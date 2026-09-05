@@ -26,10 +26,10 @@ protocol that owns them:
 | `extensions/espressif/esp_now` | ESP-NOW v1/v2 framing and protected-envelope validation |
 | `extensions/espressif/esp_now/v2/reassembly` | Caller-owned storage for a validated v2 datagram |
 
-The public Block Ack, fragmentation, station and data namespaces retain their
-existing exports. The former `wmm` and `esp_now` imports are compatibility
-exports of the canonical modules. Production consumers use the explicit QoS,
-WMM and ESP-NOW paths; a path change does not alter a traffic policy.
+The public Block Ack, fragmentation, station and data namespaces expose their
+protocol contracts. Root `wmm` and `esp_now` imports are compatibility exports
+of the canonical modules. Production consumers use the explicit QoS, WMM and
+ESP-NOW paths.
 
 QoS classification includes the existing DSCP mapping and downgrade helpers.
 The actual admission/downgrade loop still belongs to chip MAC TX runtime;
@@ -55,8 +55,6 @@ Portable AP `service` retains one peer storage owner and separates `peer`,
 Chip AP `engine` retains the hardware/service/key/beacon owner and separates
 `management`, `tx`, `rx` and `power_save` operations without duplicating state.
 
-No extra crates or independent owners are introduced by these namespaces.
-Tests remain in child files beside their owner or at the shared protocol
-boundary. See the [driver map](../README.md) and
-[migration result](../../docs/DRIVER_STRUCTURE_PLAN.md) for the complete layering
-and validation.
+Module namespaces do not create independent owners. Tests live in child files
+beside their owner or at the shared protocol boundary. See the
+[driver map](../README.md) for the complete layering contract.

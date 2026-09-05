@@ -76,7 +76,7 @@ override mechanism.
 
 ## Body applicability and caller facts
 
-The five ROM reconstruction bindings use symbol-body digests extracted by
+The ROM reconstruction bindings use symbol-body digests extracted by
 `artifact::load_code_symbol_exact` from the complete ROM whose SHA-256 is
 `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
 as recorded in `registers/esp32s31/evidence/vendor-rom.toml`. The extraction checked
@@ -89,11 +89,10 @@ path; ordinary tests use synthetic bytes and need no vendor input.
 
 These executable reconstructions remain temporary models, not hardware facts
 or generated analysis. A body digest does not prove its caller preconditions
-or the implementation of another function it calls. In particular, the former
-DTM argument-zero channel range `0..=39` is no longer supplied by this overlay:
-the summary hook receives neither authenticated caller evidence nor an entry
-contract proving that bound. The generic analyzer must preserve unknown input
-until such evidence can be carried and validated explicitly.
+or the implementation of another function it calls. The overlay does not supply a DTM argument-zero channel range without
+authenticated caller evidence or an entry contract proving that range. The
+generic analyzer preserves unknown input until its bound is explicit and
+validated.
 
 Provider extension validation also preserves every complete compressed-pointer
 encoding fact, including its reconstruction parameters. Retaining only a

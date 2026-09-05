@@ -25,7 +25,7 @@ const MILLISECONDS_PER_SECOND: u32 = 1_000;
 
 // Source-owned S31 recurring-event policy. The exact provenance of these
 // physical allowances is recorded in the recurring-event section of
-// verification/vendor/projects/esp32s31/analysis/bluetooth-peripheral-connection.md.
+// verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md.
 // They are deliberately not descriptor images.
 const LE_1M_RECURRING_EVENT_MICROS: u32 = 5_154;
 const LE_CONNECTION_COMMON_RESERVE_MICROS: u32 = 440;

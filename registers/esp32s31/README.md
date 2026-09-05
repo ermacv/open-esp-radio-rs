@@ -33,8 +33,9 @@ Handwritten runtime ownership and safe hardware access remain in the
 
 The [source-only project](publication/README.md) selects the reusable chip
 provider, model, reviewed assertions, ownership policy and PAC API. It requires
-no private artifacts. It does not implicitly select the investigation's
-executable reconstructions, register lints or evidence catalogs.
+no private artifacts. It explicitly selects the shared lint pack and source evidence catalogs,
+without selecting the investigation's executable reconstructions or authenticating
+private vendor artifacts.
 
 The [vendor investigation](../../verification/vendor/projects/esp32s31/README.md)
 selects those additional inputs explicitly and authenticates artifact-specific

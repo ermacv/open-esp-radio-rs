@@ -53,10 +53,6 @@ channel. Extracted Blobray has no dependency on this xtask package.
 
 The compiled `blobray-run` limiter remains owned by Blobray. Linux/OpenWrt
 fixture logic and privileged installation remain owned by HIL; xtask does not
-install fixtures or change network state. The migration is validated on the
-current Linux environment. Native operation on other systems is outside this
-change's acceptance criteria.
-
-The [migration plan](../../docs/tooling-audit/XTASK_PORTABILITY_PLAN.md) records
-the current scope and acceptance gates. The [earlier shell audit](../../docs/SHELL_SCRIPT_AUDIT.md)
-preserves the previous scripts' findings and process/lock regressions.
+install fixtures or change network state. Linux process ownership uses explicit
+process groups; Blobray provides its own session/systemd resource limiter. Unsupported hosts
+return an error when the required ownership backend is unavailable.

@@ -215,7 +215,7 @@ impl RxDmaArenaState {
 
 /// One descriptor whose completion ownership has moved from the MAC to Rust.
 ///
-/// Taking it through [`RxRingLive::take_completed`] also records that this
+/// Taking it through [`RxDmaStorage::take_completed`](crate::rx_storage::RxDmaStorage::take_completed) records that this
 /// descriptor must not be exposed a second time before its recycle group has
 /// been rearmed. The token is deliberately neither `Copy` nor constructible
 /// by callers: consuming it at the staging boundary represents the unique
@@ -414,7 +414,7 @@ pub enum RxReloadObservation {
 /// Prepared zero-terminated RX ring while the hardware walker is stopped.
 ///
 /// This type owns the right to start the descriptor walker. Consuming
-/// [`start`](Self::start) transfers that authority into [`RxRingLive`].
+/// [`try_start`](Self::try_start) transfers that authority into [`RxRingLive`].
 pub struct RxRingStopped<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
@@ -471,7 +471,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
 ///
 /// Live frontier bookkeeping is deliberately discarded at this lifecycle
 /// edge. A later association must rebuild and republish the ring through
-/// [`prepare`](Self::prepare), never resume descriptors from the previous
+/// [`RxDmaStorage::prepare_halted`](crate::rx_storage::RxDmaStorage::prepare_halted), never resume descriptors from the previous
 /// peer epoch.
 pub struct RxRingHalted<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
@@ -507,7 +507,7 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
     ///
     /// A halted ring can contain the terminal image of the preceding DMA
     /// epoch. This snapshot is useful for fault evidence before the next
-    /// [`Self::prepare`] rebuilds every descriptor.
+    /// [`RxDmaStorage::prepare_halted`](crate::rx_storage::RxDmaStorage::prepare_halted) rebuilds every descriptor.
     pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         descriptor_snapshot(self.descriptors, self.descriptor_base, index)
     }
@@ -797,7 +797,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// Opens the walker and consumes the stopped-state authority.
     ///
     /// The caller owns any platform-specific settle delay between
-    /// [`prepare`](Self::prepare) and this edge.
+    /// ring preparation and this edge.
     pub fn try_start<M: RxDma>(
         self,
         mmio: &mut M,
@@ -1077,7 +1077,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// Snapshot a complete RX unit only through the descriptor frontier which
     /// hardware has published in `RX_LAST_DESCRIPTOR`.
     ///
-    /// SOURCE[`libpp:wdevProcessRxSucDataAll`]: the complete vendor walker
+    /// `SOURCE[libpp:wdevProcessRxSucDataAll]`: the complete vendor walker
     /// snapshots `hal_mac_rx_get_last_dscr` before touching the software list,
     /// processes through that descriptor, then refreshes the snapshot before
     /// extending the same pass. `RX_DONE` alone is therefore not sufficient
@@ -2209,7 +2209,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// Complete the reload doorbell and its conditional BASE-repair suffix as
     /// one unscheduled transaction.
     ///
-    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the vendor function performs
+    /// `SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]`: the vendor function performs
     /// the bounded `RX_CONTROL` loop and immediately samples `NEXT`, then
     /// conditional `LAST`, without returning to its scheduler. Yielding after
     /// a pending sample lets a later RX completion replace that cursor epoch

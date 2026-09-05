@@ -12,7 +12,7 @@ verification/vendor/
     esp32s31/                   investigation composition, provider and host
       probes/                   isolated workspace: three library/ELF pairs
       profiles/ dispositions/ baselines/ replays/
-      analysis/ evidence/ revisions/
+      reference/ evidence/ revisions/
     esp32c5/                    portability fixture
 ```
 
@@ -35,10 +35,9 @@ cargo blobray project doctor --project verification/vendor/projects/esp32s31/ven
 ```
 
 Artifact paths and authentication remain caller-owned. Checked configuration
-must not select private input through hard-coded local paths. Old generated
-analysis and local bindings remain ignored after a directory migration; they
-are not moved into the reviewed source tree or relabelled as fresh evidence.
+must not select private input through hard-coded local paths. Generated analysis and machine-local bindings remain ignored and separate
+from reviewed inputs.
 
 Blobray owns comparison truth within each declared claim. The only path from
 comparison evidence to product readiness is the independent
-[verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md).
+[verification and qualification contract](../docs/verification-and-qualification.md).

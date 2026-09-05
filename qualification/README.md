@@ -14,19 +14,20 @@ cargo qualification validate \
 
 cargo qualification validate \
   --manifest qualification/targets/esp32s31/bluetooth-le.toml
+
+cargo qualification validate \
+  --manifest qualification/targets/esp32s31/ieee802154.toml
 ```
 
 Three commands have deliberately different contracts:
 
-- `validate` rejects malformed manifests, unsafe or stale references, invalid
+- `validate` rejects malformed manifests, unsafe references, invalid
   dependency graphs, mismatched verification inputs and corrupt HIL bundles;
   an incomplete target is still a valid development state;
 - `evaluate` emits the same derived verdict and optionally a complete JSON
   report through `--json-report PATH`;
 - `gate` returns non-zero unless every required capability and dependency is
   ready.
-
-There is no `check` compatibility command and no `.ledger` parser.
 
 ## Declared and derived axes
 
@@ -46,15 +47,14 @@ Every capability has five independent axes:
   `not-applicable` with a reason. Consistency with gaps is checked; the
   evaluator does not infer executor behavior from source names.
 
-
 `proof-ready` means all five axes are terminal. `ready` additionally requires
 every dependency to be ready. `required-capabilities` must exactly equal the
 manifest capability set, preventing a mismatch between required roots and declared capabilities.
 Changing the declared program still requires review; validation cannot prove
 that a removed capability was unnecessary.
 
-Known `gaps` are planning facts, not editable outcomes. The evaluator also adds
-a deterministic derived gap whenever machine evidence is absent.
+Known `gaps` declare reviewed blockers rather than override outcomes. The
+evaluator also derives a gap whenever required machine evidence is absent.
 
 ## Evidence ownership
 
@@ -71,8 +71,7 @@ maps both into the declared capability graph.
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, clean repository provenance, commit equality,
-scenario outcome and repetition count. A Markdown narrative under
-`targets/esp32s31/records/` remains useful review history but is not proof.
+scenario outcome and repetition count. Markdown reports are not proof inputs.
 A generated run directory without a manifest and an unsealed bundle whose
 manifest is still `running` are incomplete mutable execution state and are
 ignored as evidence. The former is counted as `hil-incomplete` in console
@@ -96,5 +95,5 @@ or current, and whether a dirty evaluator worktree prevented otherwise valid
 evidence from entering the verdict.
 
 See the canonical
-[verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md)
+[verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.

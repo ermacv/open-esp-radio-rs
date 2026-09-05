@@ -16,16 +16,13 @@ hil/
 ```
 
 Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
-lives in immutable bundles under `target/hil/<chip>/runs`; dated narratives in
-`qualification/targets/esp32s31/records` are historical context, not proof
-consumed by the qualification evaluator.
+lives in immutable bundles under `target/hil/<chip>/runs`. The qualification
+evaluator independently checks those bundles; Markdown is not proof input.
 
 Vendor-linked oracles remain isolated under `verification/vendor`; they are
 not HIL scenarios or runner commands.
 
-The current ownership map is in [the host README](host/README.md).
-[`docs/HIL_ARCHITECTURE_AUDIT.md`](../docs/HIL_ARCHITECTURE_AUDIT.md) preserves
-the dated 2026-09-01 audit and implementation history.
+The ownership map and bundle contract are in [the host README](host/README.md).
 
 Run the host interface through the workspace alias:
 
@@ -64,20 +61,15 @@ the exact current commit, and both the producer and evaluator worktrees are
 clean. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.
 
-The controlled OpenWrt AP and the HIL host share its laboratory LAN; reverse
-flows use the local IPv4 route selected for the discovered target. The
-upstream FRITZ!Box supplies Internet access and optional HE20 compatibility
-smoke tests, but is not an exact-delivery fixture.
+The controlled OpenWrt AP and HIL host share the fixture LAN. Reverse flows
+use the local IPv4 route selected for the discovered target. External AP
+fixtures provide compatibility workloads; exact-delivery scenarios require
+the controlled fixture declared by the scenario.
 
-An AP scenario that uses the controlled OpenWrt client starts from a fresh
-OpenWrt wireless epoch. The runner removes its scoped forwarding/VIF state,
-restarts the OpenWrt wireless subsystem, and verifies the requested channel
-and width before resetting the DUT. This is part of measurement isolation:
-mt76/mac80211 can otherwise retain a pathological state across many virtual
-client lifecycles in which every BA32 succeeds and all retry/error counters
-remain zero, but several milliseconds of idle time appear between aggregates.
-The AP report records whether this fixture preparation ran and how long it
-took.
+AP scenarios that use a controlled OpenWrt client begin with a fresh wireless
+epoch. The runner removes scoped forwarding/VIF state, restarts wireless and
+checks channel and width before resetting the DUT. The report records fixture
+preparation and its duration separately from the measured workload.
 
 The Linux helper is installed separately because its narrowly scoped AP,
 managed-client, monitor and USB-reset operations require root privileges:

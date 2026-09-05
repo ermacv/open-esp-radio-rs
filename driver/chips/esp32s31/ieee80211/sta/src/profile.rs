@@ -73,10 +73,8 @@ const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) ->
 // separately through HT Capabilities, as represented by HT40_CAPABILITY_IE.
 //
 // SOURCE[PROMOTED_HE20_ASSOCIATION]: reviewed promoted HE20 MCS9 capability
-// image, originally compared with the request constructed
-// by pinned `libnet80211.a`.
+// image of the request constructed by pinned `libnet80211.a`.
 //
-// FIELD AUDIT: complete
 // `libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` proves that
 // byte 11 bit 3 is the S31 `g_phy_cap_rx_stbc` advertisement. Byte 15 bits
 // 2..4 advertise triggered SU beamforming feedback, triggered MU partial-
@@ -90,8 +88,8 @@ const HE20_VENDOR_MCS9_CAPABILITY_IE: [u8; 24] = [
 const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
     let mut capability = HE20_VENDOR_MCS9_CAPABILITY_IE;
     // HE MAC Capabilities bit 1 is TWT Requester Support. The open driver has
-    // no TWT negotiation or wake transaction owner, so it must not inherit
-    // that vendor claim.
+    // no activated hardware TWT wake transaction owner, so it must not
+    // inherit that vendor claim.
     capability[3] &= !(1 << 1);
     // Hardware setup and report-rate programming exist, but the reachable
     // software publication boundary rejects every NDPA feedback request and

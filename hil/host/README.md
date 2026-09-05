@@ -32,11 +32,11 @@ UDP/TCP direction or rates does not rebuild or reflash firmware. It continues
 after scenario, image-build and image-flash failures, records the remaining
 scenarios as blocked when necessary, writes the complete suite, and returns a
 non-zero status unless every selected scenario passed. Independent scenarios
-reset the target. A future multi-cell workload may opt into one-boot
-`matrix-session`; ordinary scenario files must use `reset`.
+reset the target. Ordinary scenario files must use `reset` isolation.
 
-AP scenarios lease the laptop WLAN as one managed WPA2 client, without a
-gateway, and restore NetworkManager on every return path. Lifecycle, ICMP,
+AP scenarios select a controlled Linux or OpenWrt client. The Linux fixture
+leases WLAN as a managed WPA2 client without a gateway and restores
+NetworkManager on every return path. Lifecycle, ICMP,
 UDP and TCP are independent workloads over the same declared image class.
 Correctness scenarios record terminal AP observations in
 `access-point-report.json`; performance scenarios reject driver observations
@@ -88,8 +88,8 @@ Repetition records index every evidence attachment with its relative path,
 media type, byte length and SHA-256 digest. Schema 2 repetition records also
 carry typed measurements: a stable name, integer value, unit and, where the
 scenario has a gate, its comparator, threshold and independently computed
-verdict. ICMP latency/loss is the first end-to-end producer; subsequent
-workloads can adopt the same contract without parsing their Markdown reports.
+verdict. ICMP latency/loss uses these typed measurements; rendering does not
+parse Markdown reports to decide scenario outcomes.
 A session unwound by a runner error is marked interrupted in the manifest.
 Reconnect stores UART/protocol pairs per boot. The command emits one completion
 JSON object on stdout; diagnostics, progress and inherited child-process output
@@ -117,20 +117,20 @@ and changed content fail closed. The hashes detect accidental corruption and
 internally inconsistent bundles; because they live beside the evidence, they
 are not a signature against a malicious rewrite of the whole bundle.
 
-New runs retain all firmware subjects through a SHA-256 content-addressed
+Runs retain all firmware subjects through a SHA-256 content-addressed
 store under `target/hil/<target>/objects/`. The files inside a run are ordinary
 hard links when the filesystem supports them, or independent copies
 otherwise. This keeps a copied run self-contained without allocating another
 large runtime ELF for every repeated scenario. Build provenance follows the
 subjects/materials/recipe separation described in
-`docs/HIL_BUILD_AND_REPORT_REPRODUCIBILITY.md`. A tracked dirty delta is stored
+[build and report reproducibility](../../docs/hil-reproducibility.md). A tracked dirty delta is stored
 as a binary Git patch; untracked content is identified but never copied
 implicitly, and makes source reconstruction incomplete.
 
 `cargo hil image replay <run-id> <image-class>` first performs the same offline
 bundle verification and then flashes the archived `application.bin` without
 running Cargo or changing its bytes. It is the supported primitive for exact
-historical A/B. It does not by itself rerun a scenario or claim that the lab
+same-artifact comparison. It does not by itself rerun a scenario or claim that the lab
 environment matches the original run.
 
 `cargo hil run <scenario-id> --firmware-from <run-id>` performs the same
@@ -141,9 +141,7 @@ available firmware subjects, effective lock and tracked source patches into
 its own CAS-backed bundle; it remains verifiable after the source run is
 removed. Its manifest records the source run and source integrity digest, and
 the independent qualification reader deliberately excludes replayed firmware
-from current-clean evidence. `run-all` does not accept one ambiguous firmware
-origin; a future multi-image replay must provide an explicit mapping per image
-class.
+from current-clean evidence. `run-all` does not accept `--firmware-from`.
 
 The qualification evaluator consumes these same sealed bundles through an
 independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
@@ -160,7 +158,7 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
 `runner/src` follows execution and evidence boundaries:
 
 - `scenario` owns catalog values, discovery and semantic acceptance rules;
-  `image/class` owns the unchanged image identities and feature recipes.
+  `image/class` owns image identities and feature recipes.
 - `image` owns build/rebuild and placement/stack auditing; the reusable ELF
   analyzer remains `tools/memory-report`.
 - `lab` owns local configuration, topology/provenance and the exclusive fixture

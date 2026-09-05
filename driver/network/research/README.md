@@ -3,7 +3,7 @@
 This crate contains a synchronous network engine and a physical batch
 materializer for radio research. Its only external repository consumer is a
 Wi-Fi adapter host test using `physical::PinnedBatchResources`. The engine has
-its own unit tests; a product integration or HIL runner does not yet compose it.
+its own unit tests; a product integration or HIL runner does not compose it.
 
 The current engine is allocation-free and synchronous. It owns bounded
 general-memory UDP/control work, parses Ethernet/ARP/IPv4/ICMP/UDP, reports
@@ -26,7 +26,7 @@ Current source scope:
   covered by a host regression with partial BlockAck and terminal credit return;
 - no heap, executor, Xarxa, Embassy, PAC or hardware dependency.
 
-Not yet implemented:
+Outside the implemented scope:
 
 - ARP cache and unresolved datagram retention;
 - fragments, IPv6, DHCP or TCP;
@@ -34,6 +34,5 @@ Not yet implemented:
 - split-core batch SPSC transport;
 - airtime scheduling or hardware completion feedback.
 
-The next boundary separates synchronous radio service from executor waits,
-then composes the same engine in fused and split-core runners. Hardware claims
-start only after that composition is measured by HIL.
+This crate exposes no executor wait or radio lifecycle. Its host tests establish
+software ownership behavior; they do not qualify an integrated hardware path.

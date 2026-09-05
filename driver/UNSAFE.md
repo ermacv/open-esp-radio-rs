@@ -9,8 +9,7 @@ permission to add unsafe operations.
 The executable policy is
 [`cargo xtask check safety`](../tools/repo/src/checks/safety.rs). Its generated
 package handling, audited-unsafe list and direct-PAC-dependency list are
-separate controls. Package names remain stable across the directory moves
-shown below.
+separate controls. The table below maps package identities to source owners.
 
 ## Generated access and trusted handwritten code
 
@@ -30,7 +29,7 @@ access through upstream `esp-hal`/`esp-pacs` belongs to
 transactions. Its retained Cargo name ends in `platform-pac`; that name does
 not make its implementation generated code.
 
-The audit currently permits scoped unsafe exceptions in these handwritten
+The executable policy permits scoped unsafe exceptions in these handwritten
 packages. Prefixes below omit `open-esp-radio-` only to keep the mapping readable.
 
 | Package suffix | Source path |

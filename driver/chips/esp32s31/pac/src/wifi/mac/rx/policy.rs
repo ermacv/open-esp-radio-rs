@@ -355,19 +355,15 @@ impl WifiRadioRegisters {
         bssid.modify(|_, w| w.address_check_enable().set_bit());
         interface.modify(|_, w| w.rx_policy_enable().set_bit());
 
-        // `wifi_set_rx_policy(6)`, used by the live vendor STA immediately
-        // before Open Authentication, finishes with
-        // `ic_set_rx_policy_ubssid_check(0, true)`. Its complete libpp leaf
-        // performs these two ordered RMWs. The earlier open transcription used
-        // the earlier reviewed policy-five/false image produced filter 0x0001_c285;
-        // the working vendor authentication capture on ESP32-S31 rev0 shows
-        // 0x0001_c387, differing by exactly these bits.
+        // Station policy six finishes with receive-unicast BSSID checking,
+        // then dump-unicast BSSID checking, as two ordered RMWs. The complete
+        // `ic_set_rx_policy_ubssid_check(0, true)` leaf defines that order;
+        // the ESP32-S31 rev0 authentication capture has filter image 0x0001_c387.
         //
         // SOURCE: `libnet80211.a[ieee80211_supplicant.o]`
         // `wifi_set_rx_policy`, jump-table case six at `.L255` through
         // `.L262`; `libpp.a[if_hwctrl.o]`
-        // `ic_set_rx_policy_ubssid_check`; live `wifi-sta-auth-probe` HIL on
-        // 2026-07-28.
+        // `ic_set_rx_policy_ubssid_check`; `wifi-sta-auth-probe` HIL capture.
         filter.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
         filter.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
     }

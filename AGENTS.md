@@ -63,6 +63,16 @@ not test generated register addresses, masks, shifts, field positions, or PAC
 type names. Tests for memory protocols should verify behavior and ownership,
 not reproduce the same raw image or layout constants as the implementation.
 
+## Documentation Guidelines
+
+Keep tracked documentation current: describe implemented interfaces, ownership,
+usage and limitations. Follow [docs/documentation.md](docs/documentation.md).
+Do not add audit reports, work plans, migration histories, experiment diaries
+or test-run summaries. Store generated reports with their owner's ignored
+outputs. Capability matrices may describe source coverage and hardware limits;
+qualification remains the readiness authority. Preserve reviewed machine
+provenance and schema inputs when removing narrative history.
+
 ## Commit & Pull Request Guidelines
 
 History follows Conventional Commit-style subjects such as

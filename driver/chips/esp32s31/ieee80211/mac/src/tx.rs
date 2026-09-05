@@ -679,7 +679,7 @@ impl LegacyRate {
     ///
     /// SOURCE: `libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}` and the
     /// exact Rust-owned schedule arenas in [`crate::rate_schedule`],
-    /// cross-checked against SOURCE[PROMOTED_LMAC_TX]
+    /// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`
     /// `lmac.rs::select_basic_retry_rate`.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<Self> {
         let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
@@ -3427,7 +3427,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
     ///
-    /// SOURCE[PROMOTED_LMAC_TX] forces CCA to three before its
+    /// `SOURCE[PROMOTED_LMAC_TX]` forces CCA to three before its
     /// fixed 16-us settling interval. `Ok(false)` means that this queue has no
     /// timeout edge and leaves all registers untouched.
     pub fn begin_timeout_abort<H: TxHardware>(

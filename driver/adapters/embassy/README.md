@@ -24,7 +24,6 @@ time bindings live in the radio packages as explicit `time::phy` leaves, while
 chip PHY remains executor-independent.
 
 Final memory profiles, static claims, IRQ binding and whole-radio lifecycles
-belong to [integration](../../integration/esp32s31/embassy/). Moving its
-supervisor into the generic Wi-Fi adapter would invert the current dependency
-on the radio facade. The [driver map](../../README.md) records the complete
-ownership direction.
+belong to [integration](../../integration/esp32s31/embassy/). The generic Wi-Fi
+adapter depends on radio-facade contracts and does not own the product
+supervisor. The [driver map](../../README.md) defines the ownership direction.

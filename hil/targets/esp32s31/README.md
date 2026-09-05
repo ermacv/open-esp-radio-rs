@@ -23,7 +23,7 @@ DMA-visible storage, dedicated trap/interrupt stacks, critical data and ISR
 text remain in internal SRAM. Every build audits
 placement and compiler stack frames: frames above 8 KiB require an explicit
 reviewed allowance, and every frame is rejected above the 50-KiB hard limit.
-The separate compiler move limit is 4 KiB. These are the existing limits in
+The separate compiler move limit is 4 KiB. These limits are configured in
 `stack.toml`; runtime evidence independently enforces its absolute per-core
 headroom.
 
@@ -55,7 +55,7 @@ and never authorize traffic or change role behaviour.
 
 ## Application boundaries
 
-The stage-two `runtime` name and binary identity remain part of the existing
+The stage-two `runtime` name and binary identity are part of the
 bootstrap/relocation contract. `product_hil` owns the radio/network composition
 and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_qualification` children own workload and observation duties. The value-only

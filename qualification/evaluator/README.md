@@ -1,7 +1,7 @@
 # Qualification evaluator
 
-This existing Cargo package independently evaluates the capability programs
-in [qualification](../README.md). Its package name remains
+This Cargo package independently evaluates the capability programs
+in [qualification](../README.md). Its package name is
 `open-esp-radio-qualification-check`; the repository entrypoint is
 `cargo qualification`.
 

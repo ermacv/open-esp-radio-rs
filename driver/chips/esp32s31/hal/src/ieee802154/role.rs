@@ -247,7 +247,7 @@ impl<P> Ieee802154Owned<P> {
     ///
     /// # Errors
     ///
-    /// Returns [`Ieee802154OwnedReleaseFailure`] retaining this owner and its
+    /// Returns a release failure retaining this owner and its
     /// platform while TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still
     /// awaits restoration in the PAC.
     pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {

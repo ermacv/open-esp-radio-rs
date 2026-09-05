@@ -715,8 +715,8 @@ Schema 10 is created only from a cold store. A cache at any other schema must be
 removed explicitly after reviewed TOML, revision snapshots, linked IR and other
 durable artifacts have been preserved. Remove the entire
 `generated/.blobray-cache/` directory, not selected SQLite or pack files, and
-rerun analysis; there is no cache import or upgrade path. The complete
-measurement, hard-cutover, retention and 64-KiB storage rationale is in
+rerun analysis; there is no cache import or upgrade path. The current
+storage, cold-store compatibility and retention contracts are in
 [`cache-policy.md`](cache-policy.md). `project analyze --plan` is the
 read-only way to see whether
 each stage is current, restorable from CAS, or requires recomputation. Plan

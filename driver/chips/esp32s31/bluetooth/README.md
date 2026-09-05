@@ -18,15 +18,15 @@ and final storage and hardware composition live in
 | `controller` | Shared controller bootstrap and hardware lifecycle |
 | `interrupt` | Chip interrupt state and hardware handling |
 
-LE modules are private implementation namespaces; existing root exports retain
+LE modules are private implementation namespaces; public root exports define
 the caller contract. Paths provide protocol context without repeating the role
 in each filename. Publication, cancellation, reset and quiescence remain
 explicit lifecycle terms. Shared controller/IRQ/scheduler code is not owned by
 one LE role.
 
-The complete boot/controller loops stay with their state owners. Module splits
-must preserve hardware handoff order, effective cfg, task cancellation points
-and terminal quarantine. Unit suites remain in child files beside those owners.
+Boot/controller loops retain their state owners through hardware handoff,
+waits and terminal quarantine. Feature gates apply to both the owners and
+their unit suites in adjacent child files.
 The separate [`memory`](memory/) crate retains controller-SRAM codecs.
 
 See [FEATURES.md](FEATURES.md) for supported and incomplete paths; structural

@@ -38,13 +38,14 @@ typed upstream-register operations, cache/MMU and GDMA transactions. It is
 handwritten integration code, even though its retained package name ends in
 `platform-pac`. It neither generates nor replaces this radio PAC.
 
-The two chains retain their reviewed dependency revisions. Normalizing source
-paths does not update upstream hardware descriptions or qualify new behavior.
+The two chains use their reviewed dependency revisions. A capability exposed
+by either PAC is not itself hardware qualification of a radio operation.
 
 ## Validation
 
 `cargo xtask check source-only` validates register sources, dependency direction,
 handwritten unsafe boundaries and the final linked image. It also checks
-publication reproducibility when the reviewed local inputs are present.
+source-only publication reproducibility unconditionally. Artifact-scoped
+publication is additionally checked when its review report is present.
 Generated addresses, masks and field positions are not regression test oracles;
 ownership and memory protocols are tested through behavior and typed contracts.

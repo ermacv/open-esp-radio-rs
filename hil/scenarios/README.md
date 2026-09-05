@@ -14,11 +14,11 @@ directory links outside the catalog. Each independently checks its required
 schema and repetition bounds; only the runner interprets executable workload
 and acceptance fields.
 
-The runner sorts by scenario ID, preserving the former flat filename order.
-`run-all` first traverses the existing `ImageClass::ALL` order, then the selected
+The runner sorts by scenario ID.
+`run-all` first traverses `ImageClass::ALL`, then the selected
 scenarios of each image in catalog order. Folder traversal order cannot change
-physical execution order. Neither migration nor grouping changes TOML values,
-image features, workload criteria or repetition counts.
+physical execution order. Each TOML document owns its image features,
+workload criteria and repetition count.
 
 Synthetic serialized compatibility inputs live in `hil/tests/fixtures/catalog`.
 They are used by both independent readers and are not part of this catalog.

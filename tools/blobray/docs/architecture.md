@@ -14,23 +14,23 @@ of observed behavior.
 
 ## Responsibility matrix
 
-| Subsystem | Responsibility | Owns | Consumes | Produces | Must not know about | Source of truth | Decision |
-|---|---|---|---|---|---|---|---|
-| Generic Blobray | Extract, link, compare, and present facts | Analysis schemas and fail-closed algorithms | Artifact bytes, composition, add-ons | Observed facts, derived IR, pseudo-Rust, reports | Chip addresses, product policy, ledger state | Artifact bytes + provenance | Keep, simplify |
-| Architecture backend | Decode/lift one ISA | ISA semantics, calling-convention implementation | Bytes, relocations, ABI | Instructions, CFG, effects, blockers | Vendors, chips, drivers, ledgers | Artifact bytes + target ABI | Keep |
-| Ecosystem pack | Attach reusable vendor/RTOS vocabulary | Declarative operation names/signatures | Generic semantic vocabulary | Hints and reviewed call annotations | Chip addresses, production code | Reviewed pack | Keep, data-only |
-| Chip pack/knowledge | Declare reusable chip facts | Memory map, SVD inputs, ROM identities, ABI and semantic declarations | Target ABI, ecosystem vocabulary | Reviewed interpretation inputs | Handwritten control flow, production driver, qualification policy | Reviewed chip pack; observations remain external | Keep declarative |
-| Executable analysis models | Interpret external boundaries or temporarily reconstruct selected bodies | Runtime adapters, guarded summary hooks, implementation provenance | Knowledge/contracts and authenticated applicability context | Modeled effects with explicit uncertainty | Hardware truth or qualification policy | Reviewed model implementation, distinct from observations | Separate from knowledge |
-| Project manifest | Compose one investigation | References, local workflow and output selection | Target, ecosystem packs, chip pack, reviewed workspaces | Resolved project | Reusable chip facts duplicated inline | Manifest only for composition | Simplify |
-| Reviewed knowledge | Accept hardware/function meaning after review | Reviewed assertions and links to evidence | Immutable observations and external evidence | Accepted names, fields, enums, contracts | Rewriting underlying observations | Reviewed model | Keep |
-| PAC generation | Publish reviewed register structure | Generator and generated-file contract | Reviewed register model | Raw PAC, bindings index | Driver/runtime policy | Reviewed register model | Keep |
-| Restricted PAC/capabilities | Encode approved low-level authority | Register-local operations and capability types | Raw PAC + reviewed API policy | Non-forgeable, bounded register authority | Polling, retries, Wi-Fi roles | Reviewed API pack | Strengthen |
-| HAL | Implement hardware operations and lifecycle | Sequences, waits, timeouts, recovery, serialization | Narrow capabilities | Hardware operation outcomes | Wi-Fi/BLE/SoftMAC policy | Reviewed sequences + production implementation | Strengthen incrementally |
-| Driver | Implement protocol/runtime behavior | Wi-Fi/BLE/SoftMAC state and policy | HAL operations | Production behavior | Raw MMIO/PAC authority | Compiled production Rust | Keep |
-| Verification models/add-on | Model environment and compare observations | Scenarios, external services, comparison relation | Compiled vendor and Rust artifacts, inputs, declarations | `MATCH`, `DIFF`, or `INCOMPLETE` evidence | Product readiness decisions | Artifacts + recorded observations | Keep, separate from knowledge |
-| Dispositions | Declare reviewed mapping and claim ceiling | Vendor-to-production binding declarations | Function identities and reviewer decisions | Allowed comparison claims | Execution truth | Reviewed declaration, not observation | Keep |
-| Qualification ledger | Decide product trust/readiness | Claims, required evidence, readiness policy | Read-only verification/HIL results | Qualification decision | Blobray analysis internals | Ledger | External; never mutated by Blobray |
-| Documentation | Explain current contracts and workflow | Normative architecture and operator guidance | Code/schema contracts | Human guidance | Duplicate historical narratives | This file + code/tests | Consolidate |
+| Subsystem | Responsibility | Owns | Consumes | Produces | Must not know about | Source of truth |
+|---|---|---|---|---|---|---|
+| Generic Blobray | Extract, link, compare, and present facts | Analysis schemas and fail-closed algorithms | Artifact bytes, composition, add-ons | Observed facts, derived IR, pseudo-Rust, reports | Chip addresses, product policy, ledger state | Artifact bytes + provenance |
+| Architecture backend | Decode/lift one ISA | ISA semantics, calling-convention implementation | Bytes, relocations, ABI | Instructions, CFG, effects, blockers | Vendors, chips, drivers, ledgers | Artifact bytes + target ABI |
+| Ecosystem pack | Attach reusable vendor/RTOS vocabulary | Declarative operation names/signatures | Generic semantic vocabulary | Hints and reviewed call annotations | Chip addresses, production code | Reviewed pack |
+| Chip pack/knowledge | Declare reusable chip facts | Memory map, SVD inputs, ROM identities, ABI and semantic declarations | Target ABI, ecosystem vocabulary | Reviewed interpretation inputs | Handwritten control flow, production driver, qualification policy | Reviewed chip pack; observations remain external |
+| Executable analysis models | Interpret external boundaries or temporarily reconstruct selected bodies | Runtime adapters, guarded summary hooks, implementation provenance | Knowledge/contracts and authenticated applicability context | Modeled effects with explicit uncertainty | Hardware truth or qualification policy | Reviewed model implementation, distinct from observations |
+| Project manifest | Compose one investigation | References, local workflow and output selection | Target, ecosystem packs, chip pack, reviewed workspaces | Resolved project | Reusable chip facts duplicated inline | Manifest only for composition |
+| Reviewed knowledge | Accept hardware/function meaning after review | Reviewed assertions and links to evidence | Immutable observations and external evidence | Accepted names, fields, enums, contracts | Rewriting underlying observations | Reviewed model |
+| PAC generation | Publish reviewed register structure | Generator and generated-file contract | Reviewed register model | Raw PAC, bindings index | Driver/runtime policy | Reviewed register model |
+| Restricted PAC/capabilities | Encode approved low-level authority | Register-local operations and capability types | Raw PAC + reviewed API policy | Non-forgeable, bounded register authority | Polling, retries, Wi-Fi roles | Reviewed API pack |
+| HAL | Implement hardware operations and lifecycle | Sequences, waits, timeouts, recovery, serialization | Narrow capabilities | Hardware operation outcomes | Wi-Fi/BLE/SoftMAC policy | Reviewed sequences + production implementation |
+| Driver | Implement protocol/runtime behavior | Wi-Fi/BLE/SoftMAC state and policy | HAL operations | Production behavior | Raw MMIO/PAC authority | Compiled production Rust |
+| Verification models/add-on | Model environment and compare observations | Scenarios, external services, comparison relation | Compiled vendor and Rust artifacts, inputs, declarations | `MATCH`, `DIFF`, or `INCOMPLETE` evidence | Product readiness decisions | Artifacts + recorded observations |
+| Dispositions | Declare reviewed mapping and claim ceiling | Vendor-to-production binding declarations | Function identities and reviewer decisions | Allowed comparison claims | Execution truth | Reviewed declaration, not observation |
+| Qualification ledger | Decide product trust/readiness | Claims, required evidence, readiness policy | Read-only verification/HIL results | Qualification decision | Blobray analysis internals | Ledger |
+| Documentation | Explain current contracts and workflow | Normative architecture and operator guidance | Code/schema contracts | Human guidance | Duplicate historical narratives | This file + code/tests |
 
 ## Dependency and knowledge direction
 
@@ -230,14 +230,13 @@ not the physical SVD block layout.
 - Protocol roles and runtime policy belong to the driver and never flow back
   into register knowledge.
 
-Migration is vertical. The channel transaction uses a narrow borrowed
-`RadioChannelHal`; this is a current slice API, not a universal split pattern.
+The channel transaction uses a narrow borrowed `RadioChannelHal`.
 The runtime arena stores only an opaque `RadioRuntimeOwner` and cannot yield a
-PAC owner. Cold MAC, channel, DMA, IRQ, TX, AP, and STA paths now consume named
+PAC owner. Cold MAC, channel, DMA, IRQ, TX, AP, and STA paths consume named
 HAL operations. Powered PHY code borrows an opaque `PhyHal` with no `Deref`,
 generic callback, or owner-recovery operation. PHY has no PAC dependency and
 can use the capability only through named HAL operations. Repository contracts
-reject the removed broad borrow APIs and any future `Deref` escape.
+enforce named HAL operations and reject broad borrow or `Deref` escapes.
 
 ## Verification and qualification
 
@@ -247,21 +246,16 @@ at compiled production Rust. Dispositions can declare what is bound and what
 claim is allowed, but cannot change recorded behavior.
 
 Blobray owns neither ledger types nor readiness policy and cannot mutate a
-ledger. A future UI may display a read-only result produced by the independent
-`qualification-check` tool; Blobray must not parse policy or calculate
-readiness itself. An implemented function without a qualifying production
+ledger. The independent qualification evaluator produces readiness results. Blobray
+does not parse its policy or calculate readiness. An implemented function without a qualifying production
 trace remains visible research coverage debt; it does not fail `project
 status` or `project verify` unless a configured policy, suite, or binding
 requirement makes that trace mandatory.
 
-## Documentation policy
+## Documentation ownership
 
-This file is normative for ownership and dependency boundaries.
-`project-workflow.md` is normative operator workflow. `formats.md` is the
-schema index. Other retained files explain one subsystem. Generated CLI help,
-reports, PAC/SVD output, and manpages are generated documentation. Git history,
-not checked-in migration narratives, is the historical archive.
-
-The completed binding cutover has no compatibility manifest: current
-dispositions, profiles, suites, and repository contract tests are the only
-maintained representation.
+This file describes ownership and dependency boundaries.
+[Project workflow](project-workflow.md) describes operator commands, while
+[formats](formats.md) indexes current schemas. Other documents cover one
+subsystem. Generated CLI help, reports, PAC/SVD output and manpages derive from
+their respective code or reviewed source inputs.

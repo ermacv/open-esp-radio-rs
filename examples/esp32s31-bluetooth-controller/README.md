@@ -40,9 +40,10 @@ This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
 and the repository's HIL evidence process.
 
-Build the target with:
+Run Cargo from this workspace so its target and linker configuration are used:
 
 ```console
+cd examples/esp32s31-bluetooth-controller
 cargo build --release
 ```
 

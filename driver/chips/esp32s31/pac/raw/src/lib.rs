@@ -62625,7 +62625,7 @@ pub mod masked_register_modify {
 /// Safe, SVD-declared field-local OR read-modify-write transactions.
 pub mod field_or_modify {
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_a(
         registers: &crate::BluetoothControllerCore,
@@ -62642,7 +62642,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_21, SOURCES_27_28] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields `[SOURCE_21, SOURCES_27_28]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_bluetooth_scheduler_run_interrupts_bank_0(
         registers: &crate::BluetoothInterruptBank,
@@ -62661,7 +62661,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_3] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields `[SOURCE_3]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_bluetooth_scheduler_run_interrupts_bank_1(
         registers: &crate::BluetoothInterruptBank,
@@ -62676,7 +62676,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_15] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields `[SOURCE_15]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_bluetooth_primary_baseline_bank_0(registers: &crate::BluetoothInterruptBank) {
         registers.irq_enable_0().modify(|reader, writer| {
@@ -62689,7 +62689,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_8, SOURCE_9, SOURCE_12] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields `[SOURCE_8, SOURCE_9, SOURCE_12]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_bluetooth_primary_baseline_bank_1(registers: &crate::BluetoothInterruptBank) {
         registers.irq_enable_1().modify(|reader, writer| {
@@ -62706,7 +62706,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0078 fields [CONTROL_25] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0078 fields `[CONTROL_25]` while preserving the fresh register observation.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_control_25(registers: &crate::BtdmRuntimeControl) {
         registers.control_0078().modify(|reader, writer| {
@@ -62719,7 +62719,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0058 fields [CONTROL_1] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0058 fields `[CONTROL_1]` while preserving the fresh register observation.
     #[inline]
     pub fn publish_bluetooth_modem_lp_timer_control_1(registers: &crate::BtdmRuntimeControl) {
         registers.control_0058().modify(|reader, writer| {
@@ -62732,7 +62732,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_b(
         registers: &crate::BluetoothControllerCore,
@@ -62749,7 +62749,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_a(
         registers: &crate::BluetoothControllerCore,
@@ -62766,7 +62766,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_b(
         registers: &crate::BluetoothControllerCore,
@@ -62783,7 +62783,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_a(
         registers: &crate::BluetoothControllerCore,
@@ -62800,7 +62800,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_b(
         registers: &crate::BluetoothControllerCore,
@@ -62817,7 +62817,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields `[LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE]` while preserving the fresh register observation.
     #[inline]
     pub fn or_ble_phy_init_tx_on_delay(registers: &crate::BtmacBlePhyInit, input: u32) {
         registers.lc_tx_on_delay_config().modify(|reader, writer| {
@@ -62833,7 +62833,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_0, INIT_BYTE_1] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_0, INIT_BYTE_1]` while preserving the fresh register observation.
     #[inline]
     pub fn or_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0254().modify(|reader, writer| {
@@ -62850,7 +62850,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_2_LOW_7, INIT_BYTE_2_HIGH] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_2_LOW_7, INIT_BYTE_2_HIGH]` while preserving the fresh register observation.
     #[inline]
     pub fn or_ble_phy_init_byte_2(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0254().modify(|reader, writer| {
@@ -62867,7 +62867,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400 fields [INIT_ENABLE_22] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400 fields `[INIT_ENABLE_22]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_ble_phy_init_control_0400(registers: &crate::BtmacBlePhyInit) {
         registers.init_control_0400().modify(|reader, writer| {
@@ -62880,7 +62880,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [SET_BY_PHY_INIT_BRANCH_BIT_18] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields `[SET_BY_PHY_INIT_BRANCH_BIT_18]` while preserving the fresh register observation.
     #[inline]
     pub fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::BtmacBlePhyInit) {
         registers
@@ -62895,7 +62895,7 @@ pub mod field_or_modify {
             });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields [SOURCE_11, SOURCE_15, SOURCE_20, SOURCE_24] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields `[SOURCE_11, SOURCE_15, SOURCE_20, SOURCE_24]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_ble_phy_interrupt_sources_11_15_20_24(registers: &crate::BtmacBlePhyInit) {
         registers.interrupt_enable().modify(|reader, writer| {
@@ -62914,7 +62914,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields [SCHEDULER_RUN] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields `[SCHEDULER_RUN]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_ble_scheduler_run_event_source(registers: &crate::BtmacBlePhyInit) {
         registers.interrupt_enable().modify(|reader, writer| {
@@ -62927,7 +62927,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4 fields [INIT_ENABLE_9] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4 fields `[INIT_ENABLE_9]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_ble_phy_init_control_00c4(registers: &crate::BtmacBlePhyInit) {
         registers.init_control_00c4().modify(|reader, writer| {
@@ -62940,7 +62940,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [LATCH_REQUEST] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[LATCH_REQUEST]` while preserving the fresh register observation.
     #[inline]
     pub fn request_bluetooth_controller_time_latch(registers: &crate::BluetoothControllerCore) {
         registers.sleep_timer_control().modify(|reader, writer| {
@@ -62957,7 +62957,7 @@ pub mod field_or_modify {
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
 pub mod field_replace_modify {
 
-    /// Replace BLE_HW_CTE_RING_CONTROL.RING_CONTROL fields [MAX_BUFFER_NUMBER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLE_HW_CTE_RING_CONTROL.RING_CONTROL fields `[MAX_BUFFER_NUMBER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bluetooth_cte_six_buffer_limit(registers: &crate::BleHwCteRingControl) {
         registers.ring_control().modify(|_, writer| {
@@ -62968,7 +62968,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s fields [COMPRESSED_DESCRIPTOR_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s fields `[COMPRESSED_DESCRIPTOR_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_cte_sample_descriptor_pointer(
         registers: &crate::BleHwCteRingControl,
@@ -62986,7 +62986,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s fields [SOFTWARE_OWNED] from one reviewed logical image while preserving every other bit.
+    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s fields `[SOFTWARE_OWNED]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_cte_buffer_software_ownership(
         registers: &crate::BleHwCteRingControl,
@@ -63000,7 +63000,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields [HEAD_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields `[HEAD_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_hardware_list_head(
         registers: &crate::BtdmSchedulerTable,
@@ -63014,7 +63014,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields [HEAD_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields `[HEAD_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_hardware_list_head(
         registers: &crate::BtdmSchedulerTable,
@@ -63028,7 +63028,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0 fields [START] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0 fields `[START]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_insertion_command_0_start(
         registers: &crate::BluetoothControllerCore,
@@ -63041,7 +63041,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1 fields [START] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1 fields `[START]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_insertion_command_1_start(
         registers: &crate::BluetoothControllerCore,
@@ -63054,7 +63054,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields `[LINK_STATE_CONTROL]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
         registers.connection_abort_control().modify(|_, writer| {
@@ -63065,7 +63065,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields `[LINK_STATE_CONTROL]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
         registers.connection_abort_control().modify(|_, writer| {
@@ -63076,7 +63076,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [BB_AGC_UPDATE_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields `[BB_AGC_UPDATE_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_agc_baseband_update_mode(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_mode_control().modify(|_, writer| {
@@ -63089,7 +63089,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL fields [BB_AGC_UPDATE_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL fields `[BB_AGC_UPDATE_SET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn complete_agc_baseband_update_mode(registers: &crate::PhyAgcOracle) {
         registers.agc_update_8078_control().modify(|_, writer| {
@@ -63104,7 +63104,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [AGC_DISABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields `[AGC_DISABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_agc(registers: &crate::PhyAgcOracle) {
         registers.agc_antenna_control().modify(|_, writer| {
@@ -63115,7 +63115,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [AGC_DISABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields `[AGC_DISABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_agc(registers: &crate::PhyAgcOracle) {
         registers.agc_antenna_control().modify(|_, writer| {
@@ -63126,7 +63126,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_agc_enable_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63137,7 +63137,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_agc_enable_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63148,7 +63148,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_COMPENSATION_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[RX_COMPENSATION_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_compensation_low(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63163,7 +63163,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL fields [RX_COMPENSATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL fields `[RX_COMPENSATION_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_compensation_high(registers: &crate::PhyAgcOracle) {
         registers
@@ -63180,7 +63180,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields [CLEAR_PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields `[CLEAR_PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_agc_dc_memory_clear_pulse(registers: &crate::PhyAgcOracle) {
         registers.dc_memory_control().modify(|_, writer| {
@@ -63191,7 +63191,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields [CLEAR_PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields `[CLEAR_PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_agc_dc_memory_clear_pulse(registers: &crate::PhyAgcOracle) {
         registers.dc_memory_control().modify(|_, writer| {
@@ -63202,7 +63202,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_pbus_work_mode_control(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63217,7 +63217,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63228,7 +63228,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -63239,7 +63239,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_1_pointer_a().modify(|_, writer| {
@@ -63250,7 +63250,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_15] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields `[SOURCE_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn mask_bluetooth_primary_baseline_bank_0(registers: &crate::BluetoothInterruptBank) {
         registers.irq_enable_0().modify(|_, writer| {
@@ -63261,7 +63261,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_8, SOURCE_9, SOURCE_12] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields `[SOURCE_8, SOURCE_9, SOURCE_12]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn mask_bluetooth_primary_baseline_bank_1(registers: &crate::BluetoothInterruptBank) {
         registers.irq_enable_1().modify(|_, writer| {
@@ -63278,7 +63278,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTDM_RUNTIME_CONTROL.CONTROL_0058 fields [CONTROL_0, CONTROL_4] from one reviewed logical image while preserving every other bit.
+    /// Replace BTDM_RUNTIME_CONTROL.CONTROL_0058 fields `[CONTROL_0, CONTROL_4]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_low_power_controls_0_4(registers: &crate::BtdmRuntimeControl) {
         registers.control_0058().modify(|_, writer| {
@@ -63293,7 +63293,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_b(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_1_pointer_b().modify(|_, writer| {
@@ -63304,7 +63304,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_2_pointer_a(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_2_pointer_a().modify(|_, writer| {
@@ -63315,7 +63315,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_2_pointer_b(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_2_pointer_b().modify(|_, writer| {
@@ -63326,7 +63326,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_3_pointer_a(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_3_pointer_a().modify(|_, writer| {
@@ -63337,7 +63337,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_3_pointer_b(registers: &crate::BluetoothControllerCore) {
         registers.mmgmt_list_3_pointer_b().modify(|_, writer| {
@@ -63348,7 +63348,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields `[LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::BtmacBlePhyInit) {
         registers.lc_tx_on_delay_config().modify(|_, writer| {
@@ -63365,7 +63365,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields [ENCODED_VALUE_MINUS_10, FORCE_ZERO_BITS_16_18] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[ENCODED_VALUE_MINUS_10, FORCE_ZERO_BITS_16_18]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_le_tx_on_delay(registers: &crate::BtV3_2Baseband, input: u32) {
         registers.le_tx_on_delay().modify(|_, writer| {
@@ -63381,7 +63381,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0 fields [AA_LC_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0 fields `[AA_LC_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ble_phy_access_address_low_correlation(registers: &crate::BtV3_2Baseband) {
         registers.le_correlation_threshold_0().modify(|_, writer| {
@@ -63392,7 +63392,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_0, INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_0, INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0254().modify(|_, writer| {
@@ -63409,7 +63409,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_2_LOW_7] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_2_LOW_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_init_byte_2_low_7(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0254().modify(|_, writer| {
@@ -63420,7 +63420,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_0(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0550().modify(|_, writer| {
@@ -63431,7 +63431,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_1(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0550().modify(|_, writer| {
@@ -63442,7 +63442,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_2(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0550().modify(|_, writer| {
@@ -63453,7 +63453,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_0(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0554().modify(|_, writer| {
@@ -63464,7 +63464,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_1(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0554().modify(|_, writer| {
@@ -63475,7 +63475,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_2(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0554().modify(|_, writer| {
@@ -63486,7 +63486,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_3(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0554().modify(|_, writer| {
@@ -63497,7 +63497,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_0(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_055c().modify(|_, writer| {
@@ -63508,7 +63508,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_1(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_055c().modify(|_, writer| {
@@ -63519,7 +63519,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_2(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_055c().modify(|_, writer| {
@@ -63530,7 +63530,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_3(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_055c().modify(|_, writer| {
@@ -63541,7 +63541,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_0(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0558().modify(|_, writer| {
@@ -63552,7 +63552,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_1(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0558().modify(|_, writer| {
@@ -63563,7 +63563,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_2(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0558().modify(|_, writer| {
@@ -63574,7 +63574,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_3(registers: &crate::BtmacBlePhyInit) {
         registers.init_bytes_0558().modify(|_, writer| {
@@ -63585,7 +63585,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458 fields [INIT_HIGH_HALF] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458 fields `[INIT_HIGH_HALF]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_high_half_0458(registers: &crate::BtmacBlePhyInit) {
         registers.init_high_half_0458().modify(|_, writer| {
@@ -63596,7 +63596,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C fields [INIT_LOW_5] from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C fields `[INIT_LOW_5]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_low_5_054c(registers: &crate::BtmacBlePhyInit) {
         registers.init_low_5_054c().modify(|_, writer| {
@@ -63607,7 +63607,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_LOW_3] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_LOW_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_sleep_timer_shift(
         registers: &crate::BluetoothControllerCore,
@@ -63620,7 +63620,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields [VALUE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields `[VALUE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_value_0(registers: &crate::BluetoothControllerCore, input: u32) {
         registers.hal_init_bytes().modify(|_, writer| {
@@ -63630,7 +63630,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields [VALUE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields `[VALUE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_value_1(registers: &crate::BluetoothControllerCore, input: u32) {
         registers.hal_init_bytes().modify(|_, writer| {
@@ -63640,7 +63640,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH fields `[ENABLE_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_bluetooth_hal_latch(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_latch().modify(|_, writer| {
@@ -63651,7 +63651,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields [CONFIG_15, CONFIG_18_19] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields `[CONFIG_15, CONFIG_18_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bluetooth_hal_control_1_high(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_control_1().modify(|_, writer| {
@@ -63668,7 +63668,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields [CONFIG_3, CONFIG_6_7] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields `[CONFIG_3, CONFIG_6_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bluetooth_hal_control_1_low(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_control_1().modify(|_, writer| {
@@ -63685,7 +63685,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0 fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0 fields `[ENABLE_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_bluetooth_hal_control_0(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_control_0().modify(|_, writer| {
@@ -63696,7 +63696,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_8(
         registers: &crate::BluetoothControllerCore,
@@ -63721,7 +63721,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_16(
         registers: &crate::BluetoothControllerCore,
@@ -63746,7 +63746,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_16_20] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[CONFIG_16_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_scheduler_config_16_20(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_scheduler_control().modify(|_, writer| {
@@ -63757,7 +63757,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_16_20] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[CONFIG_16_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_scheduler_config_16_20(
         registers: &crate::BluetoothControllerCore,
@@ -63770,7 +63770,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[ENABLE_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_bluetooth_hal_scheduler_control(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_scheduler_control().modify(|_, writer| {
@@ -63781,7 +63781,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields [CONFIG_LOW_16] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields `[CONFIG_LOW_16]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_low_half(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_low_half().modify(|_, writer| {
@@ -63792,7 +63792,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields [CONFIG_LOW_16] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields `[CONFIG_LOW_16]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn fill_bluetooth_hal_low_half(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_low_half().modify(|_, writer| {
@@ -63803,7 +63803,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[CONFIG_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_scheduler_byte_1(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_scheduler_control().modify(|_, writer| {
@@ -63814,7 +63814,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_BYTE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[CONFIG_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_scheduler_byte_1(registers: &crate::BluetoothControllerCore) {
         registers.hal_init_scheduler_control().modify(|_, writer| {
@@ -63825,7 +63825,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_0_INDEX_HIGH, LANE_0_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_0_INDEX_HIGH, LANE_0_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_0_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63843,7 +63843,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_1_INDEX_HIGH, LANE_1_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_1_INDEX_HIGH, LANE_1_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_1_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63861,7 +63861,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_2_INDEX_HIGH, LANE_2_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_2_INDEX_HIGH, LANE_2_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_2_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63879,7 +63879,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_3_INDEX_HIGH, LANE_3_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_3_INDEX_HIGH, LANE_3_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_3_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63897,7 +63897,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_4_INDEX_HIGH, LANE_4_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_4_INDEX_HIGH, LANE_4_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_4_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63915,7 +63915,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_5_INDEX_HIGH, LANE_5_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_5_INDEX_HIGH, LANE_5_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_5_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63933,7 +63933,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_6_INDEX_HIGH, LANE_6_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_6_INDEX_HIGH, LANE_6_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_6_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63951,7 +63951,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_7_INDEX_HIGH, LANE_7_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_7_INDEX_HIGH, LANE_7_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_slot_lane_7_upper(
         registers: &crate::BluetoothControllerCore,
@@ -63969,7 +63969,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_0_ENABLE, LANE_0_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_0_ENABLE, LANE_0_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_0(
         registers: &crate::BluetoothControllerCore,
@@ -63987,7 +63987,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_1_ENABLE, LANE_1_RETAINED_INDEX_LOW, LANE_1_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_1_ENABLE, LANE_1_RETAINED_INDEX_LOW, LANE_1_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_1(
         registers: &crate::BluetoothControllerCore,
@@ -64007,7 +64007,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_2_ENABLE, LANE_2_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_2_ENABLE, LANE_2_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_2(
         registers: &crate::BluetoothControllerCore,
@@ -64025,7 +64025,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_3_ENABLE, LANE_3_RETAINED_INDEX_LOW, LANE_3_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_3_ENABLE, LANE_3_RETAINED_INDEX_LOW, LANE_3_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_3(
         registers: &crate::BluetoothControllerCore,
@@ -64045,7 +64045,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_4_ENABLE, LANE_4_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_4_ENABLE, LANE_4_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_4(
         registers: &crate::BluetoothControllerCore,
@@ -64063,7 +64063,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_5_ENABLE, LANE_5_RETAINED_INDEX_LOW, LANE_5_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_5_ENABLE, LANE_5_RETAINED_INDEX_LOW, LANE_5_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_5(
         registers: &crate::BluetoothControllerCore,
@@ -64083,7 +64083,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_6_ENABLE, LANE_6_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_6_ENABLE, LANE_6_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_6(
         registers: &crate::BluetoothControllerCore,
@@ -64101,7 +64101,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_7_ENABLE, LANE_7_RETAINED_INDEX_LOW, LANE_7_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields `[LANE_7_ENABLE, LANE_7_RETAINED_INDEX_LOW, LANE_7_INDEX_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_slot_lane_7(
         registers: &crate::BluetoothControllerCore,
@@ -64121,7 +64121,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT fields [TX_ARGUMENT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT fields `[TX_ARGUMENT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_tx_argument(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_argument().modify(|_, writer| {
@@ -64132,7 +64132,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0 fields [TX_SETUP_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0 fields `[TX_SETUP_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_tx_setup_image(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_image_0().modify(|_, writer| {
@@ -64143,7 +64143,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [TX_SET_LOW_BYTE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields `[TX_SET_LOW_BYTE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_tx_low_byte(registers: &crate::BtV3_2Baseband) {
         registers
@@ -64156,7 +64156,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields [CONFIG_FORCE_ONE_18] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[CONFIG_FORCE_ONE_18]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_coexistence_18(registers: &crate::BtV3_2Baseband) {
         registers.coex_config().modify(|_, writer| {
@@ -64167,7 +64167,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields [CONFIG_FORCE_ONE_20] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[CONFIG_FORCE_ONE_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_coexistence_20(registers: &crate::BtV3_2Baseband) {
         registers.coex_config().modify(|_, writer| {
@@ -64178,7 +64178,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_VALUE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[CONFIG_VALUE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_cca_value_0(registers: &crate::PhyBtagcRecovered) {
         registers.cca_config().modify(|_, writer| {
@@ -64189,7 +64189,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_VALUE_1] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[CONFIG_VALUE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_cca_value_1(registers: &crate::PhyBtagcRecovered) {
         registers.cca_config().modify(|_, writer| {
@@ -64200,7 +64200,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_FORCE_ONE_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[CONFIG_FORCE_ONE_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_cca_bit_23(registers: &crate::PhyBtagcRecovered) {
         registers.cca_config().modify(|_, writer| {
@@ -64211,7 +64211,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_1 fields [DEFAULT_CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_1 fields `[DEFAULT_CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_cca_default(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_1().modify(|_, writer| {
@@ -64226,7 +64226,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields [POSITIONAL_IMAGE_21_31] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields `[POSITIONAL_IMAGE_21_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_0_high(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_0().modify(|_, writer| {
@@ -64241,7 +64241,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields [SHARED_INIT_IMAGE_10_20] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields `[SHARED_INIT_IMAGE_10_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_control_image(registers: &crate::ZbbbRadioControl) {
         registers.rx_setup_control().modify(|_, writer| {
@@ -64256,7 +64256,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_1 fields [POSITIONAL_IMAGE_0_10] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_1 fields `[POSITIONAL_IMAGE_0_10]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_1_low(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_1().modify(|_, writer| {
@@ -64271,7 +64271,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields [POSITIONAL_IMAGE_13_20] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields `[POSITIONAL_IMAGE_13_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_0_middle(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_0().modify(|_, writer| {
@@ -64286,7 +64286,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_IMAGE_20_30] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields `[POSITIONAL_IMAGE_20_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_4_high(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_4().modify(|_, writer| {
@@ -64301,7 +64301,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_IMAGE_9_19] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields `[POSITIONAL_IMAGE_9_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_4_middle(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_4().modify(|_, writer| {
@@ -64316,7 +64316,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields [POSITIONAL_IMAGE_8_31] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields `[POSITIONAL_IMAGE_8_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_2_high(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_2().modify(|_, writer| {
@@ -64327,7 +64327,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_3 fields [POSITIONAL_IMAGE_8_31] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_3 fields `[POSITIONAL_IMAGE_8_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_3_high(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_3().modify(|_, writer| {
@@ -64338,7 +64338,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_0 fields [POSITIONAL_FORCE_ZERO_1] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_0 fields `[POSITIONAL_FORCE_ZERO_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_control_0(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_control_0().modify(|_, writer| {
@@ -64351,7 +64351,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_1 fields [POSITIONAL_FORCE_ONE_30] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_1 fields `[POSITIONAL_FORCE_ONE_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_control_1(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_control_1().modify(|_, writer| {
@@ -64364,7 +64364,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields [POSITIONAL_IMAGE_0_7] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields `[POSITIONAL_IMAGE_0_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_2_low(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_2().modify(|_, writer| {
@@ -64379,7 +64379,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_FORCE_ONE_0] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields `[POSITIONAL_FORCE_ONE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_receive_image_4_low(registers: &crate::ZbbbRadioControl) {
         registers.shared_rx_init_image_4().modify(|_, writer| {
@@ -64392,7 +64392,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields [DYNAMIC_BITS_7_13] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields `[DYNAMIC_BITS_7_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_compensation_7_13(registers: &crate::PhyBtagcRecovered) {
         registers.rx_comp_control().modify(|_, writer| {
@@ -64403,7 +64403,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields [DYNAMIC_BITS_0_6] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields `[DYNAMIC_BITS_0_6]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_compensation_0_6(registers: &crate::PhyBtagcRecovered) {
         registers.rx_comp_control().modify(|_, writer| {
@@ -64414,7 +64414,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields [FINITE_BITS_24_28] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields `[FINITE_BITS_24_28]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_compensation_24_28(registers: &crate::PhyBtagcRecovered) {
         registers.rx_comp_control().modify(|_, writer| {
@@ -64425,7 +64425,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields [FINITE_BITS_19_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields `[FINITE_BITS_19_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_compensation_19_23(registers: &crate::PhyBtagcRecovered) {
         registers.rx_comp_control().modify(|_, writer| {
@@ -64436,7 +64436,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields [FINITE_BITS_14_18] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_COMP_CONTROL fields `[FINITE_BITS_14_18]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_compensation_14_18(registers: &crate::PhyBtagcRecovered) {
         registers.rx_comp_control().modify(|_, writer| {
@@ -64447,7 +64447,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields [POSITIONAL_BITS_5_9] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields `[POSITIONAL_BITS_5_9]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_0_bits_5_9(
         registers: &crate::PhyBtagcRecovered,
@@ -64464,7 +64464,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields [POSITIONAL_BITS_0_4] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields `[POSITIONAL_BITS_0_4]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_0_bits_0_4(
         registers: &crate::PhyBtagcRecovered,
@@ -64481,7 +64481,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields [POSITIONAL_BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields `[POSITIONAL_BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_0_bits_16_23(
         registers: &crate::PhyBtagcRecovered,
@@ -64498,7 +64498,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields [POSITIONAL_BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE fields `[POSITIONAL_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_0_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
@@ -64515,7 +64515,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_1_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
@@ -64532,7 +64532,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_offset_1_bits_16_23(
         registers: &crate::PhyBtagcRecovered,
@@ -64549,7 +64549,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields [INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_BIT_2_UNKNOWN, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_BIT_2_UNKNOWN, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_baseband(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7cd0().modify(|_, writer| {
@@ -64572,7 +64572,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields [DYNAMIC_BITS_0_6] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields `[DYNAMIC_BITS_0_6]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_force(
         registers: &crate::PhyBtagcRecovered,
@@ -64586,7 +64586,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_GAIN_IMAGE fields [DYNAMIC_BITS_2_8] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_GAIN_IMAGE fields `[DYNAMIC_BITS_2_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_image(
         registers: &crate::PhyBtagcRecovered,
@@ -64600,7 +64600,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields [POSITIONAL_BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields `[POSITIONAL_BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a0(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -64617,7 +64617,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_17_24] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[POSITIONAL_BITS_17_24]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a8_high(
         registers: &crate::PhyBtagcRecovered,
@@ -64636,7 +64636,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_4_11] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[POSITIONAL_BITS_4_11]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a8_low(
         registers: &crate::PhyBtagcRecovered,
@@ -64655,7 +64655,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields [POSITIONAL_BITS_12_19] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields `[POSITIONAL_BITS_12_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00b8(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -64672,7 +64672,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CTE_AGC_TARGET fields [BASEBAND_TARGET_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CTE_AGC_TARGET fields `[BASEBAND_TARGET_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_cte(registers: &crate::PhyBtagcRecovered) {
         registers.cte_agc_target().modify(|_, writer| {
@@ -64687,7 +64687,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields [TARGET_BITS_23_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_00b0(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -64700,7 +64700,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields [TARGET_BITS_13_21] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields `[TARGET_BITS_13_21]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_gain_force(registers: &crate::PhyBtagcRecovered) {
         registers.rx_gain_force_opaque().modify(|_, writer| {
@@ -64711,7 +64711,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields [TARGET_BITS_0_8] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[TARGET_BITS_0_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_008c_low(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_008c().modify(|_, writer| {
@@ -64722,7 +64722,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields [TARGET_BITS_9_17] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[TARGET_BITS_9_17]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_008c_high(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_008c().modify(|_, writer| {
@@ -64733,7 +64733,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [TARGET_BITS_14_22] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[TARGET_BITS_14_22]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_cca(registers: &crate::PhyBtagcRecovered) {
         registers.cca_config().modify(|_, writer| {
@@ -64744,7 +64744,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields [TARGET_BITS_23_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_00b4(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -64757,7 +64757,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields [CONFIG_FORCE_ZERO_30] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ZERO_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_config_0088(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_0088().modify(|_, writer| {
@@ -64768,7 +64768,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields [RESTART_BIT_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_control_00bc(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -64781,7 +64781,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084 fields [FINITE_BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084 fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_config_0084(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_config_0084().modify(|_, writer| {
@@ -64792,7 +64792,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_24_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e0().modify(|_, writer| {
@@ -64803,7 +64803,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields [BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_16_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e0().modify(|_, writer| {
@@ -64814,7 +64814,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields [BITS_8_15] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_8_15(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e0().modify(|_, writer| {
@@ -64825,7 +64825,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields [BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_16_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e4().modify(|_, writer| {
@@ -64836,7 +64836,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields [BITS_8_15] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_8_15(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e4().modify(|_, writer| {
@@ -64847,7 +64847,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields [BITS_0_7] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_0_7(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e4().modify(|_, writer| {
@@ -64858,7 +64858,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields [BITS_0_7] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0 fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_0_7(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e0().modify(|_, writer| {
@@ -64869,7 +64869,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_24_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e8().modify(|_, writer| {
@@ -64880,7 +64880,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_24_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00ec().modify(|_, writer| {
@@ -64891,7 +64891,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields [BITS_8_15] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_8_15(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00ec().modify(|_, writer| {
@@ -64902,7 +64902,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f0_24_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f0().modify(|_, writer| {
@@ -64913,7 +64913,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_24_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e4().modify(|_, writer| {
@@ -64924,7 +64924,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields [BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_16_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e8().modify(|_, writer| {
@@ -64935,7 +64935,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields [BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_16_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00ec().modify(|_, writer| {
@@ -64946,7 +64946,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields [BITS_0_7] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_0_7(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00ec().modify(|_, writer| {
@@ -64957,7 +64957,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0 fields [BITS_16_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0 fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f0_16_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f0().modify(|_, writer| {
@@ -64968,7 +64968,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_20_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_20_23(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_0100().modify(|_, writer| {
@@ -64979,7 +64979,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_24_27] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields `[BITS_24_27]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_24_27(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_0100().modify(|_, writer| {
@@ -64990,7 +64990,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_16_19] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields `[BITS_16_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_16_19(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_0100().modify(|_, writer| {
@@ -65001,7 +65001,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_12_15] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields `[BITS_12_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_12_15(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_0100().modify(|_, writer| {
@@ -65012,7 +65012,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_28_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields `[BITS_28_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_28_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_0100().modify(|_, writer| {
@@ -65023,7 +65023,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields [BITS_10_15] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields `[BITS_10_15]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_10_15(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00e8().modify(|_, writer| {
@@ -65034,7 +65034,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [RX_SETUP_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields `[RX_SETUP_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_correlator(registers: &crate::BtV3_2Baseband) {
         registers.rx_correlator_control().modify(|_, writer| {
@@ -65045,7 +65045,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_21_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_21_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_21(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65058,7 +65058,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_20_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_20_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_20(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65071,7 +65071,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_19_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_19_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_19(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65084,7 +65084,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_10_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_10_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_10(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65097,7 +65097,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_9_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_9_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_9(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65110,7 +65110,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_8_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_8_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_8(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65123,7 +65123,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_7_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_7_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_7(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65136,7 +65136,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_6_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields `[RESTART_BIT_6_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_baseband_6(registers: &crate::BtV3_2Baseband) {
         registers.agc_restart_control().modify(|_, writer| {
@@ -65149,7 +65149,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_bits_00dc().modify(|_, writer| {
@@ -65160,7 +65160,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_30] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_30(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_bits_00dc().modify(|_, writer| {
@@ -65171,7 +65171,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_29] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_29]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_29(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_bits_00dc().modify(|_, writer| {
@@ -65182,7 +65182,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_27] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_27]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_27(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_bits_00dc().modify(|_, writer| {
@@ -65193,7 +65193,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_28] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_28]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_28(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_bits_00dc().modify(|_, writer| {
@@ -65204,7 +65204,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_2_7] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields `[BITS_2_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_2_7(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f8().modify(|_, writer| {
@@ -65215,7 +65215,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_8_13] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields `[BITS_8_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_8_13(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f8().modify(|_, writer| {
@@ -65226,7 +65226,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_14_19] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields `[BITS_14_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_14_19(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f8().modify(|_, writer| {
@@ -65237,7 +65237,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_26_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields `[BITS_26_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_26_31(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f8().modify(|_, writer| {
@@ -65248,7 +65248,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_20_25] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields `[BITS_20_25]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_20_25(registers: &crate::PhyBtagcRecovered) {
         registers.agc_restart_image_00f8().modify(|_, writer| {
@@ -65259,7 +65259,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields [RECORRECT_BIT_8] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b4_bit_8(
         registers: &crate::PhyBtagcRecovered,
@@ -65274,7 +65274,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields [RECORRECT_BITS_9_13] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[RECORRECT_BITS_9_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b4_bits_9_13(
         registers: &crate::PhyBtagcRecovered,
@@ -65293,7 +65293,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields [RECORRECT_BIT_5, RECORRECT_BIT_7] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RECORRECT_BIT_5, RECORRECT_BIT_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00bc_set_pair(
         registers: &crate::PhyBtagcRecovered,
@@ -65312,7 +65312,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_13] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_gain_bit_13(
         registers: &crate::PhyBtagcRecovered,
@@ -65325,7 +65325,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields [RECORRECT_BIT_6, RECORRECT_BIT_8] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RECORRECT_BIT_6, RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00bc_clear_pair(
         registers: &crate::PhyBtagcRecovered,
@@ -65344,7 +65344,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_5] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_5]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_gain_bit_5(
         registers: &crate::PhyBtagcRecovered,
@@ -65357,7 +65357,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_11_12] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_11_12]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_gain_bits_11_12(
         registers: &crate::PhyBtagcRecovered,
@@ -65374,7 +65374,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_6_10] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_6_10]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_gain_bits_6_10(
         registers: &crate::PhyBtagcRecovered,
@@ -65391,7 +65391,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields [RECORRECT_BITS_18_22] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[RECORRECT_BITS_18_22]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b0_bits_18_22(
         registers: &crate::PhyBtagcRecovered,
@@ -65410,7 +65410,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields [RECORRECT_BITS_13_17] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[RECORRECT_BITS_13_17]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b0_bits_13_17(
         registers: &crate::PhyBtagcRecovered,
@@ -65429,7 +65429,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields [POSITIONAL_BITS_0_4] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[POSITIONAL_BITS_0_4]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_gain_bits_0_4(
         registers: &crate::PhyBtagcRecovered,
@@ -65446,7 +65446,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C fields [FINITE_BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_control_006c(
         registers: &crate::PhyBtagcRecovered,
@@ -65459,7 +65459,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields [POSITIONAL_BITS_24_27] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields `[POSITIONAL_BITS_24_27]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a0(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -65476,7 +65476,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields [BITS_5_9] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_5_9]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_5_9(
         registers: &crate::PhyBtagcRecovered,
@@ -65489,7 +65489,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_12_16] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[POSITIONAL_BITS_12_16]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a8_middle(
         registers: &crate::PhyBtagcRecovered,
@@ -65508,7 +65508,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_0_3] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[POSITIONAL_BITS_0_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a8_low(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -65525,7 +65525,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields [BITS_10_14] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_10_14]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_10_14(
         registers: &crate::PhyBtagcRecovered,
@@ -65538,7 +65538,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields [POSITIONAL_BITS_8_11] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields `[POSITIONAL_BITS_8_11]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00b8(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -65555,7 +65555,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields [BITS_10_14] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_10_14]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_10_14(
         registers: &crate::PhyBtagcRecovered,
@@ -65568,7 +65568,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
@@ -65581,7 +65581,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields [BITS_20_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_20_23(
         registers: &crate::PhyBtagcRecovered,
@@ -65594,7 +65594,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields [BITS_15_19] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_15_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_15_19(
         registers: &crate::PhyBtagcRecovered,
@@ -65607,7 +65607,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields [BITS_24_31] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
@@ -65620,7 +65620,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields [BITS_20_23] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_20_23(
         registers: &crate::PhyBtagcRecovered,
@@ -65633,7 +65633,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields [BITS_15_19] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_15_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_15_19(
         registers: &crate::PhyBtagcRecovered,
@@ -65646,7 +65646,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_28_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_28_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_28_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
@@ -65657,7 +65657,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_23_27] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_23_27]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_23_27(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
@@ -65668,7 +65668,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_17_22] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_17_22]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_17_22(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
@@ -65679,7 +65679,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_10_16] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_10_16]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_10_16(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
@@ -65690,7 +65690,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_2_9] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_2_9]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_2_9(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
@@ -65701,7 +65701,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_23_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_23_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_23_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
@@ -65712,7 +65712,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_13_22] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_13_22]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_13_22(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
@@ -65723,7 +65723,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_2_12] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_2_12]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_2_12(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
@@ -65734,7 +65734,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields [BITS_21_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_21_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_2_bits_21_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_2().modify(|_, writer| {
@@ -65745,7 +65745,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields [BITS_10_20] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_10_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_2_bits_10_20(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_2().modify(|_, writer| {
@@ -65756,7 +65756,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields [BITS_21_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_21_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_3_bits_21_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_3().modify(|_, writer| {
@@ -65767,7 +65767,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields [BITS_10_20] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_10_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_3_bits_10_20(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_3().modify(|_, writer| {
@@ -65778,7 +65778,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_25_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields `[GAUSSIAN_BITS_25_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_0_bits_25_31(registers: &crate::BtV3_2Baseband) {
         registers
@@ -65795,7 +65795,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_17_24] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields `[GAUSSIAN_BITS_17_24]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_0_bits_17_24(registers: &crate::BtV3_2Baseband) {
         registers
@@ -65812,7 +65812,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_8_16] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields `[GAUSSIAN_BITS_8_16]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_0_bits_8_16(registers: &crate::BtV3_2Baseband) {
         registers
@@ -65829,7 +65829,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_22_31] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_22_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_22_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
@@ -65840,7 +65840,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_11_21] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_11_21]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_11_21(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
@@ -65851,7 +65851,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_0_10] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_0_10]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_0_10(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
@@ -65862,7 +65862,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields `[CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_correlator(registers: &crate::BtV3_2Baseband) {
         registers.rx_correlator_control().modify(|_, writer| {
@@ -65873,7 +65873,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields [CONFIG_FORCE_ZERO_19] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields `[CONFIG_FORCE_ZERO_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_dpo_bit_19(registers: &crate::BtV3_2Baseband) {
         registers.rx_dpo_control().modify(|_, writer| {
@@ -65884,7 +65884,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields [CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields `[CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_dpo_value(registers: &crate::BtV3_2Baseband) {
         registers.rx_dpo_control().modify(|_, writer| {
@@ -65895,7 +65895,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_1] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_1(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65906,7 +65906,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_5] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_5]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_5(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65917,7 +65917,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_4] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_4]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_4(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65928,7 +65928,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_3] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_3(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65939,7 +65939,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_2(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65950,7 +65950,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields `[SELECT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_filter_0(registers: &crate::BtV3_2Baseband) {
         registers.rx_filter_select().modify(|_, writer| {
@@ -65961,7 +65961,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [FINAL_FORCE_ZERO_13] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields `[FINAL_FORCE_ZERO_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_correlator_final(registers: &crate::BtV3_2Baseband) {
         registers.rx_correlator_control().modify(|_, writer| {
@@ -65972,7 +65972,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT fields [ARGUMENT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT fields `[ARGUMENT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_argument(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_argument().modify(|_, writer| {
@@ -65983,7 +65983,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0 fields [CONFIG_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0 fields `[CONFIG_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_image(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_image_0().modify(|_, writer| {
@@ -65994,7 +65994,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace SHARED_RADIO_INIT_CONTROL.CONTROL fields [BT_RX_SETUP_BIT_31_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace SHARED_RADIO_INIT_CONTROL.CONTROL fields `[BT_RX_SETUP_BIT_31_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_shared_control(
         registers: &crate::SharedRadioInitControl,
@@ -66009,7 +66009,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields [SET_BY_RX_SETUP_BIT_2] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields `[SET_BY_RX_SETUP_BIT_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_receive_setup_control_1_bit_2(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_1().modify(|_, writer| {
@@ -66022,7 +66022,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields [CONFIG_VALUE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields `[CONFIG_VALUE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d0_high(registers: &crate::PhyBtagcRecovered) {
         registers.agc_config_00d0().modify(|_, writer| {
@@ -66033,7 +66033,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields [CONFIG_VALUE_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields `[CONFIG_VALUE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d0_low(registers: &crate::PhyBtagcRecovered) {
         registers.agc_config_00d0().modify(|_, writer| {
@@ -66044,7 +66044,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4 fields [CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4 fields `[CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d4(registers: &crate::PhyBtagcRecovered) {
         registers.agc_config_00d4().modify(|_, writer| {
@@ -66055,7 +66055,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields [CONFIG_FORCE_ZERO_29] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_008c_bit_29_initial(
         registers: &crate::PhyBtagcRecovered,
@@ -66068,7 +66068,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields [CONFIG_FORCE_ZERO_29] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_0088_bit_29(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_0088().modify(|_, writer| {
@@ -66079,7 +66079,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields [CONFIG_FORCE_ONE_18] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ONE_18]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_0088_bit_18(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_0088().modify(|_, writer| {
@@ -66090,7 +66090,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_1 fields [RX_SETUP_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_1 fields `[RX_SETUP_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_cca_1(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_1().modify(|_, writer| {
@@ -66101,7 +66101,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_2 fields [RX_SETUP_DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_2 fields `[RX_SETUP_DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_cca_2_disable(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_2().modify(|_, writer| {
@@ -66112,7 +66112,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CTE_DC_SHIFT fields [RX_CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CTE_DC_SHIFT fields `[RX_CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_cte_value(registers: &crate::PhyBtagcRecovered) {
         registers.cte_dc_shift().modify(|_, writer| {
@@ -66123,7 +66123,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CTE_DC_SHIFT fields [DC_SHIFT_MAX] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CTE_DC_SHIFT fields `[DC_SHIFT_MAX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_cte_max(registers: &crate::PhyBtagcRecovered) {
         registers.cte_dc_shift().modify(|_, writer| {
@@ -66134,7 +66134,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_2 fields [RX_SETUP_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_2 fields `[RX_SETUP_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_cca_2_enable(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_2().modify(|_, writer| {
@@ -66145,7 +66145,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields [CONFIG_FORCE_ZERO_26] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_FORCE_ZERO_26]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_004c_bit_26(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_004c().modify(|_, writer| {
@@ -66156,7 +66156,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields [CONFIG_FORCE_ZERO_29] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_008c_bit_29_final(
         registers: &crate::PhyBtagcRecovered,
@@ -66169,7 +66169,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields [SET_BY_RX_SETUP_BIT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields `[SET_BY_RX_SETUP_BIT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_receive_setup_control_0_bit_0(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_0().modify(|_, writer| {
@@ -66182,7 +66182,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields [CONFIG_FORCE_ZERO_8] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields `[CONFIG_FORCE_ZERO_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_zbbb_bit_8(registers: &crate::ZbbbRadioControl) {
         registers.rx_setup_control().modify(|_, writer| {
@@ -66193,7 +66193,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE fields [CONFIG_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE fields `[CONFIG_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_zbbb_image(registers: &crate::ZbbbRadioControl) {
         registers.rx_setup_image().modify(|_, writer| {
@@ -66204,7 +66204,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields [CONFIG_FORCE_ZERO_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields `[CONFIG_FORCE_ZERO_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_zbbb_low(registers: &crate::ZbbbRadioControl) {
         registers.rx_setup_control().modify(|_, writer| {
@@ -66219,7 +66219,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_BT_DELAY] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields `[PA_ON_BT_DELAY]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_tx_pa_delay(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_pa_control_1().modify(|_, writer| {
@@ -66230,7 +66230,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields [FORCE_ZERO_BITS_16_18, ENCODED_VALUE_MINUS_10] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[FORCE_ZERO_BITS_16_18, ENCODED_VALUE_MINUS_10]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_le_tx_delay(registers: &crate::BtV3_2Baseband) {
         registers.le_tx_on_delay().modify(|_, writer| {
@@ -66247,7 +66247,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields [PERIOD_FORCE_ZERO_20_22, PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields `[PERIOD_FORCE_ZERO_20_22, PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_tx_cca_period_difference(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_0().modify(|_, writer| {
@@ -66264,7 +66264,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields [PERIOD_ARGUMENT_0_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields `[PERIOD_ARGUMENT_0_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_tx_cca_period_argument(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_0().modify(|_, writer| {
@@ -66279,7 +66279,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY fields [ENCODED_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY fields `[ENCODED_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_shared_tx_delay(registers: &crate::SharedBasebandTxTiming) {
         registers.auxiliary_tx_on_delay().modify(|_, writer| {
@@ -66290,7 +66290,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE fields [CONFIG_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE fields `[CONFIG_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_shared_receive_final_image(registers: &crate::ZbbbRadioControl) {
         registers.rx_setup_image().modify(|_, writer| {
@@ -66301,7 +66301,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace WIFI_MAC_CORE_ENABLE.CONTROL fields [MAC_DISABLE_GATES_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_MAC_CORE_ENABLE.CONTROL fields `[MAC_DISABLE_GATES_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_wifi_mac_core(registers: &crate::WifiMacCoreEnable) {
         registers.control().modify(|_, writer| {
@@ -66316,7 +66316,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s fields [RX_POLICY_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s fields `[RX_POLICY_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_mac_interface_receive_policy(
         registers: &crate::WifiMacInterfaceAddress,
@@ -66330,7 +66330,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST fields [CLK_WIFIPWR_ST_MAP_BIT_ONE, CLK_WIFIPWR_ST_MAP_BIT_TWO, CLK_COEX_ST_MAP_BIT_ONE, CLK_COEX_ST_MAP_BIT_TWO, CLK_I2C_MST_ST_MAP_BIT_ONE, CLK_I2C_MST_ST_MAP_BIT_TWO, CLK_LP_APB_ST_MAP_BIT_ONE, CLK_LP_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST fields `[CLK_WIFIPWR_ST_MAP_BIT_ONE, CLK_WIFIPWR_ST_MAP_BIT_TWO, CLK_COEX_ST_MAP_BIT_ONE, CLK_COEX_ST_MAP_BIT_TWO, CLK_I2C_MST_ST_MAP_BIT_ONE, CLK_I2C_MST_ST_MAP_BIT_TWO, CLK_LP_APB_ST_MAP_BIT_ONE, CLK_LP_APB_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_shared_modem_power_state_map(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66357,7 +66357,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_COEX_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_COEX_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66368,7 +66368,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_COEX_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_COEX_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66379,7 +66379,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_I2C_MST_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_I2C_MST_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66390,7 +66390,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_I2C_MST_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_I2C_MST_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66401,7 +66401,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_LP_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_LP_TIMER_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66412,7 +66412,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_LP_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_LP_TIMER_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
         registers.clk_conf().modify(|_, writer| {
@@ -66423,7 +66423,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields [CALIBRATION_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields `[CALIBRATION_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rx_dco_calibration_control(registers: &crate::PhyRxDcoOracle) {
         registers.control().modify(|_, writer| {
@@ -66438,7 +66438,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields [CALIBRATION_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields `[CALIBRATION_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_rx_dco_calibration_control(registers: &crate::PhyRxDcoOracle, input: u32) {
         registers.control().modify(|_, writer| {
@@ -66452,7 +66452,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [PHY_CALIBRATION_CLOCK_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields `[PHY_CALIBRATION_CLOCK_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_calibration_clock(registers: &crate::PhyClockOracle) {
         registers.fe_bb_clock_control_opaque().modify(|_, writer| {
@@ -66465,7 +66465,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [PHY_CALIBRATION_CLOCK_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields `[PHY_CALIBRATION_CLOCK_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_calibration_clock(registers: &crate::PhyClockOracle) {
         registers.fe_bb_clock_control_opaque().modify(|_, writer| {
@@ -66478,7 +66478,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [ROM_FE_BB_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields `[ROM_FE_BB_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn open_frontend_baseband_control(registers: &crate::PhyClockOracle) {
         registers.fe_bb_clock_control_opaque().modify(|_, writer| {
@@ -66493,7 +66493,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [ROM_FE_BB_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields `[ROM_FE_BB_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn close_frontend_baseband_control(registers: &crate::PhyClockOracle) {
         registers.fe_bb_clock_control_opaque().modify(|_, writer| {
@@ -66508,7 +66508,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_HARDWARE_LIST_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
@@ -66525,7 +66525,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_HARDWARE_LIST_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
@@ -66542,7 +66542,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CTRL0 fields [MODEM_CLK_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CTRL0 fields `[MODEM_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_modem_register_bus_clock(registers: &crate::HpSysClkrstRadio) {
         registers.modem_ctrl0().modify(|_, writer| {
@@ -66553,7 +66553,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields [REF_160M_CLK_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields `[REF_160M_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
         registers.ref_160m_ctrl0().modify(|_, writer| {
@@ -66564,7 +66564,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields [MODEM_APB_CLK_EN, MODEM_RST_EN, MODEM_CLK_EN, MODEM_CLK_SOURCE_SEL, MODEM_PLL_CLK_EN, MODEM_XTAL_CLK_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields `[MODEM_APB_CLK_EN, MODEM_RST_EN, MODEM_CLK_EN, MODEM_CLK_SOURCE_SEL, MODEM_PLL_CLK_EN, MODEM_XTAL_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_modem_source_clocks(registers: &crate::HpSysClkrstRadio) {
         registers.modem_conf().modify(|_, writer| {
@@ -66587,7 +66587,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields [REF_160M_CLK_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields `[REF_160M_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
         registers.ref_160m_ctrl0().modify(|_, writer| {
@@ -66598,7 +66598,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.RF_PWC fields [XPD_RF_CIRCUIT] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.RF_PWC fields `[XPD_RF_CIRCUIT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn power_on_rf_circuits(registers: &crate::PmuRadio) {
         registers.rf_pwc().modify(|_, writer| {
@@ -66609,7 +66609,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.RF_PWC fields [XPD_RF_CIRCUIT] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.RF_PWC fields `[XPD_RF_CIRCUIT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn power_off_rf_circuits(registers: &crate::PmuRadio) {
         registers.rf_pwc().modify(|_, writer| {
@@ -66620,7 +66620,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields [TIE_HIGH_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields `[TIE_HIGH_XPD_BB_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_baseband_i2c_power_tie(registers: &crate::PmuRadio) {
         registers.imm_hp_ck_power_0().modify(|_, writer| {
@@ -66631,7 +66631,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields [TIE_HIGH_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields `[TIE_HIGH_XPD_BB_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_baseband_i2c_power_tie(registers: &crate::PmuRadio) {
         registers.imm_hp_ck_power_0().modify(|_, writer| {
@@ -66642,7 +66642,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [XPD_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields `[XPD_PERIF_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn power_on_analog_i2c(registers: &crate::PmuRadio) {
         registers.ana_peri_pwr_ctrl().modify(|_, writer| {
@@ -66653,7 +66653,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [XPD_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields `[XPD_PERIF_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn power_off_analog_i2c(registers: &crate::PmuRadio) {
         registers.ana_peri_pwr_ctrl().modify(|_, writer| {
@@ -66664,7 +66664,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [RSTB_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields `[RSTB_PERIF_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn release_analog_i2c_reset(registers: &crate::PmuRadio) {
         registers.ana_peri_pwr_ctrl().modify(|_, writer| {
@@ -66675,7 +66675,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [RSTB_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields `[RSTB_PERIF_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn assert_analog_i2c_reset(registers: &crate::PmuRadio) {
         registers.ana_peri_pwr_ctrl().modify(|_, writer| {
@@ -66686,7 +66686,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.HP_ACTIVE_HP_CK_POWER fields [ROM_OPEN_FE_BB_UNKNOWN_LOW, HP_ACTIVE_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.HP_ACTIVE_HP_CK_POWER fields `[ROM_OPEN_FE_BB_UNKNOWN_LOW, HP_ACTIVE_XPD_BB_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_frontend_baseband_power(registers: &crate::PmuRadio) {
         registers.hp_active_hp_ck_power().modify(|_, writer| {
@@ -66703,7 +66703,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIBB, RST_WIFIMAC] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_WIFIBB, RST_WIFIMAC]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_baseband_and_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -66717,7 +66717,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIBB] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_WIFIBB]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_baseband_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -66727,7 +66727,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFI_APB_EN, CLK_FE_80M_EN, CLK_FE_160M_EN, CLK_FE_APB_EN, CLK_BT_APB_EN, CLK_BTBB_EN, CLK_FE_PWDET_ADC_EN, CLK_FE_ADC_EN, CLK_FE_DAC_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFI_APB_EN, CLK_FE_80M_EN, CLK_FE_160M_EN, CLK_FE_APB_EN, CLK_BT_APB_EN, CLK_BTBB_EN, CLK_FE_PWDET_ADC_EN, CLK_FE_ADC_EN, CLK_FE_DAC_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_calibration_clocks(registers: &crate::ModemSysconRadio) {
         registers.clk_conf1().modify(|_, writer| {
@@ -66774,7 +66774,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_I2C_MST_SEL_160M] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_I2C_MST_SEL_160M]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn select_phy_i2c_160mhz_source(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
@@ -66785,7 +66785,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFIMAC_EN, CLK_WIFI_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFIMAC_EN, CLK_WIFI_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_wifi_mac_clocks(registers: &crate::ModemSysconRadio) {
         registers.clk_conf1().modify(|_, writer| {
@@ -66818,7 +66818,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIMAC] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_WIFIMAC]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -66828,7 +66828,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [COLD_START_CLEAR_UNKNOWN, WIFI_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[COLD_START_CLEAR_UNKNOWN, WIFI_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_cold_start_wifi_control(registers: &crate::ModemSysconRadio) {
         registers.wifi_bb_cfg().modify(|_, writer| {
@@ -66843,7 +66843,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [WIFI_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[WIFI_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_baseband_enable(registers: &crate::ModemSysconRadio, input: u32) {
         registers.wifi_bb_cfg().modify(|_, writer| {
@@ -66853,7 +66853,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [BSS_CBW_40_DIGITAL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[BSS_CBW_40_DIGITAL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_baseband_40mhz_state(registers: &crate::ModemSysconRadio, input: u32) {
         registers.wifi_bb_cfg().modify(|_, writer| {
@@ -66867,7 +66867,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [BB_AGC_UPDATE_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[BB_AGC_UPDATE_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_wifi_baseband_agc_update_mode(registers: &crate::ModemSysconRadio, input: u32) {
         registers.wifi_bb_cfg().modify(|_, writer| {
@@ -66881,7 +66881,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [MAC_BASEBAND_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[MAC_BASEBAND_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_mac_baseband_enable(registers: &crate::ModemSysconRadio, input: u32) {
         registers.wifi_bb_cfg().modify(|_, writer| {
@@ -66893,7 +66893,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_modem_apb_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66908,7 +66908,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_MODEM_PERI_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_MODEM_PERI_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_modem_peripheral_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66921,7 +66921,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_wifi_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66936,7 +66936,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_BT_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_BT_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_bluetooth_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66949,7 +66949,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_frontend_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66964,7 +66964,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_ZB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_ZB_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_ieee802154_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -66977,7 +66977,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_80X1_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_80X1_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_wifi_baseband_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf1().modify(|_, writer| {
@@ -66988,7 +66988,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ETM_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ETM_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_etm_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
@@ -66999,7 +66999,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BT_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BT_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_bluetooth_apb_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67010,7 +67010,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_MODEM_SEC_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_modem_security_apb_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
@@ -67021,7 +67021,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTBB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BTBB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_common_baseband_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67032,7 +67032,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ZB_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZB_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_apb_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
@@ -67043,7 +67043,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ZBMAC_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZBMAC_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_ieee802154_mac_clock(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
@@ -67054,7 +67054,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_ZBMAC] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_ZBMAC]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_ieee802154_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67064,7 +67064,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_ZBMAC_APB] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_ZBMAC_APB]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_ieee802154_apb_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67074,7 +67074,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_ZB_ST_MAP_BIT_TWO, CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO, CLK_BT_ST_MAP_BIT_TWO, CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO, CLK_MODEM_PERI_ST_MAP_BIT_TWO, CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields `[CLK_ZB_ST_MAP_BIT_TWO, CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO, CLK_BT_ST_MAP_BIT_TWO, CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO, CLK_MODEM_PERI_ST_MAP_BIT_TWO, CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_modem_syscon_clock_map(registers: &crate::ModemSysconRadio) {
         registers.clk_conf_power_st().modify(|_, writer| {
@@ -67103,7 +67103,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_80X1_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_80X1_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_wifi_baseband_80x1_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67113,7 +67113,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ETM_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ETM_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_etm_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf().modify(|_, writer| {
@@ -67123,7 +67123,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTMAC_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BTMAC_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_mac_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67133,7 +67133,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_EN, CLK_MODEM_SEC_ECB_EN, CLK_MODEM_SEC_CCM_EN, CLK_MODEM_SEC_BAH_EN, CLK_BLE_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_MODEM_SEC_EN, CLK_MODEM_SEC_ECB_EN, CLK_MODEM_SEC_CCM_EN, CLK_MODEM_SEC_BAH_EN, CLK_BLE_TIMER_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_peripheral_clocks(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf().modify(|_, writer| {
@@ -67153,7 +67153,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BT_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BT_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67163,7 +67163,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_APB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_MODEM_SEC_APB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_modem_security_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf().modify(|_, writer| {
@@ -67173,7 +67173,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTBB_EN] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BTBB_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_baseband_clock(registers: &crate::ModemSysconRadio, input: u32) {
         registers.clk_conf1().modify(|_, writer| {
@@ -67183,7 +67183,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BTMAC] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_BTMAC]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67193,7 +67193,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BTMAC_APB] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_BTMAC_APB]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_mac_apb_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67203,7 +67203,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BLE_TIMER] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_BLE_TIMER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_timer_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67213,7 +67213,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_ECB] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_MODEM_ECB]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_modem_ecb_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67223,7 +67223,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_CCM] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_MODEM_CCM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_modem_ccm_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67233,7 +67233,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_BAH] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_MODEM_BAH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_modem_bah_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67243,7 +67243,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_SEC] from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_MODEM_SEC]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_modem_security_reset(registers: &crate::ModemSysconRadio, input: u32) {
         registers.modem_rst_conf().modify(|_, writer| {
@@ -67253,7 +67253,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.ANA_CONF2 fields [PHY_HOST_MAP] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.ANA_CONF2 fields `[PHY_HOST_MAP]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host_map(registers: &crate::I2cAnaMst) {
         registers.ana_conf2().modify(|_, writer| {
@@ -67264,7 +67264,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host0_sda_guard(registers: &crate::I2cAnaMst) {
         registers.i2c0_ctrl1().modify(|_, writer| {
@@ -67275,7 +67275,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host0_scl_duration(registers: &crate::I2cAnaMst) {
         registers.i2c0_ctrl1().modify(|_, writer| {
@@ -67286,7 +67286,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host1_sda_guard(registers: &crate::I2cAnaMst) {
         registers.i2c1_ctrl1().modify(|_, writer| {
@@ -67297,7 +67297,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host1_scl_duration(registers: &crate::I2cAnaMst) {
         registers.i2c1_ctrl1().modify(|_, writer| {
@@ -67308,7 +67308,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_hardware_sda_guard(registers: &crate::I2cAnaMst) {
         registers.hw_i2c_ctrl().modify(|_, writer| {
@@ -67319,7 +67319,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_hardware_scl_duration(registers: &crate::I2cAnaMst) {
         registers.hw_i2c_ctrl().modify(|_, writer| {
@@ -67330,7 +67330,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.ANA_CONF0 fields [PHY_REGISTER_MODE] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields `[PHY_REGISTER_MODE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn select_phy_i2c_register_mode(registers: &crate::I2cAnaMst) {
         registers.ana_conf0().modify(|_, writer| {
@@ -67341,7 +67341,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.ANA_CONF0 fields [PHY_REGISTER_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields `[PHY_REGISTER_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_i2c_register_access(registers: &crate::I2cAnaMst) {
         registers.ana_conf0().modify(|_, writer| {
@@ -67352,7 +67352,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace I2C_ANA_MST.ANA_CONF0 fields [BBPLL_CAL_MODE] from one reviewed logical image while preserving every other bit.
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields `[BBPLL_CAL_MODE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_i2c_bbpll_calibration(registers: &crate::I2cAnaMst, input: u32) {
         registers.ana_conf0().modify(|_, writer| {
@@ -67362,7 +67362,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [FORCE_TXRX_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[FORCE_TXRX_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_force_txrx_state(registers: &crate::PhyPbus, input: u32) {
         registers.status_clock_force().modify(|_, writer| {
@@ -67376,7 +67376,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.MODE fields [WORK_MODE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.MODE fields `[WORK_MODE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_work_mode(registers: &crate::PhyPbus, input: u32) {
         registers.mode().modify(|_, writer| {
@@ -67386,7 +67386,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.COMMAND fields [DEBUG_MODE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.COMMAND fields `[DEBUG_MODE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_debug_mode(registers: &crate::PhyPbus, input: u32) {
         registers.command().modify(|_, writer| {
@@ -67396,7 +67396,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.COMMAND fields [TRANSACTION_START] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.COMMAND fields `[TRANSACTION_START]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_pbus_transaction(registers: &crate::PhyPbus) {
         registers.command().modify(|_, writer| {
@@ -67407,7 +67407,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN, RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN, RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_rx_clock_pair(registers: &crate::PhyPbus, input: u32) {
         registers.status_clock_force().modify(|_, writer| {
@@ -67421,7 +67421,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [TX_CLOCK_ENABLE_PAIR] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[TX_CLOCK_ENABLE_PAIR]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_tx_clock_pair(registers: &crate::PhyPbus, input: u32) {
         registers.status_clock_force().modify(|_, writer| {
@@ -67435,7 +67435,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG fields [CONFIG_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG fields `[CONFIG_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_iq_estimator_config_mode(registers: &crate::PhyIqEstimatorOracle) {
         registers.estimator_config().modify(|_, writer| {
@@ -67450,7 +67450,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields `[MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_iq_estimator_mode(registers: &crate::PhyIqEstimatorOracle) {
         registers.estimator_control().modify(|_, writer| {
@@ -67461,7 +67461,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [CONTROL_WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields `[CONTROL_WINDOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_iq_estimator_control_window(
         registers: &crate::PhyIqEstimatorOracle,
@@ -67479,7 +67479,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [START_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields `[START_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_iq_estimator_start_state(registers: &crate::PhyIqEstimatorOracle, input: u32) {
         registers.estimator_control().modify(|_, writer| {
@@ -67489,7 +67489,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields `[MEASUREMENT_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_iq_estimator_measurement_state(registers: &crate::PhyIqEstimatorOracle, input: u32) {
         registers.estimator_control().modify(|_, writer| {
@@ -67499,7 +67499,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields [EVEN_GROUP_FIRST_ENTRY, EVEN_GROUP_LAST_ENTRY] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields `[EVEN_GROUP_FIRST_ENTRY, EVEN_GROUP_LAST_ENTRY]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_even_pbus_memory_group_boundary(
         registers: &crate::PhyMemory,
@@ -67519,7 +67519,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields [ODD_GROUP_FIRST_ENTRY, ODD_GROUP_LAST_ENTRY] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields `[ODD_GROUP_FIRST_ENTRY, ODD_GROUP_LAST_ENTRY]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_odd_pbus_memory_group_boundary(
         registers: &crate::PhyMemory,
@@ -67539,7 +67539,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.COMMAND fields [MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8, PBUS_COMMAND_BIT_9] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.COMMAND fields `[MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8, PBUS_COMMAND_BIT_9]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_pbus_memory_command(registers: &crate::PhyMemory, input: u32) {
         registers.command().modify(|_, writer| {
@@ -67557,7 +67557,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [BASE_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields `[BASE_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_table_memory_base_index(registers: &crate::PhyClockOracle, input: u32) {
         registers.table_memory_index_source().modify(|_, writer| {
@@ -67567,7 +67567,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [FORCE_POWER_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields `[FORCE_POWER_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_power_state(registers: &crate::PhyClockOracle, input: u32) {
         registers.table_memory_index_source().modify(|_, writer| {
@@ -67577,7 +67577,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [FORCED_POWER_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields `[FORCED_POWER_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_power_index(registers: &crate::PhyClockOracle, input: u32) {
         registers.table_memory_index_source().modify(|_, writer| {
@@ -67587,7 +67587,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.COMMAND fields [MEMORY_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.COMMAND fields `[MEMORY_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_cfr_memory_index(registers: &crate::PhyMemory, input: u32) {
         registers.command().modify(|_, writer| {
@@ -67597,7 +67597,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.COMMAND fields [TX_CFR_COMMIT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.COMMAND fields `[TX_CFR_COMMIT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_tx_cfr_commit(registers: &crate::PhyMemory) {
         registers.command().modify(|_, writer| {
@@ -67608,7 +67608,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.COMMAND fields [TX_CFR_COMMIT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.COMMAND fields `[TX_CFR_COMMIT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_tx_cfr_commit(registers: &crate::PhyMemory) {
         registers.command().modify(|_, writer| {
@@ -67619,7 +67619,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_MEMORY.COMMAND fields [GAIN_COMMAND_LOW_ZERO_UNKNOWN, MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_MEMORY.COMMAND fields `[GAIN_COMMAND_LOW_ZERO_UNKNOWN, MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_gain_memory_command(registers: &crate::PhyMemory, input: u32) {
         registers.command().modify(|_, writer| {
@@ -67637,7 +67637,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_hccfr_enable_state(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.hccfr_control().modify(|_, writer| {
@@ -67647,7 +67647,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_hccfr_enable_from_vendor_argument(
         registers: &crate::PhyBasebandConfigOracle,
@@ -67661,7 +67661,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields [VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields `[VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_hccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.hccfr_value().modify(|_, writer| {
@@ -67671,7 +67671,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields [VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields `[VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_hccfr_value_from_vendor_argument(
         registers: &crate::PhyBasebandConfigOracle,
@@ -67685,7 +67685,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_ENABLE_CONTROL fields [GATE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_ENABLE_CONTROL fields `[GATE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_iccfr_gate_state(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.iccfr_enable_control().modify(|_, writer| {
@@ -67695,7 +67695,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_iccfr_mode_high(
         registers: &crate::PhyBasebandConfigOracle,
@@ -67708,7 +67708,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_iccfr_enable_state(
         registers: &crate::PhyBasebandConfigOracle,
@@ -67721,7 +67721,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_TRIGGER] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_TRIGGER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn trigger_forced_iccfr(registers: &crate::PhyBasebandConfigOracle) {
         registers.iccfr_force_control().modify(|_, writer| {
@@ -67732,7 +67732,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_MODE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_iccfr_mode_low(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.iccfr_force_control().modify(|_, writer| {
@@ -67742,7 +67742,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_iccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.iccfr_force_control().modify(|_, writer| {
@@ -67752,7 +67752,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_VALUE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields `[FORCE_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_iccfr_value_from_vendor_argument(
         registers: &crate::PhyBasebandConfigOracle,
@@ -67766,7 +67766,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields [DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields `[DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_coex_timer_disable(registers: &crate::CoexHwTimer, index: usize) {
         registers.disable_control(index).modify(|_, writer| {
@@ -67777,7 +67777,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_coex_timer_enable(registers: &crate::CoexHwTimer, index: usize) {
         registers.enable_control(index).modify(|_, writer| {
@@ -67788,7 +67788,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_coex_timer_enable(registers: &crate::CoexHwTimer, index: usize) {
         registers.enable_control(index).modify(|_, writer| {
@@ -67799,7 +67799,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields [DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields `[DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_coex_timer_disable(registers: &crate::CoexHwTimer, index: usize) {
         registers.disable_control(index).modify(|_, writer| {
@@ -67810,7 +67810,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PRIMARY_TICK_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn force_coex_timer(registers: &crate::CoexHwTimer, index: usize) {
         registers.configuration(index).modify(|_, writer| {
@@ -67821,7 +67821,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PRIMARY_TICK_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn unforce_coex_timer(registers: &crate::CoexHwTimer, index: usize) {
         registers.configuration(index).modify(|_, writer| {
@@ -67832,7 +67832,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PARAMETER_1] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PARAMETER_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_coex_timer_client(registers: &crate::CoexHwTimer, index: usize, input: u32) {
         registers.configuration(index).modify(|_, writer| {
@@ -67842,7 +67842,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PARAMETER_2] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PARAMETER_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_coex_timer_pti(registers: &crate::CoexHwTimer, index: usize, input: u32) {
         registers.configuration(index).modify(|_, writer| {
@@ -67852,7 +67852,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PRIMARY_TICK_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_coex_timer_primary_target(
         registers: &crate::CoexHwTimer,
@@ -67867,7 +67867,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace COEX_HW_TIMER.SECONDARY_TARGET%s fields [SECONDARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace COEX_HW_TIMER.SECONDARY_TARGET%s fields `[SECONDARY_TICK_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_coex_timer_secondary_target(
         registers: &crate::CoexHwTimer,
@@ -67882,7 +67882,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields [ANTENNA_DIVERSITY_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields `[ANTENNA_DIVERSITY_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_antenna_diversity_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.antenna_control_0().modify(|_, writer| {
@@ -67894,7 +67894,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_value(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -67908,7 +67908,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_value_from_vendor_argument(
         registers: &crate::PhyAgcOracle,
@@ -67926,7 +67926,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -67936,7 +67936,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_state_from_vendor_argument(
         registers: &crate::PhyAgcOracle,
@@ -67950,7 +67950,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_FIRST] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_low_rate_first_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
@@ -67962,7 +67962,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_SECOND] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_low_rate_second_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
@@ -67974,7 +67974,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields [LOW_RATE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_low_rate_secondary_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.low_rate_secondary_control().modify(|_, writer| {
@@ -67984,7 +67984,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields [RX_GAIN_LIMIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[RX_GAIN_LIMIT_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_rx_gain_limit(registers: &crate::PhyAgcOracle, input: u32) {
         registers.rx_gain_limit_control().modify(|_, writer| {
@@ -67999,7 +67999,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW fields [PARAMETER_MINUS_ONE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW fields `[PARAMETER_MINUS_ONE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_gain_limit_low(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_gain_limit_low().modify(|_, writer| {
@@ -68014,7 +68014,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_GAIN_INDEX_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[RX_GAIN_INDEX_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_rx_gain_index(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -68029,7 +68029,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_saturation_low(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68040,7 +68040,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields [PARAMETER_121_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields `[PARAMETER_121_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_parameter_121(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_parameter_control().modify(|_, writer| {
@@ -68054,7 +68054,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields [PARAMETER_120_OFFSET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields `[PARAMETER_120_OFFSET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_parameter_120_offset(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_parameter_control().modify(|_, writer| {
@@ -68069,7 +68069,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_control_high(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -68084,7 +68084,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -68095,7 +68095,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -68106,7 +68106,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL fields [INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL fields `[INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_high(registers: &crate::PhyAgcOracle) {
         registers.agc_init_high_control().modify(|_, writer| {
@@ -68117,7 +68117,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields [LOW_CLEAR_UNKNOWN, BIT_12_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields `[LOW_CLEAR_UNKNOWN, BIT_12_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_agc_initial_antenna_fields(registers: &crate::PhyAgcOracle) {
         registers.antenna_control_0().modify(|_, writer| {
@@ -68134,7 +68134,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [ANTENNA_INIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields `[ANTENNA_INIT_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_antenna_control(registers: &crate::PhyAgcOracle) {
         registers.agc_antenna_control().modify(|_, writer| {
@@ -68149,7 +68149,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_2 fields [LOW_UNKNOWN, HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_2 fields `[LOW_UNKNOWN, HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_antenna_paths(registers: &crate::PhyAgcOracle) {
         registers.antenna_control_2().modify(|_, writer| {
@@ -68166,7 +68166,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_FIRST] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx11b_first_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
@@ -68179,7 +68179,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_SECOND] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx11b_second_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
@@ -68192,7 +68192,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields [LOW_RATE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx11b_secondary_low_rate_state(
         registers: &crate::PhyAgcOracle,
@@ -68206,7 +68206,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_rf_rx_saturation_state(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68227,7 +68227,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_rf_rx_saturation_state(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68248,7 +68248,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_rf_rx_saturation_low(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68259,7 +68259,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_rf_rx_saturation_low(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68270,7 +68270,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_GAIN_INDEX_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[RX_GAIN_INDEX_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_gain_table_final_index(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -68285,7 +68285,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields [RX_GAIN_LIMIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[RX_GAIN_LIMIT_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_gain_table_final_limit(registers: &crate::PhyAgcOracle, input: u32) {
         registers.rx_gain_limit_control().modify(|_, writer| {
@@ -68300,7 +68300,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [POST_INIT_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields `[POST_INIT_SET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_agc_post_initialization_flag(registers: &crate::PhyAgcOracle) {
         registers.agc_saturation_control().modify(|_, writer| {
@@ -68313,7 +68313,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields [WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields `[WINDOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_post_initialization_window(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_window_control().modify(|_, writer| {
@@ -68324,7 +68324,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields `[LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_post_initialization_low(registers: &crate::PhyAgcOracle) {
         registers.post_init_rx_control().modify(|_, writer| {
@@ -68335,7 +68335,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields [HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields `[HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_post_initialization_high(registers: &crate::PhyAgcOracle) {
         registers.post_init_rx_control().modify(|_, writer| {
@@ -68346,7 +68346,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields `[RX_11B_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_enabled_rx_11b_path_0_high(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_0().modify(|_, writer| {
@@ -68361,7 +68361,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields `[RX_11B_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_enabled_rx_11b_path_0_low(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_0().modify(|_, writer| {
@@ -68372,7 +68372,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields `[RX_11B_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_enabled_rx_11b_path_1_high(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_1().modify(|_, writer| {
@@ -68387,7 +68387,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields `[RX_11B_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_enabled_rx_11b_path_1_low(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_1().modify(|_, writer| {
@@ -68398,7 +68398,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [RX_11B_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields `[RX_11B_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_enabled_rx_11b_mode(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_mode_control().modify(|_, writer| {
@@ -68413,7 +68413,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields `[RX_11B_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_disabled_rx_11b_path_0_high(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_0().modify(|_, writer| {
@@ -68428,7 +68428,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields `[RX_11B_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_disabled_rx_11b_path_0_low(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_0().modify(|_, writer| {
@@ -68439,7 +68439,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields `[RX_11B_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_disabled_rx_11b_path_1_high(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_1().modify(|_, writer| {
@@ -68454,7 +68454,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields `[RX_11B_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_disabled_rx_11b_path_1_low(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_path_control_1().modify(|_, writer| {
@@ -68465,7 +68465,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [RX_11B_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields `[RX_11B_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_disabled_rx_11b_mode(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_mode_control().modify(|_, writer| {
@@ -68480,7 +68480,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields [WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields `[WINDOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_rx_11b_optimization_window(registers: &crate::PhyAgcOracle) {
         registers.rx_11b_window_control().modify(|_, writer| {
@@ -68491,7 +68491,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_rx_iq_correction_modes(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -68506,7 +68506,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_tx_iq_correction_modes(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -68521,7 +68521,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_rxiq_status_first(registers: &crate::PhyPbus) {
         registers.status_clock_force().modify(|_, writer| {
@@ -68534,7 +68534,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pbus_rxiq_status_second(registers: &crate::PhyPbus) {
         registers.status_clock_force().modify(|_, writer| {
@@ -68547,7 +68547,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_rxiq_root_rx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -68560,7 +68560,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_rxiq_root_tx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -68573,7 +68573,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_rxiq_root_rx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -68586,7 +68586,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_rxiq_root_tx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -68599,7 +68599,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_rxiq_root_rx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -68612,7 +68612,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_rxiq_root_tx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -68625,7 +68625,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_rxiq_root_rx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -68638,7 +68638,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields `[RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_pbus_rxiq_status_second(registers: &crate::PhyPbus) {
         registers.status_clock_force().modify(|_, writer| {
@@ -68651,7 +68651,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [TRACK_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields `[TRACK_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_state(
         registers: &crate::PhyBasebandConfigOracle,
@@ -68664,7 +68664,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_tx_power_tracking_initial_field(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_0().modify(|_, writer| {
@@ -68675,7 +68675,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [INIT_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields `[INIT_SET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_initial_field(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_0().modify(|_, writer| {
@@ -68686,7 +68686,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [INIT_CLEAR_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields `[INIT_CLEAR_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_tx_power_tracking_control_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_1().modify(|_, writer| {
@@ -68699,7 +68699,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [INIT_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields `[INIT_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_tx_power_tracking_control_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_1().modify(|_, writer| {
@@ -68712,7 +68712,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields `[TRACK_VALUE_1_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_5(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_3().modify(|_, writer| {
@@ -68727,7 +68727,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields `[TRACK_VALUE_0_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_4(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_3().modify(|_, writer| {
@@ -68742,7 +68742,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_3_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields `[TRACK_VALUE_3_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_3(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_2().modify(|_, writer| {
@@ -68757,7 +68757,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_2_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields `[TRACK_VALUE_2_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_2(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_2().modify(|_, writer| {
@@ -68772,7 +68772,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields `[TRACK_VALUE_1_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_2().modify(|_, writer| {
@@ -68787,7 +68787,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields `[TRACK_VALUE_0_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_0(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_2().modify(|_, writer| {
@@ -68802,7 +68802,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_2_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields `[TRACK_VALUE_2_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_8(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_1().modify(|_, writer| {
@@ -68817,7 +68817,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields `[TRACK_VALUE_1_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_7(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_1().modify(|_, writer| {
@@ -68832,7 +68832,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields `[TRACK_VALUE_0_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_tx_power_tracking_value_6(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_power_track_control_1().modify(|_, writer| {
@@ -68847,7 +68847,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields [INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bt_wifi_baseband_fields(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7cd0().modify(|_, writer| {
@@ -68868,7 +68868,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_CONTROL fields [WATCHDOG_CONFIG_UNKNOWN, WATCHDOG_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_CONTROL fields `[WATCHDOG_CONFIG_UNKNOWN, WATCHDOG_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_baseband_watchdog_control(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_watchdog_control().modify(|_, writer| {
@@ -68885,7 +68885,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields `[WATCHDOG_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_watchdog(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_watchdog_enable().modify(|_, writer| {
@@ -68896,7 +68896,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields [HE_RU26_GOOD_RESPONSE_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields `[HE_RU26_GOOD_RESPONSE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_he_ru26_good_response(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7890().modify(|_, writer| {
@@ -68909,7 +68909,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields [HE_RU26_GOOD_RESPONSE_DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields `[HE_RU26_GOOD_RESPONSE_DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_he_ru26_good_response_disable(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7890().modify(|_, writer| {
@@ -68922,7 +68922,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields [AUTO_CONTROL_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields `[AUTO_CONTROL_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_noise_floor_auto_control_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.noise_floor_control().modify(|_, writer| {
@@ -68935,7 +68935,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields [AUTO_CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields `[AUTO_CONTROL_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_noise_floor_auto_control_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.noise_floor_control().modify(|_, writer| {
@@ -68948,7 +68948,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_0 fields [AUTO_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_0 fields `[AUTO_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_noise_floor_auto_path_0(registers: &crate::PhyBasebandConfigOracle) {
         registers.noise_floor_enable_0().modify(|_, writer| {
@@ -68959,7 +68959,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_1 fields [AUTO_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_1 fields `[AUTO_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_noise_floor_auto_path_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.noise_floor_enable_1().modify(|_, writer| {
@@ -68970,7 +68970,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields [TX_RATE_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields `[TX_RATE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_tx_rate_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.i2c_tx_rate_control().modify(|_, writer| {
@@ -68985,7 +68985,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields [TX_RATE_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields `[TX_RATE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_tx_rate_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.i2c_tx_rate_control().modify(|_, writer| {
@@ -69000,7 +69000,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields [PA_ON_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields `[PA_ON_FIELD_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_pa_on_field(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_tx_pa_control().modify(|_, writer| {
@@ -69015,7 +69015,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0 fields [PA_ON_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0 fields `[PA_ON_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_pa_on_high_0(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_pa_control_0().modify(|_, writer| {
@@ -69026,7 +69026,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING fields [PA_ON_TIMING_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING fields `[PA_ON_TIMING_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_pa_on_timing(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_tx_pa_timing().modify(|_, writer| {
@@ -69041,7 +69041,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields `[PA_ON_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_pa_on_high_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_pa_control_1().modify(|_, writer| {
@@ -69056,7 +69056,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_BT_DELAY] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields `[PA_ON_BT_DELAY]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_pa_on_bt_delay(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_pa_control_1().modify(|_, writer| {
@@ -69067,7 +69067,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400 fields [INIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400 fields `[INIT_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_prefix(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7400().modify(|_, writer| {
@@ -69078,7 +69078,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808 fields [INIT_VALUE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808 fields `[INIT_VALUE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_7808(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7808().modify(|_, writer| {
@@ -69089,7 +69089,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC fields [INIT_VALUE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC fields `[INIT_VALUE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_78dc(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_78dc().modify(|_, writer| {
@@ -69100,7 +69100,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4 fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4 fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_78e4(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_78e4().modify(|_, writer| {
@@ -69111,7 +69111,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING fields [BASEBAND_INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING fields `[BASEBAND_INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_tx_pa_timing_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_tx_pa_timing().modify(|_, writer| {
@@ -69126,7 +69126,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_790c_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_790c().modify(|_, writer| {
@@ -69137,7 +69137,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8 fields [INIT_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8 fields `[INIT_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_7ca8_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7ca8().modify(|_, writer| {
@@ -69148,7 +69148,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980 fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980 fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_7980_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7980().modify(|_, writer| {
@@ -69159,7 +69159,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28 fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28 fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_7a28_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7a28().modify(|_, writer| {
@@ -69170,7 +69170,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields [INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_BIT_2_UNKNOWN, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_BIT_2_UNKNOWN, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_mode_fields(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7cd0().modify(|_, writer| {
@@ -69193,7 +69193,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields [BASEBAND_INIT_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields `[BASEBAND_INIT_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_tx_pa_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_tx_pa_control().modify(|_, writer| {
@@ -69206,7 +69206,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields [INIT_CLEAR_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields `[INIT_CLEAR_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_743c_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_743c().modify(|_, writer| {
@@ -69221,7 +69221,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields [INIT_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields `[INIT_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_743c_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_743c().modify(|_, writer| {
@@ -69234,7 +69234,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields [INIT_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields `[INIT_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_7428_init(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7428().modify(|_, writer| {
@@ -69245,7 +69245,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields [INIT_VALUE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields `[INIT_VALUE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_7428_value(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_init_7428().modify(|_, writer| {
@@ -69256,7 +69256,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[CALIBRATION_FIELD_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_power_detector_calibration(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69271,7 +69271,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [INITIALIZATION_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[INITIALIZATION_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_power_detector_mode(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69286,7 +69286,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_MIDDLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[ENABLE_CLEAR_MIDDLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_detector_enable_middle(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69299,7 +69299,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[ENABLE_CLEAR_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_detector_enable_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69312,7 +69312,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[ENABLE_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_detector_enable_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69325,7 +69325,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_power_detector_sar_mode(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69338,7 +69338,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_CONFIG_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_CONFIG_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_detector_sar_config(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69353,7 +69353,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [BACKGROUND_CONTROL_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[BACKGROUND_CONTROL_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_power_detector_background_control(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69368,7 +69368,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn select_phy_txdc_power_detector_sar_mode(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69381,7 +69381,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [SAR_TRIGGER] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[SAR_TRIGGER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_power_detector_sar_trigger(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69392,7 +69392,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [SAR_TRIGGER] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[SAR_TRIGGER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_power_detector_sar_trigger(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69403,7 +69403,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_TIMEOUT_CLEAR] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields `[WATCHDOG_TIMEOUT_CLEAR]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_watchdog_timeout(registers: &crate::PhyBasebandConfigOracle) {
         registers.baseband_watchdog_enable().modify(|_, writer| {
@@ -69416,7 +69416,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields [TX_DC_TEMPORARY_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields `[TX_DC_TEMPORARY_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_phy_txdc_power_detector_table_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_table_1().modify(|_, writer| {
@@ -69431,7 +69431,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[CALIBRATION_FIELD_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn prepare_phy_txdc_power_detector_calibration(registers: &crate::PhyBasebandConfigOracle) {
         registers.power_detector_control().modify(|_, writer| {
@@ -69446,7 +69446,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields [TX_DC_TEMPORARY_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields `[TX_DC_TEMPORARY_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_txdc_power_detector_table_low(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69463,7 +69463,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields `[CALIBRATION_FIELD_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_txdc_power_detector_calibration(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69480,7 +69480,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields [COMPENSATION_BYTE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields `[COMPENSATION_BYTE_0_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_0(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
@@ -69495,7 +69495,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields [COMPENSATION_BYTE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields `[COMPENSATION_BYTE_1_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
@@ -69510,7 +69510,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields [COMPENSATION_BYTE_2_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields `[COMPENSATION_BYTE_2_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_2(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
@@ -69525,7 +69525,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields [COMPENSATION_BYTE_3_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION fields `[COMPENSATION_BYTE_3_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_3(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
@@ -69540,7 +69540,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields [TONE_STOP_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields `[TONE_STOP_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_control_tone_stop(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69557,7 +69557,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields [DAC_SCALE_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields `[DAC_SCALE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_dac_scale_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.dac_scale_control().modify(|_, writer| {
@@ -69572,7 +69572,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields [DAC_SCALE_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields `[DAC_SCALE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_dac_scale_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.dac_scale_control().modify(|_, writer| {
@@ -69587,7 +69587,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields [DAC_SCALE_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields `[DAC_SCALE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_dac_scale_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.dac_scale_control().modify(|_, writer| {
@@ -69602,7 +69602,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields [DAC_SCALE_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL fields `[DAC_SCALE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn restore_phy_dac_scale_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.dac_scale_control().modify(|_, writer| {
@@ -69617,7 +69617,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [TONE_ENABLE_OR_ARM] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields `[TONE_ENABLE_OR_ARM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_tone_path_0(registers: &crate::PhyBasebandConfigOracle) {
         registers.tone_path_0_control().modify(|_, writer| {
@@ -69628,7 +69628,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL fields [TONE_ENABLE_OR_ARM] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL fields `[TONE_ENABLE_OR_ARM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_tone_path_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.tone_path_1_control().modify(|_, writer| {
@@ -69639,7 +69639,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields [TONE_STOP_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields `[TONE_STOP_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn stop_phy_tone_paths(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69656,7 +69656,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields [PATH_0_SELECTOR_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields `[PATH_0_SELECTOR_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tone_path_0_selector_low(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69674,7 +69674,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields [PATH_1_SELECTOR_LOW] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields `[PATH_1_SELECTOR_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tone_path_1_selector_low(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69692,7 +69692,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [TONE_ENABLE_OR_ARM] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields `[TONE_ENABLE_OR_ARM]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_power_detector_tone_armed(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69705,7 +69705,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields `[MEASUREMENT_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69718,7 +69718,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields `[MEASUREMENT_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn disable_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69731,7 +69731,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_START] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields `[MEASUREMENT_START]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_tx_dc_measurement_start(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69744,7 +69744,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_START] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields `[MEASUREMENT_START]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn start_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69757,7 +69757,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_PBUS.READ_RESULT_0 fields [FE_INIT_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_PBUS.READ_RESULT_0 fields `[FE_INIT_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_pbus(registers: &crate::PhyPbus) {
         registers.read_result_0().modify(|_, writer| {
@@ -69770,7 +69770,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields [INIT_FIRST_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields `[INIT_FIRST_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_first(registers: &crate::PhyBasebandConfigOracle) {
         registers.front_end_init_0c08().modify(|_, writer| {
@@ -69781,7 +69781,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields [INIT_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields `[INIT_SECOND_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_second(registers: &crate::PhyBasebandConfigOracle) {
         registers.front_end_init_0c08().modify(|_, writer| {
@@ -69792,7 +69792,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_CLEAR_CONTROL fields [INIT_CLEAR_FIRST_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_CLEAR_CONTROL fields `[INIT_CLEAR_FIRST_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_first(registers: &crate::PhyBasebandConfigOracle) {
         registers.front_end_clear_control().modify(|_, writer| {
@@ -69805,7 +69805,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields [FRONT_END_INIT_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL fields `[FRONT_END_INIT_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_front_end_init(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69820,7 +69820,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_CLEAR_CONTROL fields [INIT_CLEAR_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_CLEAR_CONTROL fields `[INIT_CLEAR_SECOND_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_second(registers: &crate::PhyBasebandConfigOracle) {
         registers.front_end_clear_control().modify(|_, writer| {
@@ -69833,7 +69833,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_front_end_adc_rate_high(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69848,7 +69848,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_front_end_adc_rate_low(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69863,7 +69863,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0 fields [FRONT_END_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0 fields `[FRONT_END_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_front_end_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_pa_control_0().modify(|_, writer| {
@@ -69878,7 +69878,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [FRONT_END_INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[FRONT_END_INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_rx_iq_front_end_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -69891,7 +69891,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [FRONT_END_INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[FRONT_END_INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_tx_iq_front_end_high(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -69904,7 +69904,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20 fields [INIT_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20 fields `[INIT_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_low(registers: &crate::PhyBasebandConfigOracle) {
         registers.front_end_init_0c20().modify(|_, writer| {
@@ -69915,7 +69915,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN, ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN, ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_front_end_adc_rates(registers: &crate::PhyBasebandConfigOracle) {
         registers
@@ -69932,7 +69932,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [CHANNEL_DUMP_VALUE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[CHANNEL_DUMP_VALUE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_dump_value(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69950,7 +69950,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[INIT_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_dump_mode(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.baseband_init_790c().modify(|_, writer| {
@@ -69961,7 +69961,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields [CHANNEL_DUMP_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields `[CHANNEL_DUMP_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_dump_enabled(
         registers: &crate::PhyBasebandConfigOracle,
@@ -69977,7 +69977,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [VHT_SUPPORT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields `[VHT_SUPPORT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_vht_support(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
         registers.channel_cbw_control_1().modify(|_, writer| {
@@ -69988,7 +69988,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL fields [FORCE_LLTF] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL fields `[FORCE_LLTF]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_csi_dump_force_lltf(registers: &crate::PhyAgcOracle, input: u32) {
         registers.csi_dump_force_control().modify(|_, writer| {
@@ -69999,7 +69999,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [FREQUENCY_BAND_INVERSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields `[FREQUENCY_BAND_INVERSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_band_inverse(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_antenna_control().modify(|_, writer| {
@@ -70012,7 +70012,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields `[FILTER_INPUT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_output_filter_0(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70026,7 +70026,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_1] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields `[FILTER_INPUT_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_output_filter_1(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70040,7 +70040,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_2] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields `[FILTER_INPUT_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_tx_output_filter_2(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70054,7 +70054,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields `[WATCHDOG_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_baseband_watchdog_reset(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70068,7 +70068,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_INTERRUPT_ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields `[WATCHDOG_INTERRUPT_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_baseband_watchdog_interrupt(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70084,7 +70084,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [LLTF_MASK_INPUT_0] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[LLTF_MASK_INPUT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_lltf_mask_0(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.baseband_init_790c().modify(|_, writer| {
@@ -70095,7 +70095,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [LLTF_MASK_INPUT_1] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[LLTF_MASK_INPUT_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_lltf_mask_1(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.baseband_init_790c().modify(|_, writer| {
@@ -70106,7 +70106,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_adc_rate_high(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers
@@ -70120,7 +70120,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_adc_rate_low(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers
@@ -70134,7 +70134,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.RX_GAIN_DC_CONTROL fields [CALIBRATION_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.RX_GAIN_DC_CONTROL fields `[CALIBRATION_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_gain_dc_calibration(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70151,7 +70151,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_iq_calibration_mode(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_control().modify(|_, writer| {
@@ -70166,7 +70166,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_GAIN_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_GAIN_COEFFICIENT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_phy_tx_iq_gain_coefficient(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70184,7 +70184,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_PHASE_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_PHASE_COEFFICIENT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_phy_tx_iq_phase_coefficient(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70202,7 +70202,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_GAIN_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_GAIN_COEFFICIENT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_phy_rx_iq_gain_coefficient(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70220,7 +70220,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_PHASE_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields `[RX_IQ_PHASE_COEFFICIENT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_phy_rx_iq_phase_coefficient(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70238,7 +70238,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL fields [SELECTOR_HIGH, LOW_RESERVED_CLEAR_UNKNOWN, NEGATED_STEP_OR_ATTENUATION, TONE_ENABLE_OR_ARM, LOW_IMAGE_REMAINDER_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL fields `[SELECTOR_HIGH, LOW_RESERVED_CLEAR_UNKNOWN, NEGATED_STEP_OR_ATTENUATION, TONE_ENABLE_OR_ARM, LOW_IMAGE_REMAINDER_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_tone_path_1_low_image(registers: &crate::PhyBasebandConfigOracle) {
         registers.tone_path_1_control().modify(|_, writer| {
@@ -70261,7 +70261,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [TXIQ_POLARITY_IMAGE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields `[TXIQ_POLARITY_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_txiq_second_polarity(
         registers: &crate::PhyBasebandConfigOracle,
@@ -70278,7 +70278,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn begin_phy_tx_iq_correction(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -70293,7 +70293,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn complete_phy_tx_iq_correction(registers: &crate::PhyBasebandConfigOracle) {
         registers.iq_correction_aux().modify(|_, writer| {
@@ -70306,7 +70306,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS fields [BASEBAND_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS fields `[BASEBAND_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_baseband_mode(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70325,7 +70325,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn assert_phy_frequency_module_reset(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70338,7 +70338,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn release_phy_frequency_module_reset(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70351,7 +70351,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [HARDWARE_FREQUENCY_DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[HARDWARE_FREQUENCY_DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_hardware_frequency_control(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70366,7 +70366,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [CHANNEL_SWITCH_PULSE, HARDWARE_FREQUENCY_DISABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[CHANNEL_SWITCH_PULSE, HARDWARE_FREQUENCY_DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_frequency_control(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70381,7 +70381,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MODULE_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MODULE_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_frequency_module(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70394,7 +70394,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [REGISTER_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[REGISTER_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_register_mode(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70411,7 +70411,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields [FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields `[FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_nrx_frequency_quotient(registers: &crate::PhyFrequencyChannelOracle) {
         registers.nrx_frequency_control().modify(|_, writer| {
@@ -70426,7 +70426,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields [SHIFT_LOW_OR_INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields `[SHIFT_LOW_OR_INIT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_nrx_frequency_shift(registers: &crate::PhyFrequencyChannelOracle) {
         registers.nrx_frequency_control().modify(|_, writer| {
@@ -70441,7 +70441,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[BT_FILTER_ENABLE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_bt_filter(registers: &crate::PhyFrequencyChannelOracle) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70454,7 +70454,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[BT_FILTER_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_bt_filter_low(registers: &crate::PhyFrequencyChannelOracle) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70467,7 +70467,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[BT_FILTER_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_bt_filter_mode(registers: &crate::PhyFrequencyChannelOracle) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70482,7 +70482,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_ADDRESS_LOW_UNKNOWN, MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MEMORY_ADDRESS_LOW_UNKNOWN, MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_memory_address(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70501,7 +70501,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_WRITE_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MEMORY_WRITE_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_frequency_memory_write_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70512,7 +70512,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_WRITE_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[MEMORY_WRITE_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_frequency_memory_write_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70523,7 +70523,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL fields [MEMORY_READ_MODE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL fields `[MEMORY_READ_MODE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_memory_read_mode(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70536,7 +70536,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL fields [READ_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL fields `[READ_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_frequency_memory_read_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers
@@ -70549,7 +70549,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL fields [READ_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL fields `[READ_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_frequency_memory_read_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers
@@ -70562,7 +70562,7 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [CHANNEL_INDEX] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[CHANNEL_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_channel_index(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70575,7 +70575,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [CHANNEL_SWITCH_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[CHANNEL_SWITCH_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_frequency_channel_switch_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70586,7 +70586,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [CHANNEL_SWITCH_PULSE] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields `[CHANNEL_SWITCH_PULSE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_frequency_channel_switch_pulse(registers: &crate::PhyFrequencyChannelOracle) {
         registers.frequency_control().modify(|_, writer| {
@@ -70597,7 +70597,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields [CHANNEL_OFFSET_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields `[CHANNEL_OFFSET_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_bss_channel_offset(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70614,7 +70614,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_CLEAR_LOW_UNKNOWN, FBW_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[FBW_CLEAR_LOW_UNKNOWN, FBW_CLEAR_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_fbw_control(registers: &crate::PhyFrequencyChannelOracle) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70629,7 +70629,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_SELECT_MID_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[FBW_SELECT_MID_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_fbw_select_mid(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70643,7 +70643,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_SELECT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields `[FBW_SELECT_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_fbw_select_high(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
         registers.fbw_bt_filter_control().modify(|_, writer| {
@@ -70657,7 +70657,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0 fields [CBW_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0 fields `[CBW_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_cbw_control_0(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70670,7 +70670,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [CBW_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields `[CBW_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_cbw_control_1_high(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70683,7 +70683,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [CBW_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields `[CBW_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_cbw_control_1_low(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70700,7 +70700,7 @@ pub mod field_replace_modify {
 /// Safe, SVD-declared multi-argument field-replacement transactions.
 pub mod field_argument_modify {
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF fields [slow_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_SLOW, fast_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_FAST, crystal_selected -> CLK_LP_TIMER_SEL_XTAL, crystal_32khz_selected -> CLK_LP_TIMER_SEL_XTAL32K, divider_minus_one -> CLK_LP_TIMER_DIV_NUM] from independently typed arguments while preserving every other bit.
+    /// Replace MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF fields `[slow_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_SLOW, fast_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_FAST, crystal_selected -> CLK_LP_TIMER_SEL_XTAL, crystal_32khz_selected -> CLK_LP_TIMER_SEL_XTAL32K, divider_minus_one -> CLK_LP_TIMER_DIV_NUM]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn configure_shared_modem_low_power_timer(
         registers: &crate::ModemLpconSharedClock,
@@ -70729,7 +70729,7 @@ pub mod field_argument_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields [apb_clock_enabled -> MODEM_APB_CLK_EN, reset_asserted -> MODEM_RST_EN, source_clock_enabled -> MODEM_CLK_EN, pll_selected -> MODEM_CLK_SOURCE_SEL, pll_clock_enabled -> MODEM_PLL_CLK_EN, xtal_clock_enabled -> MODEM_XTAL_CLK_EN] from independently typed arguments while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields `[apb_clock_enabled -> MODEM_APB_CLK_EN, reset_asserted -> MODEM_RST_EN, source_clock_enabled -> MODEM_CLK_EN, pll_selected -> MODEM_CLK_SOURCE_SEL, pll_clock_enabled -> MODEM_PLL_CLK_EN, xtal_clock_enabled -> MODEM_XTAL_CLK_EN]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn restore_modem_source_clocks(
         registers: &crate::HpSysClkrstRadio,
@@ -70759,7 +70759,7 @@ pub mod field_argument_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [modem_security_enabled -> CLK_MODEM_SEC_EN, ecb_enabled -> CLK_MODEM_SEC_ECB_EN, ccm_enabled -> CLK_MODEM_SEC_CCM_EN, bah_enabled -> CLK_MODEM_SEC_BAH_EN, ble_timer_enabled -> CLK_BLE_TIMER_EN] from independently typed arguments while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[modem_security_enabled -> CLK_MODEM_SEC_EN, ecb_enabled -> CLK_MODEM_SEC_ECB_EN, ccm_enabled -> CLK_MODEM_SEC_CCM_EN, bah_enabled -> CLK_MODEM_SEC_BAH_EN, ble_timer_enabled -> CLK_BLE_TIMER_EN]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn restore_bluetooth_peripheral_clocks(
         registers: &crate::ModemSysconRadio,
@@ -70786,7 +70786,7 @@ pub mod field_argument_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [selector_high -> SELECTOR_HIGH, low_reserved -> LOW_RESERVED_CLEAR_UNKNOWN, negated_step -> NEGATED_STEP_OR_ATTENUATION, enabled -> TONE_ENABLE_OR_ARM, mismatch_mode -> TXIQ_MISMATCH_MODE_UNKNOWN, middle_reserved -> MIDDLE_RESERVED_CLEAR_UNKNOWN, polarity -> TXIQ_POLARITY_IMAGE] from independently typed arguments while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields `[selector_high -> SELECTOR_HIGH, low_reserved -> LOW_RESERVED_CLEAR_UNKNOWN, negated_step -> NEGATED_STEP_OR_ATTENUATION, enabled -> TONE_ENABLE_OR_ARM, mismatch_mode -> TXIQ_MISMATCH_MODE_UNKNOWN, middle_reserved -> MIDDLE_RESERVED_CLEAR_UNKNOWN, polarity -> TXIQ_POLARITY_IMAGE]` from independently typed arguments while preserving every other bit.
     #[allow(
         clippy::too_many_arguments,
         reason = "reviewed hardware transaction exposes one typed argument per field"
@@ -70825,7 +70825,7 @@ pub mod field_argument_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL fields [address_0 -> NUMBER_ADDRESS_0_UNKNOWN, address_1 -> NUMBER_ADDRESS_1_UNKNOWN] from independently typed arguments while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL fields `[address_0 -> NUMBER_ADDRESS_0_UNKNOWN, address_1 -> NUMBER_ADDRESS_1_UNKNOWN]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn configure_phy_frequency_i2c_number_prefix(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -70845,7 +70845,7 @@ pub mod field_argument_modify {
         });
     }
 
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields [offset -> CHANNEL_OFFSET_LOW_UNKNOWN, high_clear -> CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN] from independently typed arguments while preserving every other bit.
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields `[offset -> CHANNEL_OFFSET_LOW_UNKNOWN, high_clear -> CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_cbw_offset(
         registers: &crate::PhyFrequencyChannelOracle,

@@ -243,7 +243,7 @@ pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
 ///
 /// SOURCE: complete `libpp.a[trc.o]::rcGetRate` (`0xd0` bytes),
 /// especially the bounded four-iteration loop at offsets `0x7c..0xce`;
-/// cross-checked against SOURCE[PROMOTED_LMAC_TX].
+/// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`.
 pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {
     let record = schedule_bytes(schedule);
     let mut cumulative = 0_u8;

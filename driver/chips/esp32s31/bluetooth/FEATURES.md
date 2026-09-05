@@ -1,91 +1,64 @@
-# ESP32-S31 Bluetooth LE implementation frontier
+# ESP32-S31 Bluetooth LE source capabilities
 
-This is the production-code frontier, not an RF or Bluetooth qualification
-claim. Qualification requirements remain in
-[bluetooth-le.toml](../../../../qualification/targets/esp32s31/bluetooth-le.toml).
-A compiling descriptor or isolated state machine does not establish a live
-controller capability.
+This matrix describes implemented code and its composition limits. It does
+not claim RF delivery, interoperable connectivity or Bluetooth qualification.
+The [qualification specification](../../../../qualification/targets/esp32s31/bluetooth-le.toml)
+owns readiness requirements and hardware evidence. A successful HCI command,
+scheduler `RUN`, descriptor or isolated state machine does not establish an
+end-to-end controller capability.
 
-## Supported direction
+## Implementation and composition
 
-The first end-to-end target is one always-awake LE 1M peripheral connection,
-legacy advertising, bounded ACL buffers and a Trouble GATT server through
-the standard `bt-hci` interface. The current dependency pair is `bt-hci`
-0.10.1 and `trouble-host` 0.8.0. Trouble is currently a development dependency
-used to test bootstrap, not a production GATT composition.
-
-BR/EDR, privacy, encryption, extended advertising, other PHYs, ISO, sleep and
-concurrent Wi-Fi/Bluetooth are separate milestones. Advertised HCI capabilities
-must remain limited to implemented behavior.
-
-## Current implementation
-
-| Layer or path | Implemented | Remaining boundary |
+| Layer or path | Implemented source contract | Unsupported or unqualified boundary |
 | --- | --- | --- |
-| PAC/HAL | Typed clock/reset, controller time, IRQ, scheduler and memory-list access; publication barriers | Physical validation, long-running timer/PHY maintenance and powered teardown |
-| Controller SRAM | DTM, advertising, scanning and peripheral graphs; private codecs; CPU/hardware ownership and bounded RX extraction | Connected TX queue, acknowledgment/retry ownership and verified packet-engine semantics |
-| DTM | RX/TX preparation, recurring events, completion/recycle, Test End and Reset with Embassy composition | Recorded RF/HIL evidence and complete long-running maintenance |
-| Advertising/scanning | Portable policy, typed HCI commands and chip event paths | Target actor regression coverage and on-air validation |
-| Connectable advertising | Configuration, generation/event identity, first event, no-connection recurrence, ordered stop and CONNECT_IND handoff | Hardware evidence for recurrence/stop; do not infer RF delivery from scheduler RUN |
-| Peripheral connection | Causal first window, first RUN, common completion engine, RX/recycle and lower recurrence preparation/publication | The active actor does not yet drive connection completion/recurrence; missed-event recovery and reliability remain incomplete |
-| Portable connection LL | CONNECT_IND validation, channel selection, event progression and anchor bookkeeping | SN/NESN responsibility, retransmission, duplicate suppression, establishment/supervision timeout and LLCP |
-| HCI | Standard packet types, bounded in-process transport, bootstrap, DTM, advertising and scanning | Connection events, handles, ACL routing and credits; non-command input is currently quarantined |
-| Trouble | Real Host runner bootstrap test | Production runner, connected ACL and GATT interoperability |
-| Shutdown | Typed pre-publication rollback and selected HCI Reset paths | Complete powered quiescence, PHY release and cold reconstruction |
+| PAC/HAL | Typed clock/reset, controller time, IRQ, scheduler and memory-list access; publication barriers | Physical validation, complete long-running timer/PHY maintenance and powered teardown are not established by these accessors |
+| Controller SRAM | DTM, advertising, scanning and peripheral graphs; private codecs; CPU/hardware ownership and bounded RX extraction | No complete connected TX queue, acknowledgment/retry owner or verified packet-engine contract |
+| DTM | RX/TX preparation, recurring events, completion/recycle, Test End and Reset with Embassy composition | These source paths do not establish RF/HIL qualification or complete long-running maintenance |
+| Advertising/scanning | Portable policy, typed HCI commands and chip event paths | Source composition does not establish on-air delivery |
+| Connectable advertising | Configuration, generation/event identity, first event, no-connection recurrence, ordered stop and CONNECT_IND handoff | Scheduler `RUN` does not establish successful advertisement or connection exchange |
+| Peripheral connection | Causal first window, first `RUN`, lower completion/RX/recycle and recurrence preparation/publication | The active actor retains the first running owner but does not drive its radio completion/recurrence; missed-event recovery and reliability are incomplete |
+| Portable connection LL | CONNECT_IND validation, channel selection, event progression and anchor bookkeeping | No complete SN/NESN, retransmission, duplicate suppression, establishment/supervision timeout or LLCP owner |
+| HCI | Standard packet types, bounded in-process transport, bootstrap, DTM, advertising and scanning | Connection events, handles, ACL routing and credits are not connected; non-command input is quarantined |
+| Trouble Host | Host bootstrap test through `bt-hci` | No production Trouble runner, connected ACL or GATT interoperability composition |
+| Shutdown | Typed rollback before publication and selected HCI Reset paths | Complete powered quiescence, PHY release and cold reconstruction are not implemented |
 
-The peripheral active actor currently retains the first running owner and
-services a pending HCI response, but does not call its radio-completion methods.
-Its repeated `PeripheralConnectionActive` observation is not evidence of
-successive connection events.
+The controller uses `bt-hci` 0.10.1. `trouble-host` 0.8.0 is a development
+dependency of the portable HCI crate, not the product GATT server. BR/EDR,
+privacy, encryption, extended advertising, other PHYs, ISO and sleep are outside
+this implementation scope. The platform adapters do not permit safe concurrent
+Wi-Fi/Bluetooth singleton ownership. HCI capability advertisement must remain
+limited to the composed implementation.
 
-Peripheral recurrence additionally requires a caller-owned local clock
-accuracy bound. Its current software-widening profile does not solve arbitrary
-missed-event anchor recovery or accumulated timing uncertainty.
+## Ownership
 
-## Ownership and reuse
+| Owner | Authority |
+| --- | --- |
+| PAC | MMIO representation and restricted access |
+| HAL | Semantic accessors, register transactions and hardware ownership proofs |
+| [Memory crate](memory/) | Controller-SRAM layouts, private codecs and DMA-visible storage |
+| Portable LE LL | Protocol policy and advertising generation/event identity |
+| Chip roles | Scheduler timing, admission, publication and role-specific RX/recycle |
+| Embassy runtime | Waits, command/response fairness and durable task state |
+| Integration | Static resources, platform claims and interrupt routes |
 
-- PAC owns MMIO encoding. HAL publishes semantic accessors and ownership proofs.
-- The memory crate owns SRAM layouts, private codecs and DMA-visible storage.
-  Chip, LL and executor code must not duplicate their bit operations.
-- Portable LL owns protocol policy and advertising generation/event identity.
-- The chip implements scheduler timing, admission, publication and role recycle.
-- Embassy owns waits, fairness and durable task storage; integration owns board
-  resources and interrupt routes.
-- `single_item_completion` is shared by advertising, scanning and peripheral
-  roles. Role-specific RX/recycle policy remains separate.
-- `controller_start/timed_preparation` shares time-request, recheck, rollback and
-  orphan-drain behavior. New roles should use these engines where semantics match.
+`single_item_completion` is the shared lower completion engine for advertising,
+scanning and peripheral roles. `controller_start/timed_preparation` owns shared
+time requests, rechecks, rollback and orphan draining. Sharing those mechanisms
+does not compose a missing caller or transfer protocol policy between roles.
 
-The actor and HCI wrappers still expose too many internal preparation phases.
-Reduce this surface around one session interface per role. Measure final actor,
-future and stack memory before replacing ordinary outcomes with callback
-frameworks solely to satisfy size lints.
+## Peripheral timing limits
 
-## Ordered closure plan
+The [active controller branch](../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs)
+services a pending HCI response and returns `PeripheralConnectionActive`.
+Repeated observations of that boundary do not represent successive radio
+events.
 
-1. Restore target compilation and behavioral tests after the interrupted
-   refactors; record a reproducible commit before adding another feature.
-2. Verify advertising RUN, completion, recurrence, Disable/Reset and re-enable
-   through the production actor, including HCI response backpressure.
-3. Drive peripheral RUN through completion/recycle into the next event.
-   Validate explicit clock accuracy, anchor acquisition and missed-event behavior.
-4. Resolve packet-engine ACK/retry semantics and implement bounded connected
-   TX/RX ownership, duplicate handling, supervision and disconnect cleanup.
-5. Implement the LL control procedures required by the advertised feature set.
-6. Connect HCI events, connection handles and ACL credit accounting to the real
-   dataplane; add a production Trouble peripheral/GATT example.
-7. Validate repeated connections, faults, periodic PHY/timer work and shutdown.
-
-Each milestone requires a concrete observable result, focused production-path
-tests and a commit. A single board can verify scheduler progression and
-quiescent resource recovery. On-air advertising and connection/data exchange
-require a BLE observer or peer. Neither a successful HCI command nor first RUN
-alone proves RF delivery.
-
-## Evidence corrections still required
-
-The peripheral research note historically treated link-state event-span storage
-and scheduler captured-anchor storage as one location. The current memory codec
-uses distinct objects. The disagreement must be resolved against source evidence
-before qualifying anchor normalization; see the explicit review note in
-[bluetooth-peripheral-connection.md](../../../../verification/vendor/projects/esp32s31/analysis/bluetooth-peripheral-connection.md).
+Lower recurrence requires a caller-owned local clock accuracy bound. Its
+software window widening does not establish arbitrary missed-event anchor
+recovery or accumulated timing uncertainty. The
+[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores
+link-state event span and scheduler captured anchor in distinct objects;
+equal offsets within those objects do not make them the same field. A raw
+captured anchor is not a normalized packet-start timestamp. Hardware timing
+qualification must cover that interpretation independently of the ownership
+and layout types.

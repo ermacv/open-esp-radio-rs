@@ -14,10 +14,10 @@ base-eFuse accessor plus the pinned S31 second-universal-address policy. The
 result remains in canonical EUI-48 order; the generic HCI bootstrap type
 performs the reviewed conversion to HCI `BD_ADDR` byte order.
 
-Bluetooth is the first client. The existing Wi-Fi ESP-HAL adapter still owns
-the same singleton types independently, so safe Wi-Fi + Bluetooth composition
-is intentionally impossible today. Wi-Fi must migrate to this coordinator
-before coexistence can be enabled.
+Bluetooth uses this coordinator. The Wi-Fi ESP-HAL adapter owns the same
+singleton types independently, so the production APIs cannot safely compose
+simultaneous Wi-Fi and Bluetooth. Neither adapter grants a second claim of
+those platform resources.
 
 The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
 `MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter routes those typed identities

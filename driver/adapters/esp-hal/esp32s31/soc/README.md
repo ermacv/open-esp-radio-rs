@@ -21,9 +21,8 @@ The private source modules follow the resources and operations they own:
 
 The transfer owner binds both channel interrupts when constructed. Register
 operations and completion share only the private mem2mem module boundary;
-callers continue to use the existing root types. Descriptor layout, linker
-sections, feature selection, reset/start ordering, and owner retention remain
-unchanged by this module split.
+callers use the public root types. Prepared and active owners retain the
+payload and descriptor borrows until completion or cleanup.
 
 `axi-gdma-mem2mem` enables the hardware transfer path and implies `esp32s31`.
 `psram-dma-diagnostic` additionally enables the existing blocking comparison
@@ -31,8 +30,8 @@ path. The descriptor sizing tests run on the host without those features.
 
 CACHE maintenance and performance counters retain their existing distinct
 contracts: writeback takes the affected mutable memory range, while performance
-counters retain the CACHE witness. Their shared hardware serialization contract
-is unresolved; this organization introduces no CACHE lease or coordinator.
+counters retain the CACHE witness. There is no shared CACHE lease or
+coordinator between those APIs; the adapter does not establish that simultaneous use is safe.
 
 Focused checks from the repository root:
 

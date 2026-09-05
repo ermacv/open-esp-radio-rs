@@ -79,7 +79,7 @@ impl StationPowerSavePolicy {
 /// Station power policy for one complete service/reconnect epoch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StationPowerMode {
-    /// Preserve the historical behavior: never advertise PM=1.
+    /// Remain awake and never advertise PM=1.
     #[default]
     AlwaysAwake,
     /// Use legacy TIM/DTIM-aware PM signalling after association.

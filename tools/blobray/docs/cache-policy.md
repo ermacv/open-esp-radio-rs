@@ -27,7 +27,7 @@ manually; an external reader may legitimately keep either file live. New or
 renamed CAS packs and the pinned cache directory are synced before SQLite can
 publish their locations.
 
-The boundary is deliberately unchanged in schema 10. The production-path
+Schema 10 uses this boundary. The production-path
 diagnostic uses 16 deterministic, unique values at 16 KiB, 64 KiB, 64 KiB + 1
 and 256 KiB. It measures fresh-cache writes (including the normal SQLite
 transaction/fsync path), verified reads and physical database/pack sizes:
@@ -41,24 +41,6 @@ BLOBRAY_CACHE_BENCH_ROOT=target \
 
 The ignored diagnostic writes its stable JSON document only to the explicitly
 named output file; normal tests do not emit or persist benchmark results.
-
-A Linux x86-64 debug-profile run on local Btrfs on 2026-08-25 produced:
-
-| Payload | Storage | Write (16 records) | Read (16 records) | SQLite | Pack | Total |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 16 KiB | SQLite inline | 6.652 ms | 5.503 ms | 303,104 B | 0 B | 303,104 B |
-| 64 KiB | SQLite inline | 21.657 ms | 15.637 ms | 1,089,536 B | 0 B | 1,089,536 B |
-| 64 KiB + 1 | CAS pack | 46.082 ms | 16.089 ms | 32,768 B | 1,049,360 B | 1,082,128 B |
-| 256 KiB | CAS pack | 108.507 ms | 65.163 ms | 32,768 B | 4,195,072 B | 4,227,840 B |
-
-These measurements show approximately equal physical/read cost at the existing
-boundary, while the CAS pack's separate data sync makes the just-over-boundary
-write materially slower on this filesystem. They support keeping small values
-inline and do not justify raising or lowering 64 KiB from one host run. Timings
-are diagnostics rather than pass/fail thresholds.
-Any future threshold change must record repeated release-profile measurements
-on representative local storage and explain the resulting WAL, latency and
-space trade-off.
 
 ## Retention and hard quotas
 

@@ -1,27 +1,18 @@
-# Historical revision snapshots
+# Investigation revision state
 
-The snapshots dated 2026-08-29 use schema 4. They preserve historical analysis
-and their original checksums in `state.blobray`. Current Blobray uses schema 5:
-each function additionally requires its raw identity, exact artifact digest,
-locator, typed occurrence identity, and optional semantic identity. Those facts
-cannot be recovered faithfully by merely changing the old schema number.
+This directory contains immutable machine snapshots and the selected revision
+state. They bind analysis identities, artifact provenance and reviewer
+decisions; they are inputs to revision comparison, not product qualification.
 
-`project doctor` therefore reports this active state as invalid and requires
-migration. The source-only register publication project is independent of this
-investigation history.
+Blobray's current revision schema is 5. A function identity includes the raw
+identity, exact artifact digest, locator, typed occurrence identity and optional
+semantic identity. A schema-4 record cannot acquire those facts by relabelling
+its schema. The checked state uses schema 4, so the current loader rejects it
+as an active revision state. Source-only register publication is independent
+of revision snapshots.
 
-To begin a current investigation, preserve the entire historical `revisions/`
-directory in a separate archive first. Keep the snapshot files and their original
-state/checksums together. Move the old `state.blobray` out of the active
-`revisions/state.blobray` location; do not overwrite or relabel its snapshots.
-Bind the intended vendor inputs in a caller-owned run spec and regenerate current
-findings through the normal project workflow. Then capture a new, distinctly
-named baseline using those authenticated inputs:
-
-```console
-cargo blobray project revision snapshot CURRENT --project verification/vendor/targets/esp32s31/vendor-project.toml --run-spec /absolute/path/to/local.toml
-```
-
-A new capture is evidence about its actual inputs and current analysis. It does
-not retroactively authenticate the historical records, and it does not transfer
-reviewed decisions between revisions without review.
+Use the [revision commands](../../../../../tools/blobray/docs/project-workflow.md#updating-vendor-artifacts-without-losing-review)
+with authenticated inputs to capture a distinct current snapshot. Reviewed
+decisions transfer only through the explicit revision comparison/review
+contract. Existing checksums and immutable snapshots retain their original
+meaning; a new capture does not authenticate another snapshot's inputs.

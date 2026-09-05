@@ -1516,7 +1516,7 @@ impl PacApiPack {
                 .collect::<Vec<_>>()
                 .join(", ");
             output.push_str(&format!(
-                "\n    /// OR one reviewed logical image into {}.{} fields [{}] while preserving the fresh register observation.\n\
+                "\n    /// OR one reviewed logical image into {}.{} fields `[{}]` while preserving the fresh register observation.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{input_parameter}) {{\n\
                      registers.{register}({index_argument}).modify(|reader, writer| {{\n\
@@ -1624,7 +1624,7 @@ impl PacApiPack {
                 .collect::<Vec<_>>()
                 .join(", ");
             output.push_str(&format!(
-                "\n    /// Replace {}.{} fields [{}] from one reviewed logical image while preserving every other bit.\n\
+                "\n    /// Replace {}.{} fields `[{}]` from one reviewed logical image while preserving every other bit.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{input_parameter}) {{\n\
                      registers.{register}({index_argument}).modify(|_, writer| {{\n\
@@ -1722,7 +1722,7 @@ impl PacApiPack {
             let too_many_arguments =
                 too_many_arguments_attribute(binding.arguments.len(), register_binding.is_array);
             output.push_str(&format!(
-                "\n    /// Replace {}.{} fields [{}] from independently typed arguments while preserving every other bit.\n\
+                "\n    /// Replace {}.{} fields `[{}]` from independently typed arguments while preserving every other bit.\n\
                  {too_many_arguments}#[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{parameters}) {{\n\
                      registers.{register}({index_argument}).modify(|_, writer| {{\n\

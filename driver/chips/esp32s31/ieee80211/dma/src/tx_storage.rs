@@ -39,9 +39,16 @@ struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
 /// Final allocation containing one ordinary TX descriptor and source buffer.
 ///
-/// Construct this in static storage, then consume that allocation through
-/// [`Self::pin_static`] on hardware or [`Self::pin_static_model`] in a native
-/// model. The returned owner is movable; this backing allocation is not.
+/// Construct this in static storage. The returned owner is movable; this
+/// backing allocation is not.
+#[cfg_attr(
+    target_pointer_width = "32",
+    doc = "Consume the hardware allocation through [`Self::pin_static`]."
+)]
+#[cfg_attr(
+    not(target_pointer_width = "32"),
+    doc = "Consume the native model allocation through [`Self::pin_static_model`]."
+)]
 #[pin_project]
 pub struct TxDmaStorage<const BUFFER_SIZE: usize> {
     #[pin]

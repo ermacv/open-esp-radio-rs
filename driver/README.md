@@ -4,14 +4,12 @@
 and production integrations. Applications supply board identity, credentials
 and peripherals. HIL scenarios, traffic generators, UART test protocols,
 vendor artifacts and qualification policy live outside this tree. See the
-[source policy](../docs/SOURCE_POLICY.md).
+[source policy](../docs/source-policy.md).
 
 ## Source map
 
 Paths describe responsibilities; a directory need not be a Cargo crate.
-Existing package names remain independent of this directory hierarchy.
-The [complete current tree](../docs/driver-audit/current-tree.txt) also lists
-the child test files and internal module directories.
+Cargo package identities are independent of this directory hierarchy.
 
 | Path | Responsibility |
 | --- | --- |
@@ -43,17 +41,11 @@ consumer is a host test of the materializer. Product radio policy cannot
 depend on either network adapters or research; the architecture audit follows
 transitive normal/build dependencies across their domain paths.
 
-The [structure audit](../docs/DRIVER_STRUCTURE_AUDIT.md) records the original
-mixed responsibilities. The [migration result](../docs/DRIVER_STRUCTURE_PLAN.md)
-records the completed namespace and ownership changes, their validation and
-the scope of the structural work.
-The [boundary review](../docs/driver-audit/migration-history.md#уточнение-границ-adapters-common-и-integration)
-records the original mixed responsibilities and their staged resolution. Product
-resource profiles now live in integration, which also executes whole-radio
+Product resource profiles live in integration, which also executes whole-radio
 lifecycles. The [Embassy map](adapters/embassy/README.md) distinguishes external
 bindings from the [radio execution domain](runtime/README.md). Folder names alone
 do not enforce these boundaries.
-The [protocol naming convention](../docs/DRIVER_PROTOCOL_NAMING.md) defines
+The [protocol naming convention](../docs/protocol-naming.md) defines
 `ieee80211`, `ieee802154` and `bluetooth` as technical family namespaces.
 Wi-Fi remains the application-facing technology name; portable LE Link Layer
 code lives in `bluetooth/le/ll`, beside the family-wide HCI boundary.
@@ -63,7 +55,7 @@ retained state inside each protocol domain. Block Ack has `frame/session`,
 fragmentation has `parsing/reassembly`, and sequence/duplicate history has
 explicit owners beside its STA/data consumers. QoS values are distinct from
 WMM element parsing; ESP-NOW wire formats remain below SoftMAC peer/security
-owners. These boundaries use modules within the existing packages.
+owners. These boundaries are modules within their protocol packages.
 
 Portable IEEE 802.11 encoders accept explicit local capabilities. Chip STA/AP
 `profile` modules select the existing advertisements; STA profile also lowers
@@ -97,7 +89,7 @@ AP `roles/access_point/network_tx` retains one TX owner. Its `queue`,
 and state; publication and cancellation remain at the owner boundary.
 Bluetooth integration `system` keeps public aggregates and separates final
 `construction`, the sole hardware `runner`, and terminal `quarantine`.
-Neither separation creates another owner or changes an async cancellation point.
+Construction and quarantine do not acquire independent hardware authority.
 The [chip Bluetooth map](chips/esp32s31/bluetooth/README.md) places LE DTM,
 advertising, scanning and peripheral modules below their protocol namespaces.
 Shared controller, IRQ and scheduler ownership remains outside the LE roles.
@@ -134,7 +126,7 @@ PHY borrows an opaque `PhyHal`; role code uses finite HAL/MAC capabilities.
 Do not expose PAC callbacks, `Deref` escapes or owner re-exports above these
 boundaries. Shared task-side handles remain tied to the HAL arena's explicit
 serialization; a copyable handle grants no unsynchronized cross-thread MMIO
-access. Existing Bluetooth/IEEE 802.15.4 PAC dependencies are explicit audit
+access. Bluetooth/IEEE 802.15.4 PAC dependencies are explicit policy
 exceptions, not a general route around HAL.
 
 The current Wi-Fi execution domain has one Core0 supervisor and controlled
@@ -171,7 +163,7 @@ Materialization transfers selected software work into a finite physical pool;
 terminal completion or proven abort returns that storage. The experimental
 research engine uses the shared egress and DMA contracts; its current
 repository consumer is a driver test.
-See the [egress architecture](../docs/WIFI_EGRESS_ARCHITECTURE.md) for queue,
+See the [egress architecture](../docs/wifi-egress.md) for queue,
 materialization and transport contracts.
 
 Ordinary code and task stacks may execute from PSRAM. DMA-visible storage,
@@ -181,8 +173,8 @@ internal SRAM; placement checks enforce this boundary.
 ## Feature scope and verification
 
 Protocol limits, security modes and live/partial/fail-closed boundaries belong
-in the [Wi-Fi feature frontier](chips/esp32s31/ieee80211/FEATURES.md) and
-[Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md). A parser,
+in the [Wi-Fi source capability matrix](chips/esp32s31/ieee80211/FEATURES.md) and
+[Bluetooth LE source capability matrix](chips/esp32s31/bluetooth/FEATURES.md). A parser,
 register setter, descriptor or host test alone does not establish an
 operational radio feature. Do not infer concurrent-radio support or new
 capabilities from structural reuse.
@@ -196,8 +188,7 @@ of a manifest is not a passing hardware qualification.
 
 Unit tests live in separate child files beside the modules whose private
 contracts they exercise; public integration tests live in crate `tests/`
-directories. Preserve feature gating and ownership assertions when moving
-code. Large-error lint expectations stay with ownership transitions that must
+directories. Feature gates apply to both the implementation and its tests. Large-error lint expectations stay with ownership transitions that must
 return exact inline owners without allocation. An uncomposed hardware path
 must identify its missing caller at the entry boundary; broad module-level
 warning suppression does not document that lifecycle limitation.

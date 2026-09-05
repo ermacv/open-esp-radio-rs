@@ -2,8 +2,8 @@
 
 PHY parity is verified from compiled vendor and Rust code by
 [`blobray`](../../tools/blobray/README.md). The generated
-report is the inventory and open-work list; this directory does not maintain a
-parallel, hand-written function ledger.
+report identifies comparison coverage and incomplete outcomes. This document
+describes the evidence contract, not an inventory of individual run results.
 
 The verifier composes `registers/esp32s31/published/radio.svd` with the validator-only official
 PAC subset in `registers/esp32s31/upstream/platform-radio-deps.svd`. A `MATCH` needs no
@@ -29,13 +29,14 @@ not-yet-ported functions from implemented architectural replacements that do
 not yet have a qualifying compiled comparison. Qualification dependencies for those roots
 are source-qualified `blocked-by` edges in that same manifest and are checked
 against the vendor inventory. The tool README defines both gates and the
-current floor.
+configured evidence baseline.
 
 There are currently no accepted parity exceptions. If one becomes necessary,
 it must be a typed, reviewable rule in the verifier with a failing regression
 test for any scope outside that rule; it must not be hidden in prose.
 
 The chip/protocol boundary is documented in the
-[driver architecture](../../driver/README.md), structured register evidence is
-under `verification/vendor/projects/esp32s31/registers`, and hardware results under the
-[ESP32-S31 qualification records](../../qualification/targets/esp32s31/records/README.md).
+[driver architecture](../../driver/README.md). Structured register provenance
+belongs to [registers](../../registers/esp32s31/README.md); HIL bundles are
+produced by the [runner](../../hil/host/README.md). Only the
+[qualification evaluator](../../qualification/README.md) derives readiness.

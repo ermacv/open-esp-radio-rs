@@ -63,8 +63,8 @@ pub enum StaAuthenticationRuntimeError {
 ///
 /// SOURCE: complete `libnet80211.a[ieee80211_sta.o]::
 /// ieee80211_sta_new_state` ordinary Authentication branch arms the 1,000-ms
-/// state timer. The three-attempt bound is the hardware-qualified open STA
-/// policy previously owned by the ESP32-S31 HIL.
+/// state timer. This runtime owns the open STA policy of at most three
+/// authentication attempts, including sequence allocation and timer outcomes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAuthenticationRuntime {
     local: [u8; 6],

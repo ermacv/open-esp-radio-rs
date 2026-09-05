@@ -6,7 +6,7 @@ use open_radio_vendor_analysis_model::{
 };
 
 const DTM_EVIDENCE: &str =
-    "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md";
+    "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md";
 const DTM_ARTIFACT_SOURCE: &str = "ble-controller";
 const DTM_ARTIFACT_SHA256: &str =
     "5dbd91c45d13a2afc99e5414732aaffe1230737b471ddcf0bbe7e17a9d98e225";

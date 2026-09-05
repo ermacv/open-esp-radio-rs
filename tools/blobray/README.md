@@ -52,7 +52,7 @@ and reviewed-workspace validation and `project check` to reproduce every
 generated result byte for byte before publishing or merging a replacement.
 
 Blobray assurance is not the product readiness authority. The repository's
-[verification and qualification contract](../../docs/VERIFICATION_AND_QUALIFICATION.md)
+[verification and qualification contract](../../docs/verification-and-qualification.md)
 defines which results are supporting research and which exact production
 traces may enter the qualification evaluator.
 
@@ -250,10 +250,8 @@ in [architecture](docs/architecture.md).
 
 ## Resource safety
 
-Artifact-wide analysis defaults to four workers. The ESP32-S31 combined image
-uses about 450 MiB at that setting and analyzes roughly three times faster than
-the single-worker path. Build the optimized binary once and use the hard-limit
-wrapper for real vendor inputs:
+Artifact-wide analysis defaults to four workers. Build the optimized binary
+and use the resource limiter for real vendor inputs:
 
 ```console
 cargo build --profile blobray -p blobray-esp32s31 --bin blobray
@@ -267,10 +265,10 @@ The Linux limiter applies a 1-GiB aggregate-memory policy and a 15-minute timeou
 Use `--jobs 1` explicitly when working under a tighter memory budget; raise the
 worker count above four only after measuring the target project.
 User-systemd mode also disables swap. When a usable user-systemd scope is not
-available, a Linux watchdog measures the complete spawned process tree and
-terminates the session when sampled aggregate RSS or runtime exceeds policy.
+available, a Linux watchdog measures members of the private process session and
+terminates that session when sampled aggregate RSS or runtime exceeds policy.
 This sampled watchdog is distinct from kernel-enforced cgroup memory limits.
-Other operating systems have no supported limiter backend in this change. Linked-IR bundles
+Other operating systems have no supported limiter backend. Linked-IR bundles
 remain internally sharded as JSONL for bounded streaming; the public console
 format is human or JSON.
 
@@ -285,6 +283,9 @@ format is human or JSON.
 - [Read-only TUI](docs/tui.md)
 - [CLI automation and host selection](docs/automation.md)
 - [Function review and generated route witnesses](docs/function-workspace.md)
+- [Research action selection and budgets](docs/research-actions.md)
+- [Reviewed code boundaries](docs/code-workspace.md)
+- [Cache storage and retention](docs/cache-policy.md)
 
 Shell completions and the complete command manual are generated from the same
 `clap` grammar:

@@ -159,7 +159,7 @@ An environment model may supply explicit external-call and device responses.
 It cannot replace either compared implementation, hide an effect, or prove
 that manually written driver code follows the vendor operation order.
 
-Migration happens one function at a time:
+A production comparison binds one declared function boundary:
 
 1. compile a thin probe that invokes the real production entry;
 2. replay vendor and Rust under the same explicit environment;
@@ -167,17 +167,12 @@ Migration happens one function at a time:
 4. bind the resulting production trace in the disposition;
 5. delete obsolete probe/model glue after no current suite references it.
 
-The former ESP32-S31 `phy_chip_set_chan` self-verdict contract has been
-deleted. Its retained `0x1a00` versus `0x3fa00` observation exposed a binding
-defect: it compared the cold ROM callback with production even though vendor
-`phy_get_romfunc_addr` replaces the slot with archive
-`phy_get_i2c_hostid_new`. Entry contracts may therefore declare
-source-qualified function-table targets. That is provenance for an observed
-runtime table value, not a global symbol override: direct cold-ROM calls remain
-ROM calls, while post-registration indirect calls resolve to the archive body.
-A new generic comparison must still bind and compare the complete compiled
-shipping entry. The corrected callback identity cannot be promoted into a
-whole-function match.
+Entry contracts may declare source-qualified function-table targets. In the
+ESP32-S31 registered PHY contract, `phy_get_romfunc_addr` installs archive
+`phy_get_i2c_hostid_new`; direct cold-ROM calls retain their ROM identity. A
+runtime table value is provenance, not a global symbol override. Correct
+callback identity alone does not establish whole-function equivalence; the
+comparison must execute the complete declared shipping boundary.
 
 ## Reports and gates
 

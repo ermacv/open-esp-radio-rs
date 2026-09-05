@@ -118,7 +118,7 @@ symbol = "register_chipv7_phy"
 disposition = "replaced-by-composition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::calibration::registration::PhyRegisterTransition"
-hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+hil-evidence = "git:af4378caadd1238013adc97977a34d16b80515b9:qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
 source = "archive"
@@ -126,7 +126,7 @@ symbol = "phy_rf_init"
 disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::calibration::cold::PhyRfColdInit"
-hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+hil-evidence = "git:af4378caadd1238013adc97977a34d16b80515b9:qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
 source = "archive"
@@ -134,7 +134,7 @@ symbol = "phy_bb_init"
 disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::calibration::baseband::PhyBbInitTransition"
-hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+hil-evidence = "git:af4378caadd1238013adc97977a34d16b80515b9:qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
 source = "archive"
@@ -149,7 +149,7 @@ symbol = "phy_chip_set_chan"
 disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::channel::PhyChipChannelTransition"
-hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+hil-evidence = "git:af4378caadd1238013adc97977a34d16b80515b9:qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
 source = "archive"

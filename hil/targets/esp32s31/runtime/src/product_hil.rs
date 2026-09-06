@@ -10,7 +10,6 @@ use core::{
 
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::select::{Either, select};
-use embassy_net::{Runner as NetworkRunner, iface::Iface};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
 };
@@ -20,6 +19,7 @@ use esp_hal::{
     rng::Trng,
 };
 use network::Resources as NetworkResources;
+use network::{Iface, Runner as NetworkRunner};
 #[cfg(feature = "driver-observation")]
 use open_esp_radio::StaLifecycleStage;
 use open_esp_radio::{

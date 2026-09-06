@@ -4,14 +4,23 @@ pub use embassy_net::{
     tcp::{TcpListener, TcpSocket},
     udp::UdpSocket,
 };
-pub fn new_udp(stack: Stack<'static>) -> UdpSocket<'static> {
+pub struct UdpStorage;
+impl UdpStorage {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+pub fn new_udp(stack: Stack<'static>, _storage: &'static mut UdpStorage) -> UdpSocket<'static> {
     UdpSocket::new(stack)
 }
 pub fn new_tcp<'a>(stack: Stack<'static>, rx: &'a mut [u8], tx: &'a mut [u8]) -> TcpSocket<'a> {
     TcpSocket::new(stack, rx, tx)
 }
-pub fn new_listener(stack: Stack<'static>) -> TcpListener<'static> {
-    TcpListener::new(stack)
+pub fn listen(stack: Stack<'static>, port: u16) -> TcpListener<'static> {
+    let mut listener = TcpListener::new(stack);
+    listener.listen(port).expect("TCP echo port must be free");
+    listener
 }
 pub async fn accept(
     listener: &mut TcpListener<'static>,
@@ -48,4 +57,10 @@ pub async fn run<F: core::future::Future>(
     );
     embassy_futures::join::join(application(stack), runner.run()).await;
     unreachable!()
+}
+
+impl Default for UdpStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }

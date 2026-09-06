@@ -7,3 +7,8 @@ pub use owned::*;
 mod upstream;
 #[cfg(feature = "upstream-network")]
 pub use upstream::*;
+
+#[cfg(feature = "compat-network")]
+mod compat;
+#[cfg(feature = "compat-network")]
+pub use compat::*;

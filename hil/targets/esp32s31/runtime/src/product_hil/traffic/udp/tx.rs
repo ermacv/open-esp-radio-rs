@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
+use crate::product_hil::network::sockets::{Ipv4Address, Stack, UdpSocket, UdpTxStorage, new_udp};
 use core::sync::atomic::{AtomicU8, Ordering};
-use embassy_net::{Stack, udp::UdpSocket, wire::Ipv4Address};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
@@ -249,6 +249,7 @@ async fn transmit_multi_flow(
 /// Device-to-host UDP load through Embassy and the open TX scheduler.
 pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
+    storage: &'a mut UdpTxStorage,
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
     #[cfg(any(
@@ -278,11 +279,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
          source_port={} payload_capacity={} tx_mode=ampdu session_protocol=required",
         config.source_port, config.payload_capacity,
     ));
-    // Receive the first typed session before exposing the socket owner. Xarxa
-    // now allocates one owned packet per publication, so there is no socket
-    // byte ring whose layout depends on the datagram size.
+    // Receive the first typed session before exposing the socket owner.
+    // Xarxa allocates packet owners per send; smoltcp uses the byte rings
+    // supplied by the workload's static socket storage.
     let first_session = config.session_source.sessions.receive().await;
-    let mut socket = UdpSocket::new(stack).expect("HIL UDP socket capacity");
+    let mut socket = new_udp(stack, storage);
     if let Err(error) = socket.bind(config.source_port) {
         runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=udp-tx-bind error={error:?}"
@@ -494,9 +495,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             .saturating_mul(1_000)
             .checked_div(elapsed_us)
             .unwrap_or(0);
-        // Owned UDP publication completes only after Xarxa has handed the
-        // complete packet to the driver. Keep the terminal radio/BlockAck
-        // interval outside measured time before sampling hardware evidence.
+        // Send completion is stack admission, not confirmation of transmission:
+        // upstream Xarxa may retain a packet for neighbor resolution, while
+        // smoltcp queues its bytes. Allow terminal radio/BlockAck progress
+        // outside the measured workload before sampling hardware evidence.
         Timer::after(config.drain).await;
         let tx_vector = qualification_sample(QualificationRequester::UdpTx)
             .await

@@ -1,14 +1,16 @@
 # ESP32-S31 HIL target
 
-This workspace selects the shared board boot and memory profile and owns Embassy executors,
-`embassy-net` from the pinned original Embassy/Xarxa sources, UART transport
-and HIL workloads. The product dependency selects the `upstream-network` driver
-contract. `cargo hil image build/flash`, `run` and `run-all` accept `--network
-upstream|udp-backpressure`; the default keeps original sources. The
-[UDP backpressure composition](../../../driver/network/adapters/xarxa/backpressure/README.md)
-replaces only the pinned Xarxa stack, with effective dependency locks archived
-beside each image. Radio behaviour
-belongs in `driver/`; HIL uses the public production constructor and runner.
+This workspace selects the shared board boot and memory profile and owns Embassy
+executors, network stacks, UART transport and HIL workloads. `cargo hil image
+build/flash`, `run` and `run-all` accept `--network upstream-xarxa` (default),
+`patched-xarxa`, `upstream-smoltcp` or `owned-xarxa`. Effective dependency locks
+are archived beside each image. The [network implementation guide](../../../docs/network-implementations.md)
+explains the crates, source policy, memory and UDP admission differences.
+
+`runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
+API bindings and diagnostic wrappers. All implementations use the same traffic
+workers and public production radio constructor. Radio behaviour belongs in
+`driver/`.
 
 - `runtime`: role-neutral control plane and runtime-dispatched workloads;
 - `telemetry`: HIL-only diagnostic observers;

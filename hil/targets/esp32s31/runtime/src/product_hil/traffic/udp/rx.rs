@@ -2,14 +2,12 @@
 
 use core::sync::atomic::Ordering;
 
+use crate::product_hil::network::sockets::{
+    IpEndpoint, Ipv4Address, Stack, UdpRxStorage, UdpSocket, new_udp, recv_from_with,
+};
 use embassy_futures::{
     select::{Either, select},
     yield_now,
-};
-use embassy_net::{
-    Stack,
-    udp::UdpSocket,
-    wire::{IpEndpoint, Ipv4Address},
 };
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(any(
@@ -180,11 +178,10 @@ async fn receive_multi_flow(
     let mut states = multi_rx_flow_states(session_config);
     let mut unknown_packets = 0_u32;
     let started = loop {
-        let Ok((length, sequence, endpoint)) = socket
-            .recv_from_with(|packet, metadata| {
-                (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
-            })
-            .await
+        let Ok((length, sequence, endpoint)) = recv_from_with(socket, |packet, metadata| {
+            (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
+        })
+        .await
         else {
             unknown_packets = unknown_packets.saturating_add(1);
             continue;
@@ -199,7 +196,7 @@ async fn receive_multi_flow(
     while !all_multi_rx_flows_terminal(&states) {
         let received = with_timeout(
             idle_timeout,
-            socket.recv_from_with(|packet, metadata| {
+            recv_from_with(socket, |packet, metadata| {
                 (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
             }),
         )
@@ -258,10 +255,11 @@ async fn receive_multi_flow(
 
 pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     stack: Stack<'a>,
+    storage: &'a mut UdpRxStorage,
     config: UdpRxBenchmarkConfig,
     telemetry: UdpRxTelemetry,
 ) -> ! {
-    let mut socket = UdpSocket::new(stack).expect("HIL UDP socket capacity");
+    let mut socket = new_udp(stack, storage);
     socket
         .bind(config.local_port)
         .unwrap_or_else(|error| panic!("production UDP RX socket bind failed: {error:?}"));
@@ -291,7 +289,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let session = loop {
             match select(
                 receive_rx_session(config.session_source),
-                socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
+                recv_from_with(&mut socket, |packet, _| iperf2_udp_sequence(packet)),
             )
             .await
             {
@@ -382,9 +380,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     .payload_bytes,
             );
             let (first_length, first_sequence) = loop {
-                let Ok((length, sequence)) = socket
-                    .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
-                    .await
+                let Ok((length, sequence)) = recv_from_with(&mut socket, |packet, _| {
+                    (packet.len(), iperf2_udp_sequence(packet))
+                })
+                .await
                 else {
                     continue;
                 };
@@ -412,7 +411,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             loop {
                 match with_timeout(
                     config.idle_timeout,
-                    socket.recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet))),
+                    recv_from_with(&mut socket, |packet, _| {
+                        (packet.len(), iperf2_udp_sequence(packet))
+                    }),
                 )
                 .await
                 {
@@ -426,7 +427,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                         #[cfg(feature = "rx-delivery-telemetry")]
                         while let Ok(Ok(Some(sequence))) = with_timeout(
                             config.idle_timeout,
-                            socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
+                            recv_from_with(&mut socket, |packet, _| iperf2_udp_sequence(packet)),
                         )
                         .await
                         {

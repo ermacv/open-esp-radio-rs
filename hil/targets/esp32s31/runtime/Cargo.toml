@@ -15,13 +15,12 @@ profile-psram-data = []
 profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-runtime/psram-task-stack"]
 boot-smoke = []
-upstream-network = ["open-esp-radio-esp32s31-embassy-wifi/upstream-network"]
+upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "open-esp-radio-esp32s31-embassy-wifi/upstream-network"]
+compat-network = ["dep:embassy-net-compat", "open-esp-radio-esp32s31-embassy-wifi/compat-network"]
+owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "open-esp-radio-esp32s31-embassy-wifi/owned-network"]
 open-radio-hil = [
-    "upstream-network",
     "oer-esp32s31-runtime/multicore",
     "dep:embassy-futures",
-    "dep:embassy-net",
-    "dep:xarxa",
     "dep:embassy-sync",
     "dep:embedded-io-async",
     "dep:log",
@@ -115,10 +114,13 @@ ieee802154-ed-event-probe = [
 ]
 
 [dependencies]
+xarxa-owned = { workspace = true, optional = true }
 xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true
 embassy-futures = { workspace = true, optional = true }
-embassy-net = { workspace = true, optional = true }
+embassy-net-upstream = { workspace = true, optional = true }
+embassy-net-compat = { workspace = true, optional = true }
+embassy-net-owned = { workspace = true, optional = true }
 embassy-sync = { workspace = true, optional = true }
 embassy-time.workspace = true
 embedded-io-async = { workspace = true, optional = true }

@@ -15,17 +15,15 @@ pub fn build(
     no_default_features: bool,
     network: Option<oer_firmware::network::Integration>,
 ) -> Result<FirmwareBuild> {
-    if network.is_some() {
-        if !matches!(example, "station" | "access-point") {
+    use oer_firmware::network::Integration;
+    let network = if matches!(example, "station" | "access-point") {
+        Some(Integration::for_example(network, features)?)
+    } else {
+        if network.is_some() {
             return Err("--network applies to station and access-point IP examples".into());
         }
-        if features
-            .iter()
-            .any(|f| matches!(f.as_str(), "owned-network" | "compat-network"))
-        {
-            return Err("--network cannot be combined with owned-network or compat-network".into());
-        }
-    }
+        None
+    };
     let directory = ctx
         .root
         .join("examples")
@@ -47,7 +45,7 @@ pub fn build(
         .root
         .join("target/firmware")
         .join(format!("esp32s31-{example}"))
-        .join(network.map_or("default", |n| n.id()));
+        .join(network.map_or("none", |n| n.id()));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
     let budget = open_esp_radio_memory_report::StackBudget::load(
@@ -61,12 +59,12 @@ pub fn build(
         .args(["--bin", binary])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if network != Some(oer_firmware::network::Integration::UdpBackpressure) {
+    if network != Some(oer_firmware::network::Integration::PatchedXarxa) {
         command.arg("--locked");
     }
     if let Some(network) = network {
         network.configure(&mut command, &ctx.root);
-        command.args(["--features", "upstream-network"]);
+        command.args(["--features", network.feature()]);
     }
     if no_default_features || network.is_some() {
         command.arg("--no-default-features");
@@ -146,7 +144,7 @@ pub fn build(
     )?;
     fs::write(
         output.join("network.txt"),
-        format!("{}\n", network.map_or("default", |n| n.id())),
+        format!("{}\n", network.map_or("none", |n| n.id())),
     )?;
     selection.restore()?;
     println!("application image: {}", image.display());
@@ -206,7 +204,7 @@ pub fn flash(
 /// Exercise the same blocked-send workload with an explicit quiescence requirement.
 pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
     use oer_firmware::network::{Integration, Selection};
-    let network = Integration::UdpBackpressure;
+    let network = Integration::PatchedXarxa;
     let mut selection = Selection::acquire(&ctx.root, &ctx.root, network)?;
     let mut command = ctx.cargo();
     command.args([

@@ -150,6 +150,21 @@ pub struct Esp32s31WifiDevice {
     pub(crate) packet_allocator: PacketBufAllocator,
 }
 
+#[cfg(feature = "compat-network")]
+impl Esp32s31WifiDevice {
+    /// Transfer the unique released Embassy device to application-owned stack composition.
+    pub fn into_compat(self) -> Esp32s31WifiNetworkDevice {
+        self.inner
+    }
+}
+#[cfg(feature = "owned-network")]
+impl Esp32s31WifiDevice {
+    /// Transfer the unique owned-packet device and its matching allocator together.
+    pub fn into_owned(self) -> (Esp32s31WifiNetworkDevice, PacketBufAllocator) {
+        (self.inner, self.packet_allocator)
+    }
+}
+
 #[cfg(not(feature = "upstream-network"))]
 impl Esp32s31WifiDevice {
     /// Select software IPv4/UDP validation for received packets.

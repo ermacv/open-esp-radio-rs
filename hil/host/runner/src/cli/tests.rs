@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn network_defaults_and_aliases_match_across_firmware_commands() {
+    use crate::image::Integration;
+
+    for command in [
+        vec!["cargo-hil", "run", "station-udp-tx-ceiling"],
+        vec!["cargo-hil", "run-all"],
+        vec!["cargo-hil", "image", "build", "performance"],
+        vec!["cargo-hil", "image", "flash", "performance"],
+    ] {
+        for (argument, expected) in [
+            (None, Integration::UpstreamXarxa),
+            (Some("upstream"), Integration::UpstreamXarxa),
+            (Some("upstream-xarxa"), Integration::UpstreamXarxa),
+            (Some("udp-backpressure"), Integration::PatchedXarxa),
+            (Some("patched-xarxa"), Integration::PatchedXarxa),
+            (Some("upstream-smoltcp"), Integration::UpstreamSmoltcp),
+            (Some("owned-xarxa"), Integration::OwnedXarxa),
+        ] {
+            let mut args = command.clone();
+            if let Some(argument) = argument {
+                args.extend(["--network", argument]);
+            }
+            let cli = Cli::try_parse_from(args).unwrap();
+            let network = match cli.command {
+                CliCommand::Run { network, .. } | CliCommand::RunAll { network, .. } => network,
+                CliCommand::Image {
+                    command:
+                        ImageCommand::Build { network, .. } | ImageCommand::Flash { network, .. },
+                } => network,
+                _ => panic!("parsed the wrong firmware command"),
+            };
+            assert_eq!(network, expected);
+        }
+    }
+}
+
+#[test]
 fn preflight_selection_is_unambiguous() {
     for command in ["plan", "doctor"] {
         assert!(Cli::try_parse_from(["cargo-hil", command, "timebase"]).is_ok());
@@ -81,7 +118,7 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "run",
             "station-udp-tx-ceiling",
             "--network",
-            "udp-backpressure",
+            "patched-xarxa",
         ],
         vec![
             "cargo-hil",
@@ -89,9 +126,9 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "build",
             "performance",
             "--network",
-            "upstream",
+            "upstream-xarxa",
         ],
-        vec!["cargo-hil", "run-all", "--network", "udp-backpressure"],
+        vec!["cargo-hil", "run-all", "--network", "patched-xarxa"],
     ] {
         assert!(Cli::try_parse_from(args).is_ok());
     }
@@ -101,7 +138,7 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "run",
             "station-udp-tx-ceiling",
             "--network",
-            "udp-backpressure",
+            "patched-xarxa",
             "--firmware-from",
             "earlier-run"
         ])

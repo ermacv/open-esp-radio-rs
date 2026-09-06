@@ -5,7 +5,8 @@ use super::{TARGET, common::*};
 const INTEGRATION: &str = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "open-esp-radio-esp32s31-embassy-wifi";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
-const COMMON_HIL: &str = "open-radio-hil,psram-task-stack,code-psram,profile-psram-data";
+const COMMON_HIL: &str =
+    "open-radio-hil,upstream-network,psram-task-stack,code-psram,profile-psram-data";
 
 pub fn run(ctx: &Context) -> Result<()> {
     let packages = driver_packages(ctx)?;

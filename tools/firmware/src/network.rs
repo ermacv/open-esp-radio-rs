@@ -1,4 +1,4 @@
-//! Reproducible, source-compatible Xarxa selections shared by firmware builders.
+//! Reproducible network implementations shared by firmware builders.
 use crate::Result;
 use fs2::FileExt;
 use std::{
@@ -9,24 +9,57 @@ use std::{
     str::FromStr,
 };
 
-const CONFIG: &str = "driver/network/adapters/xarxa/backpressure/cargo-config.toml";
+const CONFIG: &str = "driver/network/dependencies/xarxa-patched.toml";
 const UPSTREAM: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Integration {
     #[default]
-    Upstream,
-    UdpBackpressure,
+    UpstreamXarxa,
+    PatchedXarxa,
+    UpstreamSmoltcp,
+    OwnedXarxa,
 }
 impl Integration {
     pub const fn id(self) -> &'static str {
         match self {
-            Self::Upstream => "upstream",
-            Self::UdpBackpressure => "udp-backpressure",
+            Self::UpstreamXarxa => "upstream-xarxa",
+            Self::PatchedXarxa => "patched-xarxa",
+            Self::UpstreamSmoltcp => "upstream-smoltcp",
+            Self::OwnedXarxa => "owned-xarxa",
         }
     }
+    pub const fn feature(self) -> &'static str {
+        match self {
+            Self::UpstreamXarxa | Self::PatchedXarxa => "upstream-network",
+            Self::UpstreamSmoltcp => "compat-network",
+            Self::OwnedXarxa => "owned-network",
+        }
+    }
+
+    /// Resolve legacy feature selection without hiding the effective stack in artifacts.
+    pub fn for_example(explicit: Option<Self>, features: &[String]) -> Result<Self> {
+        let mut selected = explicit;
+        for feature in features {
+            let candidate = match feature.as_str() {
+                "upstream-network" => Self::UpstreamXarxa,
+                "compat-network" => Self::UpstreamSmoltcp,
+                "owned-network" => Self::OwnedXarxa,
+                _ => continue,
+            };
+            if let Some(current) = selected {
+                if current.feature() != candidate.feature() {
+                    return Err("select exactly one network implementation; --network conflicts with the network Cargo feature".into());
+                }
+            } else {
+                selected = Some(candidate);
+            }
+        }
+        Ok(selected.unwrap_or_default())
+    }
+
     pub fn configure(self, command: &mut Command, root: &Path) {
-        if self == Self::UdpBackpressure {
+        if self == Self::PatchedXarxa {
             command.arg("--config").arg(root.join(CONFIG));
         }
     }
@@ -35,10 +68,12 @@ impl FromStr for Integration {
     type Err = String;
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value {
-            "upstream" => Ok(Self::Upstream),
-            "udp-backpressure" => Ok(Self::UdpBackpressure),
+            "upstream-xarxa" | "upstream" => Ok(Self::UpstreamXarxa),
+            "patched-xarxa" | "udp-backpressure" => Ok(Self::PatchedXarxa),
+            "upstream-smoltcp" => Ok(Self::UpstreamSmoltcp),
+            "owned-xarxa" => Ok(Self::OwnedXarxa),
             _ => Err(format!(
-                "unknown network integration `{value}` (expected upstream or udp-backpressure)"
+                "unknown network integration `{value}` (expected upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa)"
             )),
         }
     }
@@ -95,7 +130,7 @@ impl Selection {
         validate_identities(original, actual, self.integration, &self.expected)
     }
     pub fn restore(&mut self) -> Result<()> {
-        if self.integration == Integration::UdpBackpressure {
+        if self.integration == Integration::PatchedXarxa {
             fs::write(&self.lock, &self.original)?;
         }
         Ok(())
@@ -135,12 +170,12 @@ fn validate_identities(
     integration: Integration,
     patched: &str,
 ) -> Result<()> {
-    if integration == Integration::UdpBackpressure {
+    if integration == Integration::PatchedXarxa {
         let entry = expected
             .iter()
             .find(|(n, _, s)| n == "xarxa" && s.as_deref() == Some(UPSTREAM))
             .cloned()
-            .ok_or("udp-backpressure requires the original upstream Xarxa composition")?;
+            .ok_or("patched-xarxa requires the original upstream Xarxa composition")?;
         expected.remove(&entry);
         expected.insert((entry.0, entry.1, Some(patched.to_owned())));
     }

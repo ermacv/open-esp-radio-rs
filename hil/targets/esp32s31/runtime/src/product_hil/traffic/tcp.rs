@@ -1,10 +1,9 @@
 #![forbid(unsafe_code)]
 
+use crate::product_hil::network::sockets::{Stack, accept, listen, new_tcp};
+mod connection;
+
 use embassy_futures::join::join;
-use embassy_net::{
-    Stack,
-    tcp::{TcpListener, TcpReader, TcpSocket, TcpWriter},
-};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
@@ -60,11 +59,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     aggregate_counters: &AggregateTxCounters,
     sessions: &'static SessionChannel,
 ) -> ! {
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer).expect("HIL TCP socket capacity");
-    let mut listener = TcpListener::new(stack).expect("HIL TCP listener capacity");
-    listener
-        .listen(config.local_port)
-        .expect("production TCP benchmark port must be free");
+    let mut socket = new_tcp(stack, rx_buffer, tx_buffer);
+    let mut listener = listen(stack, config.local_port);
     for direction in [
         HilDirection::Rx,
         HilDirection::Tx,
@@ -96,15 +92,6 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let session = sessions.receive().await;
         wait_session_link_requirements(session.config.link_requirements, config.network_interface)
             .await;
-        publish_event_reliably(
-            session.session_id,
-            0,
-            HilEvent::SessionReady(SessionReady {
-                direction: session.config.direction,
-                tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
-            }),
-        )
-        .await;
         let duration_millis = match session.config.completion {
             HilCompletion::DurationMillis(duration) => duration,
             HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
@@ -128,9 +115,20 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             aggregate_counters.snapshot()
         });
         let connection_timeout = duration + Duration::from_secs(5);
-        let connected = match with_timeout(connection_timeout, async {
-            socket.accept(listener.accept().await?).await
-        })
+        let connected = match with_timeout(
+            connection_timeout,
+            connection::before_ready(accept(&mut listener, &mut socket), async {
+                publish_event_reliably(
+                    session.session_id,
+                    0,
+                    HilEvent::SessionReady(SessionReady {
+                        direction: session.config.direction,
+                        tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
+                    }),
+                )
+                .await;
+            }),
+        )
         .await
         {
             Ok(Ok(())) => true,
@@ -327,37 +325,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     }
 }
 
-trait TcpRead {
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error>;
-}
-
-impl TcpRead for TcpSocket<'_, '_> {
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error> {
-        TcpSocket::read(self, buffer).await
-    }
-}
-
-impl TcpRead for TcpReader<'_, '_> {
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error> {
-        TcpReader::read(self, buffer).await
-    }
-}
-
-trait TcpWrite {
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error>;
-}
-
-impl TcpWrite for TcpSocket<'_, '_> {
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
-        TcpSocket::write(self, buffer).await
-    }
-}
-
-impl TcpWrite for TcpWriter<'_, '_> {
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
-        TcpWriter::write(self, buffer).await
-    }
-}
+use embedded_io_async::{Read as TcpRead, Write as TcpWrite};
 
 async fn receive_stream(
     reader: &mut impl TcpRead,

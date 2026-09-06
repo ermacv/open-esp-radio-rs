@@ -4,7 +4,9 @@
 and production integrations. Applications supply board identity, credentials
 and peripherals. HIL scenarios, traffic generators, UART test protocols,
 vendor artifacts and qualification policy live outside this tree. See the
-[source policy](../docs/source-policy.md).
+[source policy](../docs/source-policy.md). The
+[network implementation guide](../docs/network-implementations.md) explains
+stack choices, their crates, defaults and reasons for patches.
 
 ## Source map
 
@@ -15,6 +17,7 @@ Cargo package identities are independent of this directory hierarchy.
 | --- | --- |
 | `radio/` | `wifi/` owns public requests and affine role lifecycle; `runtime/embassy` drives local control epochs |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
+| `network/dependencies/` | Reviewed Cargo source selection for network stacks; no adapter code |
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `ieee80211/{mac,softmac,sta,ap,security/wpa2}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `ieee80211/datapath/` | Software egress ownership, flow demand and physical materialization contracts |

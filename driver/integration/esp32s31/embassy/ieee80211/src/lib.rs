@@ -204,7 +204,6 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
-#[cfg(feature = "upstream-network")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::Esp32s31WifiNetworkDevice;
 #[cfg(not(feature = "upstream-network"))]

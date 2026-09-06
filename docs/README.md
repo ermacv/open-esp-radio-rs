@@ -11,6 +11,8 @@ details live beside their owner; this directory contains shared contracts.
   integration.
 - [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
   Bluetooth and module naming.
+- [Network implementation choices](network-implementations.md): original and
+  patched Xarxa, released Embassy/smoltcp, rationale and current availability.
 - [Wi-Fi network integration](wifi-egress.md): packet ownership, SRAM admission,
   completion, compatibility and research boundaries.
 - [Verification and qualification](verification-and-qualification.md): evidence

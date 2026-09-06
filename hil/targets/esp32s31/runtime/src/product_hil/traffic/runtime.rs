@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
+use crate::product_hil::network::sockets::{Stack, UDP_RX_QUEUE_DEPTH, UdpRxStorage, UdpTxStorage};
 use embassy_executor::Spawner;
-use embassy_net::Stack;
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
 use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
@@ -20,7 +20,6 @@ use open_esp_radio_hil_protocol::WifiNetworkInterface;
 const UDP_PAYLOAD_CAPACITY: usize = 1_472;
 // Workload pacing is independent of the stack's packet-pool capacity.
 const UDP_TX_PACING_GROUP_DATAGRAMS: u8 = 128;
-const UDP_RX_QUEUE_DEPTH: usize = embassy_net::config::UDP_RX_QUEUE_COUNT;
 const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 // This is larger than the link BDP for a separate reason: TCP must be able to
 // retain enough unsent payload to feed both 32-frame A-MPDU arenas. A 64-KiB
@@ -30,6 +29,8 @@ const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 const TCP_TX_BUFFER_CAPACITY: usize = 131_072;
 
 struct ConnectedTrafficResources {
+    udp_rx: ConstStaticCell<UdpRxStorage>,
+    udp_tx: ConstStaticCell<UdpTxStorage>,
     tcp_rx_buffer: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
     tcp_tx_buffer: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
     bidirectional_rx_sessions: BidirectionalSessionChannel,
@@ -42,6 +43,8 @@ struct ConnectedTrafficResources {
 impl ConnectedTrafficResources {
     const fn new() -> Self {
         Self {
+            udp_rx: ConstStaticCell::new(UdpRxStorage::new()),
+            udp_tx: ConstStaticCell::new(UdpTxStorage::new()),
             tcp_rx_buffer: ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]),
             tcp_tx_buffer: ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]),
             bidirectional_rx_sessions: Channel::new(),
@@ -107,6 +110,7 @@ async fn udp_rx_task(
     observe_open_radio_task_polls(
         run_open_radio_udp_rx_benchmark(
             stack,
+            resources.udp_rx.take(),
             UdpRxBenchmarkConfig {
                 network_interface,
                 local_port: 4_323,
@@ -147,6 +151,7 @@ async fn udp_tx_task(
     observe_open_radio_task_polls(
         run_open_radio_udp_tx_benchmark(
             stack,
+            resources.udp_tx.take(),
             UdpTxBenchmarkConfig {
                 network_interface,
                 source_port: 4_324,

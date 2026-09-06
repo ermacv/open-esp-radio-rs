@@ -19,6 +19,7 @@ for implementation coverage and limitations.
 
 | Task | Documentation |
 | --- | --- |
+| Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
 | Build a station application | [Station example](examples/esp32s31-station/README.md) |
 | Build another radio role | [AP](examples/esp32s31-access-point/README.md), [monitor](examples/esp32s31-monitor/README.md), [Bluetooth controller](examples/esp32s31-bluetooth-controller/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |

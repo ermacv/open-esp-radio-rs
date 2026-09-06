@@ -22,8 +22,9 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check architecture` | Compile supported feature profiles and check dependency ownership and composition contracts |
 | `cargo xtask check safety` | Compiler-enforced unsafe policy and reviewed hardware access boundaries |
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
+| `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
-| `cargo xtask check examples` | Target type checks of the four examples and the station released-compat/upstream-Xarxa variants |
+| `cargo xtask check examples` | Target type checks of the four examples and all station/AP network contracts |
 | `cargo xtask check source-only` | Compose repository suites, Cargo/Clippy, publication and final-image analysis |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
@@ -46,7 +47,7 @@ Original upstream checks require the reviewed full revisions from
 `embassy-rs/embassy` and `embassy-rs/xarxa` and reject fork, registry-network or
 local-source substitutions. Product and example checks reject mixed network
 features. Development-only dependencies do not define a production ownership boundary.
-All three station example selections are checked in their own locked workspace;
+All three station and AP feature profiles are checked in their own locked workspace;
 library profiles use isolated consumers so unrelated workspace features cannot
 hide a dependency leak.
 
@@ -63,10 +64,18 @@ there are no source-spelling or regex checks for required Rust identifiers.
 Builds retain normal Cargo parallelism. `OPEN_RADIO_ANALYSIS_BUILD_JOBS` is an
 optional explicit local limit for vendor probe builds.
 
-Standalone firmware builds keep a Cargo cache per example and hold that example's
-artifact lease until its ELFs and images are copied into a unique
-`target/firmware/esp32s31-<example>/build-<id>/` bundle. Different examples can build
-concurrently; repeated builds of one example wait cancellably for its cache.
+Standalone firmware builds keep a Cargo cache per example and network selection,
+and copy their ELFs and images into a unique
+`target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/` bundle.
+Use `--network upstream-xarxa`, `patched-xarxa`, `upstream-smoltcp` or
+`owned-xarxa` for station/AP. Omission selects upstream Xarxa; explicit network
+Cargo features resolve to their corresponding implementation. See the
+[implementation guide](../../docs/network-implementations.md) for smoltcp and
+owned-network choices.
+
+Different example workspaces can build concurrently. An overlapping build in
+the same workspace fails before changing its dependency lock catalog; the
+artifact lease separately protects the selected cache and output snapshot.
 Successful bundles remain available for inspection, while failed partial bundles
 are removed. Flashing uses the completed bundle after releasing the build lease,
 so a later build cannot replace the selected image. The serial-device lease

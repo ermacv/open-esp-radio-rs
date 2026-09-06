@@ -382,10 +382,38 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 18] {
+pub fn profiles() -> [Profile; 22] {
     use Boundary::*;
     let product = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
     [
+        Profile {
+            boundary: CompatProduct,
+            manifest: "examples/esp32s31-access-point/Cargo.toml",
+            features: &["--no-default-features", "--features", "compat-network"],
+        },
+        Profile {
+            boundary: OwnedProduct,
+            manifest: "examples/esp32s31-access-point/Cargo.toml",
+            features: &["--no-default-features", "--features", "owned-network"],
+        },
+        Profile {
+            boundary: CompatProduct,
+            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
+            features: &[
+                "--no-default-features",
+                "--features",
+                "open-radio-hil,compat-network,code-psram,profile-psram-data,psram-task-stack",
+            ],
+        },
+        Profile {
+            boundary: OwnedProduct,
+            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
+            features: &[
+                "--no-default-features",
+                "--features",
+                "open-radio-hil,owned-network,code-psram,profile-psram-data,psram-task-stack",
+            ],
+        },
         Profile {
             boundary: Upstream,
             manifest: "driver/network/adapters/xarxa/upstream/Cargo.toml",
@@ -417,7 +445,7 @@ pub fn profiles() -> [Profile; 18] {
             features: &[
                 "--no-default-features",
                 "--features",
-                "open-radio-hil,code-psram,profile-psram-data,psram-task-stack",
+                "open-radio-hil,upstream-network,code-psram,profile-psram-data,psram-task-stack",
             ],
         },
         Profile {
@@ -473,7 +501,7 @@ pub fn profiles() -> [Profile; 18] {
         Profile {
             boundary: OwnedProduct,
             manifest: "examples/esp32s31-station/Cargo.toml",
-            features: &[],
+            features: &["--no-default-features", "--features", "owned-network"],
         },
         Profile {
             boundary: CompatProduct,

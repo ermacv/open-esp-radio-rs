@@ -1,5 +1,8 @@
 # Original Xarxa driver
 
+See [Network implementation choices](../../../../../docs/network-implementations.md)
+for source selection and the boundary shared with patched Xarxa.
+
 This crate implements the original `xarxa-driver::Driver` at the revision
 selected by the station example's upstream Embassy dependency. It depends on
 neither Embassy networking nor chip-specific radio execution.
@@ -16,12 +19,15 @@ The ESP32-S31 bridge releases the software packet only after construction of
 the final physical frame. The radio's physical owner then survives retries and
 completion independently.
 
-The pinned original Embassy UDP API wakes its runner after a pending send;
+With the `upstream-xarxa` stack selection, the pinned original Embassy UDP API
+wakes its runner after a pending send;
 Xarxa wakes the sending socket again when polling its TX-starved state. With
 no free packet or TX queue slot, those tasks can repeatedly wake each other
 before the radio makes progress. The driver does not control that socket/stack
 scheduling policy. Its release notifications provide actual capacity changes,
-but do not eliminate these upstream retries.
+but do not eliminate these upstream retries. `patched-xarxa` changes the
+stack's device-capacity wake policy while retaining this same driver; pool
+exhaustion remains governed by the original API.
 
 RX publication checks link state, frame length, queue capacity and allocation.
 `poll_ready` waits for a queue slot, not global pool capacity. Upstream provides

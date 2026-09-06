@@ -48,8 +48,9 @@ pub fn run(ctx: &Context) -> Result<()> {
     dma::check(ctx)?;
     for (example, feature) in [
         ("station", "compat-network"),
-        ("station", "upstream-network"),
-        ("access-point", "upstream-network"),
+        ("station", "owned-network"),
+        ("access-point", "owned-network"),
+        ("access-point", "compat-network"),
     ] {
         process::run(
             ctx.cargo()

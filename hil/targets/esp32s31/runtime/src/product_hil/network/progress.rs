@@ -1,11 +1,7 @@
 //! Stack/driver boundary counters. No wakeups or admission policy are changed.
 #![forbid(unsafe_code)]
 
-use core::{
-    sync::atomic::{AtomicU32, Ordering},
-    task::Waker,
-};
-use embassy_net::driver::{self, Driver, PacketBuf};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Clone, Copy)]
 pub(crate) enum Event {
@@ -54,58 +50,13 @@ impl Snapshot {
 }
 
 pub(crate) struct Device<D> {
-    inner: D,
-    counters: &'static Counters,
+    pub(super) inner: D,
+    pub(super) counters: &'static Counters,
 }
 
 impl<D> Device<D> {
     pub fn new(inner: D, counters: &'static Counters) -> Self {
         Self { inner, counters }
-    }
-}
-
-impl<D: Driver> Driver for Device<D> {
-    fn capabilities(&self) -> driver::Capabilities {
-        self.inner.capabilities()
-    }
-    fn hardware_address(&self) -> driver::HardwareAddress {
-        self.inner.hardware_address()
-    }
-    fn link_state(&mut self) -> driver::LinkState {
-        self.inner.link_state()
-    }
-    fn register_waker(&mut self, waker: &Waker) -> Result<(), driver::NotSupported> {
-        self.inner.register_waker(waker)
-    }
-    fn receive(&mut self) -> Option<PacketBuf> {
-        let packet = self.inner.receive();
-        self.counters.record(if packet.is_some() {
-            Event::RxDelivered
-        } else {
-            Event::RxEmpty
-        });
-        packet
-    }
-    fn can_transmit(&mut self) -> bool {
-        let ready = self.inner.can_transmit();
-        self.counters.record(if ready {
-            Event::TxReady
-        } else {
-            Event::TxUnavailable
-        });
-        ready
-    }
-    fn transmit(&mut self, packet: PacketBuf) -> Result<(), PacketBuf> {
-        let result = self.inner.transmit(packet);
-        self.counters.record(if result.is_ok() {
-            Event::TxAccepted
-        } else {
-            Event::TxRejected
-        });
-        result
-    }
-    fn set_multicast_filter(&mut self, addrs: &[[u8; 6]]) {
-        self.inner.set_multicast_filter(addrs);
     }
 }
 

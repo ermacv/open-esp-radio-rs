@@ -7,11 +7,14 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-default = ["owned-network"]
+default = ["upstream-network"]
 owned-network = ["dep:embassy-net-owned", "open-esp-radio-esp32s31-embassy-wifi/owned-network"]
 upstream-network = ["dep:embassy-net-upstream", "open-esp-radio-esp32s31-embassy-wifi/upstream-network"]
 
+compat-network = ["dep:embassy-net-compat", "open-esp-radio-esp32s31-embassy-wifi/compat-network"]
+
 [dependencies]
+embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"], optional = true }
 embassy-net-upstream = { package = "embassy-net", git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", default-features = false, features = ["medium-ethernet", "ipv4", "udp", "tcp-listener", "icmp-ping-reply"], optional = true }
 open-esp-radio-wifi-embassy = { path = "../../driver/adapters/embassy/ieee80211" }
 edge-dhcp = { version = "0.8.0", default-features = false }

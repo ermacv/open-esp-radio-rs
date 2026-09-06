@@ -6,6 +6,9 @@ storage and stack-facing contract. Source support limits are listed in the
 [ESP32-S31 IEEE 802.11 feature reference](../driver/chips/esp32s31/ieee80211/FEATURES.md).
 Hardware readiness is decided by [qualification](../qualification/README.md).
 
+For the reason each stack is retained, public selection names and current
+availability, see [Network implementation choices](network-implementations.md).
+
 ## Compositions and owners
 
 | Component | Owns | Does not own |
@@ -33,7 +36,7 @@ DHCP and sockets. Stack APIs do not expose radio peer slots or airtime grants.
 | Integration | Stack-facing contract | Dependency guarantee |
 | --- | --- | --- |
 | `compat-network` | Released `embassy-net-driver` 0.2.0 RX/TX tokens; `embassy-net` 0.9.1 uses smoltcp | The selected production network graph uses unmodified registry packages |
-| `upstream-network` | Original `xarxa-driver::Driver` and global `PacketBuf` pool; the application supplies its stack | Original pinned `embassy-rs/xarxa` source; the station example also uses original pinned Git Embassy |
+| `upstream-network` | Original `xarxa-driver::Driver` and global `PacketBuf` pool; the application supplies its stack | Original pinned `embassy-rs/xarxa` by default; the explicit `patched-xarxa` composition replaces only the stack while preserving this driver API |
 | `owned-network` (default) | Unique Xarxa `PacketBuf` owners, explicit packet allocators and bounded stack polling | Pinned Embassy/Xarxa Git sources with a maintained patchset |
 | Research library | Bounded synchronous IPv4 work and physical batch emission | No Embassy or Xarxa dependency |
 
@@ -56,8 +59,8 @@ the pinned `esp-hal` and `esp-pacs` forks remain in all product profiles.
 ## Original upstream integration
 
 The upstream adapter implements the original [Xarxa driver contract](https://github.com/embassy-rs/xarxa/blob/14c369bbcbe8ee7167488ac9c9e18be059d83555/xarxa-driver/src/lib.rs).
-The station example uses [Embassy revision c0fdd08e](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net),
-which itself pins that Xarxa revision. No network source is replaced with a
+The station example defaults to original Xarxa and uses [Embassy revision c0fdd08e](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net),
+which itself pins that Xarxa revision. In `upstream-xarxa`, no network source is replaced with a
 fork or locally edited copy. The full revisions appear in the manifests and
 are checked against Cargo's resolved production graph.
 
@@ -94,7 +97,9 @@ capacity returned. A full queue can therefore cause repeated application/stack
 wakes without packet progress. This is not a driver promise to busy-poll.
 The pinned Embassy `wait_send_ready` implementation checks only whether the
 socket is open; it does not establish queue or packet-pool capacity. Neither
-case is worked around by changing upstream source or adding driver delays.
+case is worked around in `upstream-xarxa`. The separate `patched-xarxa`
+composition corrects device-capacity wakeups inside Xarxa, as described in the
+[implementation overview](network-implementations.md#why-keep-original-and-patched-xarxa).
 
 The host backpressure test uses the original stack and production adapter. It
 reports wake-driven poll counts while the radio consumer is stopped, then
@@ -115,7 +120,9 @@ workspaces explicitly map only upstream `embassy-time-driver` to its unmodified
 official crates.io version 0.2.2 through Cargo's `[patch]` source selection.
 This unifies the timer ABI; it does not patch Xarxa, Embassy networking or any
 library implementation. The reusable upstream driver itself needs no such
-mapping. The HIL target also selects the original upstream stack. Each HIL role
+mapping. The HIL target selects `upstream-xarxa` by default;
+`--network patched-xarxa` selects the explicit stack patch. HIL also composes
+`upstream-smoltcp` and `owned-xarxa` through their own driver contracts. Each HIL role
 keeps a separate stack and interface, preserving the existing workload and
 placement boundaries. `cargo hil run-all` builds these upstream images; archived
 runs retain their own exact source and firmware provenance. Checksum-cost

@@ -58,7 +58,7 @@ enum Build {
         features: Vec<String>,
         #[arg(long)]
         no_default_features: bool,
-        /// Select a source-compatible network stack for a Wi-Fi IP example.
+        /// Network implementation: upstream-xarxa (default), patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long)]
         network: Option<oer_firmware::network::Integration>,
     },

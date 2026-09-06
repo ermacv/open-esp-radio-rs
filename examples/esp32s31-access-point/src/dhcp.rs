@@ -1,12 +1,12 @@
 use core::net::Ipv4Addr;
 
-use crate::network::{Stack, new_udp};
+use crate::network::{Stack, UdpStorage, new_udp};
 use edge_dhcp::{
     Options, Packet,
     server::{Server, ServerOptions},
 };
 use embassy_time::Instant;
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 const SERVER_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 4, 1);
 const LEASE_START: Ipv4Addr = Ipv4Addr::new(192, 168, 4, 100);
@@ -17,6 +17,7 @@ const DATAGRAM_CAPACITY: usize = 768;
 
 type DhcpServer = Server<fn() -> u64, 15>;
 
+static UDP_STORAGE: ConstStaticCell<UdpStorage> = ConstStaticCell::new(UdpStorage::new());
 static SERVER: StaticCell<DhcpServer> = StaticCell::new();
 // DHCP packets are deliberately static: keeping two maximum-sized messages
 // out of the async state machine prevents a large executor stack frame.
@@ -34,7 +35,7 @@ pub async fn run(stack: Stack<'static>) -> ! {
     let server = SERVER.init(server);
     let mut gateway = [Ipv4Addr::UNSPECIFIED];
     let options = ServerOptions::new(SERVER_ADDRESS, Some(&mut gateway));
-    let mut socket = new_udp(stack);
+    let mut socket = new_udp(stack, UDP_STORAGE.take());
     socket
         .bind(DHCP_SERVER_PORT)
         .expect("DHCP port must be free");

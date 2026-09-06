@@ -306,10 +306,8 @@ fn build_selected(
     if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
         return build_resolved(root, class, network, LocalOverrides::default(), None, false);
     }
-    if network != Integration::Upstream {
-        return Err(
-            "an explicit network patch cannot be combined with local dependency overrides".into(),
-        );
+    if network != Integration::UpstreamXarxa {
+        return Err("local dependency overrides are supported only with upstream-xarxa".into());
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
@@ -393,7 +391,7 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = class.runtime_features();
+    let runtime_features = format!("{},{}", class.runtime_features(), network.feature());
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -402,13 +400,13 @@ fn build_resolved(
         .arg("--manifest-path")
         .arg(&manifest)
         .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
-        .args(["--no-default-features", "--features", runtime_features])
+        .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
     if local_esp_hal.is_none()
         && local_embassy.is_none()
         && local_xarxa.is_none()
-        && network == Integration::Upstream
+        && network != Integration::PatchedXarxa
     {
         runtime.arg("--locked");
     }

@@ -9,6 +9,8 @@ use open_esp_radio_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 
 #[path = "../../../targets/esp32s31/runtime/src/product_hil/network/progress.rs"]
 mod progress;
+#[path = "../../../targets/esp32s31/runtime/src/product_hil/network/progress/xarxa.rs"]
+mod progress_adapter;
 
 #[test]
 fn observation_preserves_queue_backpressure_and_exact_packet_ownership() {

@@ -4,10 +4,20 @@
 pub mod dhcp;
 pub mod services;
 
-#[cfg(all(feature = "owned-network", feature = "upstream-network"))]
+#[cfg(any(
+    all(feature = "owned-network", feature = "upstream-network"),
+    all(feature = "owned-network", feature = "compat-network"),
+    all(feature = "upstream-network", feature = "compat-network"),
+))]
 compile_error!("select exactly one network integration");
-#[cfg(not(any(feature = "owned-network", feature = "upstream-network")))]
+#[cfg(not(any(
+    feature = "owned-network",
+    feature = "upstream-network",
+    feature = "compat-network"
+)))]
 compile_error!("select exactly one network integration");
+#[cfg(feature = "compat-network")]
+extern crate embassy_net_compat as embassy_net;
 #[cfg(feature = "owned-network")]
 extern crate embassy_net_owned as embassy_net;
 #[cfg(feature = "upstream-network")]

@@ -1,14 +1,23 @@
 use crate::embassy_net;
 pub use embassy_net::{Stack, tcp::TcpListener, udp::UdpSocket};
 pub type TcpSocket<'a> = embassy_net::tcp::TcpSocket<'a, 'static>;
-pub fn new_udp(stack: Stack<'static>) -> UdpSocket<'static> {
+pub struct UdpStorage;
+impl UdpStorage {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+pub fn new_udp(stack: Stack<'static>, _storage: &'static mut UdpStorage) -> UdpSocket<'static> {
     UdpSocket::new(stack).expect("UDP socket capacity")
 }
 pub fn new_tcp<'a>(stack: Stack<'static>, rx: &'a mut [u8], tx: &'a mut [u8]) -> TcpSocket<'a> {
     TcpSocket::new(stack, rx, tx).expect("TCP socket capacity")
 }
-pub fn new_listener(stack: Stack<'static>) -> TcpListener<'static> {
-    TcpListener::new(stack).expect("TCP listener capacity")
+pub fn listen(stack: Stack<'static>, port: u16) -> TcpListener<'static> {
+    let mut listener = TcpListener::new(stack).expect("TCP listener capacity");
+    listener.listen(port).expect("TCP echo port must be free");
+    listener
 }
 pub async fn accept(
     listener: &mut TcpListener<'static>,
@@ -44,4 +53,10 @@ pub async fn run<F: core::future::Future>(
         .expect("one static AP address fits");
     embassy_futures::join::join(application(stack), runner.run()).await;
     unreachable!()
+}
+
+impl Default for UdpStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }

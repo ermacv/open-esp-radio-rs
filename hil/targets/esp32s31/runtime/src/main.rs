@@ -1,6 +1,21 @@
 #![no_main]
 #![no_std]
 #![recursion_limit = "256"]
+#[cfg(feature = "compat-network")]
+extern crate embassy_net_compat as embassy_net;
+#[cfg(feature = "owned-network")]
+extern crate embassy_net_owned as embassy_net;
+#[cfg(feature = "upstream-network")]
+extern crate embassy_net_upstream as embassy_net;
+#[cfg(all(
+    feature = "open-radio-hil",
+    not(any(
+        feature = "upstream-network",
+        feature = "compat-network",
+        feature = "owned-network"
+    ))
+))]
+compile_error!("select one network contract: upstream-network, compat-network or owned-network");
 #[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
 compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]

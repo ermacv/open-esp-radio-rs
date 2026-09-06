@@ -48,13 +48,18 @@ pub(crate) enum CliCommand {
         /// Use the scenario's image class from a sealed earlier HIL run.
         #[arg(long, value_name = "RUN_ID")]
         firmware_from: Option<String>,
-        /// Select the pinned source-compatible network implementation.
-        #[arg(long, default_value = "upstream", conflicts_with = "firmware_from")]
+        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
+        #[arg(
+            long,
+            default_value = "upstream-xarxa",
+            conflicts_with = "firmware_from"
+        )]
         network: crate::image::Integration,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {
-        #[arg(long, default_value = "upstream")]
+        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
+        #[arg(long, default_value = "upstream-xarxa")]
         network: crate::image::Integration,
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
@@ -102,7 +107,8 @@ pub(crate) enum ScenarioCommand {
 pub(crate) enum ImageCommand {
     Build {
         class: crate::image::ImageClass,
-        #[arg(long, default_value = "upstream")]
+        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
+        #[arg(long, default_value = "upstream-xarxa")]
         network: crate::image::Integration,
     },
     /// Build one clean commit in two different checkout roots and compare every firmware subject.
@@ -114,7 +120,8 @@ pub(crate) enum ImageCommand {
     },
     Flash {
         class: crate::image::ImageClass,
-        #[arg(long, default_value = "upstream")]
+        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
+        #[arg(long, default_value = "upstream-xarxa")]
         network: crate::image::Integration,
     },
     /// Verify and flash an exact application archived by an earlier HIL run.

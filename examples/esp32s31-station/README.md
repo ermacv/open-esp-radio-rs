@@ -14,24 +14,33 @@ cd examples/esp32s31-station
 cargo check --release
 ```
 
-The default build uses the pinned Git Embassy/Xarxa integration with explicit
-packet pools. The same application source can be checked against released
-Embassy/smoltcp network crates and the token-based compatibility adapter:
+## Network selection
+
+The default is **upstream Xarxa**, matching HIL and the example builder. Use an
+explicit selection when comparing them; the
+[implementation guide](../../docs/network-implementations.md) explains the
+crates, patches and shared Wi-Fi boundary.
+
+Build a complete image from the repository root:
 
 ```console
-cargo check --release --no-default-features --features compat-network
+cargo xtask build firmware station --network upstream-xarxa
+cargo xtask build firmware station --network patched-xarxa
+cargo xtask build firmware station --network upstream-smoltcp
+cargo xtask build firmware station --network owned-xarxa
 ```
 
-The original upstream Xarxa/Embassy integration is selected explicitly:
+The first two commands select the same `upstream-network` driver contract;
+only the second replaces the Xarxa stack source. `upstream-smoltcp` selects
+released Embassy + smoltcp through `compat-network`; `owned-xarxa` selects the
+broader maintained forks through `owned-network`. Network Cargo features are
+mutually exclusive. For a direct
+type check from this example directory, use `cargo check --release
+--no-default-features --features upstream-network` for original Xarxa or
+`--features compat-network` in its place for smoltcp. Direct `cargo check` does
+not automatically apply the patched-Xarxa source override.
 
-```console
-cargo check --release --no-default-features --features upstream-network
-```
-
-The three network integrations are compile-time alternatives and cannot be
-combined in one binary. All retain the pinned `esp-hal` and `esp-pacs`
-hardware forks. Their stack-facing APIs and source guarantees are described
-in the [network integration contract](../../docs/wifi-egress.md#network-dependency-contracts).
+## Application behavior
 
 Network credentials are application build configuration. They are deliberately
 absent from reusable driver crates and HIL configuration:
@@ -42,9 +51,9 @@ ESP32S31_WIFI_PASSPHRASE='your passphrase' \
 cargo check --release
 ```
 
-After scan, WPA2 and DHCP complete, the upstream variant exposes a UDP echo
-service on port 4321 and replies to ICMP ping. The owned and released-compat
-variants currently run their DHCP/network tasks without an echo workload.
+After scan, WPA2 and DHCP complete, all four selections expose the same UDP
+echo service on port 4321 and reply to ICMP ping. Released Embassy uses explicit
+static UDP byte rings; Xarxa uses packet pools.
 Application socket storage and IP policy live in `src/network.rs`.
 
 If no matching AP is present, each complete 13-channel cold scan returns its
@@ -56,7 +65,6 @@ Build the complete application from the repository root:
 ```console
 cargo xtask build firmware station
 cargo xtask build firmware station --flash --monitor --port /dev/ttyACM0
-cargo xtask build firmware station --no-default-features --features upstream-network
 ```
 
 The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
@@ -66,12 +74,8 @@ or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
 
-The upstream variant pins original Embassy and the exact Xarxa revision
-selected by that Embassy manifest. Its only upstream Cargo source mapping
-selects official `embassy-time-driver` 0.2.2 from crates.io to share one timer
-ABI with the platform. No network implementation is forked or edited. See
-the [upstream contract](../../docs/wifi-egress.md#original-upstream-integration)
-for pool exhaustion, RX scheduling and ownership limits.
+See the [original Xarxa contract](../../docs/wifi-egress.md#original-upstream-integration)
+for packet-pool exhaustion, RX scheduling and ownership limits.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,
@@ -83,19 +87,3 @@ before the stopped RX resources are split for reconnect. A fresh `ScanRecord`
 can select another BSSID or channel. Product readiness is determined by the
 [qualification program](../../qualification/targets/esp32s31/wifi-sta.toml) and
 current evidence, independently of this application's source check.
-
-## Network implementation
-
-Use the same explicit choice as HIL when building from the repository root:
-
-```console
-cargo xtask build firmware station --network upstream
-cargo xtask build firmware station --network udp-backpressure
-```
-
-Both choices use the original Embassy wrapper and the upstream driver contract.
-The [UDP backpressure composition](../../driver/network/adapters/xarxa/backpressure/README.md)
-changes only the pinned Xarxa stack. The builder checks dependency pins, archives
-the effective locks and restores the tracked upstream catalog. Without
-`--network`, the example retains its `owned-network` default. Direct Cargo builds
-can select `--no-default-features --features upstream-network` for the control.

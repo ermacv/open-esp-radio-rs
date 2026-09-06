@@ -27,6 +27,8 @@ use embassy_executor::Spawner;
 use embassy_net_compat as embassy_net;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
+#[cfg(feature = "upstream-network")]
+use embassy_net_upstream as embassy_net;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,

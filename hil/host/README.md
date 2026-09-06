@@ -65,6 +65,9 @@ A-MPDU aggregation quality; that requires separate aggregation evidence.
 Multi-client UDP saves each peer's raw host delivery and available target
 transport counters in `cycle-*/delivery-progress.json` before terminal-evidence
 and delivery/rate gates. A later gate failure does not discard these measurements.
+Reverse-path UDP probes wait for target session readiness. Sender failures are
+recorded after joining the receivers and collecting/acknowledging available
+terminal evidence, so they do not discard the other direction's delivery.
 Single-cycle measurements do not replace the catalog's repeated AP lifecycle
 qualification scenarios.
 

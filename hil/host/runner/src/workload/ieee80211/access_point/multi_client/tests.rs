@@ -25,6 +25,7 @@ fn observation(target: Result<MultiClientTarget>) -> MultiClientObservation {
             Some(vec![]),
         ],
         target,
+        host_errors: Vec::new(),
     }
 }
 
@@ -80,4 +81,47 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
     assert_eq!(saved["target_flows"][1]["tx_bytes"], 1472);
     assert_eq!(saved["host_rx"][1][0]["bytes"], 1472);
     assert!(saved["target_error"].is_null());
+}
+
+#[test]
+fn socket_setup_does_not_prime_an_unready_target() {
+    let peer = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    peer.set_read_timeout(Some(Duration::from_millis(20)))
+        .unwrap();
+    let std::net::SocketAddr::V4(peer_address) = peer.local_addr().unwrap() else {
+        panic!("IPv4 peer expected")
+    };
+    let socket = open_multi_client_socket(
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+        Some(peer_address),
+    )
+    .unwrap();
+    let mut packet = [0_u8; 16];
+    let error = peer.recv_from(&mut packet).unwrap_err();
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ));
+    open_reverse_flow(&socket).unwrap();
+    assert_eq!(peer.recv_from(&mut packet).unwrap().0, 1);
+}
+
+#[test]
+fn failed_sender_keeps_successful_receiver_observations() {
+    let output = tempfile::tempdir().unwrap();
+    let mut observed = observation(Ok(MultiClientTarget {
+        elapsed_micros: 12_000_000,
+        flows: [None, None],
+    }));
+    observed.host_errors.push("flow 1 sender failed".to_owned());
+    assert!(
+        observed
+            .evaluate(output.path(), &Criteria::default())
+            .is_err()
+    );
+    let saved: serde_json::Value =
+        serde_json::from_slice(&fs::read(output.path().join("delivery-progress.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["host_errors"][0], "flow 1 sender failed");
+    assert_eq!(saved["host_rx"][0][0]["bytes"], 1472);
 }

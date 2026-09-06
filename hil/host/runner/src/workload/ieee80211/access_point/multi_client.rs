@@ -78,13 +78,11 @@ fn multi_client_host_flows(
                   peer: Ipv4Addr,
                   traffic_target: Ipv4Addr|
      -> Result<_> {
-        let socket = UdpSocket::bind(SocketAddrV4::new(bind_address, port))?;
-        configure_qualification_receive_buffer(&socket)?;
-        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-        if target_transmits(direction) {
-            socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
-            open_reverse_flow(&socket)?;
-        }
+        let socket = open_multi_client_socket(
+            SocketAddrV4::new(bind_address, port),
+            target_transmits(direction)
+                .then_some(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT)),
+        )?;
         Ok(MultiClientHostFlow {
             flow_id,
             peer: Ipv4Endpoint {
@@ -106,6 +104,19 @@ fn multi_client_host_flows(
             secondary_target,
         )?,
     ])
+}
+
+fn open_multi_client_socket(
+    bind: SocketAddrV4,
+    reverse_peer: Option<SocketAddrV4>,
+) -> Result<UdpSocket> {
+    let socket = UdpSocket::bind(bind)?;
+    configure_qualification_receive_buffer(&socket)?;
+    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    if let Some(peer) = reverse_peer {
+        socket.connect(peer)?;
+    }
+    Ok(socket)
 }
 
 pub(super) fn qualify_multi_client_udp(
@@ -183,6 +194,14 @@ pub(super) fn qualify_multi_client_udp(
         link_requirements: SessionLinkRequirements::NONE,
     })?;
 
+    // start_session waits for both requested directions to report readiness.
+    // Priming before that can elicit Port Unreachable from the unbound target
+    // TX port; either side of this shared socket can consume the late error.
+    if target_transmits(direction) {
+        for flow in &flows {
+            open_reverse_flow(&flow.socket)?;
+        }
+    }
     let receive_duration = duration.saturating_add(Duration::from_secs(2));
     let mut receiver_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
     if target_transmits(direction) {
@@ -226,15 +245,20 @@ pub(super) fn qualify_multi_client_udp(
         }
     }
 
+    let mut host_errors = Vec::new();
     let mut host_tx = [None; SESSION_FLOW_CAPACITY];
     for (flow_id, sender) in sender_threads {
-        host_tx[usize::from(flow_id)] = Some(
-            sender
-                .join()
-                .map_err(|_| format!("AP UDP flow {flow_id} sender thread panicked"))?
-                .map_err(|error| format!("AP UDP flow {flow_id} sender failed: {error}"))?,
-        );
+        match sender
+            .join()
+            .map_err(|_| format!("AP UDP flow {flow_id} sender thread panicked"))
+            .and_then(|result| {
+                result.map_err(|error| format!("AP UDP flow {flow_id} sender failed: {error}"))
+            }) {
+            Ok(sent) => host_tx[usize::from(flow_id)] = Some(sent),
+            Err(error) => host_errors.push(error),
+        }
     }
+
     let structured = capture.wait_for_session(session, config.timeout);
     let acknowledgement = structured
         .as_ref()
@@ -242,19 +266,24 @@ pub(super) fn qualify_multi_client_udp(
         .unwrap_or(Ok(()));
     let mut host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY] = [None, None];
     for (flow_id, receiver) in receiver_threads {
-        host_rx[usize::from(flow_id)] = Some(
-            receiver
-                .join()
-                .map_err(|_| format!("AP UDP flow {flow_id} receiver thread panicked"))?
-                .map_err(|error| format!("AP UDP flow {flow_id} receiver failed: {error}"))?,
-        );
+        match receiver
+            .join()
+            .map_err(|_| format!("AP UDP flow {flow_id} receiver thread panicked"))
+            .and_then(|result| {
+                result.map_err(|error| format!("AP UDP flow {flow_id} receiver failed: {error}"))
+            }) {
+            Ok(received) => host_rx[usize::from(flow_id)] = Some(received),
+            Err(error) => host_errors.push(error),
+        }
     }
+
     let observed = MultiClientObservation {
         direction,
         duration,
         peers: flows.each_ref().map(|flow| flow.peer),
         host_tx,
         host_rx,
+        host_errors,
         target: structured.map(|evidence| MultiClientTarget {
             elapsed_micros: evidence.transport.elapsed_micros,
             flows: evidence.flow_transport,
@@ -277,6 +306,7 @@ struct MultiClientObservation {
     host_tx: [Option<UdpTransmission>; SESSION_FLOW_CAPACITY],
     host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY],
     target: Result<MultiClientTarget>,
+    host_errors: Vec<String>,
 }
 
 impl MultiClientObservation {
@@ -297,6 +327,7 @@ impl MultiClientObservation {
                 "deadline_resets": host.deadline_resets,
             }))),
             "host_rx": self.host_rx,
+            "host_errors": self.host_errors,
             "target_flows": self.target.as_ref().ok().map(|target| target.flows),
             "target_elapsed_micros": self.target.as_ref().ok().map(|target| target.elapsed_micros),
             "target_error": self.target.as_ref().err().map(|error| error.to_string()),
@@ -306,6 +337,9 @@ impl MultiClientObservation {
             output.join("delivery-progress.json"),
             serde_json::to_vec_pretty(&progress)?,
         )?;
+        if !self.host_errors.is_empty() {
+            return Err(self.host_errors.join("; ").into());
+        }
         let structured = self
             .target
             .map_err(|error| format!("AP UDP target failed: {error}"))?;

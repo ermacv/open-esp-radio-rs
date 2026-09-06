@@ -24,12 +24,15 @@ use crate::{
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         OpenRadioBidirectionalResult, aggregate_tx_evidence,
-        complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
-        log_open_radio_task_poll_interval, wait_session_link_requirements,
+        complete_open_radio_bidirectional_direction, wait_session_link_requirements,
     },
     product_hil::{
         OPEN_RADIO_TASK_POLL_TELEMETRY, QualificationRequester, TASK_POLLS, qualification_sample,
     },
+};
+
+use crate::product_hil::traffic::reporting::{
+    log_open_radio_ampdu_snapshot, log_open_radio_task_poll_snapshot,
 };
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -358,6 +361,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             feature = "core0-rx-coarse-telemetry"
         ))]
         let cache_start = l1_cache.snapshot();
+        #[cfg(feature = "mac-irq-telemetry")]
+        let ingress_start = (
+            qualification_sample(QualificationRequester::UdpTx)
+                .await
+                .rx_primary,
+            crate::product_hil::RX_PIPELINE.snapshot(),
+        );
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
         #[cfg(feature = "mac-irq-telemetry")]
@@ -481,6 +491,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             )
         };
         let elapsed_us = started.elapsed().as_micros().max(1);
+        let task_poll_interval = OPEN_RADIO_TASK_POLL_TELEMETRY
+            .then(|| TASK_POLLS.snapshot().wrapping_delta_since(task_poll_start));
         #[cfg(feature = "mac-irq-telemetry")]
         let irq_interval = crate::product_hil::MAC_IRQ
             .snapshot()
@@ -500,14 +512,27 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // smoltcp queues its bytes. Allow terminal radio/BlockAck progress
         // outside the measured workload before sampling hardware evidence.
         Timer::after(config.drain).await;
-        let tx_vector = qualification_sample(QualificationRequester::UdpTx)
-            .await
-            .tx_vector;
+        let qualification_end = qualification_sample(QualificationRequester::UdpTx).await;
+        let tx_vector = qualification_end.tx_vector;
+        #[cfg(feature = "mac-irq-telemetry")]
+        let ingress_interval = (
+            ingress_start
+                .0
+                .zip(qualification_end.rx_primary)
+                .map(|(start, end)| end.wrapping_delta_since(start)),
+            crate::product_hil::RX_PIPELINE
+                .snapshot()
+                .wrapping_delta_since(ingress_start.1),
+        );
         #[cfg(any(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
         ))]
         let cache_interval = l1_cache.snapshot().wrapping_delta_since(cache_start);
+        // Freeze terminal evidence before any report can wait for USB capacity.
+        // Reuse this same aggregate snapshot for text and structured evidence.
+        let aggregate = aggregate_start
+            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
         // This live link vector belongs to the associated-STA datapath. AP
         // rate/A-MPDU evidence is owned by its terminal role report instead.
         // A station session that explicitly required BlockAck must never
@@ -527,17 +552,18 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             tx_vector.map_or(0, |vector| vector.aggregate_rate_kbps),
             config.code_address,
         ));
-        let aggregate = aggregate_start
-            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
-        if let Some(aggregate_start) = aggregate_start {
-            log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
-        }
-        log_open_radio_task_poll_interval(
-            task_poll_start,
-            OPEN_RADIO_TASK_POLL_TELEMETRY,
-            &TASK_POLLS,
+        #[cfg(feature = "mac-irq-telemetry")]
+        crate::product_hil::traffic::reporting::log_tx_ingress(
+            ingress_interval.0,
+            ingress_interval.1,
         )
         .await;
+        if let Some(aggregate) = aggregate {
+            log_open_radio_ampdu_snapshot(aggregate).await;
+        }
+        if let Some(interval) = task_poll_interval {
+            log_open_radio_task_poll_snapshot(interval).await;
+        }
         #[cfg(feature = "task-poll-telemetry")]
         if session.config.active_flow_count() == 1 {
             crate::product_hil::network::observation::log(

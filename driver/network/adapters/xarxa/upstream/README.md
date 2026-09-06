@@ -35,6 +35,15 @@ no pool-release notification, so allocation failure is returned as an explicit
 `PoolExhausted` drop, counted by `Endpoint::rx_pool_drops`. The radio bridge
 declares terminal pool exhaustion, so AP/paired-role batch cursors discard
 that record instead of waiting or repeatedly polling for it.
+
+The default upstream unresolved-neighbor queue can retain all 16 global packet
+owners. Saturated UDP to an unresolved peer can therefore prevent allocation
+of its incoming ARP reply, even with an empty adapter RX queue. The
+`unresolved_udp` integration test reproduces this using the original stack.
+This adapter does not reserve packet owners for control traffic; applications
+must budget neighbor queues and RX headroom together. This limitation also
+applies to the minimal patched stack, which retains the upstream pool.
+
 Queue consumption wakes the radio; packet publication,
 TX queue-credit return and link changes wake the network runner. Dropping a
 selected TX owner also wakes it after releasing the packet's global pool slot:

@@ -43,6 +43,21 @@ entry classification for UDP TX, including interrupts with no pending status,
 alongside its existing sampled publication/IRQ/service timings. The interval
 ends before the terminal drain; summaries are printed after traffic.
 
+MAC IRQ diagnostic TX workloads also emit `hil-tx-ingress` RX progress from
+before traffic through the terminal drain. These records separate hardware
+completion, protocol processing, reorder release and network publication;
+`pool_exhausted` counts the subset of publication drops caused by allocation
+failure. Incoming ARP replies are required for UDP egress to an unresolved
+peer, so RX diagnostics remain relevant in a TX-only workload. The host saves
+`delivery-progress.json` before burst qualification, including for zero or
+partial delivery. Socket acceptance is separate from host reception, and
+unavailable diagnostic counters remain unknown rather than zero.
+
+UDP TX task-poll intervals close at the end of the measured workload, before
+the terminal drain or report output. Aggregate evidence closes after the drain;
+text and structured reports share the same frozen aggregate snapshot. Waiting
+for diagnostic output capacity therefore cannot extend these intervals.
+
 `udp-tx-ht40-mac-wait-diagnostic` uses `diagnostic-tx-wait` to investigate slow
 transmissions, including busy-channel conditions. It has no idle-channel
 admission limit or throughput floor; a pass means the diagnostic workload

@@ -120,6 +120,19 @@ pub struct TaskPollSetSnapshot {
     pub tcp: TaskPollSnapshot,
 }
 
+impl TaskPollSetSnapshot {
+    /// Close the interval before asynchronous reporting can add more polls.
+    pub fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            network: self.network.wrapping_delta_since(earlier.network),
+            radio: self.radio.wrapping_delta_since(earlier.radio),
+            udp_rx: self.udp_rx.wrapping_delta_since(earlier.udp_rx),
+            udp_tx: self.udp_tx.wrapping_delta_since(earlier.udp_tx),
+            tcp: self.tcp.wrapping_delta_since(earlier.tcp),
+        }
+    }
+}
+
 pub struct TaskPollSet {
     network: TaskPollCounters,
     radio: TaskPollCounters,

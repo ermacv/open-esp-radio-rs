@@ -114,12 +114,16 @@ impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
             #[cfg(any(feature = "diagnostics", test))]
             let outcome = match result {
                 Ok(()) => RxNetworkPublicationOutcome::Enqueued,
-                Err(_error) => {
+                Err(error) => {
                     #[cfg(feature = "diagnostics")]
                     if let Some(observer) = self.delivery_observer {
-                        observer.dropped(RxNetworkDeliveryEvent::decoded(frame, Some(raw)), _error);
+                        observer.dropped(RxNetworkDeliveryEvent::decoded(frame, Some(raw)), error);
                     }
-                    RxNetworkPublicationOutcome::Dropped
+                    if error == open_esp_radio_network::RxEnqueueError::PoolExhausted {
+                        RxNetworkPublicationOutcome::PoolExhausted
+                    } else {
+                        RxNetworkPublicationOutcome::Dropped
+                    }
                 }
             };
             #[cfg(not(any(feature = "diagnostics", test)))]

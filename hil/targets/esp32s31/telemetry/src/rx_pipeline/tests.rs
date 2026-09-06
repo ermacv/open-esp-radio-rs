@@ -320,3 +320,18 @@ fn buffer_full_is_classified_inside_the_observed_service_transaction() {
     assert_eq!(delta.dma_buffer_full_last_phase, 2);
     assert_eq!(delta.dma_buffer_full_last_counter, 9);
 }
+
+#[test]
+fn pool_exhaustion_is_a_distinct_subset_of_publication_drops() {
+    let counters = RxPipelineCounters::new(|| 0);
+    counters.record_network_publish(42, 0, RxNetworkPublicationOutcome::PoolExhausted);
+    let before = counters.snapshot();
+    counters.record_network_publish(42, 0, RxNetworkPublicationOutcome::Dropped);
+    counters.record_network_publish(42, 0, RxNetworkPublicationOutcome::PoolExhausted);
+    counters.record_network_publish(42, 0, RxNetworkPublicationOutcome::Enqueued);
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.network_publications, 3);
+    assert_eq!(delta.network_dropped, 2);
+    assert_eq!(delta.network_pool_exhausted, 1);
+    assert_eq!(delta.network_enqueued, 1);
+}

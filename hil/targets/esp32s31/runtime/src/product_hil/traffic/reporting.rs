@@ -128,6 +128,12 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     counters: &AggregateTxCounters,
 ) {
     let aggregate = counters.snapshot().wrapping_delta_since(earlier);
+    log_open_radio_ampdu_snapshot(aggregate).await;
+}
+
+pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
+    aggregate: AggregateTxCounterSnapshot,
+) {
     let aggregate_min = aggregate.minimum_prepared_subframes().unwrap_or(0);
     let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
     runtime_log_reliably(format_args!(
@@ -323,6 +329,51 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     ))
     .await;
     yield_now().await;
+}
+
+/// Incoming progress matters for TX too: unresolved ARP can prevent any UDP egress.
+/// Snapshots cover the workload and terminal drain; logging happens afterwards.
+#[cfg(feature = "mac-irq-telemetry")]
+pub(in crate::product_hil) async fn log_tx_ingress(
+    hardware: Option<crate::product_hil::ObservedRxStatistics>,
+    pipeline: RxPipelineCounterSnapshot,
+) {
+    if let Some(hardware) = hardware {
+        runtime_log_reliably(format_args!(
+            "hil-tx-ingress: mpdu={} success={} fcs={} abort={} full={} tkip={} unmatched={}",
+            hardware.mpdu_count,
+            hardware.data_success,
+            hardware.fcs_error,
+            hardware.abort,
+            hardware.buffer_full,
+            hardware.tkip_error,
+            hardware.last_unmatched_error,
+        ))
+        .await;
+    }
+    runtime_log_reliably(format_args!(
+        "hil-tx-ingress: completed={} staged={} discarded={} protocol={} data={}",
+        pipeline.completed_units,
+        pipeline.staged_units,
+        pipeline.discarded_units,
+        pipeline.protocol_frames,
+        pipeline.protocol_data_frames,
+    ))
+    .await;
+    runtime_log_reliably(format_args!(
+        "hil-tx-ingress: reorder_in={} direct={} buffered={} released={} stale={} discarded={} occupied={}",
+        pipeline.reorder_ingress, pipeline.reorder_direct, pipeline.reorder_buffered,
+        pipeline.reorder_released, pipeline.reorder_stale, pipeline.reorder_discarded,
+        pipeline.reorder_current_occupied,
+    )).await;
+    runtime_log_reliably(format_args!(
+        "hil-tx-ingress: publications={} enqueued={} dropped={} pool_exhausted={}",
+        pipeline.network_publications,
+        pipeline.network_enqueued,
+        pipeline.network_dropped,
+        pipeline.network_pool_exhausted,
+    ))
+    .await;
 }
 
 pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
@@ -521,24 +572,17 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
     if !enabled {
         return;
     }
-    let current = counters.snapshot();
-    log_open_radio_task_poll(
-        "network",
-        current.network.wrapping_delta_since(earlier.network),
-    )
-    .await;
-    log_open_radio_task_poll("radio", current.radio.wrapping_delta_since(earlier.radio)).await;
-    log_open_radio_task_poll(
-        "udp_rx",
-        current.udp_rx.wrapping_delta_since(earlier.udp_rx),
-    )
-    .await;
-    log_open_radio_task_poll(
-        "udp_tx",
-        current.udp_tx.wrapping_delta_since(earlier.udp_tx),
-    )
-    .await;
-    log_open_radio_task_poll("tcp", current.tcp.wrapping_delta_since(earlier.tcp)).await;
+    log_open_radio_task_poll_snapshot(counters.snapshot().wrapping_delta_since(earlier)).await;
+}
+
+pub(in crate::product_hil) async fn log_open_radio_task_poll_snapshot(
+    interval: TaskPollSetSnapshot,
+) {
+    log_open_radio_task_poll("network", interval.network).await;
+    log_open_radio_task_poll("radio", interval.radio).await;
+    log_open_radio_task_poll("udp_rx", interval.udp_rx).await;
+    log_open_radio_task_poll("udp_tx", interval.udp_tx).await;
+    log_open_radio_task_poll("tcp", interval.tcp).await;
 }
 
 #[cfg(feature = "core0-rx-cycle-telemetry")]

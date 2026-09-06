@@ -110,6 +110,7 @@ pub struct RxPipelineCounters {
     network_publications: AtomicU32,
     network_enqueued: AtomicU32,
     network_dropped: AtomicU32,
+    network_pool_exhausted: AtomicU32,
     network_published_bytes: AtomicU32,
     network_publish_micros: AtomicU32,
     network_publish_lifetime_max_micros: AtomicU32,
@@ -222,6 +223,7 @@ impl RxPipelineCounters {
             network_publications: AtomicU32::new(0),
             network_enqueued: AtomicU32::new(0),
             network_dropped: AtomicU32::new(0),
+            network_pool_exhausted: AtomicU32::new(0),
             network_published_bytes: AtomicU32::new(0),
             network_publish_micros: AtomicU32::new(0),
             network_publish_lifetime_max_micros: AtomicU32::new(0),
@@ -430,6 +432,7 @@ impl RxPipelineCounters {
             network_publications: self.network_publications.load(Ordering::Relaxed),
             network_enqueued: self.network_enqueued.load(Ordering::Relaxed),
             network_dropped: self.network_dropped.load(Ordering::Relaxed),
+            network_pool_exhausted: self.network_pool_exhausted.load(Ordering::Relaxed),
             network_published_bytes: self.network_published_bytes.load(Ordering::Relaxed),
             network_publish_micros: self.network_publish_micros.load(Ordering::Relaxed),
             network_publish_lifetime_max_micros: self
@@ -779,6 +782,10 @@ impl RxPipelineCounters {
             RxNetworkPublicationOutcome::Enqueued => {
                 self.network_enqueued.fetch_add(1, Ordering::Relaxed);
             }
+            RxNetworkPublicationOutcome::PoolExhausted => {
+                self.network_dropped.fetch_add(1, Ordering::Relaxed);
+                self.network_pool_exhausted.fetch_add(1, Ordering::Relaxed);
+            }
             RxNetworkPublicationOutcome::Dropped => {
                 self.network_dropped.fetch_add(1, Ordering::Relaxed);
             }
@@ -1036,6 +1043,8 @@ pub struct RxPipelineCounterSnapshot {
     pub network_publications: u32,
     pub network_enqueued: u32,
     pub network_dropped: u32,
+    /// Subset of drops caused by shared network packet pool exhaustion.
+    pub network_pool_exhausted: u32,
     pub network_published_bytes: u32,
     pub network_publish_micros: u32,
     /// Maximum observed since boot, not an interval delta.
@@ -1243,6 +1252,9 @@ impl RxPipelineCounterSnapshot {
                 .wrapping_sub(earlier.network_publications),
             network_enqueued: self.network_enqueued.wrapping_sub(earlier.network_enqueued),
             network_dropped: self.network_dropped.wrapping_sub(earlier.network_dropped),
+            network_pool_exhausted: self
+                .network_pool_exhausted
+                .wrapping_sub(earlier.network_pool_exhausted),
             network_published_bytes: self
                 .network_published_bytes
                 .wrapping_sub(earlier.network_published_bytes),

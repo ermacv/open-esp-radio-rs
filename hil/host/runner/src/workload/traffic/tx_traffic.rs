@@ -1,5 +1,7 @@
 //! Host receiver and report writer for the production UDP TX qualification.
 
+mod progress;
+
 use crate::execution::context::Context;
 use std::{
     collections::HashSet,
@@ -315,6 +317,14 @@ pub(crate) fn run(
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
+    let delivery = progress::DeliveryProgress::new(structured.transport.tx_units, &bursts, &log);
+    fs::write(
+        output.join("delivery-progress.json"),
+        serde_json::to_vec_pretty(&delivery)?,
+    )?;
+    if delivery.host_received_datagrams == 0 {
+        return Err(delivery.no_delivery_message().into());
+    }
     if let Some(result) = beacon_loss {
         result?;
     }

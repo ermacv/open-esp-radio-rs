@@ -84,13 +84,24 @@ fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
             RxPipelineObservation::NetworkPublication {
                 bytes: 14,
                 micros: 1,
-                outcome: RxNetworkPublicationOutcome::Dropped,
+                outcome: RxNetworkPublicationOutcome::PoolExhausted,
             },
         ]
     );
     assert_eq!(sink.observer().0, 2);
-    assert!(device.receive().is_some());
+    let held = device.receive().unwrap();
     assert!(device.receive().is_none());
+    sink.publish(event);
+    assert_eq!(
+        pipeline_observer.observations.lock().unwrap().last(),
+        Some(&RxPipelineObservation::NetworkPublication {
+            bytes: 14,
+            micros: 1,
+            outcome: RxNetworkPublicationOutcome::PoolExhausted,
+        }),
+        "an empty RX queue can still lack a packet-pool owner",
+    );
+    drop(held);
 
     let eapol = ConnectedRxEvent::Ethernet {
         frame: EthernetFrameParts {
@@ -104,6 +115,6 @@ fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
         metadata: open_esp_radio_wifi_softmac::MacRxMetadata::unavailable(),
     };
     sink.publish(eapol);
-    assert_eq!(sink.observer().0, 3);
+    assert_eq!(sink.observer().0, 4);
     assert!(device.receive().is_none());
 }

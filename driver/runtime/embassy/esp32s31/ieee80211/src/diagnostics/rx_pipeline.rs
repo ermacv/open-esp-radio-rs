@@ -12,6 +12,8 @@ pub use open_esp_radio_esp32s31_wifi::rx::transaction::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxNetworkPublicationOutcome {
     Enqueued,
+    /// The shared network packet pool could not provide an RX owner.
+    PoolExhausted,
     Dropped,
 }
 

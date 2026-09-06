@@ -297,13 +297,10 @@ impl RadioPhyRegisters {
     pub fn configure_channel_cbw(&mut self, cbw: u32) {
         let fields = channel_cbw_fields(cbw);
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        // The ROM clears the shared bits 7:4 before publishing the bounded
-        // low channel-offset nibble. The independently named upper two
-        // minimum-power bits remain untouched by these field accessors.
+        // Channel offset owns only the low nibble. Preserve the adjacent
+        // minimum-power setting, as both ROM channel setters do.
         let tx_offset = crate::generated::PhyChannelOffsetNibble::new(u32::from(fields.tx_offset))
             .expect("reviewed channel offset fits its generated nibble domain");
-        let high_clear = crate::generated::PhyChannelCbwTwoBitImage::new(0)
-            .expect("zero fits the generated two-bit CBW domain");
         let control_0 =
             crate::generated::PhyChannelCbwTwoBitImage::new(u32::from(fields.control_0))
                 .expect("reviewed CBW control fits its generated two-bit domain");
@@ -313,7 +310,7 @@ impl RadioPhyRegisters {
         let control_1_low =
             crate::generated::PhyChannelCbwTwoBitImage::new(u32::from(fields.control_1_low))
                 .expect("reviewed CBW control fits its generated two-bit domain");
-        crate::generated::configure_phy_channel_cbw_offset(frequency, tx_offset, high_clear);
+        crate::generated::configure_phy_channel_cbw_offset(frequency, tx_offset);
         crate::generated::configure_phy_channel_cbw_control_0(frequency, control_0);
         crate::generated::configure_phy_channel_cbw_control_1_high(frequency, control_1_high);
         crate::generated::configure_phy_channel_cbw_control_1_low(frequency, control_1_low);

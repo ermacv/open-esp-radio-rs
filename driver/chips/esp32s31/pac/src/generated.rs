@@ -7571,6 +7571,15 @@ pub(crate) fn configure_phy_fbw_select_high(
     crate::svd::field_replace_modify::configure_phy_fbw_select_high(registers, value.bits());
 }
 
+/// Typed bridge for the reviewed `configure_phy_channel_cbw_offset` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_cbw_offset(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyChannelOffsetNibble,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_cbw_offset(registers, value.get());
+}
+
 /// Typed bridge for the reviewed `configure_phy_channel_cbw_control_0` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_channel_cbw_control_0(
@@ -7705,20 +7714,6 @@ pub(crate) fn configure_phy_frequency_i2c_number_prefix(
         registers,
         address_0.get(),
         address_1.get(),
-    );
-}
-
-/// Typed bridge for the reviewed `configure_phy_channel_cbw_offset` multi-argument field-replacement transaction.
-#[inline]
-pub(crate) fn configure_phy_channel_cbw_offset(
-    registers: &crate::svd::PhyFrequencyChannelOracle,
-    offset: PhyChannelOffsetNibble,
-    high_clear: PhyChannelCbwTwoBitImage,
-) {
-    crate::svd::field_argument_modify::configure_phy_channel_cbw_offset(
-        registers,
-        offset.get(),
-        high_clear.get(),
     );
 }
 

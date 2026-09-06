@@ -10068,14 +10068,12 @@ domain = "PhyFbwSelectionState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
 
-[[field-argument-modifies]]
+[[field-replace-modifies]]
 name = "configure_phy_channel_cbw_offset"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "CHANNEL_TX_OFFSET_CONTROL"
-arguments = [
-    { name = "offset", field = "CHANNEL_OFFSET_LOW_UNKNOWN", domain = "PhyChannelOffsetNibble" },
-    { name = "high_clear", field = "CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN", domain = "PhyChannelCbwTwoBitImage" },
-]
+fields = [{ field = "CHANNEL_OFFSET_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyChannelOffsetNibble"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
 

@@ -4439,11 +4439,10 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `CHANNEL_OFFSET_LOW_UNKNOWN` writer - "]
         pub type ChannelOffsetLowUnknownW<'a, REG> =
             crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN` reader - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
-        pub type ChannelOffsetHighOrMinimumPowerLowUnknownR = crate::FieldReader;
-        #[doc = "Field `CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN` writer - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
-        pub type ChannelOffsetHighOrMinimumPowerLowUnknownW<'a, REG> =
-            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `MINIMUM_POWER_LOW` reader - Low four bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes five. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg preserve this field when updating the adjacent channel offset."]
+        pub type MinimumPowerLowR = crate::FieldReader;
+        #[doc = "Field `MINIMUM_POWER_LOW` writer - Low four bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes five. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg preserve this field when updating the adjacent channel offset."]
+        pub type MinimumPowerLowW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `MINIMUM_POWER_HIGH` reader - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
         pub type MinimumPowerHighR = crate::FieldReader;
         #[doc = "Field `MINIMUM_POWER_HIGH` writer - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
@@ -4458,12 +4457,10 @@ pub mod phy_frequency_channel_oracle {
             pub fn channel_offset_low_unknown(&self) -> ChannelOffsetLowUnknownR {
                 ChannelOffsetLowUnknownR::new((self.bits & 0x0f) as u8)
             }
-            #[doc = "Bits 4:7 - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
+            #[doc = "Bits 4:7 - Low four bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes five. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg preserve this field when updating the adjacent channel offset."]
             #[inline(always)]
-            pub fn channel_offset_high_or_minimum_power_low_unknown(
-                &self,
-            ) -> ChannelOffsetHighOrMinimumPowerLowUnknownR {
-                ChannelOffsetHighOrMinimumPowerLowUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            pub fn minimum_power_low(&self) -> MinimumPowerLowR {
+                MinimumPowerLowR::new(((self.bits >> 4) & 0x0f) as u8)
             }
             #[doc = "Bits 8:9 - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
             #[inline(always)]
@@ -4484,13 +4481,12 @@ pub mod phy_frequency_channel_oracle {
             ) -> ChannelOffsetLowUnknownW<'_, ChannelTxOffsetControlSpec> {
                 ChannelOffsetLowUnknownW::new(self, 0)
             }
-            #[doc = "Bits 4:7 - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
+            #[doc = "Bits 4:7 - Low four bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes five. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg preserve this field when updating the adjacent channel offset."]
             #[inline(always)]
-            pub fn channel_offset_high_or_minimum_power_low_unknown(
+            pub fn minimum_power_low(
                 &mut self,
-            ) -> ChannelOffsetHighOrMinimumPowerLowUnknownW<'_, ChannelTxOffsetControlSpec>
-            {
-                ChannelOffsetHighOrMinimumPowerLowUnknownW::new(self, 4)
+            ) -> MinimumPowerLowW<'_, ChannelTxOffsetControlSpec> {
+                MinimumPowerLowW::new(self, 4)
             }
             #[doc = "Bits 8:9 - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
             #[inline(always)]
@@ -70657,6 +70653,23 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields `[CHANNEL_OFFSET_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_cbw_offset(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.channel_tx_offset_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .channel_offset_low_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
     /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0 fields `[CBW_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_cbw_control_0(
@@ -70841,26 +70854,6 @@ pub mod field_argument_modify {
                     .bits(address_0 as u8)
                     .number_address_1_unknown()
                     .bits(address_1 as u8)
-            }
-        });
-    }
-
-    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields `[offset -> CHANNEL_OFFSET_LOW_UNKNOWN, high_clear -> CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN]` from independently typed arguments while preserving every other bit.
-    #[inline]
-    pub fn configure_phy_channel_cbw_offset(
-        registers: &crate::PhyFrequencyChannelOracle,
-        offset: u32,
-        high_clear: u32,
-    ) {
-        registers.channel_tx_offset_control().modify(|_, writer| {
-            // SAFETY: generator validation proves every typed argument fits its named SVD field;
-            // no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .channel_offset_low_unknown()
-                    .bits(offset as u8)
-                    .channel_offset_high_or_minimum_power_low_unknown()
-                    .bits(high_clear as u8)
             }
         });
     }

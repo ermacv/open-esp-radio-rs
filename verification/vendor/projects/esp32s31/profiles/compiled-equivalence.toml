@@ -320,6 +320,34 @@ vendor-symbol = "phy_bb_cbw_chan_cfg"
 rust-symbol = "open_phy_trace_bb_cbw_chan_cfg"
 compare-return = false
 
+# Channel changes must preserve the existing minimum-power setting and
+# unrelated controls, including when the secondary channel is below primary.
+[[profiles.cases]]
+name = "ht40-above-preserves-power"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x20104400
+value = 0xa5a2035f
+[[profiles.cases.mmio-initial]]
+address = 0x20107ce0
+value = 0xa5a5a5a5
+[[profiles.cases.mmio-initial]]
+address = 0x20107ce4
+value = 0x5a5a5a5a
+
+[[profiles.cases]]
+name = "ht40-below-preserves-power"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x20104400
+value = 0xa5a2035f
+[[profiles.cases.mmio-initial]]
+address = 0x20107ce0
+value = 0xa5a5a5a5
+[[profiles.cases.mmio-initial]]
+address = 0x20107ce4
+value = 0x5a5a5a5a
+
 [[profiles.cases]]
 name = "low-below-two"
 arguments = [0]

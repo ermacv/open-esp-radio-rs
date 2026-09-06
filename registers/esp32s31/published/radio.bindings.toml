@@ -16283,8 +16283,8 @@ bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN"
-method = "channel_offset_high_or_minimum_power_low_unknown"
+svd-name = "MINIMUM_POWER_LOW"
+method = "minimum_power_low"
 bit-offset = 4
 bit-width = 4
 access = "read-write"

@@ -391,8 +391,8 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN"
-description = "Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."
+name = "MINIMUM_POWER_LOW"
+description = "Low four bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes five. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg preserve this field when updating the adjacent channel offset."
 bitOffset = 4
 bitWidth = 4
 

@@ -9,6 +9,7 @@ pub enum ImageClass {
     Performance,
     Correctness,
     DiagnosticMacIrq,
+    DiagnosticTxWait,
     DiagnosticTaskResidence,
     DiagnosticTxArchitecture,
     DiagnosticTaskPoll,
@@ -21,11 +22,12 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
         Self::DiagnosticMacIrq,
+        Self::DiagnosticTxWait,
         Self::DiagnosticTaskResidence,
         Self::DiagnosticTxArchitecture,
         Self::DiagnosticTaskPoll,
@@ -43,6 +45,7 @@ impl ImageClass {
             Self::Performance => "performance",
             Self::Correctness => "correctness",
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
+            Self::DiagnosticTxWait => "diagnostic-tx-wait",
             Self::DiagnosticTaskResidence => "diagnostic-task-residence",
             Self::DiagnosticTxArchitecture => "diagnostic-tx-architecture",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
@@ -64,6 +67,9 @@ impl ImageClass {
             }
             Self::DiagnosticMacIrq => {
                 "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
+            }
+            Self::DiagnosticTxWait => {
+                "open-radio-hil,psram-task-stack,tx-wait-probe,task-poll-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticTaskResidence => {
                 "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
@@ -101,6 +107,7 @@ impl ImageClass {
             | Self::Performance
             | Self::Correctness
             | Self::DiagnosticMacIrq
+            | Self::DiagnosticTxWait
             | Self::DiagnosticTaskResidence
             | Self::DiagnosticTxArchitecture
             | Self::DiagnosticTaskPoll

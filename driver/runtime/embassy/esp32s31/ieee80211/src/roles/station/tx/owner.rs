@@ -691,7 +691,13 @@ where
 
     pub fn next_deadline_micros(&self) -> Option<u64> {
         match &self.active {
-            ConnectedTxActive::Aggregate(active) => Some(active.deadline_micros),
+            ConnectedTxActive::Aggregate(active) => {
+                #[cfg(feature = "tx-wait-probe")]
+                if let Some(probe) = active.wait_probe.deadline() {
+                    return Some(probe.min(active.deadline_micros));
+                }
+                Some(active.deadline_micros)
+            }
             ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
             ConnectedTxActive::Ordinary => self.ordinary.next_deadline_micros(),
             ConnectedTxActive::Idle => None,

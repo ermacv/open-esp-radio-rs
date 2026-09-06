@@ -326,6 +326,8 @@ impl PreparedTxSchedulerTimingCounters {
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    #[cfg(feature = "tx-wait-probe")]
+    pub wait_trace: crate::tx_wait::Trace,
     now_micros: fn() -> u64,
     ap_udp_claim_highest: AtomicU32,
     ap_udp_claimed: AtomicU32,
@@ -422,6 +424,8 @@ impl AggregateTxCounters {
 
     pub const fn with_clock(now_micros: fn() -> u64) -> Self {
         Self {
+            #[cfg(feature = "tx-wait-probe")]
+            wait_trace: crate::tx_wait::Trace::new(),
             now_micros,
             ap_udp_claim_highest: AtomicU32::new(u32::MAX),
             ap_udp_claimed: AtomicU32::new(0),
@@ -938,6 +942,13 @@ impl AggregateTxCounters {
 }
 
 impl AggregateTxObserver for AggregateTxCounters {
+    #[cfg(feature = "tx-wait-probe")]
+    fn observe_wait_probe(
+        &self,
+        sample: open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::TxWaitSample,
+    ) {
+        self.wait_trace.record(sample);
+    }
     fn now_micros(&self) -> u64 {
         (self.now_micros)()
     }

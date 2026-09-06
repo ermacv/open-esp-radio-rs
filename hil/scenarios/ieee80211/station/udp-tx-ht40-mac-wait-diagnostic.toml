@@ -1,0 +1,23 @@
+schema = 4
+id = "udp-tx-ht40-mac-wait-diagnostic"
+description = "HT40 saturated TX latency observation, including busy-channel and low-throughput conditions"
+repetitions = 1
+image = "diagnostic-tx-wait"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq"]
+
+[link]
+phy = "ht40"
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 130000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false

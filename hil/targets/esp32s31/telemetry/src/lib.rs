@@ -15,4 +15,6 @@ pub mod rx_delivery;
 pub mod rx_evidence;
 pub mod rx_pipeline;
 pub mod task_poll;
+#[cfg(any(feature = "tx-wait-probe", test))]
+pub mod tx_wait;
 pub mod wait;

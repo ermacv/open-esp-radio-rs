@@ -105,6 +105,22 @@ where
         wake: WifiTxWake,
         mut active: AggregateActive<SLOTS>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        #[cfg(feature = "tx-wait-probe")]
+        if let Some(observer) = self.observer {
+            let now = self.ordinary.now_micros();
+            if let Some((elapsed_micros, timer_lateness_micros)) = active.wait_probe.sample(now) {
+                let queue = active.traffic.queue().hardware_index();
+                observer.observe_wait_probe(crate::diagnostics::aggregate_tx::TxWaitSample {
+                    deadline_wake: matches!(wake, WifiTxWake::Deadline),
+                    at_micros: now,
+                    elapsed_micros,
+                    timer_lateness_micros,
+                    first_sequence: active.first_sequence,
+                    queue,
+                    snapshot: hardware.ordinary_tx_queue_snapshot(queue),
+                });
+            }
+        }
         let service_event = match AggregateTxServiceEvent::classify(wake) {
             Ok(event) => event,
             Err(error) => {

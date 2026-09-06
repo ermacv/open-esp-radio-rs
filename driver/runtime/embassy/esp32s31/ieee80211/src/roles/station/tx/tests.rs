@@ -750,6 +750,28 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         subframes: 2,
         stop: AggregateBuildStop::QueueEmpty,
     }));
+    #[cfg(feature = "tx-wait-probe")]
+    {
+        assert_eq!(tx.next_deadline_micros(), Some(5_000));
+        {
+            let mut wait = core::pin::pin!(tx.wait_deadline());
+            assert!(wait.as_mut().poll(&mut context()).is_ready());
+        }
+        assert_eq!(
+            tx.service(&mut hardware, WifiTxWake::Deadline),
+            Ok(WifiTxProgress::Pending)
+        );
+        assert_eq!(tx.next_deadline_micros(), Some(10_000));
+        assert_eq!(
+            hardware.he_publications, 1,
+            "observation must not republish the aggregate"
+        );
+        assert_ne!(
+            tx.aggregate_slot_state(),
+            TxSlotState::Free,
+            "observation must retain DMA owners"
+        );
+    }
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
         tx.service(

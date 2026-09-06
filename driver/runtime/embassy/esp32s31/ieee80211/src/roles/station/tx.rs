@@ -280,7 +280,14 @@ struct AggregateActive<const SLOTS: usize> {
     deadline_micros: u64,
     #[cfg(any(feature = "diagnostics", test))]
     first_publication_micros: Option<u64>,
+    #[cfg(feature = "tx-wait-probe")]
+    wait_probe: wait_probe::Schedule,
+    #[cfg(feature = "tx-wait-probe")]
+    first_sequence: u16,
 }
+
+#[cfg(any(feature = "tx-wait-probe", test))]
+mod wait_probe;
 
 struct AggregatePrepared<const SLOTS: usize> {
     traffic: AggregateTraffic,

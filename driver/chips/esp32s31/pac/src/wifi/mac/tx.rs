@@ -34,6 +34,19 @@ pub struct MacOrdinaryTxQueueSnapshot {
     pub scheduler_priority: u8,
     pub cca_force: u8,
     pub cca_aux_force: u8,
+    /// Shared MAC activity encoding sampled after the queue configuration.
+    /// Vendor channel-stop code identifies TX/RX activity within this field;
+    /// it does not define a transmit-start timestamp or a CCA/NAV state.
+    /// The snapshot is a sequence of reads, not an atomic hardware capture.
+    pub mac_active_state: u8,
+    /// Cumulative hang counters sampled independently of queue/activity state.
+    pub hang: crate::MacRxHangStatistics,
+    /// Global wrapping 16-bit RX progress counters, sampled independently.
+    pub rx_mpdu_count: u16,
+    pub rx_signal_count: u16,
+    pub rx_end_count: u16,
+    pub rx_fcs_error_count: u16,
+    pub rx_abort_count: u16,
     pub valid: bool,
     pub enabled: bool,
     pub completion_pending: bool,
@@ -751,6 +764,7 @@ impl WifiRadioRegisters {
             .read();
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
         let cca = common.cca_control().read();
+        let rx = &self.peripherals.wifi_mac.wifi_mac_rx_statistics;
         MacOrdinaryTxQueueSnapshot {
             descriptor_address_low: control.descriptor_address_low().bits(),
             plcp_format: control.plcp_format().bits(),
@@ -765,6 +779,13 @@ impl WifiRadioRegisters {
             scheduler_priority: config.scheduler_priority().bits(),
             cca_force: cca.force().bits(),
             cca_aux_force: cca.phy_aux_force().bits(),
+            mac_active_state: self.mac_channel_active_state(),
+            hang: self.rx_hang_statistics_snapshot(),
+            rx_mpdu_count: rx.mpdu_and_cfo().read().mpdu_count().bits(),
+            rx_signal_count: rx.signal_field().read().count().bits(),
+            rx_end_count: rx.end().read().count().bits(),
+            rx_fcs_error_count: rx.fcs_error().read().count().bits(),
+            rx_abort_count: rx.abort().read().count().bits(),
             valid: control.valid().bit_is_set(),
             enabled: control.enable().bit_is_set(),
             completion_pending: queue::completion_pending(common, queue),

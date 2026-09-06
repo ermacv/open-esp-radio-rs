@@ -22,8 +22,8 @@ feature, selected by HIL `driver-observation`. Ordinary role owners keep the
 compact registration result instead of carrying RF measurements through every
 role transition. Diagnostic images log the retained PLL results after startup.
 `correctness` adds value-only driver observations, while the `diagnostic-*`
-images add one explicitly named hot-path probe. `diagnostic-mac-irq` alone
-extends the SRAM-closed ISR graph to sample publication-to-IRQ and
+images add one explicitly named hot-path probe. `diagnostic-mac-irq` and `diagnostic-tx-wait`
+extend the SRAM-closed ISR graph to sample publication-to-IRQ and
 IRQ-to-bottom-half latency. UDP/TCP RX/TX/bidirectional
 workers remain runtime-selected; STA/AP roles and workload direction do not
 change image identity. The task-poll diagnostic accepts both data-plane
@@ -40,6 +40,41 @@ individual packets inside the radio queue. The MAC IRQ image emits `hil-irq`
 entry classification for UDP TX, including interrupts with no pending status,
 alongside its existing sampled publication/IRQ/service timings. The interval
 ends before the terminal drain; summaries are printed after traffic.
+
+`udp-tx-ht40-mac-wait-diagnostic` uses `diagnostic-tx-wait` to investigate slow
+transmissions, including busy-channel conditions. It has no idle-channel
+admission limit or throughput floor; a pass means the diagnostic workload
+completed, not that the link met a performance target. The separate
+`udp-tx-ht40-mac-irq-diagnostic` retains its idle-channel limit and throughput
+floor. Publication-to-IRQ samples include hardware waiting and interrupt
+entry latency; IRQ-to-service samples measure the subsequent executor handoff.
+The wait image combines MAC IRQ and task-poll observations with an explicitly
+intrusive `tx-wait-probe` feature. While an aggregate remains published, the
+station owner adds observation deadlines at 5, 10, 20 and 40 ms after each
+publication. These deadlines preserve the ordinary completion/abort policy;
+late wakes skip missed sample points. Each observation reads the typed queue
+snapshot before consuming a completion and records both publication age and
+observation-deadline lateness. A pending completion can therefore be identified
+before normal service acknowledges it.
+
+`hil-tx-wait` records retain the first eight observations in each observed-age
+band: below 10 ms, 10–20 ms, 20–40 ms and at least 40 ms (upper bounds excluded).
+Independent budgets prevent common short waits from hiding rare long waits.
+Additional samples in a full band are counted as dropped. Output is grouped
+by age band; timestamps recover chronological order across bands.
+The producer uses an atomic append-only buffer;
+text is emitted after UDP TX. Queue CCA fields are control settings, not a live
+channel-busy measurement. Timer lateness includes executor and interrupt delays
+and does not by itself measure how long interrupts were disabled. Ordinary
+MAC IRQ, correctness and performance images do not enable this probe.
+The shared `mac_active` field retains the reviewed MAC activity encoding;
+it does not identify CCA/NAV or timestamp the beginning of a transmission.
+Queue and activity fields are sequential reads, not an atomic hardware capture.
+Hang/panic fields are cumulative hardware counters from the reviewed RX
+statistics decoder, not live receiver-state or channel-busy measurements.
+RX MPDU, signal, end, FCS-error and abort counters record receiver progress;
+their deltas use wrapping 16-bit subtraction. They are global to the MAC,
+not attributed to the queued aggregate or exclusively to the connected BSS.
 
 Large socket buffers, task arenas and ordinary task stacks live in PSRAM.
 DMA-visible storage, dedicated trap/interrupt stacks, critical data and ISR

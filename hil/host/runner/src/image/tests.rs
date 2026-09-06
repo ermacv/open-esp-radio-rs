@@ -83,7 +83,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 13);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 14);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -149,6 +149,10 @@ fn image_capability_classifier_preserves_every_exclusive_class() {
         (
             image_signature(true, false, false, true, false, false),
             ImageClass::DiagnosticMacIrq,
+        ),
+        (
+            image_signature(true, true, false, true, false, false),
+            ImageClass::DiagnosticTxWait,
         ),
         (
             image_signature(false, true, false, false, false, false),

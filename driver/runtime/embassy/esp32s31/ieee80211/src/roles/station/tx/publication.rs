@@ -475,6 +475,10 @@ where
             deadline_micros: 0,
             #[cfg(any(feature = "diagnostics", test))]
             first_publication_micros: None,
+            #[cfg(feature = "tx-wait-probe")]
+            wait_probe: wait_probe::Schedule::default(),
+            #[cfg(feature = "tx-wait-probe")]
+            first_sequence: prepared.first_sequence,
         });
         Ok(())
     }
@@ -1116,6 +1120,10 @@ where
             let publication_finished = self.ordinary.now_micros();
             if active.first_publication_micros.is_none() {
                 active.first_publication_micros = Some(publication_started);
+            }
+            #[cfg(feature = "tx-wait-probe")]
+            {
+                active.wait_probe = wait_probe::Schedule::new(publication_started);
             }
             observer.observe(AggregateTxObservation::Published {
                 at_micros: publication_started,

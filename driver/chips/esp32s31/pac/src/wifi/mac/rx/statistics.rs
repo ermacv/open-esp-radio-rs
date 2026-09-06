@@ -172,7 +172,7 @@ impl MacRxDecodeErrorStatistics {
 }
 
 /// MAC/baseband hang counters exposed by the same complete decoder.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MacRxHangStatistics {
     pub rx: u8,
     pub tx: u8,
@@ -208,6 +208,19 @@ pub struct MacRxStatisticsSnapshot {
 }
 
 impl WifiRadioRegisters {
+    /// Read only the hang/panic counters for a bounded wait diagnostic.
+    /// These are cumulative counters, not a live CCA or receiver-state decode.
+    pub fn rx_hang_statistics_snapshot(&self) -> MacRxHangStatistics {
+        let hangs = &self.peripherals.wifi_mac.wifi_mac_rx_hang_statistics;
+        let hang = hangs.hang().read();
+        MacRxHangStatistics {
+            rx: hang.rx_count().bits(),
+            tx: hang.tx_count().bits(),
+            rx_tx_hang: hangs.rx_tx_hang().read().count().bits(),
+            rx_tx_panic: hangs.rx_tx_panic().read().count().bits(),
+        }
+    }
+
     /// Read only the receive-buffer starvation counter.
     ///
     /// Unlike [`Self::rx_statistics_snapshot`], this single-register accessor

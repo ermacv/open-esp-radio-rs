@@ -548,6 +548,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         }
         #[cfg(feature = "mac-irq-telemetry")]
         crate::product_hil::traffic::reporting::log_mac_irq_interval(irq_interval).await;
+        #[cfg(feature = "tx-wait-probe")]
+        crate::product_hil::traffic::reporting::log_tx_wait_trace(&aggregate_counters.wait_trace)
+            .await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]

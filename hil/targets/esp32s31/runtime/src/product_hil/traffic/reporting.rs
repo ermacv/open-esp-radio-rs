@@ -1203,3 +1203,51 @@ pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Futur
     })
     .await
 }
+
+#[cfg(feature = "tx-wait-probe")]
+pub(super) async fn log_tx_wait_trace(
+    trace: &open_esp_radio_hil_esp32s31_telemetry::tx_wait::Trace,
+) {
+    for (index, sample) in trace.records().enumerate() {
+        let at = (u64::from(sample.at_high) << 32) | u64::from(sample.at_low);
+        runtime_log_reliably(format_args!(
+            "hil-tx-wait: sample={} at={} age_us={} late_us={} seq={} q={} available={} deadline_wake={}",
+            index,
+            at,
+            sample.elapsed_us,
+            sample.lateness_us,
+            sample.sequence,
+            sample.queue,
+            sample.available,
+            sample.deadline_wake,
+        ))
+        .await;
+        runtime_log_reliably(format_args!(
+            "hil-tx-wait: sample={} enabled={} valid={} done={} timeout={} collision={} aifsn={} backoff={} priority={} cca={}/{} mac_active={}",
+            index, sample.enabled, sample.valid, sample.done, sample.timeout, sample.collision,
+            sample.aifsn, sample.backoff, sample.priority, sample.cca_force, sample.cca_aux_force,
+            sample.mac_active_state,
+        )).await;
+        runtime_log_reliably(format_args!(
+            "hil-tx-wait: sample={} rx_hang={} tx_hang={} rx_tx_hang={} rx_tx_panic={}",
+            index, sample.rx_hang, sample.tx_hang, sample.rx_tx_hang, sample.rx_tx_panic,
+        ))
+        .await;
+        runtime_log_reliably(format_args!(
+            "hil-tx-wait: sample={} rx_mpdu={} rx_signal={} rx_end={} rx_fcs={} rx_abort={}",
+            index,
+            sample.rx_mpdu_count,
+            sample.rx_signal_count,
+            sample.rx_end_count,
+            sample.rx_fcs_error_count,
+            sample.rx_abort_count,
+        ))
+        .await;
+    }
+    runtime_log_reliably(format_args!(
+        "hil-tx-wait: scope=boot retention=8-per-age-band retained={} dropped={}",
+        trace.records().count(),
+        trace.dropped()
+    ))
+    .await;
+}

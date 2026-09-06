@@ -47,6 +47,11 @@ mac-irq-telemetry = [
     "driver-observation",
     "open-esp-radio-esp32s31-embassy-wifi/mac-irq-diagnostics",
 ]
+tx-wait-probe = [
+    "mac-irq-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/tx-wait-probe",
+    "open-esp-radio-hil-esp32s31-telemetry/tx-wait-probe",
+]
 # Common low-overhead observer used by both residence and task-poll images.
 # Keep it independent from the TX architecture probes: task-poll scenarios do
 # not select those probes and must not pay for their DMA-visible owners.

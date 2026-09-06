@@ -87,6 +87,7 @@ diagnostics = [
 # Hard-IRQ callbacks are a deliberately separate diagnostic boundary. Enabling
 # ordinary value observers must not change the SRAM-closed interrupt call graph.
 mac-irq-diagnostics = ["diagnostics"]
+tx-wait-probe = ["diagnostics", "open-esp-radio-esp32s31-wifi-embassy/tx-wait-probe"]
 task-poll-telemetry = [
     "diagnostics",
     "open-esp-radio-esp32s31-wifi-embassy/task-poll-telemetry",

@@ -145,10 +145,28 @@ pub trait AggregateTxObserver: Sync {
 
     fn observe(&self, observation: AggregateTxObservation);
 
+    /// Read-only queue evidence from the explicitly intrusive `tx-wait-probe`
+    /// feature. Unlike attaching an observer, enabling that feature adds
+    /// observation deadlines. The normal hardware timeout remains unchanged.
+    fn observe_wait_probe(&self, _sample: TxWaitSample) {}
+
     /// Observe one AP Ethernet lease exactly when the radio claims it from
     /// the network frontier, before encoding mutates its backing.
     ///
     /// The borrowed bytes are diagnostic input only and must not be retained.
     /// The default keeps ordinary production observers value-only.
     fn observe_access_point_network_claim(&self, _ethernet: &[u8]) {}
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TxWaitSample {
+    /// True when the owner was entered through its timer rather than an IRQ.
+    pub deadline_wake: bool,
+    pub at_micros: u64,
+    pub elapsed_micros: u64,
+    pub timer_lateness_micros: u64,
+    /// Original aggregate sequence; retained retries may contain a subset.
+    pub first_sequence: u16,
+    pub queue: u8,
+    pub snapshot: Option<open_esp_radio_esp32s31_hal::MacOrdinaryTxQueueSnapshot>,
 }

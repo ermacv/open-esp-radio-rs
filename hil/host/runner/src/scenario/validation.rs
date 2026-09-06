@@ -579,7 +579,7 @@ impl Scenario {
                 security,
                 traffic,
             } => {
-                bounded(*cycles, 2, 8, self, "cycles")?;
+                bounded(*cycles, 1, 8, self, "cycles")?;
                 bounded(*boots, 1, 20, self, "boots")?;
                 bounded(*timeout_seconds, 20, 180, self, "timeout_seconds")?;
                 validate_access_point_traffic(traffic, self)?;

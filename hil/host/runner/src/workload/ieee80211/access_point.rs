@@ -255,7 +255,7 @@ fn qualify(
             Ok(None)
         };
         let data_result = match independent_air_capture.as_ref() {
-            Ok(_) => qualify_data_plane(capture, config, context, &clients),
+            Ok(_) => qualify_data_plane(capture, config, context, &clients, &air_output),
             Err(error) => Err(error.to_string().into()),
         };
         let independent_air_result = independent_air_capture
@@ -635,6 +635,7 @@ fn qualify_data_plane(
     config: &Config,
     context: &Context<'_>,
     clients: &ConnectedClients,
+    output: &Path,
 ) -> Result<TrafficReport> {
     let target = context.lab.access_point.target_address();
     let traffic_target = clients.traffic_target(target)?;
@@ -686,6 +687,7 @@ fn qualify_data_plane(
             secondary_tx_pacing_group_datagrams,
             payload_bytes,
         } => qualify_multi_client_udp(
+            output,
             capture,
             config,
             context,

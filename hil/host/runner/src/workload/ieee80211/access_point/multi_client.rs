@@ -2,7 +2,9 @@
 
 use crate::execution::context::Context;
 use std::{
+    fs,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+    path::Path,
     thread,
     time::Duration,
 };
@@ -107,6 +109,7 @@ fn multi_client_host_flows(
 }
 
 pub(super) fn qualify_multi_client_udp(
+    output: &Path,
     capture: &SerialCapture,
     config: &Config,
     context: &Context<'_>,
@@ -246,57 +249,116 @@ pub(super) fn qualify_multi_client_udp(
                 .map_err(|error| format!("AP UDP flow {flow_id} receiver failed: {error}"))?,
         );
     }
-    let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
-    acknowledgement?;
-
-    let mut flow_reports = [MultiClientFlowReport {
-        flow_id: 0,
-        peer: Ipv4Endpoint {
-            address: [0; 4],
-            port: 0,
-        },
-        rx_bytes: 0,
-        tx_bytes: 0,
-        rx_units: 0,
-        tx_units: 0,
-        elapsed_micros: 0,
-        rx_bps: 0,
-        tx_bps: 0,
-        host_tx_started_at_zero: None,
-        host_tx_missing: None,
-        host_tx_reordered: None,
-        host_tx_duplicates: None,
-        host_tx_maximum_interarrival_us: None,
-        host_tx_sequence_after_maximum_interarrival: None,
-    }; SESSION_FLOW_CAPACITY];
-    for index in 0..SESSION_FLOW_CAPACITY {
-        let flow_evidence = structured.flow_transport[index]
-            .ok_or_else(|| format!("AP UDP flow {index} omitted transport evidence"))?;
-        flow_reports[index] = validate_multi_client_udp_flow(
-            flows[index].peer,
-            host_tx[index],
-            host_rx[index].as_deref(),
-            flow_evidence,
-            config.criteria.exact_delivery,
-        )?;
-    }
-    let aggregate = SessionReport {
+    let observed = MultiClientObservation {
         direction,
-        rx_bytes: flow_reports.iter().map(|flow| flow.rx_bytes).sum(),
-        tx_bytes: flow_reports.iter().map(|flow| flow.tx_bytes).sum(),
-        rx_units: flow_reports.iter().map(|flow| flow.rx_units).sum(),
-        tx_units: flow_reports.iter().map(|flow| flow.tx_units).sum(),
-        elapsed_micros: structured.transport.elapsed_micros,
+        duration,
+        peers: flows.each_ref().map(|flow| flow.peer),
+        host_tx,
+        host_rx,
+        target: structured.map(|evidence| MultiClientTarget {
+            elapsed_micros: evidence.transport.elapsed_micros,
+            flows: evidence.flow_transport,
+        }),
     };
-    validate_rate_criteria(&aggregate, &config.criteria)?;
-    validate_multi_client_fairness(&flow_reports, direction, &config.criteria)?;
-    Ok(TrafficReport::UdpMultiClient(Box::new(
-        MultiClientSessionReport {
+    let report = observed.evaluate(output, &config.criteria);
+    acknowledgement?;
+    report
+}
+
+struct MultiClientTarget {
+    elapsed_micros: u64,
+    flows: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
+}
+
+struct MultiClientObservation {
+    direction: Direction,
+    duration: Duration,
+    peers: [Ipv4Endpoint; SESSION_FLOW_CAPACITY],
+    host_tx: [Option<UdpTransmission>; SESSION_FLOW_CAPACITY],
+    host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY],
+    target: Result<MultiClientTarget>,
+}
+
+impl MultiClientObservation {
+    fn evaluate(self, output: &Path, criteria: &Criteria) -> Result<TrafficReport> {
+        // Preserve delivery even when terminal evidence or a later gate fails.
+        // Raw per-flow host observations must not depend on qualification.
+        let progress = serde_json::json!({
+            "schema": 1,
+            "direction": self.direction,
+            "duration_micros": u64::try_from(self.duration.as_micros())?,
+            "peers": self.peers,
+            "host_tx": self.host_tx.map(|host| host.map(|host| serde_json::json!({
+                "bytes": host.bytes,
+                "datagrams": host.datagrams,
+                "elapsed_micros": host.elapsed.as_micros(),
+                "maximum_lateness_micros": host.maximum_lateness.as_micros(),
+                "maximum_catch_up_datagrams": host.maximum_catch_up_datagrams,
+                "deadline_resets": host.deadline_resets,
+            }))),
+            "host_rx": self.host_rx,
+            "target_flows": self.target.as_ref().ok().map(|target| target.flows),
+            "target_elapsed_micros": self.target.as_ref().ok().map(|target| target.elapsed_micros),
+            "target_error": self.target.as_ref().err().map(|error| error.to_string()),
+        });
+        fs::create_dir_all(output)?;
+        fs::write(
+            output.join("delivery-progress.json"),
+            serde_json::to_vec_pretty(&progress)?,
+        )?;
+        let structured = self
+            .target
+            .map_err(|error| format!("AP UDP target failed: {error}"))?;
+        let direction = self.direction;
+        let mut flow_reports = [MultiClientFlowReport {
+            flow_id: 0,
+            peer: Ipv4Endpoint {
+                address: [0; 4],
+                port: 0,
+            },
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_units: 0,
+            tx_units: 0,
+            elapsed_micros: 0,
+            rx_bps: 0,
+            tx_bps: 0,
+            host_tx_started_at_zero: None,
+            host_tx_missing: None,
+            host_tx_reordered: None,
+            host_tx_duplicates: None,
+            host_tx_maximum_interarrival_us: None,
+            host_tx_sequence_after_maximum_interarrival: None,
+        }; SESSION_FLOW_CAPACITY];
+        for (index, report) in flow_reports.iter_mut().enumerate() {
+            let flow_evidence = structured.flows[index]
+                .ok_or_else(|| format!("AP UDP flow {index} omitted transport evidence"))?;
+            *report = validate_multi_client_udp_flow(
+                self.peers[index],
+                self.host_tx[index],
+                self.host_rx[index].as_deref(),
+                flow_evidence,
+                criteria.exact_delivery,
+            )?;
+        }
+        let aggregate = SessionReport {
             direction,
-            aggregate,
-            flows: flow_reports,
-        },
-    )))
+            rx_bytes: flow_reports.iter().map(|flow| flow.rx_bytes).sum(),
+            tx_bytes: flow_reports.iter().map(|flow| flow.tx_bytes).sum(),
+            rx_units: flow_reports.iter().map(|flow| flow.rx_units).sum(),
+            tx_units: flow_reports.iter().map(|flow| flow.tx_units).sum(),
+            elapsed_micros: structured.elapsed_micros,
+        };
+        validate_rate_criteria(&aggregate, criteria)?;
+        validate_multi_client_fairness(&flow_reports, direction, criteria)?;
+        Ok(TrafficReport::UdpMultiClient(Box::new(
+            MultiClientSessionReport {
+                direction,
+                aggregate,
+                flows: flow_reports,
+            },
+        )))
+    }
 }
 
 fn validate_multi_client_udp_flow(
@@ -473,3 +535,6 @@ pub(super) fn validate_multi_client_fairness(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

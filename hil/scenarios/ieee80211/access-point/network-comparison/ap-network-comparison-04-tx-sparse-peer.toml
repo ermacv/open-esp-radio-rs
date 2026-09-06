@@ -1,0 +1,35 @@
+schema = 4
+id = "ap-network-comparison-04-tx-sparse-peer"
+description = "Two physical stations with ESP as AP: tx-sparse-peer"
+repetitions = 1
+image = "diagnostic-task-residence"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "access-point", "multi-client", "ht40", "ap-network-comparison"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 1
+boots = 1
+timeout_seconds = 150
+client = "laptop"
+
+[workload.traffic]
+kind = "udp-multi-client"
+direction = "tx"
+duration_seconds = 12
+payload_bytes = 1472
+tx_rate_bps_per_flow = 130000000
+secondary_tx_rate_bps = 235520
+secondary_tx_pacing_group_datagrams = 2
+
+[criteria]
+exact_delivery = false
+minimum_bps_per_flow = 1
+minimum_concurrent_ap_clients = 2
+minimum_tx_bps = 1
+minimum_secondary_tx_datagrams = 200
+maximum_secondary_tx_interarrival_ms = 250

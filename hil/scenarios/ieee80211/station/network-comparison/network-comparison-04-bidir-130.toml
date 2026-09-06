@@ -1,7 +1,7 @@
 schema = 4
 id = "network-comparison-04-bidir-130"
 description = "Four-stack HT40 comparison: bidir-130"
-repetitions = 3
+repetitions = 1
 image = "diagnostic-task-residence"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -13,7 +13,7 @@ phy = "ht40"
 [workload]
 kind = "udp"
 direction = "bidirectional"
-duration_seconds = 16
+duration_seconds = 12
 payload_bytes = 1472
 rx_rate_bps = 130000000
 tx_rate_bps = 130000000

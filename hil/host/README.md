@@ -30,8 +30,10 @@ cargo hil run-all [--tag qualification]
 The `network-comparison` tag selects the same five station workloads for each
 network implementation: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
 TX-only at 130 Mbit/s, bidirectional UDP at 130 + 130 Mbit/s, and idle ping.
-Each scenario repeats three times and uses the task-residence image. UDP
-windows last 16 seconds. Run one implementation at a time:
+Each scenario runs once and uses the task-residence image. UDP windows last
+12 seconds; idle ping sends 120 requests at 100 ms intervals. This is a quick
+comparison, not a repeatability or endurance qualification. Build, association,
+reset and cleanup time is additional. Run one implementation at a time:
 
 ```console
 cargo hil run-all --tag network-comparison --network patched-xarxa
@@ -40,6 +42,31 @@ cargo hil run-all --tag network-comparison --network patched-xarxa
 Select `upstream-xarxa`, `upstream-smoltcp` or `owned-xarxa` for the other
 compositions. The throughput criteria still apply under overload; a completed
 measurement can fail its speed gate. Task residence is not full CPU utilization.
+
+The separate `ap-network-comparison` tag uses ESP as an HT40 AP with two
+physical stations (laptop and OpenWrt). Each scenario has one boot, one AP
+cycle and one 12-second UDP window:
+
+| Workload | Offered traffic, relative to ESP |
+| --- | --- |
+| Balanced TX | 65 Mbit/s to each station |
+| Balanced RX | 65 Mbit/s from each station |
+| Balanced bidirectional | 32.5 Mbit/s in each direction per station |
+| TX with sparse peer | 130 Mbit/s to laptop; two datagrams every 100 ms to OpenWrt |
+
+```console
+cargo hil run-all --tag ap-network-comparison --network patched-xarxa
+```
+
+The AP comparison checks per-peer progress, with an additional sparse-peer
+delivery and interarrival gate. Its low throughput floors do not qualify
+performance or fairness. Task residence and throughput alone do not establish
+A-MPDU aggregation quality; that requires separate aggregation evidence.
+Multi-client UDP saves each peer's raw host delivery and available target
+transport counters in `cycle-*/delivery-progress.json` before terminal-evidence
+and delivery/rate gates. A later gate failure does not discard these measurements.
+Single-cycle measurements do not replace the catalog's repeated AP lifecycle
+qualification scenarios.
 
 Durable evidence packages and private remote storage are described in
 [HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.

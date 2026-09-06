@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn ap_measurement_accepts_one_cycle_but_rejects_empty_lifecycle() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("ap-network-comparison-01-tx-balanced")
+        .unwrap()
+        .clone();
+    for (count, valid) in [(0, false), (1, true), (2, true), (8, true), (9, false)] {
+        let Workload::AccessPoint { cycles, .. } = &mut scenario.workload else {
+            panic!("AP workload expected")
+        };
+        *cycles = count;
+        assert_eq!(scenario.validate().is_ok(), valid, "cycles={count}");
+    }
+}
+
+#[test]
 fn memory_batch_catalog_preserves_single_defaults_and_rejects_invalid_cross_products() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

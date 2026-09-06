@@ -1774,7 +1774,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         );
     }
 
-    connected_datapath.spawn(radio_runner);
+    connected_datapath.start(radio_runner);
     let requested_command = await_stack_boundary!(wait_connected_datapath_completion(
         connected_datapath,
         station_control,

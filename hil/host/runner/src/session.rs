@@ -292,21 +292,6 @@ fn open_serial_after_busy_release(
     }
 }
 
-/// Reset an ESP USB-Serial/JTAG target without giving up the capture handle.
-///
-/// This is the `espflash` `reset_after_flash` USB-Serial/JTAG sequence. DTR is
-/// kept high at the board pin, while the RTS transition issues the chip reset.
-fn reset_usb_serial_jtag(serial: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
-    thread::sleep(Duration::from_millis(100));
-    serial.write_data_terminal_ready(false)?;
-    thread::sleep(Duration::from_millis(100));
-    serial.write_request_to_send(true)?;
-    serial.write_data_terminal_ready(false)?;
-    serial.write_request_to_send(true)?;
-    thread::sleep(Duration::from_millis(100));
-    serial.write_request_to_send(false)
-}
-
 impl Drop for SerialCapture {
     fn drop(&mut self) {
         self.stop_and_join();
@@ -325,6 +310,8 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
+mod reset;
+use reset::reset_usb_serial_jtag;
 mod capture;
 pub(crate) mod error;
 use error::LinkError;

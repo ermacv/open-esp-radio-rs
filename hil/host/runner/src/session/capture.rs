@@ -32,11 +32,6 @@ impl SerialCapture {
                     port.display()
                 ))
             })?;
-            serial
-                .clear(serialport::ClearBuffer::Input)
-                .map_err(|error| {
-                    LinkError::transport(format!("serial input clear failed: {error}"))
-                })?;
             reset_usb_serial_jtag(&mut *serial).map_err(|error| {
                 LinkError::transport(format!("serial target reset failed: {error}"))
             })?;

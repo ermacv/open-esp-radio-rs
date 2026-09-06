@@ -382,7 +382,7 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 17] {
+pub fn profiles() -> [Profile; 18] {
     use Boundary::*;
     let product = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
     [
@@ -404,6 +404,11 @@ pub fn profiles() -> [Profile; 17] {
         Profile {
             boundary: UpstreamApplication,
             manifest: "examples/esp32s31-station/Cargo.toml",
+            features: &["--no-default-features", "--features", "upstream-network"],
+        },
+        Profile {
+            boundary: UpstreamApplication,
+            manifest: "examples/esp32s31-access-point/Cargo.toml",
             features: &["--no-default-features", "--features", "upstream-network"],
         },
         Profile {

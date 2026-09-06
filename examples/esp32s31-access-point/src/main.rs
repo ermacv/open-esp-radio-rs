@@ -3,7 +3,6 @@
 #![recursion_limit = "256"]
 
 use embassy_executor::Spawner;
-use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StaticConfigV4};
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -17,13 +16,12 @@ use oer::wifi::{
     WifiMacAddress, WifiSsid,
 };
 use open_esp_radio as oer;
-use open_esp_radio_esp32s31_access_point::{dhcp, services};
+use open_esp_radio_esp32s31_access_point::{dhcp, network, services};
 use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executor};
 use open_esp_radio_esp32s31_embassy_wifi::{
     self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
     Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
-    Esp32s31WifiNetworkRunner as NetworkRunner, Esp32s31WifiParts as WifiParts,
-    Esp32s31WifiStackResources as StackResources,
+    Esp32s31WifiParts as WifiParts,
 };
 use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -31,9 +29,6 @@ use static_cell::StaticCell;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
-// Network socket state is application-owned and static so it never inflates
-// the executor task frame.
-static NETWORK_RESOURCES: StaticCell<StackResources> = StaticCell::new();
 
 const AP_SSID: &str = match option_env!("ESP32S31_AP_SSID") {
     Some(value) => value,
@@ -134,60 +129,55 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         station_status: _,
         mut access_point_status,
     } = wifi.into_parts();
-    let network_config = Config::ipv4_static(StaticConfigV4 {
-        address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 4, 1), 24),
-        gateway: None,
-        dns_servers: Default::default(),
-    });
-    let (stack, network_runner) = NetworkRunner::new(
+    let seed = u64::from_le_bytes([
+        access_point_address[0],
+        access_point_address[1],
+        access_point_address[2],
+        access_point_address[3],
+        access_point_address[4],
+        access_point_address[5],
+        0xa5,
+        0x31,
+    ]);
+    open_esp_radio_wifi_embassy::await_stack_boundary!(network::run(
         access_point_device,
-        network_config,
-        NETWORK_RESOURCES.init(StackResources::new()),
-        u64::from_le_bytes([
-            access_point_address[0],
-            access_point_address[1],
-            access_point_address[2],
-            access_point_address[3],
-            access_point_address[4],
-            access_point_address[5],
-            0xa5,
-            0x31,
-        ]),
-    );
-    let application = async move {
-        let access_point = async move {
-            let active = wifi
-                .start_access_point(request)
-                .await
-                .expect("AP must start");
-            esp_println::println!(
-                "open-radio: AP active generation={}",
-                active.generation().value()
-            );
-            let _active = active;
-            core::future::pending::<()>().await;
-        };
-        let status = async move {
-            loop {
-                let snapshot = access_point_status.changed().await;
+        seed,
+        |stack| async move {
+            let access_point = async move {
+                let active = wifi
+                    .start_access_point(request)
+                    .await
+                    .expect("AP must start");
                 esp_println::println!(
-                    "open-radio: AP generation={:?} associated={} authorized={}/{}",
-                    snapshot.generation,
-                    snapshot.associated,
-                    snapshot.authorized,
-                    snapshot.client_limit,
+                    "open-radio: AP active generation={}",
+                    active.generation().value()
                 );
-            }
-        };
-        let echoes = async move {
-            let (_udp, _tcp) =
-                embassy_futures::join::join(services::udp_echo(stack), services::tcp_echo(stack))
-                    .await;
-        };
-        let (_ap, _status, _dhcp, _echoes) =
-            embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
-    };
-    embassy_futures::join::join(application, network_runner.run()).await;
+                let _active = active;
+                core::future::pending::<()>().await;
+            };
+            let status = async move {
+                loop {
+                    let snapshot = access_point_status.changed().await;
+                    esp_println::println!(
+                        "open-radio: AP generation={:?} associated={} authorized={}/{}",
+                        snapshot.generation,
+                        snapshot.associated,
+                        snapshot.authorized,
+                        snapshot.client_limit,
+                    );
+                }
+            };
+            let echoes = async move {
+                let (_udp, _tcp) = embassy_futures::join::join(
+                    services::udp_echo(stack),
+                    services::tcp_echo(stack),
+                )
+                .await;
+            };
+            let (_ap, _status, _dhcp, _echoes) =
+                embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
+        }
+    ));
 }
 
 #[embassy_executor::task]

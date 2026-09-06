@@ -46,7 +46,11 @@ pub fn run(ctx: &Context) -> Result<()> {
             .arg(ctx.root.join("examples/esp32s31-access-point/Cargo.toml")),
     )?;
     dma::check(ctx)?;
-    for feature in ["compat-network", "upstream-network"] {
+    for (example, feature) in [
+        ("station", "compat-network"),
+        ("station", "upstream-network"),
+        ("access-point", "upstream-network"),
+    ] {
         process::run(
             ctx.cargo()
                 .args([
@@ -58,7 +62,10 @@ pub fn run(ctx: &Context) -> Result<()> {
                     TARGET,
                     "--manifest-path",
                 ])
-                .arg(ctx.root.join("examples/esp32s31-station/Cargo.toml"))
+                .arg(
+                    ctx.root
+                        .join(format!("examples/esp32s31-{example}/Cargo.toml")),
+                )
                 .args(["--no-default-features", "--features", feature]),
         )?;
     }

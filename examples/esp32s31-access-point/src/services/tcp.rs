@@ -1,6 +1,6 @@
 //! One TCP echo session and its acknowledged close/reset boundary.
 
-use embassy_net::tcp::TcpSocket;
+use crate::network::TcpSocket;
 use embassy_time::{Duration, with_timeout};
 
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);

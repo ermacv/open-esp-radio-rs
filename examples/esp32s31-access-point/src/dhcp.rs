@@ -1,10 +1,10 @@
 use core::net::Ipv4Addr;
 
+use crate::network::{Stack, new_udp};
 use edge_dhcp::{
     Options, Packet,
     server::{Server, ServerOptions},
 };
-use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::Instant;
 use static_cell::StaticCell;
 
@@ -34,7 +34,7 @@ pub async fn run(stack: Stack<'static>) -> ! {
     let server = SERVER.init(server);
     let mut gateway = [Ipv4Addr::UNSPECIFIED];
     let options = ServerOptions::new(SERVER_ADDRESS, Some(&mut gateway));
-    let mut socket = UdpSocket::new(stack);
+    let mut socket = new_udp(stack);
     socket
         .bind(DHCP_SERVER_PORT)
         .expect("DHCP port must be free");

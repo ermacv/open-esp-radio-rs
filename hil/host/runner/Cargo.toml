@@ -14,6 +14,9 @@ object = { version = "=0.39.1", default-features = false, features = ["elf", "re
 oer-firmware = { path = "../../../tools/firmware" }
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"
+flate2 = "1.1"
+tar = { version = "0.4", default-features = false }
+tempfile = "3"
 libc = "0.2"
 open-esp-radio-hil-protocol = { path = "../../protocol" }
 open-esp-radio-ieee80211 = { path = "../../../driver/ieee80211/mac" }
@@ -26,7 +29,7 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
-embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }
+embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }
 open-esp-radio-embassy-net-compat = { path = "../../../driver/network/adapters/embassy/compat" }
 # Match the target's UDP receive capacity for burst-retention tests.
 xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", default-features = false, features = ["udp-rx-queue-count-16"] }

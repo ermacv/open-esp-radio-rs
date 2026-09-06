@@ -21,6 +21,8 @@ diagnostics = ["open-esp-radio-esp32s31-wifi-embassy/diagnostics"]
 tx-phase-telemetry = ["open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry"]
 
 [dev-dependencies]
+open-esp-radio-esp32s31-wifi-sta = { path = "../../../../chips/esp32s31/ieee80211/sta" }
+open-esp-radio-wifi-softmac = { path = "../../../../ieee80211/softmac" }
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [lints]

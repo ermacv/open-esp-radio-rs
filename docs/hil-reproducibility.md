@@ -110,7 +110,8 @@ Subjects are ordinary files. A local content-addressed store permits hard-link
 deduplication; copying is the fallback when linking is unavailable. Copying a
 sealed run produces a self-contained bundle. Firmware binaries and generated
 reports remain outside tracked source. Automatic CAS garbage collection is
-not provided.
+not provided. [Durable archives](hil-archives.md) package these same bundles for
+offline import and private remote storage.
 
 ## Reproducing a hardware observation
 

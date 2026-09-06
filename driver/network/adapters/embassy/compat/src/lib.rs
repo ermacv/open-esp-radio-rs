@@ -316,6 +316,7 @@ struct QueuedFrame<const FRAME_CAPACITY: usize> {
 /// Payload bytes live in two separately supplied [`FrameStorage`] arenas.
 /// These channels move only unique frame leases, never complete frame values.
 pub struct Resources<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
+    rx_queue_full: AtomicU32,
     rx_free: Channel<M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     rx_ready: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_free: Channel<M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
@@ -330,6 +331,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
     /// Creates empty ownership queues with the link down.
     pub const fn new() -> Self {
         Self {
+            rx_queue_full: AtomicU32::new(0),
             rx_free: Channel::new(),
             rx_ready: Channel::new(),
             tx_free: Channel::new(),
@@ -385,6 +387,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
                 ingress_fairness: IngressPollFairness::new(QUEUE_DEPTH),
             },
             RadioRunner {
+                rx_queue_full: &self.rx_queue_full,
                 rx_ready: self.rx_ready.sender(),
                 rx_free: self.rx_free.receiver(),
                 rx_free_return: self.rx_free.sender(),
@@ -437,6 +440,7 @@ pub struct RadioRunner<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
+    rx_queue_full: &'resources AtomicU32,
     rx_ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
     rx_free: Receiver<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     rx_free_return: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
@@ -444,6 +448,40 @@ pub struct RadioRunner<
     tx_free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
+}
+
+/// Read-only queue observation without borrowing the radio executor.
+pub struct ResourceMonitor<'a, M: RawMutex, const F: usize, const Q: usize> {
+    rx_queue_full: &'a AtomicU32,
+    rx_ready: Sender<'a, M, QueuedFrame<F>, Q>,
+    rx_free: Receiver<'a, M, FrameSlot<F>, Q>,
+    tx_ready: Receiver<'a, M, QueuedFrame<F>, Q>,
+    tx_free: Sender<'a, M, FrameSlot<F>, Q>,
+}
+
+/// Queue lengths are sampled individually; a live producer may advance between
+/// reads. Tokens held by the stack or radio are absent from both queues.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResourceSnapshot {
+    /// Cumulative publication refusals due to occupied RX storage, wrapping
+    /// at u32::MAX. A refusal counts once per attempt, not once per packet.
+    pub rx_queue_full: u32,
+    pub rx_ready: usize,
+    pub rx_free: usize,
+    pub tx_ready: usize,
+    pub tx_free: usize,
+}
+
+impl<M: RawMutex, const F: usize, const Q: usize> ResourceMonitor<'_, M, F, Q> {
+    pub fn snapshot(&self) -> ResourceSnapshot {
+        ResourceSnapshot {
+            rx_queue_full: self.rx_queue_full.load(Ordering::Relaxed),
+            rx_ready: self.rx_ready.len(),
+            rx_free: self.rx_free.len(),
+            tx_ready: self.tx_ready.len(),
+            tx_free: self.tx_free.len(),
+        }
+    }
 }
 
 /// Copyable link-only authority retained by a finite radio role.
@@ -472,6 +510,7 @@ pub struct RadioRxPublisher<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
+    rx_queue_full: &'resources AtomicU32,
     ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
     free: Receiver<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     free_return: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
@@ -511,10 +550,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         if !snapshot.up {
             return Err(RxEnqueueError::LinkDown);
         }
-        let owned = self
-            .free
-            .try_receive()
-            .map_err(|_| RxEnqueueError::QueueFull)?;
+        let owned = self.free.try_receive().map_err(|_| {
+            self.rx_queue_full.fetch_add(1, Ordering::Relaxed);
+            RxEnqueueError::QueueFull
+        })?;
         if let Err(error) = owned.copy_from_slice_in_place(frame) {
             self.release(owned);
             return Err(RxEnqueueError::InvalidLength(error));
@@ -533,10 +572,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         if !snapshot.up {
             return Err(RxEnqueueError::LinkDown);
         }
-        let owned = self
-            .free
-            .try_receive()
-            .map_err(|_| RxEnqueueError::QueueFull)?;
+        let owned = self.free.try_receive().map_err(|_| {
+            self.rx_queue_full.fetch_add(1, Ordering::Relaxed);
+            RxEnqueueError::QueueFull
+        })?;
         if let Err(error) = owned.copy_from_parts_in_place(destination, source, ether_type, payload)
         {
             self.release(owned);
@@ -680,10 +719,23 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         RadioLinkController { link: self.link }
     }
 
+    pub const fn resource_monitor(
+        &self,
+    ) -> ResourceMonitor<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+        ResourceMonitor {
+            rx_queue_full: self.rx_queue_full,
+            rx_ready: self.rx_ready,
+            rx_free: self.rx_free,
+            tx_ready: self.tx_ready,
+            tx_free: self.tx_free,
+        }
+    }
+
     pub const fn rx_publisher(
         &self,
     ) -> RadioRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
         RadioRxPublisher {
+            rx_queue_full: self.rx_queue_full,
             ready: self.rx_ready,
             free: self.rx_free,
             free_return: self.rx_free_return,

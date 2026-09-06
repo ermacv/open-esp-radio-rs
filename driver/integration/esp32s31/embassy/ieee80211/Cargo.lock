@@ -423,11 +423,11 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
+source = "git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91#1fa0957c07398f83c9795b645a5a6ceda1270f91"
 dependencies = [
  "document-features",
  "embassy-futures",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",
@@ -445,7 +445,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
+source = "git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91#1fa0957c07398f83c9795b645a5a6ceda1270f91"
 dependencies = [
  "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
@@ -1191,7 +1191,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
  "embassy-sync 0.8.0",
  "open-esp-radio-network",
  "open-esp-radio-wifi-datapath",
@@ -1219,7 +1219,7 @@ dependencies = [
  "embassy-executor",
  "embassy-futures",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "esp-hal",
@@ -2091,7 +2091,7 @@ dependencies = [
 [[package]]
 name = "xarxa"
 version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4#122e97146fc0a174ef3310f4526defc37663bed4"
+source = "git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc#0d41d8e80cb617d355cf6981b6ff76635c44cadc"
 dependencies = [
  "bitflags 2.13.1",
  "byteorder",

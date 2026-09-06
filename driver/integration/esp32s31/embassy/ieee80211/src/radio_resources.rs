@@ -71,6 +71,25 @@ pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 #[cfg(feature = "compat-network")]
 pub const ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH: usize = 16;
 
+#[cfg(feature = "compat-network")]
+type CompatMonitor = open_esp_radio_embassy_net_compat::ResourceMonitor<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
+>;
+#[cfg(feature = "compat-network")]
+static STATION_COMPAT_MONITOR: embassy_sync::blocking_mutex::Mutex<
+    CriticalSectionRawMutex,
+    core::cell::RefCell<Option<CompatMonitor>>,
+> = embassy_sync::blocking_mutex::Mutex::new(core::cell::RefCell::new(None));
+
+/// Observe station queue ownership even if radio service is awaiting capacity.
+#[cfg(feature = "compat-network")]
+pub fn station_compat_resources() -> Option<open_esp_radio_embassy_net_compat::ResourceSnapshot> {
+    STATION_COMPAT_MONITOR.lock(|monitor| monitor.borrow().as_ref().map(CompatMonitor::snapshot))
+}
+
 #[cfg(feature = "owned-network")]
 type NetworkResources = OwnedEndpointResources<
     CriticalSectionRawMutex,
@@ -531,6 +550,8 @@ pub(crate) fn initialize_network(
         STATION_COMPAT_RX_STORAGE.take(),
         STATION_COMPAT_TX_STORAGE.take(),
     );
+    STATION_COMPAT_MONITOR
+        .lock(|monitor| *monitor.borrow_mut() = Some(station_runner.resource_monitor()));
     let (access_point_device, access_point_runner) = access_point_resources.split(
         access_point_address,
         ACCESS_POINT_COMPAT_RX_STORAGE.take(),
@@ -572,11 +593,11 @@ pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {
 #[cfg(feature = "upstream-network")]
 mod upstream;
 #[cfg(feature = "upstream-network")]
-pub use upstream::Esp32s31WifiNetworkDevice;
-#[cfg(feature = "upstream-network")]
 use upstream::RadioNetworkRunner;
 #[cfg(feature = "upstream-network")]
 pub(crate) use upstream::initialize_network;
+#[cfg(feature = "upstream-network")]
+pub use upstream::{Esp32s31WifiNetworkDevice, station_rx_pool_drops};
 #[cfg(feature = "upstream-network")]
 pub(super) type RadioNetworkTxBacking =
     open_esp_radio_xarxa_upstream::TxFrame<'static, CriticalSectionRawMutex>;

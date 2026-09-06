@@ -97,7 +97,7 @@ pub(crate) fn archived_firmware(
     })
 }
 
-fn verify_at(
+pub(crate) fn verify_at(
     target_directory: &Path,
     target: &str,
     run_id: Option<&str>,

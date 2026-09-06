@@ -14,6 +14,7 @@ use clap::Parser;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod archive;
 mod cli;
 mod device;
 mod error;
@@ -99,6 +100,7 @@ fn run() -> Result<()> {
         .unwrap_or(crate::lab::config::LabConfig::default_path()?);
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
+        CliCommand::Archive { command } => archive::run(&root, command),
         CliCommand::Doctor(selection) => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;

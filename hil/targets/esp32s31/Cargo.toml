@@ -17,9 +17,9 @@ embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # Original network stack; HIL exercises the public upstream driver contract.
 embassy-net-upstream = { package = "embassy-net", git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", features = ["icmp-ping-reply", "dhcpv4", "medium-ethernet", "tcp-listener", "udp"] }
-embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
-embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "317fb69357779a844a502fc171518395529c6394", default-features = false, features = ["dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
-xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", default-features = false, features = ["udp-rx-queue-count-16"] }
+embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", default-features = false, features = ["auto-icmp-echo-reply", "dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "0d41d8e80cb617d355cf6981b6ff76635c44cadc", default-features = false, features = ["udp-rx-queue-count-16"] }
 # One network poll drains up to 16 driver RX owners before sockets can run.
 xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", default-features = false, features = ["udp-rx-queue-count-16"] }
 embassy-sync = "0.8.0"

@@ -12,6 +12,11 @@ API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in
 `driver/`.
 
+The released Embassy/smoltcp and owned Embassy/Xarxa compositions enable
+`auto-icmp-echo-reply` explicitly for the HIL ping workload because these
+dependencies disable default features. Echo response is independent of DHCP,
+UDP/TCP sockets and the radio adapter.
+
 - `runtime`: role-neutral control plane and runtime-dispatched workloads;
 - `telemetry`: HIL-only diagnostic observers;
 
@@ -52,6 +57,26 @@ peer, so RX diagnostics remain relevant in a TX-only workload. The host saves
 `delivery-progress.json` before burst qualification, including for zero or
 partial delivery. Socket acceptance is separate from host reception, and
 unavailable diagnostic counters remain unknown rather than zero.
+
+UDP RX uses a continuous observation window for both single- and multi-flow
+sessions. The first data packet starts the configured duration, with at most
+two seconds of startup allowance; without a packet, the window starts when
+that allowance expires. Neither socket errors, 750-ms silence nor an early
+terminal marker ends the window. A separate 750-ms terminal grace excludes
+late payload from throughput. Every flow uses the full duration as denominator,
+including zero-delivery flows.
+
+The reliable `ORX_WINDOW` record reports startup delay, socket errors, late
+datagrams and delayed deadline service. `ORX_SILENCE` reports silence gaps,
+including the offset of the longest gap and the trailing gap; `ORX_SOCKET`
+identifies the last receive error when errors occurred.
+Silence means no data reached the UDP consumer; it does not identify an RF,
+stack or driver cause. `ORX_POOL` reports shared Xarxa allocation refusals;
+`ORX_RESOURCES` reports compatibility RX/TX free and queued slots plus cumulative
+`rx_queue_full` publication refusals. These observations can be
+read even when the radio executor is blocked. Slot snapshots include neither
+held tokens nor a claim of atomic observation across all queues. RX task-poll
+observation closes at the window boundary, before terminal grace and reporting.
 
 UDP TX task-poll intervals close at the end of the measured workload, before
 the terminal drain or report output. Aggregate evidence closes after the drain;

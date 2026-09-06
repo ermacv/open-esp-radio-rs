@@ -8,6 +8,47 @@ use open_esp_radio_embassy_net_compat::{
 
 const FRAME_CAPACITY: usize = 64;
 
+#[test]
+fn saturated_tx_blocks_rx_until_radio_releases_a_tx_owner() {
+    let (resources, rx_storage, tx_storage) = endpoint_resources::<2>();
+    let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1], rx_storage, tx_storage);
+    let monitor = radio.resource_monitor();
+    radio.set_link_state(LinkState::Up);
+    for _ in 0..2 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(ETHERNET_HEADER_LEN, |frame| frame.fill(1));
+        radio.try_send_rx(&[2; ETHERNET_HEADER_LEN]).unwrap();
+    }
+    let full = monitor.snapshot();
+    assert_eq!(
+        (full.rx_ready, full.rx_free, full.tx_ready, full.tx_free),
+        (2, 0, 2, 0)
+    );
+    assert!(radio.rx_publisher().poll_ready(&mut context()).is_pending());
+    assert!(device.receive(&mut context()).is_none());
+
+    // Selecting TX still retains its payload owner. A scheduler awaiting RX
+    // capacity before this terminal drop cannot break the circular wait.
+    let selected = radio.try_receive_tx().unwrap();
+    assert_eq!(monitor.snapshot().tx_ready, 1);
+    assert_eq!(monitor.snapshot().tx_free, 0);
+    assert!(device.receive(&mut context()).is_none());
+    drop(selected);
+    assert_eq!(monitor.snapshot().tx_free, 1);
+    let (rx, reply) = device.receive(&mut context()).unwrap();
+    assert_eq!(
+        monitor.snapshot().rx_free,
+        0,
+        "RX token still owns its slot"
+    );
+    rx.consume(|frame| assert_eq!(frame, &[2; ETHERNET_HEADER_LEN]));
+    drop(reply);
+    assert!(radio.rx_publisher().poll_ready(&mut context()).is_ready());
+    assert_eq!(monitor.snapshot().rx_free, 1);
+}
+
 fn context() -> Context<'static> {
     Context::from_waker(Waker::noop())
 }

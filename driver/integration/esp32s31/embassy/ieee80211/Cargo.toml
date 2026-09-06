@@ -25,7 +25,7 @@ embassy-futures = "0.1.2"
 # Network stacks are mutually exclusive composition leaves. The compatibility
 # leaf resolves only released crates; the owned leaf contains the maintained
 # owner-transfer fork. Neither choice changes radio policy.
-embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "317fb69357779a844a502fc171518395529c6394", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
 embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"

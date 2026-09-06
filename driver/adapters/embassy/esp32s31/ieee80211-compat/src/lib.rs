@@ -8,6 +8,11 @@
 //! materialization contract. Complete Ethernet frames wait in bounded general
 //! adapter storage. The radio chooses a logical interface before the bridge
 //! reserves final DMA-visible SRAM and performs one additional copy.
+//!
+//! Standalone RX publication drops a new frame when compatibility storage is
+//! full. It cannot await RX space while holding the radio owner: upstream RX
+//! needs a reply TX token whose return depends on that owner's TX progress.
+//! Existing queued frames retain their ownership and order.
 
 use core::future::Future;
 
@@ -20,7 +25,10 @@ use open_esp_radio_esp32s31_wifi_embassy::datapath::MaterializationOwnershipSnap
 use open_esp_radio_esp32s31_wifi_embassy::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, SelectedBurstMaterializer,
     SoftwareTxFrame,
-    network::{DatapathNetwork, DatapathNetworkLink, DatapathNetworkRx, DatapathNetworkRxSet},
+    network::{
+        DatapathNetwork, DatapathNetworkLink, DatapathNetworkRx, DatapathNetworkRxSet,
+        RxBackpressure,
+    },
 };
 use open_esp_radio_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
@@ -85,6 +93,13 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Copy
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> DatapathNetworkRx
     for CompatibilityRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
+    fn backpressure(&self) -> RxBackpressure {
+        // Upstream receive() needs a TX token even for an RX-only packet.
+        // Waiting on a full RX queue here would stop the radio owner that
+        // must materialize TX frames to return those tokens to the stack.
+        RxBackpressure::DropFrame
+    }
+
     fn queue_len(&self) -> usize {
         self.inner.queue_len()
     }

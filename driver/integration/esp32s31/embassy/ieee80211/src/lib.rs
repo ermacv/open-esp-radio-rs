@@ -212,6 +212,11 @@ pub use radio_resources::Esp32s31WifiStackResources;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
+#[cfg(all(feature = "compat-network", target_arch = "riscv32"))]
+pub use radio_resources::station_compat_resources;
+#[cfg(feature = "upstream-network")]
+#[cfg(target_arch = "riscv32")]
+pub use radio_resources::station_rx_pool_drops;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::{

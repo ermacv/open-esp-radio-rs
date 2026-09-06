@@ -40,7 +40,7 @@ radio-facing adapters and the underlying IEEE 802.11 driver.
 | Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `open-esp-radio-xarxa-upstream` |
 | Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [UDP wait patch](https://github.com/ermacv/xarxa/tree/d1919959c7821cf2ba17c79da932e1ac6edc2e66) | Same `open-esp-radio-xarxa-upstream` |
 | Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `open-esp-radio-embassy-net-compat` |
-| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/317fb69357779a844a502fc171518395529c6394); `xarxa` and `xarxa-driver` from the [owned Xarxa fork](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `open-esp-radio-embassy-net` |
+| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `open-esp-radio-embassy-net` |
 
 The original and owned Git revisions are reviewed pins, not tracking branches
 or a promise of compatibility with every later upstream revision. Dependency
@@ -108,6 +108,12 @@ broader `owned-network` fork and does not establish that all resource waits
 are efficient. Pool exhaustion and raw sockets retain upstream retry behavior.
 The original pool has no public release event, including for buffers dropped
 by application code outside the driver.
+
+The owned composition also gates device-blocked UDP wakes on the current
+route's capacity. Its Embassy pin selects that correction while retaining the
+owned packet allocator and driver source identity. This fixes the device wait;
+it does not redesign pool retry policy or reserve RX capacity in the original
+shared-pool composition.
 
 ## What changes in the Wi-Fi driver
 
@@ -203,6 +209,14 @@ Released Embassy/smoltcp send completes when a datagram
 enters the socket byte ring. Host delivery and terminal drain therefore matter
 when comparing TX results; an API completion alone is not delivery on air.
 
+The ESP32-S31 original and patched Xarxa composition bounds each TX queue to
+8 owners while retaining RX depth 16. With the default global pool of 16,
+one queued TX direction therefore cannot consume the entire pool needed by
+RX publication. Selected TX frames keep their owner until materialization/drop;
+sockets and the other logical interface also share the pool. This queue budget
+is not an exclusive RX reservation and does not bound unresolved-neighbor
+owners held inside Xarxa.
+
 The upstream global pool and unresolved-neighbor queue both default to 16
 packet owners. A burst to an unresolved peer can fill that pool before its
 ARP reply arrives. This adapter also allocates RX packets from the same pool,
@@ -212,6 +226,22 @@ resource dependency. Applications must account for neighbor-resolution and RX
 headroom together; changing retry wakeups alone does not reserve RX memory.
 The adapter's [resource contract](../driver/network/adapters/xarxa/upstream/README.md)
 describes allocation failures and ownership.
+
+The Embassy/smoltcp `receive()` contract requires a free TX slot to return
+an RX/reply-token pair. With no TX slots, the stack cannot drain RX. The
+standalone compatibility radio sink therefore attempts each RX publication
+once and drops the new frame if its bounded storage is full. It never awaits
+network capacity while holding the radio owner needed to materialize TX and
+return software slots. Queued frames retain their owners and order; ordinary
+and A-MSDU/reorder publication use the same admission policy. The resource
+monitor counts full-storage publication refusals as `rx_queue_full`.
+
+This is an explicit overload loss policy, not a guarantee of lossless RX or
+a reserved reply pool. It preserves the unchanged upstream token contract
+without additional payload storage. Same-channel role services can instead
+retain bounded pending output and return backpressure to outer TX arbitration.
+This dependency is distinct from unresolved-neighbor packets blocking a socket
+TX queue.
 
 HIL requests 16 queued RX datagrams in each stack. smoltcp retains 16 metadata
 entries and 16 × 1472 bytes in each workload's active UDP direction, in PSRAM;

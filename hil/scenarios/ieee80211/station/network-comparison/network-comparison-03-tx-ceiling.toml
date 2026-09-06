@@ -1,0 +1,22 @@
+schema = 4
+id = "network-comparison-03-tx-ceiling"
+description = "Four-stack HT40 comparison: tx-ceiling"
+repetitions = 3
+image = "diagnostic-task-residence"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "station", "ht40", "network-comparison"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+payload_bytes = 1472
+tx_rate_bps = 130000000
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false

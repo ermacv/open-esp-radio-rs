@@ -15,7 +15,7 @@ use crate::diagnostics::rx_pipeline::{
     RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
 };
 use crate::{
-    datapath::network::DatapathNetworkRx,
+    datapath::network::{DatapathNetworkRx, RxBackpressure},
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, StagedEthernetPublication, StagedRxDisposition,
     },
@@ -166,12 +166,14 @@ impl<
         StagedRxAdmission::AwaitCapacity
     }
 
-    fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
-        poll_fn(|context| self.network.poll_ready(context))
+    async fn wait_ready(&mut self) {
+        if self.network.backpressure() == RxBackpressure::WaitForCapacity {
+            poll_fn(|context| self.network.poll_ready(context)).await;
+        }
     }
 
     fn wait_staged_ready(&mut self) -> impl Future<Output = ()> + '_ {
-        poll_fn(|context| self.network.poll_ready(context))
+        <Self as ConnectedRxProtocolSink<STAGE_CAPACITY, STAGE_SLOTS>>::wait_ready(self)
     }
 
     fn publish_staged(

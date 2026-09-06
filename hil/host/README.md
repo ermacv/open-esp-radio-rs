@@ -18,10 +18,31 @@ cargo hil image replay <run-id> <image-class>
 cargo hil device status
 cargo hil report rebuild
 cargo hil report verify [run-id]
+cargo hil archive export <archive-id> --run <run-id>
+cargo hil archive verify|import <archive.tar.gz>
+cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
+cargo hil archive fetch <archive-id> --repo <owner/repository>
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
 ```
+
+The `network-comparison` tag selects the same five station workloads for each
+network implementation: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
+TX-only at 130 Mbit/s, bidirectional UDP at 130 + 130 Mbit/s, and idle ping.
+Each scenario repeats three times and uses the task-residence image. UDP
+windows last 16 seconds. Run one implementation at a time:
+
+```console
+cargo hil run-all --tag network-comparison --network patched-xarxa
+```
+
+Select `upstream-xarxa`, `upstream-smoltcp` or `owned-xarxa` for the other
+compositions. The throughput criteria still apply under overload; a completed
+measurement can fail its speed gate. Task residence is not full CPU utilization.
+
+Durable evidence packages and private remote storage are described in
+[HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.
 
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
 it does not read `hil/local.toml`, inspect tools or contact hardware. `doctor`
@@ -283,7 +304,11 @@ completion JSON retains its outcome and artifact paths, sets `history_report`
 and `history_html` to null, and reports `history_failure`. Retrying the derived
 view does not change the sealed bundle.
 
-`cargo hil report verify [run-id]` performs a read-only offline integrity
+`cargo hil report verify [run-id]
+cargo hil archive export <archive-id> --run <run-id>
+cargo hil archive verify|import <archive.tar.gz>
+cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
+cargo hil archive fetch <archive-id> --repo <owner/repository>` performs a read-only offline integrity
 check. With no run ID it checks every bundle. It validates manifest/suite
 structure, canonical relative paths, regular-file boundaries, attachment byte
 lengths and SHA-256 digests, plus the archived application image for every

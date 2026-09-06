@@ -20,6 +20,13 @@ use super::{SelectedBurstMaterializer, SoftwareTxFrame};
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
 pub trait DatapathNetworkRx {
+    /// Whether a standalone RX service may wait while holding the radio owner.
+    /// Select `DropFrame` when releasing RX capacity can require TX progress
+    /// from that same owner. Publication still reports the actual queue error.
+    fn backpressure(&self) -> RxBackpressure {
+        RxBackpressure::WaitForCapacity
+    }
+
     /// Whether pool exhaustion has a release notification that can resume a
     /// retained frame. A global pool without such a notification must drop
     /// that frame instead of retrying forever or polling an always-ready queue.
@@ -49,6 +56,15 @@ pub trait DatapathNetworkRx {
         frame: EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError>;
+}
+
+/// Admission when a finite RX turn cannot obtain an output slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxBackpressure {
+    /// Another independently progressing owner can return capacity.
+    WaitForCapacity,
+    /// Try publication once and account a drop rather than block radio TX.
+    DropFrame,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

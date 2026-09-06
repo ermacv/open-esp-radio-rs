@@ -59,7 +59,7 @@ pub(crate) struct Config {
     pub(crate) maximum_idle_channel_utilization_255: Option<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct Burst {
     pub(crate) bytes: u64,
     pub(crate) datagrams: u64,

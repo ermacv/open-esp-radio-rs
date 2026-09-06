@@ -17,6 +17,7 @@ details live beside their owner; this directory contains shared contracts.
   completion, compatibility and research boundaries.
 - [Verification and qualification](verification-and-qualification.md): evidence
   strength, freshness and the sole readiness authority.
+- [Durable HIL archives](hil-archives.md): offline packaging and private storage.
 - [HIL provenance and replay](hil-reproducibility.md): artifact identity,
   source reconstruction, rebuild comparison and lab observations.
 - [PHY comparison](phy/README.md): compiled comparison and incomplete outcomes.

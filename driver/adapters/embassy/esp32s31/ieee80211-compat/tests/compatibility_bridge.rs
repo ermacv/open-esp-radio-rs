@@ -165,3 +165,6 @@ fn dual_compatibility_endpoints_share_only_the_physical_horizon() {
         .expect("the other interface receives the returned global credit");
     assert_eq!(second.as_slice(), &[0xb2; ETHERNET_HEADER_LEN]);
 }
+
+#[path = "compatibility_bridge/rx_progress.rs"]
+mod rx_progress;

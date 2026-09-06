@@ -17,4 +17,5 @@ pub mod rx_pipeline;
 pub mod task_poll;
 #[cfg(any(feature = "tx-wait-probe", test))]
 pub mod tx_wait;
+pub mod udp_rx_window;
 pub mod wait;

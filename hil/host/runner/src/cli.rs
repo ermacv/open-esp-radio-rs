@@ -18,6 +18,11 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum CliCommand {
+    /// Preserve and retrieve verified HIL evidence without accessing hardware.
+    Archive {
+        #[command(subcommand)]
+        command: crate::archive::Command,
+    },
     /// Check the selected scenarios' tools and fixture, without resetting hardware.
     Doctor(Selection),
     /// Resolve scenario requirements offline, without opening a device or lab config.

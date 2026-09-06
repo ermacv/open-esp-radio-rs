@@ -116,7 +116,7 @@ async fn udp_rx_task(
                 local_port: 4_323,
                 queue_depth: UDP_RX_QUEUE_DEPTH,
                 payload_capacity: UDP_PAYLOAD_CAPACITY,
-                idle_timeout: Duration::from_millis(750),
+                silence_threshold: Duration::from_millis(750),
                 task_poll_telemetry: OPEN_RADIO_TASK_POLL_TELEMETRY,
                 code_address: runtime_code_marker as *const () as usize,
                 session_source: UdpRxSessionSource {

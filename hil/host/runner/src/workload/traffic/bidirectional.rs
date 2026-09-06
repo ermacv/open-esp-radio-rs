@@ -291,6 +291,11 @@ pub(crate) fn run(
         .join()
         .map_err(|_| "bidirectional host TX receiver panicked")??;
     let host = host_result?;
+    // Host delivery remains evidence even if the target never finishes its session.
+    fs::write(
+        output.join("delivery-progress.json"),
+        serde_json::to_vec_pretty(&progress::snapshot(host, &tx_bursts, None))?,
+    )?;
     let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
         Ok(evidence) => evidence,
         Err(error) => {
@@ -324,6 +329,14 @@ pub(crate) fn run(
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
+    fs::write(
+        output.join("delivery-progress.json"),
+        serde_json::to_vec_pretty(&progress::snapshot(
+            host,
+            &tx_bursts,
+            Some(structured.transport),
+        ))?,
+    )?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -793,6 +806,8 @@ pub(crate) use qualify::validate_exact_rx_delivery;
 use qualify::{assess_rx_report, is_qualified_rx_sample};
 #[cfg(test)]
 use qualify::{qualify_rx_report, qualify_tx_samples};
+mod progress;
+
 use report::{
     BidirectionalPerformanceReport, write_bidirectional_performance_report, write_report,
 };

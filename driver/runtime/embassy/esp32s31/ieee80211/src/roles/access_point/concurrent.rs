@@ -1453,6 +1453,27 @@ where
                         }
                     }
                 }
+                Err(RxEnqueueError::PoolExhausted)
+                    if network.pool_exhaustion()
+                        == crate::datapath::network::RxPoolExhaustion::DropFrame =>
+                {
+                    #[cfg(feature = "diagnostics")]
+                    if let Some(observer) = self.delivery_observer {
+                        observer.dropped(
+                            RxNetworkDeliveryEvent::decoded(frame, None),
+                            RxEnqueueError::PoolExhausted,
+                        );
+                    }
+                    if let Some(active) = self.protocol.active_mut() {
+                        active.processor.commit_rx_batch_record(next_offset);
+                    } else {
+                        self.protocol
+                            .parked_state_mut()
+                            .expect("paired AP role is active or parked")
+                            .processor
+                            .commit_rx_batch_record(next_offset);
+                    }
+                }
                 Err(
                     RxEnqueueError::QueueFull
                     | RxEnqueueError::PoolExhausted

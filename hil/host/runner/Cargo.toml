@@ -26,6 +26,12 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+# Match the target's UDP receive capacity for burst-retention tests.
+xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", default-features = false, features = ["udp-rx-queue-count-16"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", features = ["dhcpv4", "medium-ethernet", "tcp-listener", "udp"] }
+embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
+embassy-sync = "0.8"
+open-esp-radio-xarxa-upstream = { path = "../../../driver/network/adapters/xarxa/upstream" }
 roxmltree = "0.20"
 
 [lints]

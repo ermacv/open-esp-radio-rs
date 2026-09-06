@@ -9,6 +9,8 @@ members = [
     "driver/radio",
     "driver/network/adapters/embassy/owned",
     "driver/network/adapters/embassy/compat",
+    "driver/network/adapters/xarxa/upstream",
+    "driver/adapters/embassy/esp32s31/ieee80211-upstream",
     "driver/network/research",
     "driver/adapters/embassy/ieee80211",
     "driver/runtime/embassy/esp32s31/bluetooth",
@@ -117,3 +119,8 @@ esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc2612
 embassy-futures = { version = "0.1.2", registry = "crates-io" }
 embassy-sync = { version = "0.8.0", registry = "crates-io" }
 embassy-time = { version = "0.5.1", registry = "crates-io" }
+
+# Share the official timer ABI between registry platform crates and upstream
+# Git Embassy in integration tests. No network implementation is substituted.
+[patch."https://github.com/embassy-rs/embassy"]
+embassy-time-driver = { version = "=0.2.2", registry = "crates-io" }

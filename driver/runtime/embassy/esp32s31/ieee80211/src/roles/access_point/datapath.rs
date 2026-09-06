@@ -298,6 +298,19 @@ where
                         }
                     }
                 }
+                Err(RxEnqueueError::PoolExhausted)
+                    if network.pool_exhaustion()
+                        == crate::datapath::network::RxPoolExhaustion::DropFrame =>
+                {
+                    #[cfg(feature = "diagnostics")]
+                    if let Some(observer) = self.delivery_observer {
+                        observer.dropped(
+                            RxNetworkDeliveryEvent::decoded(frame, None),
+                            RxEnqueueError::PoolExhausted,
+                        );
+                    }
+                    self.control.commit_rx_batch_record(next_offset);
+                }
                 Err(
                     RxEnqueueError::QueueFull
                     | RxEnqueueError::PoolExhausted

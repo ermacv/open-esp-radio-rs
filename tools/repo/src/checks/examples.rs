@@ -46,18 +46,21 @@ pub fn run(ctx: &Context) -> Result<()> {
             .arg(ctx.root.join("examples/esp32s31-access-point/Cargo.toml")),
     )?;
     dma::check(ctx)?;
-    process::run(
-        ctx.cargo()
-            .args([
-                "check",
-                "--locked",
-                "--offline",
-                "--release",
-                "--target",
-                TARGET,
-                "--manifest-path",
-            ])
-            .arg(ctx.root.join("examples/esp32s31-station/Cargo.toml"))
-            .args(["--no-default-features", "--features", "compat-network"]),
-    )
+    for feature in ["compat-network", "upstream-network"] {
+        process::run(
+            ctx.cargo()
+                .args([
+                    "check",
+                    "--locked",
+                    "--offline",
+                    "--release",
+                    "--target",
+                    TARGET,
+                    "--manifest-path",
+                ])
+                .arg(ctx.root.join("examples/esp32s31-station/Cargo.toml"))
+                .args(["--no-default-features", "--features", feature]),
+        )?;
+    }
+    Ok(())
 }

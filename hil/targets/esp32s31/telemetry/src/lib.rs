@@ -15,3 +15,4 @@ pub mod rx_delivery;
 pub mod rx_evidence;
 pub mod rx_pipeline;
 pub mod task_poll;
+pub mod wait;

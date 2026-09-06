@@ -23,7 +23,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check safety` | Compiler-enforced unsafe policy and reviewed hardware access boundaries |
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
-| `cargo xtask check examples` | Target type checks of the four examples and station compatibility-network variant |
+| `cargo xtask check examples` | Target type checks of the four examples and the station released-compat/upstream-Xarxa variants |
 | `cargo xtask check source-only` | Compose repository suites, Cargo/Clippy, publication and final-image analysis |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
@@ -34,15 +34,19 @@ The root Cargo alias selects this package. `--root PATH` selects an explicit
 repository checkout. A nested independent workspace does not acquire the root
 workspace's package membership through `--manifest-path`.
 
-Network dependency checks distinguish three contracts. Compatibility products
+Network dependency checks distinguish released compatibility, original upstream,
+maintained owned and research contracts. Compatibility products
 use the official crates.io Embassy network APIs and exclude the owned adapter
 and Xarxa. Owned products use fully revision-pinned network forks, with the
 Embassy stack and driver resolving to the same source. These source rules do
 not prohibit shared platform forks such as ESP-HAL. Research excludes Embassy
 and Xarxa from normal and build dependencies, including optional declarations;
 its default and complete feature selections are resolved independently.
-Development-only dependencies do not define a production ownership boundary.
-Both station example selections are checked in their own locked workspace;
+Original upstream checks require the reviewed full revisions from
+`embassy-rs/embassy` and `embassy-rs/xarxa` and reject fork, registry-network or
+local-source substitutions. Product and example checks reject mixed network
+features. Development-only dependencies do not define a production ownership boundary.
+All three station example selections are checked in their own locked workspace;
 library profiles use isolated consumers so unrelated workspace features cannot
 hide a dependency leak.
 

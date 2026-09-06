@@ -10,12 +10,24 @@
 
 pub mod resources;
 
-#[cfg(all(feature = "owned-network", feature = "compat-network"))]
+#[cfg(any(
+    all(feature = "owned-network", feature = "compat-network"),
+    all(feature = "upstream-network", feature = "owned-network"),
+    all(feature = "upstream-network", feature = "compat-network")
+))]
 #[cfg(target_arch = "riscv32")]
-compile_error!("select exactly one network integration: owned-network or compat-network");
-#[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
+compile_error!(
+    "select exactly one network integration: upstream-network, owned-network or compat-network"
+);
+#[cfg(not(any(
+    feature = "owned-network",
+    feature = "compat-network",
+    feature = "upstream-network"
+)))]
 #[cfg(target_arch = "riscv32")]
-compile_error!("select exactly one network integration: owned-network or compat-network");
+compile_error!(
+    "select exactly one network integration: upstream-network, owned-network or compat-network"
+);
 
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
@@ -69,6 +81,7 @@ mod status;
 #[cfg(target_arch = "riscv32")]
 mod supervisor;
 #[cfg(target_arch = "riscv32")]
+#[cfg(not(feature = "upstream-network"))]
 mod wifi_network;
 
 #[cfg(feature = "diagnostics")]
@@ -191,6 +204,12 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+#[cfg(feature = "upstream-network")]
+#[cfg(target_arch = "riscv32")]
+pub use radio_resources::Esp32s31WifiNetworkDevice;
+#[cfg(not(feature = "upstream-network"))]
+#[cfg(target_arch = "riscv32")]
+pub use radio_resources::Esp32s31WifiStackResources;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
@@ -200,7 +219,7 @@ pub use radio_resources::{
     DirectPsramTxDmaProbeObservation, direct_psram_tx_dma_probe_observation,
 };
 #[cfg(target_arch = "riscv32")]
-pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices, Esp32s31WifiStackResources};
+pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 #[cfg(target_arch = "riscv32")]
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,
@@ -214,6 +233,7 @@ pub use supervisor::station::{
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
 #[cfg(target_arch = "riscv32")]
+#[cfg(not(feature = "upstream-network"))]
 pub use wifi_network::Esp32s31WifiNetworkRunner;
 
 /// One low-overhead batch of Core0 connected-DATAPATH poll residence.

@@ -113,6 +113,9 @@ impl PhyCalibrationPath {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRegisterOutcome {
+    /// Observed RF calibration results; completion alone does not imply PLL lock.
+    #[cfg(feature = "registration-diagnostics")]
+    pub rf_calibration: Option<RfCalibrationDiagnostics>,
     pub full_calibration_performed: bool,
     pub calibration_path: PhyCalibrationPath,
 }
@@ -309,6 +312,8 @@ pub struct PhyRegisterTransition {
     calibration_cache_ready: bool,
     calibration_path: PhyCalibrationPath,
     temperature_control: Option<crate::calibration::cold::PhyRegisterTemperatureControl>,
+    #[cfg(feature = "registration-diagnostics")]
+    rf_calibration: Option<RfCalibrationDiagnostics>,
     phase: Option<Phase>,
 }
 
@@ -333,6 +338,8 @@ impl PhyRegisterTransition {
             calibration_cache_ready: false,
             calibration_path: PhyCalibrationPath::FullUncached,
             temperature_control: None,
+            #[cfg(feature = "registration-diagnostics")]
+            rf_calibration: None,
             phase: Some(Phase::Prelude(PreludeStep::Prepare)),
         }
     }
@@ -365,6 +372,8 @@ impl PhyRegisterTransition {
                 PhyCalibrationPath::FullForCache
             },
             temperature_control: None,
+            #[cfg(feature = "registration-diagnostics")]
+            rf_calibration: None,
             phase: Some(Phase::Prelude(PreludeStep::Prepare)),
         }
     }
@@ -677,6 +686,10 @@ impl PhyRegisterTransition {
                             outcome,
                             crate::analog::i2c::PhyRfInitPrefixOutcome::ChannelFrequencyInitialized { .. }
                         );
+                        #[cfg(feature = "registration-diagnostics")]
+                        {
+                            self.rf_calibration = RfCalibrationDiagnostics::from_outcome(outcome);
+                        }
                         let state = transition.into_state();
                         if successful {
                             self.phase = Some(Phase::Baseband(
@@ -1071,6 +1084,8 @@ impl PhyRegisterTransition {
                     self.calibration_cache_ready = true;
                 }
                 Phase::Complete(PhyRegisterOutcome {
+                    #[cfg(feature = "registration-diagnostics")]
+                    rf_calibration: self.rf_calibration,
                     full_calibration_performed: true,
                     calibration_path: self.calibration_path,
                 })
@@ -1488,3 +1503,10 @@ impl PhyRegisterExternalBinding {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "registration-diagnostics")]
+mod diagnostics;
+#[cfg(feature = "registration-diagnostics")]
+pub use diagnostics::{
+    FrequencyCalibrationDiagnostics, RfCalibrationDiagnostics, RfpllCalibrationPoint,
+};

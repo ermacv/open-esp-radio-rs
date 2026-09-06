@@ -29,6 +29,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and compatibility network binding |
 | `runtime/embassy/esp32s31/{ieee80211,bluetooth}/` | Concrete radio execution; Wi-Fi role/datapath owners and Bluetooth controller/session owners, with their embedded time bindings |
 | `network/adapters/embassy/{owned,compat}/` | Owned-packet and released-interface network adapters |
+| `network/adapters/xarxa/upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure |
 | `network/research/` | Experimental synchronous network engine; currently consumed only by a driver test |
 | `integration/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |
 
@@ -36,7 +37,10 @@ Cargo package identities are independent of this directory hierarchy.
 modules own hardware descriptors and controller transitions. `network/interface`
 is a dependency-free value boundary. The compatibility adapter uses the
 released Embassy token contract; the owned adapter uses the pinned Git
-Embassy/Xarxa contract and its maintained packet-pool extensions.
+Embassy/Xarxa contract and its maintained packet-pool extensions. The upstream
+Xarxa adapter uses the original global pool and driver API. Its ESP32-S31
+bridge lives in `adapters/embassy/esp32s31/ieee80211-upstream`; all integrations
+share the existing radio scheduler and final SRAM allocator.
 `network/research` contains an experimental engine and physical materializer;
 its only external repository
 consumer is a host test of the materializer. Product radio policy cannot

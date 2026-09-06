@@ -60,8 +60,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     aggregate_counters: &AggregateTxCounters,
     sessions: &'static SessionChannel,
 ) -> ! {
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    let mut listener = TcpListener::new(stack);
+    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer).expect("HIL TCP socket capacity");
+    let mut listener = TcpListener::new(stack).expect("HIL TCP listener capacity");
     listener
         .listen(config.local_port)
         .expect("production TCP benchmark port must be free");
@@ -128,7 +128,11 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             aggregate_counters.snapshot()
         });
         let connection_timeout = duration + Duration::from_secs(5);
-        let connected = match with_timeout(connection_timeout, listener.accept(&mut socket)).await {
+        let connected = match with_timeout(connection_timeout, async {
+            socket.accept(listener.accept().await?).await
+        })
+        .await
+        {
             Ok(Ok(())) => true,
             Ok(Err(error)) => {
                 runtime_log(format_args!(
@@ -327,13 +331,13 @@ trait TcpRead {
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error>;
 }
 
-impl TcpRead for TcpSocket<'_> {
+impl TcpRead for TcpSocket<'_, '_> {
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpSocket::read(self, buffer).await
     }
 }
 
-impl TcpRead for TcpReader<'_> {
+impl TcpRead for TcpReader<'_, '_> {
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpReader::read(self, buffer).await
     }
@@ -343,13 +347,13 @@ trait TcpWrite {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error>;
 }
 
-impl TcpWrite for TcpSocket<'_> {
+impl TcpWrite for TcpSocket<'_, '_> {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpSocket::write(self, buffer).await
     }
 }
 
-impl TcpWrite for TcpWriter<'_> {
+impl TcpWrite for TcpWriter<'_, '_> {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpWriter::write(self, buffer).await
     }

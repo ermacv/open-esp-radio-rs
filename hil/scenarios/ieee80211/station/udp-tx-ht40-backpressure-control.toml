@@ -1,0 +1,22 @@
+schema = 4
+id = "udp-tx-ht40-backpressure-control"
+description = "Paced HT40 TX control for comparison with saturated task-poll diagnostics"
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "backpressure"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 16000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = true
+require_no_beacon_loss = true
+minimum_tx_bps = 15000000

@@ -29,6 +29,21 @@ use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRa
 
 use crate::console::runtime_log_reliably;
 
+/// Entry classification over the measured workload, without its terminal drain.
+#[cfg(feature = "mac-irq-telemetry")]
+pub(in crate::product_hil) async fn log_mac_irq_interval(sample: MacIrqClassificationSnapshot) {
+    runtime_log_reliably(format_args!(
+        "hil-irq: spurious={} rx_only={} rx_mixed={}",
+        sample.spurious_entries, sample.rx_only_entries, sample.rx_mixed_entries,
+    ))
+    .await;
+    runtime_log_reliably(format_args!(
+        "hil-irq: tx_only={} tx_mixed={} other_only={}",
+        sample.tx_only_entries, sample.tx_mixed_entries, sample.other_only_entries,
+    ))
+    .await;
+}
+
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"

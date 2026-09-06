@@ -1,7 +1,8 @@
 # ESP32-S31 HIL target
 
 This workspace selects the shared board boot and memory profile and owns Embassy executors,
-`embassy-net`, UART transport and HIL workloads. Radio behaviour
+`embassy-net` from the pinned original Embassy/Xarxa sources, UART transport
+and HIL workloads. The product dependency selects `upstream-network`. Radio behaviour
 belongs in `driver/`; HIL uses the public production constructor and runner.
 
 - `runtime`: role-neutral control plane and runtime-dispatched workloads;
@@ -11,6 +12,10 @@ belongs in `driver/`; HIL uses the public production constructor and runner.
 bootstrap, linker scripts and stage-two entry used by HIL and examples.
 
 `performance` contains no driver observer or scheduler instrumentation.
+RF calibration details are retained only by the PHY `registration-diagnostics`
+feature, selected by HIL `driver-observation`. Ordinary role owners keep the
+compact registration result instead of carrying RF measurements through every
+role transition. Diagnostic images log the retained PLL results after startup.
 `correctness` adds value-only driver observations, while the `diagnostic-*`
 images add one explicitly named hot-path probe. `diagnostic-mac-irq` alone
 extends the SRAM-closed ISR graph to sample publication-to-IRQ and
@@ -18,6 +23,18 @@ IRQ-to-bottom-half latency. UDP/TCP RX/TX/bidirectional
 workers remain runtime-selected; STA/AP roles and workload direction do not
 change image identity. The task-poll diagnostic accepts both data-plane
 placements and retains the ordinary 16-KiB CPU1 owner stack in either case.
+
+The task-poll overlay also counts per-interface stack/driver transfers and
+polls without a transfer. For single-flow UDP TX, post-workload `hil-net`
+records separate send-future poll residence, suspension and explicit workload
+pacing. Cancellation at the session deadline retains the last blocked send.
+These extra measurements affect diagnostic throughput. A poll without a
+transfer can still do internal protocol work; suspension includes executor
+scheduling latency and is not CPU time. The measurements do not timestamp
+individual packets inside the radio queue. The MAC IRQ image emits `hil-irq`
+entry classification for UDP TX, including interrupts with no pending status,
+alongside its existing sampled publication/IRQ/service timings. The interval
+ends before the terminal drain; summaries are printed after traffic.
 
 Large socket buffers, task arenas and ordinary task stacks live in PSRAM.
 DMA-visible storage, dedicated trap/interrupt stacks, critical data and ISR
@@ -40,14 +57,12 @@ retains radio and RX protocol on CPU0 and moves only `embassy-net` plus sockets
 to CPU1. The protocol still names the CPU0-local composition so a deliberately
 constructed external diagnostic can isolate placement, but it is not a catalog
 scenario or a default. This is an ownership-preserving executor placement, not
-a second radio datapath. Network
-ingress is time-bounded at 250 us and owns
-one dedicated TX credit per permanent endpoint beyond the 64 application
-credits. Saturated egress therefore cannot prevent either STA or AP from
-receiving the paired RX/TX-token handoff required by `embassy-net`. Application
-credits are otherwise elastic: a standalone role may use the complete pool,
-and real concurrent contention is resolved by waking one active waiting VIF on
-each returned credit instead of applying a permanent per-role quota.
+a second radio datapath. Upstream devices retain bounded RX/TX queues and
+use Xarxa's global packet pool. Pool exhaustion drops and accounts RX frames
+because upstream has no public pool-release notification. One RX drain is
+bounded by the endpoint queue depth so a continuously refilling radio cannot
+monopolize the network executor. The shared radio still owns the final SRAM
+TX allocation and scheduling.
 
 Initialization ends at `WifiIdle`. Credentials arrive only with a STA/AP role
 request; scan and monitor do not require a temporary STA. Permanent STA and
@@ -67,6 +82,16 @@ contract. `product_hil` owns the radio/network composition
 and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_qualification` children own workload and observation duties. The value-only
 `rx_statistics` child owns RX counter deltas and wire-evidence conversion.
+`network` owns persistent original stack/driver storage, per-interface IPv4
+configuration and HIL-only checksum-cost policy. Socket workloads use the
+original UDP and TCP APIs. UDP receive depth comes from upstream configuration;
+The UDP RX queue holds 16 packets, matching one complete driver RX drain before
+socket tasks can run. This is selected through the original Xarxa configuration
+feature; packet-pool capacity remains a separate limit.
+TX pacing is a workload policy, not a claimed socket queue capacity. TCP buffer
+sizes remain application-owned. The upstream global packet pool uses its
+default capacity.
+
 `console` retains the coupled UART/session admission, logger serialization
 and emergency writer lifecycle. Its `radio` child supplies the product-facing
 startup, session and Wi-Fi completion endpoints; memory-only images exclude

@@ -6,7 +6,11 @@ use embassy_futures::{
     select::{Either, select},
     yield_now,
 };
-use embassy_net::{IpEndpoint, Ipv4Address, Stack, udp::UdpSocket};
+use embassy_net::{
+    Stack,
+    udp::UdpSocket,
+    wire::{IpEndpoint, Ipv4Address},
+};
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
@@ -257,7 +261,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     config: UdpRxBenchmarkConfig,
     telemetry: UdpRxTelemetry,
 ) -> ! {
-    let mut socket = UdpSocket::new(stack);
+    let mut socket = UdpSocket::new(stack).expect("HIL UDP socket capacity");
     socket
         .bind(config.local_port)
         .unwrap_or_else(|error| panic!("production UDP RX socket bind failed: {error:?}"));

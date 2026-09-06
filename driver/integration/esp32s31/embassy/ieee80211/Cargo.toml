@@ -8,15 +8,18 @@ repository = "https://github.com/ermacv/open-esp-radio-rs"
 description = "Product-level ESP32-S31 Wi-Fi composition for Embassy and esp-hal"
 
 [package.metadata.open-radio]
-# Cargo features are additive, while these two integration leaves are
+# Cargo features are additive, while these integration leaves are
 # intentionally alternatives. Repository audits compile every declared
 # profile independently instead of constructing an invalid all-feature union.
 supported-feature-profiles = [
+    "upstream-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
     "owned-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
     "compat-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
 ]
 
 [dependencies]
+open-esp-radio-xarxa-upstream = { path = "../../../../network/adapters/xarxa/upstream", optional = true }
+open-esp-radio-esp32s31-wifi-xarxa-upstream = { path = "../../../../adapters/embassy/esp32s31/ieee80211-upstream", optional = true }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # Network stacks are mutually exclusive composition leaves. The compatibility
@@ -61,6 +64,10 @@ critical-section = { version = "1.2.0", features = ["std"] }
 
 [features]
 default = ["owned-network"]
+upstream-network = [
+    "dep:open-esp-radio-xarxa-upstream",
+    "dep:open-esp-radio-esp32s31-wifi-xarxa-upstream",
+]
 owned-network = [
     "dep:embassy-net-owned",
     "dep:open-esp-radio-embassy-net",
@@ -75,6 +82,7 @@ diagnostics = [
     "dep:log",
     "open-esp-radio-esp32s31-wifi-embassy/diagnostics",
     "open-esp-radio-esp32s31-wifi-embassy-compat?/diagnostics",
+    "open-esp-radio-esp32s31-wifi-xarxa-upstream?/diagnostics",
 ]
 # Hard-IRQ callbacks are a deliberately separate diagnostic boundary. Enabling
 # ordinary value observers must not change the SRAM-closed interrupt call graph.
@@ -88,6 +96,7 @@ core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy-compat?/tx-phase-telemetry",
+    "open-esp-radio-esp32s31-wifi-xarxa-upstream?/tx-phase-telemetry",
 ]
 tx-psram-dma-probe = [
     "dep:open-esp-radio-esp32s31-platform-pac",

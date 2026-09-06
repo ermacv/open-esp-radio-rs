@@ -15,16 +15,19 @@ profile-psram-data = []
 profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-runtime/psram-task-stack"]
 boot-smoke = []
+upstream-network = ["open-esp-radio-esp32s31-embassy-wifi/upstream-network"]
 open-radio-hil = [
+    "upstream-network",
     "oer-esp32s31-runtime/multicore",
     "dep:embassy-futures",
     "dep:embassy-net",
+    "dep:xarxa",
     "dep:embassy-sync",
     "dep:embedded-io-async",
     "dep:log",
     "dep:heapless",
     "dep:open-esp-radio",
-    "dep:open-esp-radio-embassy-net",
+    "dep:open-esp-radio-network",
     "dep:open-esp-radio-esp32s31-embassy-wifi",
     "dep:open-esp-radio-esp32s31-phy",
     "dep:open-esp-radio-esp32s31-wifi-esp-hal",
@@ -36,6 +39,7 @@ open-radio-hil = [
 ]
 driver-observation = [
     "open-esp-radio-esp32s31-embassy-wifi/diagnostics",
+    "open-esp-radio-esp32s31-phy/registration-diagnostics",
 ]
 # Intrusive hard-IRQ classification. This is never part of correctness or
 # performance images because it extends the SRAM-closed MAC ISR call graph.
@@ -106,6 +110,7 @@ ieee802154-ed-event-probe = [
 ]
 
 [dependencies]
+xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true
 embassy-futures = { workspace = true, optional = true }
 embassy-net = { workspace = true, optional = true }
@@ -116,7 +121,7 @@ esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 log = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 open-esp-radio = { workspace = true, optional = true }
-open-esp-radio-embassy-net = { workspace = true, optional = true }
+open-esp-radio-network = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-wifi = { workspace = true, optional = true }
 open-esp-radio-esp32s31-hal = { workspace = true, optional = true }
 open-esp-radio-esp32s31-phy = { workspace = true, optional = true }

@@ -22,8 +22,14 @@ Embassy/smoltcp network crates and the token-based compatibility adapter:
 cargo check --release --no-default-features --features compat-network
 ```
 
-The two network integrations are compile-time alternatives and cannot be
-combined in one binary. Both retain the pinned `esp-hal` and `esp-pacs`
+The original upstream Xarxa/Embassy integration is selected explicitly:
+
+```console
+cargo check --release --no-default-features --features upstream-network
+```
+
+The three network integrations are compile-time alternatives and cannot be
+combined in one binary. All retain the pinned `esp-hal` and `esp-pacs`
 hardware forks. Their stack-facing APIs and source guarantees are described
 in the [network integration contract](../../docs/wifi-egress.md#network-dependency-contracts).
 
@@ -36,9 +42,10 @@ ESP32S31_WIFI_PASSPHRASE='your passphrase' \
 cargo check --release
 ```
 
-After scan, WPA2 and DHCP complete, the example exposes a small UDP echo
-service on port 4321. This is application traffic through the normal
-`embassy-net` device; it is not a HIL benchmark path.
+After scan, WPA2 and DHCP complete, the upstream variant exposes a UDP echo
+service on port 4321 and replies to ICMP ping. The owned and released-compat
+variants currently run their DHCP/network tasks without an echo workload.
+Application socket storage and IP policy live in `src/network.rs`.
 
 If no matching AP is present, each complete 13-channel cold scan returns its
 halted RX ring, waits 500 ms and prepares that same owner for the next scan.
@@ -49,6 +56,7 @@ Build the complete application from the repository root:
 ```console
 cargo xtask build firmware station
 cargo xtask build firmware station --flash --monitor --port /dev/ttyACM0
+cargo xtask build firmware station --no-default-features --features upstream-network
 ```
 
 The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
@@ -57,6 +65,13 @@ in SRAM. The command checks ELF placement and stack frames before packaging
 or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
+
+The upstream variant pins original Embassy and the exact Xarxa revision
+selected by that Embassy manifest. Its only upstream Cargo source mapping
+selects official `embassy-time-driver` 0.2.2 from crates.io to share one timer
+ABI with the platform. No network implementation is forked or edited. See
+the [upstream contract](../../docs/wifi-egress.md#original-upstream-integration)
+for pool exhaustion, RX scheduling and ownership limits.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,

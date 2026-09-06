@@ -447,7 +447,7 @@ name = "embassy-net-driver"
 version = "0.2.0"
 source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
 dependencies = [
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -1195,7 +1195,7 @@ dependencies = [
  "embassy-sync 0.8.0",
  "open-esp-radio-network",
  "open-esp-radio-wifi-datapath",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -1238,6 +1238,7 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
+ "open-esp-radio-esp32s31-wifi-xarxa-upstream",
  "open-esp-radio-ieee80211",
  "open-esp-radio-network",
  "open-esp-radio-wifi-ap",
@@ -1245,6 +1246,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "open-esp-radio-xarxa-upstream",
  "riscv",
  "static_cell",
 ]
@@ -1423,6 +1425,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-embassy",
+ "open-esp-radio-xarxa-upstream",
+]
+
+[[package]]
 name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
@@ -1480,6 +1494,16 @@ dependencies = [
  "pbkdf2",
  "sha1",
  "zeroize",
+]
+
+[[package]]
+name = "open-esp-radio-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-datapath",
+ "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]
@@ -2073,7 +2097,7 @@ dependencies = [
  "byteorder",
  "document-features",
  "heapless 0.9.3",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -2084,6 +2108,15 @@ dependencies = [
  "atomic-waker",
  "document-features",
  "portable-atomic",
+]
+
+[[package]]
+name = "xarxa-driver"
+version = "0.1.0"
+source = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555"
+dependencies = [
+ "critical-section",
+ "document-features",
 ]
 
 [[package]]

@@ -150,6 +150,7 @@ pub struct Esp32s31WifiDevice {
     pub(crate) packet_allocator: PacketBufAllocator,
 }
 
+#[cfg(not(feature = "upstream-network"))]
 impl Esp32s31WifiDevice {
     /// Select software IPv4/UDP validation for received packets.
     pub fn with_software_ipv4_udp_rx_checksum_validation(mut self, enabled: bool) -> Self {
@@ -220,8 +221,10 @@ pub(super) type RadioAmpduStorage =
 pub type WifiNetworkResources = StationNetworkResources<(), NetworkRunner, ()>;
 pub(super) type RunningWifiNetwork = RunningStationNetwork<(), NetworkRunner>;
 
+#[cfg(not(feature = "upstream-network"))]
 static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
+#[cfg(not(feature = "upstream-network"))]
 static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
 #[cfg(feature = "compat-network")]
@@ -549,4 +552,25 @@ pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {
         )?,
         TX_AMPDU_STANDBY_RETENTION.take(),
     ))
+}
+
+#[cfg(feature = "upstream-network")]
+mod upstream;
+#[cfg(feature = "upstream-network")]
+pub use upstream::Esp32s31WifiNetworkDevice;
+#[cfg(feature = "upstream-network")]
+use upstream::RadioNetworkRunner;
+#[cfg(feature = "upstream-network")]
+pub(crate) use upstream::initialize_network;
+#[cfg(feature = "upstream-network")]
+pub(super) type RadioNetworkTxBacking =
+    open_esp_radio_xarxa_upstream::TxFrame<'static, CriticalSectionRawMutex>;
+
+#[cfg(feature = "upstream-network")]
+impl Esp32s31WifiDevice {
+    /// Transfer the original Xarxa driver to the application's upstream stack.
+    /// The application owns stack storage, IP configuration and socket policy.
+    pub fn into_upstream(self) -> Esp32s31WifiNetworkDevice {
+        self.inner
+    }
 }

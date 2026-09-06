@@ -105,6 +105,12 @@ impl<'storage, O> Esp32s31StaApStationRxSink<'storage, O> {
         {
             match network.try_send_parts(record.frame) {
                 Ok(()) => self.offset = record.next_offset,
+                Err(RxEnqueueError::PoolExhausted)
+                    if network.pool_exhaustion()
+                        == crate::datapath::network::RxPoolExhaustion::DropFrame =>
+                {
+                    self.offset = record.next_offset;
+                }
                 Err(
                     RxEnqueueError::QueueFull
                     | RxEnqueueError::PoolExhausted

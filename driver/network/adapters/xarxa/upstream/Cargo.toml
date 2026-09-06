@@ -1,0 +1,22 @@
+[package]
+name = "open-esp-radio-xarxa-upstream"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Unmodified upstream Xarxa driver boundary with bounded packet-owner queues"
+
+[dependencies]
+embassy-sync = "0.8.0"
+open-esp-radio-network = { path = "../../../interface" }
+open-esp-radio-wifi-datapath = { path = "../../../../ieee80211/datapath" }
+xarxa-driver = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", features = ["async"] }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+embassy-net-upstream = { package = "embassy-net", git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", default-features = false, features = ["medium-ethernet", "ipv4", "udp", "icmp-ping-reply"] }
+embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
+
+[lints]
+workspace = true

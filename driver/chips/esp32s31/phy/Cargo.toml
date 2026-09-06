@@ -10,6 +10,8 @@ description = "Allocation-free Rust ESP32-S31 PHY state machines"
 [features]
 default = []
 validation-probes = []
+# Retain value-only RF measurements in registration and role start reports.
+registration-diagnostics = []
 
 [dependencies]
 open-esp-radio-esp32s31-hal = { path = "../hal" }

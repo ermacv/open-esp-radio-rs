@@ -329,7 +329,7 @@ checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
 dependencies = [
  "bt-hci-transport",
  "btuuid",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
@@ -877,9 +877,9 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0641612053b2f34fc250bb63f6630ae75de46e02ade7f457268447081d709ce"
 dependencies = [
- "embassy-futures",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-hal-internal",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -926,6 +926,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc2d050bdc5c21e0862a89256ed8029ae6c290a93aecefc73084b3002cdebb01"
 
 [[package]]
+name = "embassy-futures"
+version = "0.1.2"
+source = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc"
+
+[[package]]
 name = "embassy-hal-internal"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -940,14 +945,29 @@ version = "0.9.1"
 source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
 dependencies = [
  "document-features",
- "embassy-futures",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-io-async 0.7.0",
  "embedded-nal-async",
  "heapless 0.9.3",
- "xarxa",
+ "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+]
+
+[[package]]
+name = "embassy-net"
+version = "0.9.1"
+source = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc"
+dependencies = [
+ "document-features",
+ "embassy-futures 0.1.2 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embassy-sync 0.8.0 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embassy-time 0.5.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embedded-io-async 0.7.0",
+ "heapless 0.9.3",
+ "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
+ "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]
@@ -961,7 +981,7 @@ name = "embassy-net-driver"
 version = "0.2.0"
 source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
 dependencies = [
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -1007,6 +1027,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "embassy-sync"
+version = "0.8.0"
+source = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "embedded-io-async 0.7.0",
+ "futures-core",
+ "futures-sink",
+ "heapless 0.9.3",
+]
+
+[[package]]
 name = "embassy-time"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1017,6 +1050,21 @@ dependencies = [
  "document-features",
  "embassy-time-driver",
  "embassy-time-queue-utils",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "futures-core",
+]
+
+[[package]]
+name = "embassy-time"
+version = "0.5.1"
+source = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "document-features",
+ "embassy-time-driver",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1059,8 +1107,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6efd0c0e0b21bcf91b475b8fa47347c1df32c9a99728ae1e1b0e6625862dfd1a"
 dependencies = [
  "critical-section",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-usb-driver",
  "portable-atomic",
 ]
@@ -1231,8 +1279,8 @@ dependencies = [
  "digest 0.11.3",
  "document-features",
  "embassy-embedded-hal",
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-usb-driver",
  "embassy-usb-synopsys-otg",
  "embedded-can",
@@ -1324,7 +1372,7 @@ dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
  "embassy-sync 0.7.2",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "esp-metadata-generated",
  "riscv",
  "xtensa-lx",
@@ -2286,8 +2334,8 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
@@ -2302,8 +2350,8 @@ version = "0.1.0"
 dependencies = [
  "bt-hci",
  "critical-section",
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "trouble-host",
@@ -2322,12 +2370,12 @@ name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-net",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-network",
  "open-esp-radio-wifi-datapath",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -2336,7 +2384,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-network",
 ]
 
@@ -2345,8 +2393,8 @@ name = "open-esp-radio-esp32s31-bluetooth"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-bluetooth-hci",
  "open-esp-radio-bluetooth-ll",
  "open-esp-radio-esp32s31-bluetooth-memory",
@@ -2360,9 +2408,9 @@ name = "open-esp-radio-esp32s31-bluetooth-embassy"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-bluetooth-hci",
  "open-esp-radio-bluetooth-ll",
  "open-esp-radio-esp32s31-bluetooth",
@@ -2374,9 +2422,9 @@ name = "open-esp-radio-esp32s31-bluetooth-integration"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "esp-hal",
  "open-esp-radio-bluetooth-hci",
  "open-esp-radio-bluetooth-ll",
@@ -2405,8 +2453,8 @@ version = "0.1.0"
 name = "open-esp-radio-esp32s31-coex-embassy"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-esp32s31-coex",
 ]
 
@@ -2442,8 +2490,8 @@ version = "0.1.0"
 name = "open-esp-radio-esp32s31-ieee802154-embassy"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-esp32s31-ieee802154-dma",
  "open-esp-radio-esp32s31-ieee802154-irq",
  "open-esp-radio-esp32s31-ieee802154-mac",
@@ -2573,9 +2621,9 @@ name = "open-esp-radio-esp32s31-wifi-embassy"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "open-esp-radio-dma",
  "open-esp-radio-embassy-net",
@@ -2596,7 +2644,7 @@ dependencies = [
  "open-esp-radio-wpa2",
  "riscv",
  "static_cell",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
 ]
 
 [[package]]
@@ -2604,8 +2652,8 @@ name = "open-esp-radio-esp32s31-wifi-embassy-compat"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-embassy-net-compat",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-network",
@@ -2659,6 +2707,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-embassy",
+ "open-esp-radio-xarxa-upstream",
+]
+
+[[package]]
 name = "open-esp-radio-hil-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2675,6 +2736,9 @@ name = "open-esp-radio-hil-runner"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "fs2",
  "libc",
  "object 0.39.1",
@@ -2683,12 +2747,14 @@ dependencies = [
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",
+ "open-esp-radio-xarxa-upstream",
  "roxmltree",
  "serde",
  "serde_json",
  "serialport",
  "sha2",
  "toml",
+ "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
  "zeroize",
 ]
 
@@ -2772,9 +2838,9 @@ name = "open-esp-radio-wifi-embassy"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "open-esp-radio-dma",
  "open-esp-radio-wifi-softmac",
 ]
@@ -2799,11 +2865,24 @@ name = "open-esp-radio-wpa2"
 version = "0.1.0"
 dependencies = [
  "aes",
- "embassy-futures",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hmac",
  "pbkdf2",
  "sha1",
  "zeroize",
+]
+
+[[package]]
+name = "open-esp-radio-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-datapath",
+ "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]
@@ -4215,9 +4294,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19a566cc37ceaff5cc2a6ff8cc02debd1ee6b95d59ced8830d005da8b080cbe9"
 dependencies = [
  "bt-hci",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-io 0.7.1",
  "futures",
  "heapless 0.9.3",
@@ -4637,7 +4716,19 @@ dependencies = [
  "document-features",
  "heapless 0.9.3",
  "libc",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+]
+
+[[package]]
+name = "xarxa"
+version = "0.1.0"
+source = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555"
+dependencies = [
+ "bitflags 2.13.1",
+ "byteorder",
+ "document-features",
+ "heapless 0.9.3",
+ "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]
@@ -4648,6 +4739,15 @@ dependencies = [
  "atomic-waker",
  "document-features",
  "portable-atomic",
+]
+
+[[package]]
+name = "xarxa-driver"
+version = "0.1.0"
+source = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555"
+dependencies = [
+ "critical-section",
+ "document-features",
 ]
 
 [[package]]

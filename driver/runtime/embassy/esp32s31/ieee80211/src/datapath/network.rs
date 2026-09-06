@@ -20,6 +20,12 @@ use super::{SelectedBurstMaterializer, SoftwareTxFrame};
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
 pub trait DatapathNetworkRx {
+    /// Whether pool exhaustion has a release notification that can resume a
+    /// retained frame. A global pool without such a notification must drop
+    /// that frame instead of retrying forever or polling an always-ready queue.
+    fn pool_exhaustion(&self) -> RxPoolExhaustion {
+        RxPoolExhaustion::WaitForRelease
+    }
     /// Number of copied RX frames still waiting in the owned network queue.
     fn queue_len(&self) -> usize;
 
@@ -43,6 +49,12 @@ pub trait DatapathNetworkRx {
         frame: EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxPoolExhaustion {
+    WaitForRelease,
+    DropFrame,
 }
 
 /// RX publication authority presented to one DATAPATH services graph.

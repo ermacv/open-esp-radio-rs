@@ -18,13 +18,9 @@ use crate::product_hil::{AGGREGATE_TX, OPEN_RADIO_TASK_POLL_TELEMETRY, RX_PIPELI
 use open_esp_radio_hil_protocol::WifiNetworkInterface;
 
 const UDP_PAYLOAD_CAPACITY: usize = 1_472;
-const UDP_RX_QUEUE_DEPTH: usize = 64;
-// Feed the complete active + standby 32-frame A-MPDU pipeline. A sixteen
-// packet socket queue made the HIL producer, rather than the negotiated radio
-// window, the TX ceiling and fragmented full-duplex aggregate preparation.
-// This CPU-owned PSRAM backlog feeds two complete aggregate horizons without
-// changing the fixed DMA-visible SRAM working set.
-const UDP_TX_QUEUE_DEPTH: usize = 128;
+// Workload pacing is independent of the stack's packet-pool capacity.
+const UDP_TX_PACING_GROUP_DATAGRAMS: u8 = 128;
+const UDP_RX_QUEUE_DEPTH: usize = embassy_net::config::UDP_RX_QUEUE_COUNT;
 const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 // This is larger than the link BDP for a separate reason: TCP must be able to
 // retain enough unsent payload to feed both 32-frame A-MPDU arenas. A 64-KiB
@@ -154,7 +150,6 @@ async fn udp_tx_task(
             UdpTxBenchmarkConfig {
                 network_interface,
                 source_port: 4_324,
-                queue_depth: UDP_TX_QUEUE_DEPTH,
                 payload_capacity: UDP_PAYLOAD_CAPACITY,
                 // A 1,472-byte HE20/MCS9 publication reaches the configured TXOP
                 // byte ceiling at 31 MPDUs. Pacing in 64-packet bursts produced a
@@ -165,7 +160,7 @@ async fn udp_tx_task(
                 // 32-entry BlockAck window and the smaller per-publication HE
                 // TXOP byte/duration ceiling; this value only prevents the load
                 // generator from manufacturing a 31+1 burst boundary.
-                pacing_group_datagrams: UDP_TX_QUEUE_DEPTH as u8,
+                pacing_group_datagrams: UDP_TX_PACING_GROUP_DATAGRAMS,
                 multi_flow_burst_datagrams: multi_flow_burst_datagrams(),
                 drain: Duration::from_millis(250),
                 code_address: runtime_code_marker as *const () as usize,

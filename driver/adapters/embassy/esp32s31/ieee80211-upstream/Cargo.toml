@@ -1,0 +1,27 @@
+[package]
+name = "open-esp-radio-esp32s31-wifi-xarxa-upstream"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Original Xarxa packet owners composed with the shared ESP32-S31 radio datapath"
+
+[dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+open-esp-radio-xarxa-upstream = { path = "../../../../network/adapters/xarxa/upstream" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
+open-esp-radio-network = { path = "../../../../network/interface" }
+open-esp-radio-wifi-embassy = { path = "../../ieee80211" }
+
+[features]
+default = []
+diagnostics = ["open-esp-radio-esp32s31-wifi-embassy/diagnostics"]
+tx-phase-telemetry = ["open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry"]
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[lints]
+workspace = true

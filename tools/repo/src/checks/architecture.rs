@@ -195,6 +195,17 @@ fn check_composition(ctx: &Context) -> Result<()> {
             )
             .into());
         }
+        if package_feature(
+            &graph,
+            "open-esp-radio-esp32s31-phy",
+            "registration-diagnostics",
+        )? != expected
+        {
+            return Err(format!(
+                "incorrect PHY registration diagnostics selection for HIL overlay {overlay:?}"
+            )
+            .into());
+        }
         package_for_manifest(&graph.metadata, &ctx.root.join(HIL_RUNTIME))?;
     }
     for (overlay, feature, expected) in [

@@ -2,15 +2,27 @@
 #![no_std]
 #![recursion_limit = "256"]
 
-#[cfg(all(feature = "owned-network", feature = "compat-network"))]
-compile_error!("select exactly one network integration: owned-network or compat-network");
-#[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
-compile_error!("select exactly one network integration: owned-network or compat-network");
+#[cfg(any(
+    all(feature = "owned-network", feature = "compat-network"),
+    all(feature = "upstream-network", feature = "owned-network"),
+    all(feature = "upstream-network", feature = "compat-network")
+))]
+compile_error!(
+    "select exactly one network integration: upstream-network, owned-network or compat-network"
+);
+#[cfg(not(any(
+    feature = "owned-network",
+    feature = "compat-network",
+    feature = "upstream-network"
+)))]
+compile_error!(
+    "select exactly one network integration: upstream-network, owned-network or compat-network"
+);
 
 use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
-use embassy_net::Config;
+
 #[cfg(feature = "compat-network")]
 use embassy_net_compat as embassy_net;
 #[cfg(feature = "owned-network")]
@@ -27,8 +39,7 @@ use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executo
 use open_esp_radio_esp32s31_embassy_wifi::{
     self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
     Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
-    Esp32s31WifiNetworkRunner as NetworkRunner, Esp32s31WifiParts as WifiParts,
-    Esp32s31WifiStackResources as StackResources,
+    Esp32s31WifiParts as WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
@@ -46,7 +57,7 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Socket/IP state belongs to the application, not to the radio driver. Static
 // placement avoids moving the stack arena through the executor task frame.
-static NETWORK_RESOURCES: StaticCell<StackResources> = StaticCell::new();
+mod network;
 
 const STA_SSID: &str = match option_env!("ESP32S31_WIFI_SSID") {
     Some(value) => value,
@@ -151,25 +162,19 @@ async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng
         station_status: _,
         access_point_status: _,
     } = wifi.into_parts();
-    let network = async move {
-        let (stack, runner) = NetworkRunner::new(
-            station_device,
-            Config::dhcpv4(Default::default()),
-            NETWORK_RESOURCES.init(StackResources::new()),
-            u64::from_le_bytes([
-                station_address[0],
-                station_address[1],
-                station_address[2],
-                station_address[3],
-                station_address[4],
-                station_address[5],
-                0xa5,
-                0x31,
-            ]),
-        );
-        let _stack = stack;
-        runner.run().await;
-    };
+    let network = network::run(
+        station_device,
+        u64::from_le_bytes([
+            station_address[0],
+            station_address[1],
+            station_address[2],
+            station_address[3],
+            station_address[4],
+            station_address[5],
+            0xa5,
+            0x31,
+        ]),
+    );
     let application = async move {
         let completed = wifi
             .scan(WifiScanRequest::new(

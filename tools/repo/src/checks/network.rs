@@ -8,6 +8,10 @@ const NETWORK: &str = "open-esp-radio-network";
 const OWNED: &str = "open-esp-radio-embassy-net";
 const COMPAT: &str = "open-esp-radio-embassy-net-compat";
 const BRIDGE: &str = "open-esp-radio-esp32s31-wifi-embassy-compat";
+const UPSTREAM: &str = "open-esp-radio-xarxa-upstream";
+const UPSTREAM_BRIDGE: &str = "open-esp-radio-esp32s31-wifi-xarxa-upstream";
+const XARXA_SOURCE: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
+const EMBASSY_SOURCE: &str = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,10 +25,18 @@ pub enum Boundary {
     CompatBridge,
     OwnedProduct,
     CompatProduct,
+    Upstream,
+    UpstreamBridge,
+    UpstreamProduct,
+    UpstreamApplication,
 }
 impl Boundary {
     pub fn name(self) -> &'static str {
         match self {
+            Self::Upstream => "upstream",
+            Self::UpstreamBridge => "upstream-bridge",
+            Self::UpstreamProduct => "upstream-product",
+            Self::UpstreamApplication => "upstream-application",
             Self::Neutral => "neutral",
             Self::Compat => "compat",
             Self::Owned => "owned",
@@ -37,7 +49,13 @@ impl Boundary {
         }
     }
     fn product(self) -> bool {
-        matches!(self, Self::OwnedProduct | Self::CompatProduct)
+        matches!(
+            self,
+            Self::OwnedProduct
+                | Self::CompatProduct
+                | Self::UpstreamProduct
+                | Self::UpstreamApplication
+        )
     }
 }
 fn registry(p: &Package) -> bool {
@@ -74,6 +92,16 @@ fn pinned_git(p: &Package) -> bool {
         return false;
     };
     revision == commit && commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+fn upstream_source(p: &Package) -> bool {
+    let source = p.source.as_ref().map(|source| source.repr.as_str());
+    if xarxa_api(p.name.as_str()) {
+        source == Some(XARXA_SOURCE)
+    } else if network_api(p.name.as_str()) {
+        p.name == "embassy-net" && source == Some(EMBASSY_SOURCE)
+    } else {
+        official_registry(p) || source == Some(EMBASSY_SOURCE)
+    }
 }
 fn physical(p: &Package, root: &Path) -> bool {
     p.name.starts_with("open-esp-radio-esp32s31")
@@ -205,6 +233,46 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             )?;
             released_driver()?;
         }
+        Boundary::Upstream
+        | Boundary::UpstreamBridge
+        | Boundary::UpstreamProduct
+        | Boundary::UpstreamApplication => {
+            reject(
+                &|p| matches!(p.name.as_str(), OWNED | COMPAT | BRIDGE),
+                "upstream acquired a different network integration",
+            )?;
+            reject(
+                &|p| (owned_api(p) || p.name.starts_with("embassy-")) && !upstream_source(p),
+                "upstream requires the reviewed original network sources",
+            )?;
+            required(
+                &|p| p.name == "xarxa-driver" && upstream_source(p),
+                "original Xarxa driver",
+            )?;
+            if boundary == Boundary::Upstream {
+                reject(
+                    &|p| physical(p, repository),
+                    "upstream adapter acquired physical radio ownership",
+                )?;
+            }
+            if matches!(
+                boundary,
+                Boundary::UpstreamProduct | Boundary::UpstreamApplication
+            ) {
+                required(&|p| p.name == UPSTREAM, "upstream adapter")?;
+                required(&|p| p.name == UPSTREAM_BRIDGE, "upstream radio bridge")?;
+            }
+            if boundary == Boundary::UpstreamApplication {
+                required(
+                    &|p| p.name == "embassy-net" && upstream_source(p),
+                    "original Embassy network stack",
+                )?;
+                required(
+                    &|p| p.name == "xarxa" && upstream_source(p),
+                    "original Xarxa stack",
+                )?;
+            }
+        }
         Boundary::Owned => {
             reject(
                 &|p| p.name == "embassy-net-driver" && registry(p),
@@ -285,12 +353,17 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
     let features = &graph.node(&root).features;
     let has = |feature: &str| features.iter().any(|f| f.as_str() == feature);
     if boundary.product() {
-        let (expected, other) = if boundary == Boundary::OwnedProduct {
-            ("owned-network", "compat-network")
-        } else {
-            ("compat-network", "owned-network")
+        let expected = match boundary {
+            Boundary::OwnedProduct => "owned-network",
+            Boundary::CompatProduct => "compat-network",
+            Boundary::UpstreamProduct | Boundary::UpstreamApplication => "upstream-network",
+            _ => unreachable!(),
         };
-        if !has(expected) || has(other) {
+        if !has(expected)
+            || ["owned-network", "compat-network", "upstream-network"]
+                .into_iter()
+                .any(|feature| feature != expected && has(feature))
+        {
             return Err(format!(
                 "{}: selected feature boundary is not exclusive",
                 boundary.name()
@@ -309,10 +382,39 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 12] {
+pub fn profiles() -> [Profile; 17] {
     use Boundary::*;
     let product = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
     [
+        Profile {
+            boundary: Upstream,
+            manifest: "driver/network/adapters/xarxa/upstream/Cargo.toml",
+            features: &[],
+        },
+        Profile {
+            boundary: UpstreamBridge,
+            manifest: "driver/adapters/embassy/esp32s31/ieee80211-upstream/Cargo.toml",
+            features: &[],
+        },
+        Profile {
+            boundary: UpstreamProduct,
+            manifest: product,
+            features: &["--no-default-features", "--features", "upstream-network"],
+        },
+        Profile {
+            boundary: UpstreamApplication,
+            manifest: "examples/esp32s31-station/Cargo.toml",
+            features: &["--no-default-features", "--features", "upstream-network"],
+        },
+        Profile {
+            boundary: UpstreamApplication,
+            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
+            features: &[
+                "--no-default-features",
+                "--features",
+                "open-radio-hil,code-psram,profile-psram-data,psram-task-stack",
+            ],
+        },
         Profile {
             boundary: Neutral,
             manifest: "driver/network/interface/Cargo.toml",
@@ -385,7 +487,9 @@ pub fn run(context: &Context, dependencies_only: bool) -> Result<()> {
             .map(|v| (*v).to_owned())
             .collect::<Vec<_>>();
         let target = profile.boundary.product().then_some(TARGET);
-        let graph = if profile.manifest.starts_with("examples/") {
+        let graph = if profile.manifest.starts_with("hil/") {
+            cargo::metadata(context, &manifest, &flags, target, true)?
+        } else if profile.manifest.starts_with("examples/") {
             // Binary examples cannot become a scratch consumer's dependency.
             // Their independent workspace already isolates feature resolution.
             if cargo::workspace_manifest(context, &manifest)? != manifest.canonicalize()? {

@@ -10,11 +10,16 @@ impl ConnectedRxSink for Observer {
 }
 
 struct Network {
+    exhausted: bool,
+    pool_policy: crate::datapath::network::RxPoolExhaustion,
     capacity: usize,
     ether_types: std::vec::Vec<u16>,
 }
 
 impl DatapathNetworkRx for Network {
+    fn pool_exhaustion(&self) -> crate::datapath::network::RxPoolExhaustion {
+        self.pool_policy
+    }
     fn queue_len(&self) -> usize {
         self.ether_types.len()
     }
@@ -27,6 +32,9 @@ impl DatapathNetworkRx for Network {
         &mut self,
         frame: open_esp_radio_ieee80211::data::EthernetFrameParts<'_>,
     ) -> Result<(), RxEnqueueError> {
+        if self.exhausted {
+            return Err(RxEnqueueError::PoolExhausted);
+        }
         if self.capacity == 0 {
             return Err(RxEnqueueError::QueueFull);
         }
@@ -99,6 +107,8 @@ fn network_backpressure_retains_exact_station_batch_cursor() {
     sink.publish(event(0x0800));
     sink.publish(event(0x0806));
     let mut network = Network {
+        exhausted: false,
+        pool_policy: crate::datapath::network::RxPoolExhaustion::WaitForRelease,
         capacity: 1,
         ether_types: std::vec::Vec::new(),
     };
@@ -118,4 +128,47 @@ fn network_backpressure_retains_exact_station_batch_cursor() {
     assert!(!sink.has_pending());
     assert_eq!(network.ether_types, [0x0800, 0x0806]);
     assert_eq!(sink.observer().0, 2);
+}
+
+#[test]
+fn packet_pool_notification_contract_controls_retention() {
+    use crate::datapath::network::RxPoolExhaustion;
+    for policy in [
+        RxPoolExhaustion::WaitForRelease,
+        RxPoolExhaustion::DropFrame,
+    ] {
+        let mut storage = [0; VENDOR_LARGE_RX_PAYLOAD_CAPACITY];
+        let mut sink = Esp32s31StaApStationRxSink::new(&mut storage, Observer::default());
+        sink.publish(event(0x0800));
+        sink.publish(event(0x0806));
+        let mut network = Network {
+            exhausted: true,
+            pool_policy: policy,
+            capacity: 2,
+            ether_types: std::vec::Vec::new(),
+        };
+        let expected = if policy == RxPoolExhaustion::WaitForRelease {
+            DatapathRxProgress::NetworkBackpressured
+        } else {
+            DatapathRxProgress::Drained
+        };
+        assert_eq!(sink.publish_pending(&mut network), Ok(expected));
+        assert_eq!(
+            sink.has_pending(),
+            policy == RxPoolExhaustion::WaitForRelease
+        );
+        network.exhausted = false;
+        assert_eq!(
+            sink.publish_pending(&mut network),
+            Ok(DatapathRxProgress::Drained)
+        );
+        assert_eq!(
+            network.ether_types.len(),
+            if policy == RxPoolExhaustion::WaitForRelease {
+                2
+            } else {
+                0
+            }
+        );
+    }
 }

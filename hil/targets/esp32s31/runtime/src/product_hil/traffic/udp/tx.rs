@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use core::sync::atomic::{AtomicU8, Ordering};
-use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
+use embassy_net::{Stack, udp::UdpSocket, wire::Ipv4Address};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
@@ -58,7 +58,6 @@ pub(in crate::product_hil) struct UdpTxSessionSource {
 pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     pub network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface,
     pub source_port: u16,
-    pub queue_depth: usize,
     pub payload_capacity: usize,
     /// Maximum application datagrams admitted before enforcing the next
     /// absolute offered-rate deadline. The composition root derives this from
@@ -276,14 +275,14 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     .await;
     runtime_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
-         source_port={} queue={} payload_capacity={} tx_mode=ampdu session_protocol=required",
-        config.source_port, config.queue_depth, config.payload_capacity,
+         source_port={} payload_capacity={} tx_mode=ampdu session_protocol=required",
+        config.source_port, config.payload_capacity,
     ));
     // Receive the first typed session before exposing the socket owner. Xarxa
     // now allocates one owned packet per publication, so there is no socket
     // byte ring whose layout depends on the datagram size.
     let first_session = config.session_source.sessions.receive().await;
-    let mut socket = UdpSocket::new(stack);
+    let mut socket = UdpSocket::new(stack).expect("HIL UDP socket capacity");
     if let Err(error) = socket.bind(config.source_port) {
         runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=udp-tx-bind error={error:?}"
@@ -360,6 +359,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let cache_start = l1_cache.snapshot();
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
+        #[cfg(feature = "mac-irq-telemetry")]
+        let irq_start = crate::product_hil::MAC_IRQ.snapshot();
+        #[cfg(feature = "task-poll-telemetry")]
+        let network_start =
+            crate::product_hil::network::observation::counters(config.network_interface).snapshot();
+        #[cfg(feature = "task-poll-telemetry")]
+        let send_wait = open_esp_radio_hil_esp32s31_telemetry::wait::Counters::new();
+        #[cfg(feature = "task-poll-telemetry")]
+        let pacing_wait = open_esp_radio_hil_esp32s31_telemetry::wait::Counters::new();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -396,6 +404,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                             packet[..sequence.len()].copy_from_slice(&sequence);
                             (payload_bytes, ())
                         });
+                    #[cfg(feature = "task-poll-telemetry")]
+                    let publication = send_wait.observe(publication, || Instant::now().as_micros());
                     match publication.await {
                         Ok(()) => {
                             bytes = bytes.saturating_add(payload_bytes as u64);
@@ -419,7 +429,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                         next_send += group_duration;
                         let now = Instant::now();
                         if now < next_send {
-                            Timer::at(next_send).await;
+                            let pacing = Timer::at(next_send);
+                            #[cfg(feature = "task-poll-telemetry")]
+                            let pacing = pacing_wait.observe(pacing, || Instant::now().as_micros());
+                            pacing.await;
                         } else if now - next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS {
                             next_send = now;
                         }
@@ -467,6 +480,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             )
         };
         let elapsed_us = started.elapsed().as_micros().max(1);
+        #[cfg(feature = "mac-irq-telemetry")]
+        let irq_interval = crate::product_hil::MAC_IRQ
+            .snapshot()
+            .wrapping_delta_since(irq_start);
+        #[cfg(feature = "task-poll-telemetry")]
+        let network_interval =
+            crate::product_hil::network::observation::counters(config.network_interface)
+                .snapshot()
+                .delta(network_start);
         let throughput_kbps = bytes
             .saturating_mul(8)
             .saturating_mul(1_000)
@@ -514,6 +536,18 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             &TASK_POLLS,
         )
         .await;
+        #[cfg(feature = "task-poll-telemetry")]
+        if session.config.active_flow_count() == 1 {
+            crate::product_hil::network::observation::log(
+                config.network_interface,
+                network_interval,
+                send_wait.snapshot(),
+                pacing_wait.snapshot(),
+            )
+            .await;
+        }
+        #[cfg(feature = "mac-irq-telemetry")]
+        crate::product_hil::traffic::reporting::log_mac_irq_interval(irq_interval).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]

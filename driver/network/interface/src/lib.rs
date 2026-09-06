@@ -51,7 +51,8 @@ pub enum RxEnqueueError {
     InvalidLength(FrameLengthError),
     /// The fixed receive queue is full.
     QueueFull,
-    /// The dedicated receive packet pool has no free owner.
+    /// The receive packet pool has no free owner. The radio adapter's pool
+    /// notification contract determines whether to wait or drop this frame.
     PoolExhausted,
     /// The logical network interface is not active.
     LinkDown,

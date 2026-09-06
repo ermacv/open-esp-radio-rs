@@ -14,8 +14,6 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "rx-delivery-telemetry")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-#[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver, Esp32s31RxEvidence,
@@ -30,6 +28,8 @@ use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_network::{FrameLengthError, RxEnqueueError};
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
 pub(crate) static RX_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();

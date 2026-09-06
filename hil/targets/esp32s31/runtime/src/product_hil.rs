@@ -10,9 +10,7 @@ use core::{
 
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::select::{Either, select};
-use embassy_net::{
-    Config as NetworkConfig, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StaticConfigV4,
-};
+use embassy_net::{Runner as NetworkRunner, iface::Iface};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
 };
@@ -21,6 +19,7 @@ use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::Trng,
 };
+use network::Resources as NetworkResources;
 #[cfg(feature = "driver-observation")]
 use open_esp_radio::StaLifecycleStage;
 use open_esp_radio::{
@@ -38,7 +37,7 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig,
     Esp32s31RadioParts, Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem,
     Esp32s31StationLinkState, Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice,
-    Esp32s31WifiNetworkRunner, Esp32s31WifiParts, Esp32s31WifiStackResources,
+    Esp32s31WifiParts,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
@@ -67,15 +66,14 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Event as HilEvent, NetworkCredentials, NetworkInfo, NetworkIpv4Configuration,
-    StartupArtifactDisposition, StationDisconnectReason, StationEpochEvidence,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
-    WifiAccessPointSecurity as HilWifiAccessPointSecurity, WifiChannelWidth as HilWifiChannelWidth,
-    WifiDataPlanePlacement, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence,
-    WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiStationAccessPointStopEvidence,
+    Event as HilEvent, NetworkCredentials, NetworkIpv4Configuration, StartupArtifactDisposition,
+    StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
+    WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
+    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
+    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
+    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
@@ -95,6 +93,7 @@ use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 use open_esp_radio_hil_protocol::StationLifecycleEvent;
 
 mod ieee802154;
+mod network;
 mod rx_qualification;
 mod traffic;
 
@@ -121,6 +120,8 @@ struct AppNetworkStart {
     station_device: Esp32s31WifiDevice,
     access_point_device: Esp32s31WifiDevice,
     station_ipv4: NetworkIpv4Configuration,
+    rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
+    tx_udp_checksum: open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy,
     seed: u64,
     l1_cache: &'static L1CachePerformanceCounters,
 }
@@ -155,8 +156,8 @@ pub(in crate::product_hil) struct ObservedTxVector {
 }
 
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
-static STATION_NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
-static ACCESS_POINT_NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
+static STATION_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
+static ACCESS_POINT_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
 static APP_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static PRIMARY_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static APP_NETWORK_READY: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -1063,8 +1064,10 @@ pub(in crate::product_hil) async fn qualification_sample(
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
+async fn network_runner_task(mut runner: NetworkRunner<'static>, _role: WifiNetworkInterface) {
     let network = runner.run();
+    #[cfg(feature = "task-poll-telemetry")]
+    let network = network::progress::observe(network, network::observation::counters(_role));
     observe_open_radio_task_polls(
         network,
         TASK_POLLS.network(),
@@ -1074,14 +1077,14 @@ async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn network_config_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+async fn network_config_task(iface: Iface<'static>, network_interface: WifiNetworkInterface) {
     let (requests, applied) = network_config_channels(network_interface);
     loop {
         match requests.receive().await {
             NetworkConfigCommand::Set(configuration) => {
-                stack.set_config_v4(network_config_v4(configuration));
+                network::configure(iface, Some(configuration));
             }
-            NetworkConfigCommand::Clear => stack.set_config_v4(ConfigV4::None),
+            NetworkConfigCommand::Clear => network::configure(iface, None),
         }
         applied.send(()).await;
     }
@@ -1104,18 +1107,26 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
     start_network_endpoint(
         spawner,
         start.station_device,
-        network_config(start.station_ipv4),
-        STATION_NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
-        start.seed,
+        STATION_NETWORK_RESOURCES.init(NetworkResources::new()),
+        network::Settings {
+            ipv4: Some(start.station_ipv4),
+            seed: start.seed,
+            rx_checksum: start.rx_checksum,
+            tx_udp_checksum: start.tx_udp_checksum,
+        },
         WifiNetworkInterface::Station,
         start.l1_cache,
     );
     start_network_endpoint(
         spawner,
         start.access_point_device,
-        NetworkConfig::default(),
-        ACCESS_POINT_NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
-        start.seed ^ (1_u64 << 63),
+        ACCESS_POINT_NETWORK_RESOURCES.init(NetworkResources::new()),
+        network::Settings {
+            ipv4: None,
+            seed: start.seed ^ (1_u64 << 63),
+            rx_checksum: start.rx_checksum,
+            tx_udp_checksum: start.tx_udp_checksum,
+        },
         WifiNetworkInterface::AccessPoint,
         start.l1_cache,
     );
@@ -1126,47 +1137,41 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
 fn start_network_endpoint(
     spawner: Spawner,
     device: Esp32s31WifiDevice,
-    config: NetworkConfig,
-    resources: &'static mut Esp32s31WifiStackResources,
-    seed: u64,
+    resources: &'static mut NetworkResources,
+    settings: network::Settings,
     network_interface: WifiNetworkInterface,
     l1_cache: &'static L1CachePerformanceCounters,
 ) {
-    let (stack, network_runner) = Esp32s31WifiNetworkRunner::new(device, config, resources, seed);
+    let (iface, network_runner) = network::new(device, resources, settings, network_interface);
     spawner.spawn(
-        network_runner_task(network_runner).expect("network runner task pool must fit both roles"),
+        network_runner_task(network_runner, network_interface)
+            .expect("network runner task pool must fit both roles"),
     );
     spawner.spawn(
-        network_config_task(stack, network_interface)
+        network_config_task(iface, network_interface)
             .expect("network config task pool must fit both roles"),
     );
     spawner.spawn(
-        network_services_start_task(spawner, stack, network_interface, l1_cache)
+        network_services_start_task(spawner, iface, network_interface, l1_cache)
             .expect("network service gate task pool must fit both roles"),
     );
 }
 
-/// Wait for one endpoint configuration with exactly one registered stack
-/// waker, then materialize every long-lived service owner for that endpoint.
-///
-/// `embassy-net::Stack` intentionally stores only one `state_waker`. Having
-/// UDP RX, UDP TX, TCP and reporting tasks call `wait_config_up` concurrently
-/// makes each registration wake and replace the previous waiter. An inactive
-/// AP endpoint would therefore keep the executor in a permanent wake loop
-/// during a station-only ceiling run.
+/// One configuration waiter per interface hands reporting to its permanent task
+/// before starting the socket owners, avoiding competing state-waker registrations.
 #[embassy_executor::task(pool_size = 2)]
 async fn network_services_start_task(
     spawner: Spawner,
-    stack: Stack<'static>,
+    iface: Iface<'static>,
     network_interface: WifiNetworkInterface,
     l1_cache: &'static L1CachePerformanceCounters,
 ) {
-    stack.wait_config_up().await;
+    iface.wait_config_v4_up().await;
     spawner.spawn(
-        network_report_task(stack, network_interface)
+        network_report_task(iface, network_interface)
             .expect("network report task pool must fit both roles"),
     );
-    start_connected_traffic(spawner, stack, network_interface, l1_cache);
+    start_connected_traffic(spawner, iface.stack(), network_interface, l1_cache);
 }
 
 fn network_config_channels(
@@ -1197,8 +1202,8 @@ async fn apply_network_config(
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn network_report_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
-    report_network(stack, network_interface).await
+async fn network_report_task(iface: Iface<'static>, network_interface: WifiNetworkInterface) {
+    report_network(iface, network_interface).await
 }
 
 #[embassy_executor::task]
@@ -1348,29 +1353,6 @@ const fn hil_failure_reason(stage: StaLifecycleStage) -> StationAttemptFailureRe
     }
 }
 
-fn network_config(configuration: NetworkIpv4Configuration) -> NetworkConfig {
-    match network_config_v4(configuration) {
-        ConfigV4::Dhcp(config) => NetworkConfig::dhcpv4(config),
-        ConfigV4::Static(config) => NetworkConfig::ipv4_static(config),
-        ConfigV4::None => NetworkConfig::default(),
-    }
-}
-
-fn network_config_v4(configuration: NetworkIpv4Configuration) -> ConfigV4 {
-    match configuration {
-        NetworkIpv4Configuration::Dhcp => ConfigV4::Dhcp(Default::default()),
-        NetworkIpv4Configuration::Static {
-            address,
-            prefix_length,
-            gateway,
-        } => ConfigV4::Static(StaticConfigV4 {
-            address: Ipv4Cidr::new(Ipv4Address::from_octets(address), prefix_length),
-            gateway: gateway.map(Ipv4Address::from_octets),
-            dns_servers: Default::default(),
-        }),
-    }
-}
-
 fn station_request(ssid: &[u8], passphrase: &[u8]) -> StationRequest {
     station_request_with_preference(ssid, passphrase, StaAssociationPreference::PreferHe20)
 }
@@ -1428,29 +1410,17 @@ fn access_point_request(
     .expect("validated HIL AP request satisfies the production AP contract")
 }
 
-async fn report_network(stack: Stack<'static>, network_interface: WifiNetworkInterface) -> ! {
+async fn report_network(iface: Iface<'static>, network_interface: WifiNetworkInterface) -> ! {
     loop {
-        stack.wait_config_up().await;
-        let config = stack
-            .config_v4()
-            .expect("wait_config_up proves an IPv4 configuration");
-        publish_event_reliably(
-            0,
-            0,
-            HilEvent::NetworkReady(NetworkInfo {
-                network_interface,
-                address: config.address.address().octets(),
-                prefix_length: config.address.prefix_len(),
-                gateway: config.gateway.map(|address| address.octets()),
-            }),
-        )
-        .await;
+        iface.wait_config_v4_up().await;
+        let info = network::info(iface, network_interface)
+            .expect("wait_config_v4_up proves an IPv4 configuration");
+        publish_event_reliably(0, 0, HilEvent::NetworkReady(info)).await;
         runtime_log(format_args!(
-            "OPEN_RADIO_HIL result=PASS stage=network-ready interface={network_interface:?} \
-             address={} gateway={:?}",
-            config.address, config.gateway,
+            "OPEN_RADIO_HIL result=PASS stage=network-ready interface={network_interface:?} address={:?} gateway={:?}",
+            info.address, info.gateway,
         ));
-        stack.wait_config_down().await;
+        iface.wait_config_v4_down().await;
     }
 }
 
@@ -1663,6 +1633,8 @@ pub async fn run(
         radio_runner_task(spawner, runner)
             .expect("production radio runner task must allocate once"),
     );
+    #[cfg(feature = "driver-observation")]
+    phy_diagnostics::log(initialization.start.wifi.registration.rf_calibration).await;
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
@@ -1713,21 +1685,11 @@ pub async fn run(
         0xa5,
         0x31,
     ]);
-    let validate_ipv4_udp_rx_checksums = matches!(
-        rx_checksum,
-        open_esp_radio_hil_protocol::WifiRxChecksumPolicy::Software
-    );
-    let generate_ipv4_udp_tx_checksums = matches!(
-        tx_udp_checksum,
-        open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy::Software
-    );
     let network_start = AppNetworkStart {
-        station_device: station_device
-            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums)
-            .with_software_ipv4_udp_tx_checksum_generation(generate_ipv4_udp_tx_checksums),
-        access_point_device: access_point_device
-            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums)
-            .with_software_ipv4_udp_tx_checksum_generation(generate_ipv4_udp_tx_checksums),
+        station_device,
+        access_point_device,
+        rx_checksum,
+        tx_udp_checksum,
         station_ipv4: startup_ipv4,
         seed,
         l1_cache,
@@ -2355,3 +2317,6 @@ async fn wifi_role_task(
         };
     }
 }
+
+#[cfg(feature = "driver-observation")]
+mod phy_diagnostics;

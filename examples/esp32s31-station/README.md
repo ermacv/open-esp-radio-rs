@@ -83,3 +83,19 @@ before the stopped RX resources are split for reconnect. A fresh `ScanRecord`
 can select another BSSID or channel. Product readiness is determined by the
 [qualification program](../../qualification/targets/esp32s31/wifi-sta.toml) and
 current evidence, independently of this application's source check.
+
+## Network implementation
+
+Use the same explicit choice as HIL when building from the repository root:
+
+```console
+cargo xtask build firmware station --network upstream
+cargo xtask build firmware station --network udp-backpressure
+```
+
+Both choices use the original Embassy wrapper and the upstream driver contract.
+The [UDP backpressure composition](../../driver/network/adapters/xarxa/backpressure/README.md)
+changes only the pinned Xarxa stack. The builder checks dependency pins, archives
+the effective locks and restores the tracked upstream catalog. Without
+`--network`, the example retains its `owned-network` default. Direct Cargo builds
+can select `--no-default-features --features upstream-network` for the control.

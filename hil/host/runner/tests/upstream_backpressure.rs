@@ -40,8 +40,7 @@ impl Wake for Scheduled {
     }
 }
 
-#[test]
-fn blocked_send_recovers_after_queue_release_and_packet_disposal() {
+fn exercise_backpressure() -> (usize, usize) {
     let mut resources = Resources::<NoopRawMutex, 2, 1>::new();
     let (mut device, radio) = resources.split(NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 1]);
     let mut storage = StackStorage::new();
@@ -125,5 +124,78 @@ fn blocked_send_recovers_after_queue_release_and_packet_disposal() {
         radio.tx_queue_len(),
         0,
         "disposed UDP is not retransmitted by the stack"
+    );
+    // A buffer may be returned by application code, outside the driver queue.
+    // Device readiness alone must not turn pool exhaustion into a lost wake.
+    let mut pool_socket = UdpSocket::new(stack).unwrap();
+    pool_socket.bind(1236).unwrap();
+    let mut held = Vec::new();
+    while let Some(packet) = xarxa::driver::PacketBuf::try_new() {
+        held.push(packet);
+    }
+    assert!(!held.is_empty());
+    let mut pool_send = pin!(pool_socket.send_to(b"pool released", peer));
+    assert!(
+        pool_send
+            .as_mut()
+            .poll(&mut application_context)
+            .is_pending()
+    );
+    for _ in 0..16 {
+        if application.take() {
+            assert!(
+                pool_send
+                    .as_mut()
+                    .poll(&mut application_context)
+                    .is_pending()
+            );
+        }
+        if network.take() {
+            assert!(run.as_mut().poll(&mut network_context).is_pending());
+        }
+    }
+    assert_eq!(radio.tx_queue_len(), 0);
+    drop(held.pop());
+    let mut pool_completed = false;
+    for _ in 0..8 {
+        if network.take() {
+            assert!(run.as_mut().poll(&mut network_context).is_pending());
+        }
+        if !pool_completed
+            && application.take()
+            && let Poll::Ready(result) = pool_send.as_mut().poll(&mut application_context)
+        {
+            result.unwrap();
+            pool_completed = true;
+        }
+    }
+    assert!(
+        pool_completed,
+        "a buffer returned outside the driver must release the send"
+    );
+    let frame = radio.try_receive_tx().unwrap();
+    assert!(frame.ethernet().ends_with(b"pool released"));
+    drop(frame);
+    drop(held);
+
+    (application_polls, network_polls)
+}
+
+#[test]
+fn blocked_send_recovers_after_queue_release_and_packet_disposal() {
+    exercise_backpressure();
+}
+
+#[test]
+#[ignore = "requires the pinned patch: cargo xtask check network-backpressure"]
+fn blocked_send_quiesces_until_capacity_returns() {
+    let (application_polls, network_polls) = exercise_backpressure();
+    assert!(
+        application_polls <= 2,
+        "blocked application must stop polling"
+    );
+    assert!(
+        network_polls <= 2,
+        "blocked network runner must stop polling"
     );
 }

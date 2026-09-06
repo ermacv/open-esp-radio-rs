@@ -2,7 +2,12 @@
 
 This workspace selects the shared board boot and memory profile and owns Embassy executors,
 `embassy-net` from the pinned original Embassy/Xarxa sources, UART transport
-and HIL workloads. The product dependency selects `upstream-network`. Radio behaviour
+and HIL workloads. The product dependency selects the `upstream-network` driver
+contract. `cargo hil image build/flash`, `run` and `run-all` accept `--network
+upstream|udp-backpressure`; the default keeps original sources. The
+[UDP backpressure composition](../../../driver/network/adapters/xarxa/backpressure/README.md)
+replaces only the pinned Xarxa stack, with effective dependency locks archived
+beside each image. Radio behaviour
 belongs in `driver/`; HIL uses the public production constructor and runner.
 
 - `runtime`: role-neutral control plane and runtime-dispatched workloads;

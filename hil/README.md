@@ -39,7 +39,12 @@ machine-specific paths. The identities are written into every run manifest so
 results from different cells and boards cannot be silently mixed.
 
 `cargo hil run <scenario>` builds and flashes the required image before the
-scenario. `cargo hil run-all` reuses each image across its scenario group but
+scenario. Use `--network upstream` (default) or `--network udp-backpressure`
+to select the pinned stack implementation for a build or run. The same choice
+is available for station and access-point examples through `cargo xtask build
+firmware <example> --network …`; see the
+[composition contract](../driver/network/adapters/xarxa/backpressure/README.md).
+`cargo hil run-all` reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
 `target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
 XML, a standalone HTML report and the exact application image flashed for each

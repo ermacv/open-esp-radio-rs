@@ -155,15 +155,15 @@ fn run() -> Result<()> {
             }
         }
         CliCommand::Image { command } => match command {
-            ImageCommand::Build { class } => {
-                let artifacts = image::build(&root, class)?;
+            ImageCommand::Build { class, network } => {
+                let artifacts = image::build(&root, class, network)?;
                 image::print_artifacts(class, &artifacts, false)
             }
             ImageCommand::VerifyRebuild { class, trim_paths } => {
                 image::verify_rebuild(&root, class, trim_paths)
             }
-            ImageCommand::Flash { class } => {
-                let artifacts = image::build(&root, class)?;
+            ImageCommand::Flash { class, network } => {
+                let artifacts = image::build(&root, class, network)?;
                 let lab = crate::lab::config::LabConfig::load(&lab_path)?;
                 let _fixture = crate::lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
@@ -209,6 +209,7 @@ fn run() -> Result<()> {
         CliCommand::Run {
             scenario: id,
             firmware_from,
+            network,
         } => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?.clone();
@@ -221,7 +222,7 @@ fn run() -> Result<()> {
                         selected.image,
                     )?))
                 }
-                None => RunFirmware::BuildCurrent,
+                None => RunFirmware::BuildCurrent(network),
             };
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
             let required = crate::lab::requirements::Requirements::for_scenario(&selected);
@@ -229,7 +230,7 @@ fn run() -> Result<()> {
             let _fixture = crate::lab::lock::FixtureLock::acquire_for(&lab, required)?;
             run_one(&root, &lab, &catalog, &selected, firmware, invocation)
         }
-        CliCommand::RunAll { tag } => {
+        CliCommand::RunAll { tag, network } => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
             let selected = crate::cli::Selection {
@@ -240,20 +241,20 @@ fn run() -> Result<()> {
             let required = crate::lab::requirements::Requirements::union(&selected);
             crate::fixture::network_helper::require_for(&lab, required)?;
             let _fixture = crate::lab::lock::FixtureLock::acquire_for(&lab, required)?;
-            run_all(&root, &lab, &catalog, &tag, invocation)
+            run_all(&root, &lab, &catalog, &tag, network, invocation)
         }
     }
 }
 
 enum RunFirmware {
-    BuildCurrent,
+    BuildCurrent(image::Integration),
     Replay(Box<crate::evidence::verify::ArchivedFirmware>),
 }
 
 impl RunFirmware {
     fn plan(&self) -> crate::evidence::run::PlannedFirmware {
         match self {
-            Self::BuildCurrent => crate::evidence::run::PlannedFirmware::BuildCurrent,
+            Self::BuildCurrent(_) => crate::evidence::run::PlannedFirmware::BuildCurrent,
             Self::Replay(firmware) => crate::evidence::run::PlannedFirmware::Replay {
                 source_run_id: firmware.run_id.clone(),
                 image: firmware.image,
@@ -278,6 +279,7 @@ fn run_all(
     lab: &crate::lab::config::LabConfig,
     catalog: &crate::scenario::Catalog,
     tags: &[String],
+    network: image::Integration,
     invocation: Vec<OsString>,
 ) -> Result<()> {
     let selected = catalog
@@ -330,7 +332,7 @@ fn run_all(
         if executable.is_empty() {
             continue;
         }
-        if let Some(failure) = prepare_image(root, lab, class, &mut session)? {
+        if let Some(failure) = prepare_image(root, lab, class, network, &mut session)? {
             for entry in executable {
                 session.record_event(
                     "scenario-blocked",
@@ -420,7 +422,7 @@ fn prepare_run_image(
     session: &mut crate::evidence::run::RunSession,
 ) -> Result<Option<crate::evidence::run::Failure>> {
     match firmware {
-        RunFirmware::BuildCurrent => prepare_image(root, lab, class, session),
+        RunFirmware::BuildCurrent(network) => prepare_image(root, lab, class, *network, session),
         RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, archived, session),
     }
 }
@@ -506,10 +508,11 @@ fn prepare_image(
     root: &Path,
     lab: &crate::lab::config::LabConfig,
     class: crate::image::ImageClass,
+    network: image::Integration,
     session: &mut crate::evidence::run::RunSession,
 ) -> Result<Option<crate::evidence::run::Failure>> {
     session.record_event("image-build-started", None, Some(class), None)?;
-    let mut artifacts = match image::build(root, class) {
+    let mut artifacts = match image::build(root, class, network) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;

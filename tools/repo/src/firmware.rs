@@ -13,7 +13,19 @@ pub fn build(
     example: &str,
     features: &[String],
     no_default_features: bool,
+    network: Option<oer_firmware::network::Integration>,
 ) -> Result<FirmwareBuild> {
+    if network.is_some() {
+        if !matches!(example, "station" | "access-point") {
+            return Err("--network applies to station and access-point IP examples".into());
+        }
+        if features
+            .iter()
+            .any(|f| matches!(f.as_str(), "owned-network" | "compat-network"))
+        {
+            return Err("--network cannot be combined with owned-network or compat-network".into());
+        }
+    }
     let directory = ctx
         .root
         .join("examples")
@@ -26,10 +38,16 @@ pub fn build(
         .and_then(|p| p.get("name"))
         .and_then(toml::Value::as_str)
         .ok_or("example has no package name")?;
+    let mut selection = oer_firmware::network::Selection::acquire(
+        &ctx.root,
+        &directory,
+        network.unwrap_or_default(),
+    )?;
     let directory_output = ctx
         .root
         .join("target/firmware")
-        .join(format!("esp32s31-{example}"));
+        .join(format!("esp32s31-{example}"))
+        .join(network.map_or("default", |n| n.id()));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
     let budget = open_esp_radio_memory_report::StackBudget::load(
@@ -38,19 +56,19 @@ pub fn build(
     let runtime_target = workspace.cache().join("runtime");
     let mut command = ctx.cargo();
     command
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "--target",
-            TARGET,
-            "--manifest-path",
-        ])
+        .args(["build", "--release", "--target", TARGET, "--manifest-path"])
         .arg(&manifest)
         .args(["--bin", binary])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if no_default_features {
+    if network != Some(oer_firmware::network::Integration::UdpBackpressure) {
+        command.arg("--locked");
+    }
+    if let Some(network) = network {
+        network.configure(&mut command, &ctx.root);
+        command.args(["--features", "upstream-network"]);
+    }
+    if no_default_features || network.is_some() {
         command.arg("--no-default-features");
     }
     if !features.is_empty() {
@@ -58,6 +76,7 @@ pub fn build(
     }
     oer_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
+    selection.validate()?;
     let runtime = workspace.snapshot(
         &runtime_target.join(TARGET).join("release").join(binary),
         "runtime.elf",
@@ -125,6 +144,11 @@ pub fn build(
         ctx.root.join("platform/esp32s31/Cargo.lock"),
         output.join("bootstrap-Cargo.lock"),
     )?;
+    fs::write(
+        output.join("network.txt"),
+        format!("{}\n", network.map_or("default", |n| n.id())),
+    )?;
+    selection.restore()?;
     println!("application image: {}", image.display());
     println!("bootstrap ELF: {}", bootstrap.display());
     Ok(workspace.finish())
@@ -176,5 +200,38 @@ pub fn flash(
     if monitor {
         monitor::run(port.ok_or("--monitor requires --port")?)?;
     }
+    Ok(())
+}
+
+/// Exercise the same blocked-send workload with an explicit quiescence requirement.
+pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
+    use oer_firmware::network::{Integration, Selection};
+    let network = Integration::UdpBackpressure;
+    let mut selection = Selection::acquire(&ctx.root, &ctx.root, network)?;
+    let mut command = ctx.cargo();
+    command.args([
+        "test",
+        "-p",
+        "open-esp-radio-hil-runner",
+        "--test",
+        "upstream_backpressure",
+    ]);
+    network.configure(&mut command, &ctx.root);
+    command.args([
+        "--",
+        "--ignored",
+        "--exact",
+        "blocked_send_quiesces_until_capacity_returns",
+        "--nocapture",
+    ]);
+    process::run(&mut command)?;
+    selection.validate()?;
+    let output = ctx.root.join("target/network-backpressure");
+    fs::create_dir_all(&output)?;
+    fs::copy(
+        ctx.root.join("Cargo.lock"),
+        output.join("effective-Cargo.lock"),
+    )?;
+    selection.restore()?;
     Ok(())
 }

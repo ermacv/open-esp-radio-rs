@@ -35,6 +35,8 @@ enum Check {
         #[arg(long)]
         dependencies_only: bool,
     },
+    /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
+    NetworkBackpressure,
     Examples,
     SourceOnly,
     BlobrayStandalone,
@@ -56,6 +58,9 @@ enum Build {
         features: Vec<String>,
         #[arg(long)]
         no_default_features: bool,
+        /// Select a source-compatible network stack for a Wi-Fi IP example.
+        #[arg(long)]
+        network: Option<oer_firmware::network::Integration>,
     },
     VendorProbes {
         #[arg(long, default_value = "esp32s31")]
@@ -86,6 +91,7 @@ fn run() -> Result<()> {
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Safety => checks::safety::run(&ctx),
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
+            Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Examples => checks::examples::run(&ctx),
             Check::SourceOnly => checks::source_only::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
@@ -99,10 +105,16 @@ fn run() -> Result<()> {
                     monitor,
                     features,
                     no_default_features,
+                    network,
                 },
         } => {
-            let output =
-                oer_xtask::firmware::build(&ctx, &example, &features, no_default_features)?;
+            let output = oer_xtask::firmware::build(
+                &ctx,
+                &example,
+                &features,
+                no_default_features,
+                network,
+            )?;
             if flash {
                 oer_xtask::firmware::flash(&ctx, &output, port.as_deref(), monitor)?;
             }

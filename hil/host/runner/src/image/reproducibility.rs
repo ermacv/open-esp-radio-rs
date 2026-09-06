@@ -194,9 +194,8 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -
     let left_artifacts = build_resolved(
         &left.path,
         class,
-        None,
-        None,
-        None,
+        super::Integration::Upstream,
+        super::LocalOverrides::default(),
         Some(&output.join("build-a")),
         trim_paths,
     )?;
@@ -204,9 +203,8 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -
     let right_artifacts = build_resolved(
         &right.path,
         class,
-        None,
-        None,
-        None,
+        super::Integration::Upstream,
+        super::LocalOverrides::default(),
         Some(&output.join("build-directory-b")),
         trim_paths,
     )?;

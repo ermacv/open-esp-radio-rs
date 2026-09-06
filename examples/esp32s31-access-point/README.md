@@ -38,3 +38,19 @@ in SRAM. The command checks ELF placement and stack frames before packaging
 or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
+
+## Network implementation
+
+Use the same explicit choice as HIL when building from the repository root:
+
+```console
+cargo xtask build firmware access-point --network upstream
+cargo xtask build firmware access-point --network udp-backpressure
+```
+
+Both choices use the original Embassy wrapper and the upstream driver contract.
+The [UDP backpressure composition](../../driver/network/adapters/xarxa/backpressure/README.md)
+changes only the pinned Xarxa stack. The builder checks dependency pins, archives
+the effective locks and restores the tracked upstream catalog. Without
+`--network`, the example retains its `owned-network` default. Direct Cargo builds
+can select `--no-default-features --features upstream-network` for the control.

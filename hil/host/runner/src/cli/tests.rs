@@ -25,6 +25,7 @@ fn run_firmware_from_is_an_explicit_single_scenario_input() {
         CliCommand::Run {
             scenario,
             firmware_from,
+            ..
         } => {
             assert_eq!(scenario, "station-udp-rx-ceiling");
             assert_eq!(firmware_from.as_deref(), Some("sealed-run-1"));
@@ -70,4 +71,51 @@ fn path_trimming_is_explicit_and_diagnostic() {
         } => assert!(trim_paths),
         _ => panic!("parsed the wrong HIL command"),
     }
+}
+
+#[test]
+fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
+    for args in [
+        vec![
+            "cargo-hil",
+            "run",
+            "station-udp-tx-ceiling",
+            "--network",
+            "udp-backpressure",
+        ],
+        vec![
+            "cargo-hil",
+            "image",
+            "build",
+            "performance",
+            "--network",
+            "upstream",
+        ],
+        vec!["cargo-hil", "run-all", "--network", "udp-backpressure"],
+    ] {
+        assert!(Cli::try_parse_from(args).is_ok());
+    }
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "station-udp-tx-ceiling",
+            "--network",
+            "udp-backpressure",
+            "--firmware-from",
+            "earlier-run"
+        ])
+        .is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "image",
+            "build",
+            "performance",
+            "--network",
+            "unknown"
+        ])
+        .is_err()
+    );
 }

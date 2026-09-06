@@ -7,6 +7,8 @@ pub mod flash;
 mod image;
 pub mod linker;
 #[cfg(feature = "image")]
+pub mod network;
+#[cfg(feature = "image")]
 mod payload;
 #[cfg(feature = "image")]
 pub mod stack;

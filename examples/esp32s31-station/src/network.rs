@@ -33,7 +33,7 @@ pub async fn run(device: Esp32s31WifiDevice, seed: u64) -> ! {
     let sockets = async {
         iface.wait_config_v4_up().await;
         esp_println::println!(
-            "open-radio: upstream Xarxa IPv4 ready {:?}",
+            "open-radio: Xarxa IPv4 ready {:?}",
             iface.ip_addrs()
         );
         let mut udp = UdpSocket::new(stack).expect("one UDP socket fits");

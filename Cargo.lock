@@ -2288,6 +2288,7 @@ dependencies = [
  "serialport",
  "sha2",
  "tempfile",
+ "toml",
 ]
 
 [[package]]

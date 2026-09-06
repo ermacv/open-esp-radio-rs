@@ -4,6 +4,8 @@ use crate::*;
 use oer_process::CommandExt as _;
 use open_esp_radio_hil_protocol::FeatureCapabilities;
 
+pub(crate) use oer_firmware::network::Integration;
+
 mod class;
 mod reproducibility;
 pub(crate) mod stack;
@@ -212,6 +214,7 @@ fn classify_image_signature(
 struct ArtifactReport<'a> {
     schema: u16,
     image_class: &'a str,
+    network: &'a str,
     profile: &'a str,
     runtime_elf: String,
     runtime_bin: String,
@@ -231,6 +234,7 @@ pub(crate) fn print_artifacts(
     let report = ArtifactReport {
         schema: crate::evidence::run::RUN_SCHEMA,
         image_class: class.id(),
+        network: artifacts.network.id(),
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
         runtime_bin: artifacts.runtime_bin.display().to_string(),
@@ -251,6 +255,7 @@ fn sha256_file(path: &Path) -> Result<String> {
 }
 
 pub(crate) struct Artifacts {
+    pub(crate) network: Integration,
     pub(crate) output: PathBuf,
     pub(crate) runtime_elf: PathBuf,
     pub(crate) runtime_bin: PathBuf,
@@ -260,12 +265,39 @@ pub(crate) struct Artifacts {
     pub(crate) application_image: PathBuf,
 }
 
-pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Artifacts> {
+pub(crate) fn build(
+    root: &Path,
+    class: crate::image::ImageClass,
+    network: Integration,
+) -> Result<Artifacts> {
+    let mut selection = oer_firmware::network::Selection::acquire(
+        root,
+        &root.join("hil/targets/esp32s31"),
+        network,
+    )?;
+    let result = build_selected(root, class, network);
+    if result.is_ok() {
+        selection.validate()?;
+    }
+    selection.restore()?;
+    result
+}
+
+fn build_selected(
+    root: &Path,
+    class: crate::image::ImageClass,
+    network: Integration,
+) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
     if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
-        return build_resolved(root, class, None, None, None, None, false);
+        return build_resolved(root, class, network, LocalOverrides::default(), None, false);
+    }
+    if network != Integration::Upstream {
+        return Err(
+            "an explicit network patch cannot be combined with local dependency overrides".into(),
+        );
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
@@ -275,9 +307,12 @@ pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Arti
     let result = build_resolved(
         root,
         class,
-        local_esp_hal.as_deref(),
-        local_embassy.as_deref(),
-        local_xarxa.as_deref(),
+        network,
+        LocalOverrides {
+            esp_hal: local_esp_hal.as_deref(),
+            embassy: local_embassy.as_deref(),
+            xarxa: local_xarxa.as_deref(),
+        },
         None,
         false,
     );
@@ -295,23 +330,35 @@ pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Arti
     }
 }
 
+#[derive(Default)]
+struct LocalOverrides<'a> {
+    esp_hal: Option<&'a Path>,
+    embassy: Option<&'a Path>,
+    xarxa: Option<&'a Path>,
+}
+
 fn build_resolved(
     root: &Path,
     class: crate::image::ImageClass,
-    local_esp_hal: Option<&Path>,
-    local_embassy: Option<&Path>,
-    local_xarxa: Option<&Path>,
+    network: Integration,
+    local: LocalOverrides<'_>,
     output_override: Option<&Path>,
     trim_paths: bool,
 ) -> Result<Artifacts> {
+    let LocalOverrides {
+        esp_hal: local_esp_hal,
+        embassy: local_embassy,
+        xarxa: local_xarxa,
+    } = local;
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
     let output = output_override.map_or_else(
         || {
             root.join("target/hil/esp32s31").join(format!(
-                "{}-{}",
+                "{}-{}-{}",
                 class.runtime_profile(),
-                class.id()
+                class.id(),
+                network.id()
             ))
         },
         Path::to_owned,
@@ -346,9 +393,14 @@ fn build_resolved(
         .args(["--no-default-features", "--features", runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if local_esp_hal.is_none() {
+    if local_esp_hal.is_none()
+        && local_embassy.is_none()
+        && local_xarxa.is_none()
+        && network == Integration::Upstream
+    {
         runtime.arg("--locked");
     }
+    network.configure(&mut runtime, root);
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
@@ -427,6 +479,7 @@ fn build_resolved(
     eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {
+        network,
         output,
         runtime_elf,
         runtime_bin,

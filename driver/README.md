@@ -8,6 +8,11 @@ vendor artifacts and qualification policy live outside this tree. See the
 [network implementation guide](../docs/network-implementations.md) explains
 stack choices, their crates, defaults and reasons for patches.
 
+ESP32-S31 source capability inventories: [Wi-Fi](chips/esp32s31/ieee80211/FEATURES.md),
+[Bluetooth](chips/esp32s31/bluetooth/FEATURES.md) and
+[IEEE 802.15.4](chips/esp32s31/ieee802154/FEATURES.md).
+Readiness remains controlled by the qualification specifications linked there.
+
 ## Source map
 
 Paths describe responsibilities; a directory need not be a Cargo crate.

@@ -1,42 +1,58 @@
-# PHY binary parity
+# PHY compiled comparison
 
-PHY parity is verified from compiled vendor and Rust code by
-[`blobray`](../../tools/blobray/README.md). The generated
-report identifies comparison coverage and incomplete outcomes. This document
-describes the evidence contract, not an inventory of individual run results.
+PHY comparison uses authenticated vendor and Rust artifacts through
+[Blobray verification](../../tools/blobray/docs/verification.md). The
+[PHY feature inventory](../../driver/chips/esp32s31/phy/FEATURES.md) describes
+implemented primitives and protocol consumers; comparison reports describe
+evidence for exact declared boundaries, not general RF readiness.
 
-The verifier composes `registers/esp32s31/published/radio.svd` with the validator-only official
-PAC subset in `registers/esp32s31/upstream/platform-radio-deps.svd`. A `MATCH` needs no
-additional per-function document, but its row retains the strength of the
-evidence: `evidence=symbolic` for normalized symbolic equality,
-`evidence=scenario` for declared concrete cases with complete branch outcomes,
-and `evidence=state` for a canonical semantic pre/post projection.
-`evidence=composition-state-scenario` compares normalized vendor call/MMIO events and
-call-time state payloads with the public actions and final typed state of a
-Rust transition. It permits an async Rust architecture instead of requiring
-the vendor polling-loop shape. Stateful roots additionally execute call
-sequences on persistent ELF-backed RAM while resetting private stack and MMIO
-environment state for every invocation. Concrete evidence is not presented as
-exhaustive proof over an undeclared input domain.
-Missing branch outcomes, calls, unresolved values, poison memory reads,
-missing Rust probes and SVD gaps are emitted as `UNCOVERED-*`/`INCOMPLETE`
-rows.
+## Inputs and ownership
 
-Use the regression gate to protect already established evidence while the
-port is incomplete; use the completion gate to require the entire selected
-vendor inventory. The machine-readable disposition manifest separates
-not-yet-ported functions from implemented architectural replacements that do
-not yet have a qualifying compiled comparison. Qualification dependencies for those roots
-are source-qualified `blocked-by` edges in that same manifest and are checked
-against the vendor inventory. The tool README defines both gates and the
-configured evidence baseline.
+The [ESP32-S31 investigation](../../verification/vendor/projects/esp32s31/README.md)
+selects the reviewed radio model, upstream platform register catalog, vendor
+identities, dispositions, execution profiles and compiled Rust bindings.
+Caller-owned artifact paths belong in its ignored run spec. The separate
+[source-only publication](../../registers/esp32s31/publication/README.md)
+checks generated PAC/model consistency without authenticating private binaries.
 
-There are currently no accepted parity exceptions. If one becomes necessary,
-it must be a typed, reviewable rule in the verifier with a failing regression
-test for any scope outside that rule; it must not be hidden in prose.
+[Comparison probes](../../verification/vendor/projects/esp32s31/probes/README.md)
+retain entry points into production PHY/HAL code. A probe's name or a generated
+reference is not evidence that the shipping entry executes that behavior.
+Dispositions describe replacement ownership and scope; profiles define the
+explicit input domain, environment, observations and comparison policy.
 
-The chip/protocol boundary is documented in the
-[driver architecture](../../driver/README.md). Structured register provenance
-belongs to [registers](../../registers/esp32s31/README.md); HIL bundles are
-produced by the [runner](../../hil/host/README.md). Only the
-[qualification evaluator](../../qualification/README.md) derives readiness.
+## Evidence and limits
+
+The current verifier records `evidence_class` as `production-trace`,
+`shared-core` or `static-analysis`. Only exact compiled production execution
+can supply production-trace evidence. Matching a model or a shared child does
+not qualify the composed PHY registration or channel-switch entry.
+
+Function statuses include `match`, `bounded-match`, `mismatch`, `incomplete`,
+`implemented-unqualified` and `uncovered`. Missing probes, unresolved calls,
+unknown state or incomplete execution must remain explicit. A bounded match
+applies only to its declared preconditions. State-only comparison does not
+prove equality of omitted MMIO or calls; reviewed call and effect contracts
+retain their separately declared scope.
+
+Stateful profiles carry explicitly retained writable memory across ordered
+cases, while stacks, MMIO responses and device models remain phase-local.
+The [verification contract](../../tools/blobray/docs/verification.md)
+defines the accepted profile policies and evidence-baseline rules. Regression
+gates protect accepted evidence; completion gates require the selected scope.
+Neither can manufacture an implementation or hide an observed difference.
+
+## Readiness
+
+The [qualification evaluator](../../qualification/README.md) independently
+consumes release-eligible evidence and current clean HIL bundles. It checks
+source freshness, declared capability requirements and dependencies; Blobray
+comparison alone cannot establish readiness. The current
+[Wi-Fi target](../../qualification/targets/esp32s31/wifi-sta.toml) includes cold
+registration, RF/baseband initialization and channel selection, with explicit
+remaining evidence gaps. Shared PHY consumer/lifecycle limits also appear in
+the Bluetooth and IEEE 802.15.4 qualification programs.
+
+Reviewed source identities and immutable evidence retain their original
+meaning. Update the exact source contract and produce new evidence when a
+compiled boundary changes; do not relabel historical outputs as current proof.

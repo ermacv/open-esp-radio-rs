@@ -53,13 +53,20 @@ relocates the application and supplies SRAM interrupt stacks. Image and stack
 audits run before packaging or flashing. A plain `cargo build` inside this
 workspace produces the stage-two ELF, which requires the shared bootstrap.
 
-This feature replaces the DTM commands. After initial Reset, it exercises
+`advertising-smoke` replaces the DTM commands. After initial Reset, it requests
 nonconnectable `ADV_NONCONN_IND`, then connectable `ADV_IND`, each with a static
 random address, 100 ms intervals, all three advertising channels and the local
 name `open-radio`. Each case configures address/parameters/data, enables for one
 second, disables, re-enables for one second, resets while enabled, reconfigures,
 enables for one second and finally disables. Run without a connecting peer:
 accepted connections exercise a separate, incomplete peripheral lifecycle.
+
+The current all-channel `ADV_IND` request does not fit the S31 backend's
+[single-channel connectable boundary](../../driver/chips/esp32s31/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
+The example retains `AdvChannelMap::ALL` for both cases, so the connectable case
+cannot complete the advertised success sequence through the current backend.
+Treat it as an unsupported configuration, not a passing connectable smoke
+test; a supported connectable caller must select exactly one primary channel.
 
 Commands print `advertising <command> submitted` and `complete` markers, with
 the command name in failures and two-second timeouts. Case and dwell markers

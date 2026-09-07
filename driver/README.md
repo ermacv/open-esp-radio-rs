@@ -166,10 +166,10 @@ association tears down the pair before reuse. Monitor and standalone ESP-NOW
 use explicit role composition rather than borrowing an unrelated active role.
 
 Applications own `embassy-net::Stack`, DHCP, sockets and network tasks. The
-Wi-Fi integration exposes a persistent network driver and selects the owned
-or compatibility leaf at compile time. Idle, scanning, monitor and disconnected
-states publish link down; role boundaries flush stale queue state. Network
-adapters do not acquire radio policy or physical DMA ownership.
+Wi-Fi integration exposes a persistent network driver and selects the
+upstream, owned or compatibility leaf at compile time. Idle, scanning, monitor
+and disconnected states publish link down; role boundaries flush stale queue
+state. Network adapters do not acquire radio policy or physical DMA ownership.
 
 Radio scheduling selects a flow before reserving scarce internal SRAM.
 Materialization transfers selected software work into a finite physical pool;

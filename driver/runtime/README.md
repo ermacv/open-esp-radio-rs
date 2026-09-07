@@ -26,7 +26,8 @@ and handles overflow. The two bindings have distinct time contracts. The platfor
 executor/time ABI remains in [adapters](../adapters/embassy/README.md).
 
 The [integration layer](../integration/esp32s31/embassy/) chooses memory budgets,
-claims static resources and composes complete radio lifecycles. Bluetooth
+claims static resources and owns protocol lifecycle composition within the
+[documented capability boundaries](../chips/esp32s31/FEATURES.md). Bluetooth
 `system/{construction,runner,quarantine}` separates assembly, the one hardware
 loop and fail-stop retention. Wi-Fi's supervisor owns shared physical resources
 and transitions between roles. Neither product composition depends on a second

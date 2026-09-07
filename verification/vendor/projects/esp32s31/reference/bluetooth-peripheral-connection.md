@@ -2,7 +2,7 @@
 
 This reference describes reviewed hardware-facing facts consumed by the Rust
 driver. Vendor Controller architecture does not define the open ownership model.
-Portable Link Layer policy remains in `driver/bluetooth/ll`; this document
+Portable Link Layer policy remains in `driver/bluetooth/le/ll`; this document
 identifies the S31 controller-SRAM fields and event edges that a chip backend
 must lower.
 

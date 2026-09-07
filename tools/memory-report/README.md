@@ -13,7 +13,7 @@ wrong region.
 
 ```console
 cargo memory report \
-  --elf target/hil/esp32s31/psram-code-psram-data-open-radio-tcp/cargo/runtime/riscv32imafc-unknown-none-elf/release/open-esp-radio-hil-esp32s31-runtime \
+  --elf /absolute/path/to/runtime.elf \
   --policy hil/targets/esp32s31/memory/tcp.toml
 
 cargo memory audit --elf ELF --policy POLICY
@@ -21,6 +21,11 @@ cargo memory stack --elf ELF --policy hil/targets/esp32s31/stack.toml
 cargo memory diff \
   --before OLD.ELF --after NEW.ELF --policy POLICY
 ```
+
+Select the retained `runtime.elf` from the completed HIL image or standalone
+firmware bundle reported by its builder. Image/network selections and build IDs
+change output paths; an old Cargo cache path does not identify the selected
+firmware. The policy must match that image's composition.
 
 Every command supports `--format human|json`. `stdout` contains only the
 selected report; errors are written to `stderr`.

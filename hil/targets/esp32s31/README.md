@@ -164,12 +164,12 @@ contract. `product_hil` owns the radio/network composition
 and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_qualification` children own workload and observation duties. The value-only
 `rx_statistics` child owns RX counter deltas and wire-evidence conversion.
-`network` owns persistent original stack/driver storage, per-interface IPv4
-configuration and HIL-only checksum-cost policy. Socket workloads use the
-original UDP and TCP APIs. UDP receive depth comes from upstream configuration;
-The UDP RX queue holds 16 packets, matching one complete driver RX drain before
-socket tasks can run. This is selected through the original Xarxa configuration
-feature; packet-pool capacity remains a separate limit.
+`network` owns storage for the selected stack/driver, per-interface IPv4
+configuration and HIL-only checksum-cost policy. Shared socket workloads use
+backend-specific UDP and TCP bindings. UDP RX retains 16 datagrams: Xarxa
+selects this depth through its configuration feature, while smoltcp uses
+explicit metadata and byte rings. Xarxa packet-pool capacity remains a
+separate limit from the socket queue depth.
 TX pacing is a workload policy, not a claimed socket queue capacity. TCP buffer
 sizes remain application-owned. The upstream global packet pool uses its
 default capacity.

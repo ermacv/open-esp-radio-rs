@@ -144,10 +144,11 @@ facts. Unlike ordinary generated output, they and their state must survive a
 vendor update; commit them or place them in equivalent durable,
 access-controlled storage. Snapshot names are immutable.
 
-Linked-IR schema 65 records the primary artifacts, symbol inventories and
+Linked-IR schema 68 records the primary artifacts, symbol inventories and
 companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
-generated evidence.
+generated evidence. Function records retain artifact-bound occurrence and
+reviewed semantic identities; a symbol name alone is not revision identity.
 
 Only schema-5 snapshots and revision-state DSL version 1 are accepted. TOML,
 older state and migration maps are not parsed or upgraded. Remove invalid
@@ -156,7 +157,7 @@ state and capture a fresh baseline from the live typed vendor bindings.
 ## Generated outputs
 
 - symbol, MMIO, and interface observations;
-- interface capability context (`schema_version = 1`, command `interfaces
+- interface capability context (`schema_version = 2`, command `interfaces
   capability-context`): a compact, deterministically sorted projection of
   unresolved interface observations and existing capability links for
   `research next`. Its `input_digest` covers project identity, calling
@@ -170,7 +171,7 @@ state and capture a fresh baseline from the live typed vendor bindings.
 - canonical derived linked-IR bundles and indexes, including structural loop
   regions, explicitly non-proving counted-loop candidates, and raw-bit
   floating value-flow nodes whose operation and rounding mode remain explicit.
-  Schema 65 also records typed guarded-return frontiers and full call-result
+  Schema 68 also records typed guarded-return frontiers and full call-result
   producer identities. `structurally_complete` means only that every terminal
   was enumerated within bounded traversal; it does not assert expression
   exactness, path feasibility, event delivery, or mutable-object lifetime;

@@ -51,7 +51,7 @@ cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/tt
 Select `station`, `access-point`, `monitor` or `bluetooth-controller`. Application
 credentials remain environment configuration of the example; HIL credentials
 remain lab configuration. Each successful invocation retains a separate bundle
-under `target/firmware/esp32s31-<example>/build-<id>/`:
+under `target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, partition/OTA images, packed runtime,
 `runtime.elf`, `bootstrap.elf`, both resolved lockfiles and
 placement/stack reports. The build rejects invalid placement and oversized

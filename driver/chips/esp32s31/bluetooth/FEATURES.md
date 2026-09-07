@@ -1,33 +1,249 @@
-# ESP32-S31 Bluetooth LE source capabilities
+# ESP32-S31 Bluetooth source capabilities
 
-This matrix describes implemented code and its composition limits. It does
-not claim RF delivery, interoperable connectivity or Bluetooth qualification.
+This inventory describes source-owned Bluetooth paths and their composition
+limits. It does not claim RF delivery, interoperable connectivity or Bluetooth
+qualification. Status applies only to the exact scope of each row.
+
+| Status | Meaning |
+| --- | --- |
+| IMPLEMENTED | A bounded production source path owns the complete operation in the stated scope; this is not a hardware qualification result. |
+| PARTIAL | A source subset exists, including narrower role, PHY, DTM or lower-layer machinery, but the full named feature is not composed. |
+| FAIL-CLOSED | Production deliberately prevents activation or advertisement at the stated boundary. Recovered registers alone do not establish this status. |
+| ABSENT | No production protocol/runtime owner exists for the operation. |
+| HOST-ONLY | The named Host/profile function is above HCI. This is a scope label, not a claim that a Host integration implements it. |
+
 The [qualification specification](../../../../qualification/targets/esp32s31/bluetooth-le.toml)
-owns readiness requirements and hardware evidence. A successful HCI command,
-scheduler `RUN`, descriptor or isolated state machine does not establish an
-end-to-end controller capability.
+owns readiness requirements and hardware evidence independently. A successful
+HCI command, scheduler `RUN`, SRAM graph, PAC accessor, parser or isolated state
+machine does not establish an end-to-end Controller capability. In particular,
+DTM PHY coverage does not establish connected PHY support.
 
-## Implementation and composition
+## Capability sources and scope
 
-| Layer or path | Implemented source contract | Unsupported or unqualified boundary |
+| Source | Inventory scope |
+| --- | --- |
+| [ESP32-S31 datasheet, pre-release v0.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf), sections 4.3.3 and 4.3.4 | LE PHY, Controller/Host features and Classic BR/EDR capabilities |
+| [ESP-IDF S31 SoC capabilities](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h) | Classic, LE, ISO/Audio, privacy, CTE, power control, subrating, PAwR and coexistence declarations |
+| [ESP-IDF S31 Bluetooth documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/bluetooth/index.html) | Vendor Controller/Host integration boundary |
+| [Chip owners](README.md), [portable Bluetooth](../../../bluetooth/) and [Embassy runtime](../../../runtime/embassy/esp32s31/bluetooth/) | Actual open-driver production composition |
+
+Vendor declarations identify capabilities to account for; they do not establish
+open-driver support. The datasheet combines Controller and Host features, so
+Host functions are listed separately below. Features beyond this hardware
+inventory, such as Monitoring Advertisers, must not be inferred from passive
+scanning or a Bluetooth version number.
+
+## LE PHY, RF and Direct Test Mode
+
+| Feature | Status | Current production boundary |
 | --- | --- | --- |
-| PAC/HAL | Typed clock/reset, controller time, IRQ, scheduler and memory-list access; publication barriers | Physical validation, complete long-running timer/PHY maintenance and powered teardown are not established by these accessors |
-| Controller SRAM | DTM, advertising, scanning and peripheral graphs; private codecs; CPU/hardware ownership and bounded RX extraction | No complete connected TX queue, acknowledgment/retry owner or verified packet-engine contract |
-| DTM | RX/TX preparation, recurring events, completion/recycle, Test End and Reset with Embassy composition | These source paths do not establish RF/HIL qualification or complete long-running maintenance |
-| Advertising/scanning | Portable policy, typed HCI commands and chip event paths | Source composition does not establish on-air delivery |
-| Connectable advertising | Configuration, generation/event identity, first event, no-connection recurrence, ordered stop and CONNECT_IND handoff | Scheduler `RUN` does not establish successful advertisement or connection exchange |
-| Peripheral connection | Causal first window, first `RUN`, lower completion/RX/recycle and recurrence preparation/publication | The active actor retains the first running owner but does not drive its radio completion/recurrence; missed-event recovery and reliability are incomplete |
-| Portable connection LL | CONNECT_IND validation, channel selection, event progression and anchor bookkeeping | No complete SN/NESN, retransmission, duplicate suppression, establishment/supervision timeout or LLCP owner |
-| HCI | Standard packet types, bounded in-process transport, bootstrap, DTM, advertising and scanning | Connection events, handles, ACL routing and credits are not connected; non-command input is quarantined |
-| Trouble Host | Host bootstrap test through `bt-hci` | No production Trouble runner, connected ACL or GATT interoperability composition |
-| Shutdown | Typed rollback before publication and selected HCI Reset paths | Complete powered quiescence, PHY release and cold reconstruction are not implemented |
+| LE 1M PHY | IMPLEMENTED | DTM and bounded legacy advertising/scanning paths own 1M event publication. This does not imply a complete connected Controller. |
+| LE 2M PHY | PARTIAL | [DTM parameters](src/le/dtm/parameters.rs) own TX/RX selectors and scheduler geometry. Ordinary advertising/scanning and peripheral roles do not select 2M. |
+| LE Coded S=8 / 125 kbit/s | PARTIAL | Enhanced DTM owns the S=8 TX selection and generic Coded RX selection. No ordinary advertising/scanning or ACL role selects Coded PHY. |
+| LE Coded S=2 / 500 kbit/s | PARTIAL | DTM has a distinct S=2 TX identity. RX uses the generic Coded selector; S=2 is not a separate accepted RX selector. No connected Coded path exists. |
+| Hardware Listen Before Talk (LBT) | ABSENT | No Bluetooth LBT policy/activation owner is composed. |
+| Static/default TX power selection | PARTIAL | DTM, advertising, scanning and peripheral graph preparation carry default power requests through the recovered [power encoding](memory/src/le_tx_power.rs). No general live power-selection API or radiated-power qualification is implied. |
+| LE Receiver Test / Transmitter Test | IMPLEMENTED | Bounded [DTM](src/le/dtm.rs) command preparation, static SRAM graphs, recurring scheduler events, RX accounting, completion/recycle and Test End are composed with Embassy. |
+| Enhanced DTM PHY selection | IMPLEMENTED | HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions. |
+| DTM test patterns | IMPLEMENTED | [TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants. |
+| Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist. Periodic tracking, timer-expiration handling and final PHY release remain incomplete. RF/HIL readiness belongs to qualification. |
 
-The controller uses `bt-hci` 0.10.1. `trouble-host` 0.8.0 is a development
-dependency of the portable HCI crate, not the product GATT server. BR/EDR,
-privacy, encryption, extended advertising, other PHYs, ISO and sleep are outside
-this implementation scope. The platform adapters do not permit safe concurrent
-Wi-Fi/Bluetooth singleton ownership. HCI capability advertisement must remain
-limited to the composed implementation.
+## Legacy advertising and scanning
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Legacy non-connectable advertising (`ADV_NONCONN_IND`) | IMPLEMENTED | A bounded event owns one to three primary-channel descriptors, scheduler publication, completion, retirement and recycle. |
+| Legacy connectable advertising (`ADV_IND`) | PARTIAL | [Connectable advertising](src/le/advertising/connectable.rs) owns configuration, response graph, recurrence and `CONNECT_IND` handoff. The S31 slice accepts exactly one selected primary channel. |
+| Advertiser Scan Response (`SCAN_RSP`) | PARTIAL | Bounded response state and graph preparation belong to connectable advertising; this is not a general scannable advertiser. |
+| Scannable non-connectable advertising (`ADV_SCAN_IND`) | ABSENT | No production role publishes this advertising mode. |
+| Low-duty / high-duty directed advertising (`ADV_DIRECT_IND`) | ABSENT | No directed-advertising scheduler and lifecycle exists. |
+| High-duty-cycle non-connectable advertising | ABSENT | No production scheduling policy implements the named feature. |
+| Static random advertiser address | PARTIAL | HCI retains a requested random address; application to advertising is role-specific. This does not provide private-address rotation. |
+| Legacy passive scanning | PARTIAL | [Passive scanning](src/le/scanning/passive.rs) composes recurring primary-channel LE 1M windows, public own address, accept-all policy, bounded reports and optional exact report-duplicate suppression. Privacy is disabled; unrelated finished-list dispatch remains incomplete. |
+| Active scanning | ABSENT | No `SCAN_REQ` producer and complete request/response scanning lifecycle exists. |
+| Extended / secondary-channel scanning | ABSENT | No AUX scanner, secondary 2M scanner or ordinary Coded scanner is composed. DTM RX is separate. |
+| Extended scanner filter policies | ABSENT | Production uses the restricted accept-all policy. |
+| Filter Accept List operation | ABSENT | HCI capacity reporting exists, but list commands and advertiser/scanner admission policy are not composed. |
+
+## LE roles, connections and reliability
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Broadcaster / Observer | PARTIAL | The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent. |
+| Peripheral | PARTIAL | `CONNECT_IND` handoff and first connection event exist. The active actor retains the running owner without driving radio completion and recurring events. |
+| Central / Initiator | ABSENT | No Create Connection/initiator scheduling or Central connection owner exists. |
+| Simultaneous Broadcaster + Observer + Central + Peripheral | ABSENT | Individual role subsets do not form a simultaneous multi-role runtime. |
+| Multiple connections / multi-connection optimization | ABSENT | No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists. |
+| `CONNECT_IND` decoding and admission | IMPLEMENTED | [Portable connection policy](../../../bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only. |
+| First peripheral connection window | PARTIAL | Causal timestamp projection, window planning, SRAM preparation and first hardware `RUN` exist; a successful connection exchange is not established. |
+| Recurring peripheral events | PARTIAL | [Lower recurrence](src/le/peripheral/connection/recurring.rs) prepares and publishes successor events. The active Controller actor does not invoke the complete completion/recurrence lifecycle. |
+| Channel Selection Algorithm #1 | PARTIAL | Portable channel progression exists within the incomplete connection owner. |
+| Channel Selection Algorithm #2 | PARTIAL | Portable CSA#2 exists, but S31 connectable advertising marks local CSA#2 support unsupported and rejects requests requiring it. |
+| Peripheral latency | PARTIAL | Timing is validated and retained; live skip/recovery scheduling is not complete. |
+| Sleep Clock Accuracy / window widening | PARTIAL | Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned; arbitrary missed-event recovery is not established. |
+| Establishment / supervision timeout | ABSENT | Request timing validation is present, but no complete live timeout and disconnect owner exists. |
+| Missed-event recovery | ABSENT | No complete connection resynchronization and accumulated-uncertainty policy exists. |
+| LL Data PDU RX | PARTIAL | Lower peripheral RX extraction and buffer recycling exist without a reliable recurring ACL link. |
+| LL Data PDU TX | ABSENT | No complete connected TX queue, publication and retry owner exists. |
+| SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledgments | ABSENT | No reliable connected LL exchange is composed. Scanner report deduplication is a separate operation. |
+| LLCP framework | ABSENT | No connected control-procedure transaction owner exists. |
+| Connection Update / Channel Map Update | ABSENT | Initial parameters are retained; live negotiation, instant handling and application are absent. |
+| PHY Update | ABSENT | No connected PHY negotiation/application owner exists; DTM selection does not implement LLCP. |
+| Data Length Extension / Data Length Update | ABSENT | No negotiated connected packet-length owner exists. |
+| Version Exchange / Feature Exchange / LE Ping | ABSENT | No connected LLCP producer/consumer and response lifecycle exists. |
+| Termination | ABSENT | No on-air termination transaction plus HCI disconnection lifecycle exists. |
+| Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps and CSA progression exist. Dynamic assessment and map updates are absent. |
+| LE Channel Classification | ABSENT | No connected classification generation/report/update procedure exists. |
+
+## Security and privacy
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| BLE encryption accelerator surface | PARTIAL | [Reviewed hardware registers](../../../../registers/esp32s31/model/peripherals/ble-hw-accelerator.toml) describe encryption operations; no connected encryption owner drives them. |
+| Link Layer Encryption | ABSENT | No key installation, packet counters/nonces, start/pause LLCP or encrypted ACL lifecycle exists. Its optional HCI feature bit stays clear. |
+| LE Privacy 1.2 | FAIL-CLOSED | The production [scanner image](memory/src/passive_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle. |
+| Resolving List | PARTIAL | [PHY engine storage](memory/src/ble_phy_engine.rs) owns allocation and base publication. HCI list commands, IRKs and live resolution policy are not composed. |
+| LE Secure Connections integration | ABSENT | No SMP Host integration is connected to a working ACL/encryption Controller path. Generic cryptographic hardware is not pairing support. |
+| Encrypted Advertising Data | ABSENT | No key/material lifecycle and advertiser/scanner formatter or consumer exists. |
+
+## Extended advertising, periodic advertising and Direction Finding
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Advertising Extensions / multiple advertising sets | ABSENT | No `ADV_EXT_IND` or `AUX_ADV_IND` production role or set lifecycle exists. Allocation counts do not create roles. |
+| Secondary-channel advertising, 2M / Coded advertising and Advertising Coding Selection | ABSENT | No AUX scheduling and PHY-selection owner exists. DTM coverage does not extend to advertising. |
+| Periodic Advertising / synchronization | ABSENT | No periodic advertiser or sync role exists; reserved sync capacity is only geometry. |
+| Periodic Advertising Sync Transfer (PAST) | ABSENT | Neither the ACL procedure nor periodic-sync owner is composed. |
+| Periodic Advertising with Responses (PAwR) | ABSENT | No subevent/response-slot scheduling or advertiser/scanner runtime exists. |
+| AdvDataInfo / Periodic Advertising Enhancements | ABSENT | No production periodic-advertising foundation exists. |
+| Advertising Channel Index | ABSENT | No production owner implements the named feature. |
+| Constant Tone Extension activation | FAIL-CLOSED | Normal initialization publishes a [disabled CTE workspace](memory/src/direction_finding_workspace.rs). Recovered CTE controls do not activate Direction Finding. |
+| AoA / AoD | ABSENT | No antenna pattern, IQ sampling, CTE TX/RX protocol or report lifecycle exists; the CTE activation boundary remains disabled. |
+| Connected / connectionless CTE procedures | ABSENT | Neither connected LLCP nor periodic-advertising CTE ownership exists. |
+| IQ sample delivery over HCI | ABSENT | No sampling-to-HCI producer or reporting lifecycle exists. |
+
+## Power control, subrating and isochronous transport
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| LE Power Control / Path Loss Monitoring | ABSENT | No connected procedure, threshold state or HCI event producer exists. Default power encoding is separate. |
+| LE Connection Subrating | ABSENT | No LLCP, subrate anchor or scheduling lifecycle exists. |
+| LE Isochronous Channels / ISOAL | ABSENT | No ISO adaptation, stream scheduling or Controller data-path owner exists. |
+| Connected Isochronous Groups / Streams (CIG/CIS) | ABSENT | No connected group/stream control and scheduling lifecycle exists. |
+| Broadcast Isochronous Groups / Streams (BIG/BIS) | ABSENT | No BIG control, periodic-advertising integration or broadcast ISO scheduler exists. |
+| LE Audio transport | ABSENT | CIS/BIS transport is not implemented. Host audio profiles cannot supply the missing Controller path. |
+
+## HCI and Host boundary
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| HCI Command / Event packets | IMPLEMENTED | Bounded in-process transport and typed dispatch own the current bootstrap, DTM and legacy advertising/scanning command/response subset. |
+| ACL / SCO / ISO packet framing | IMPLEMENTED | [Packet validation](../../../bluetooth/hci/src/transport/packet.rs) recognizes standard packet kinds and declared lengths. This is framing only, not an operational data plane. |
+| HCI ACL routing and bidirectional flow control | ABSENT | No connected handle, radio queue or credit lifecycle exists. Bootstrap retains Host buffer/flow-control policy; non-command input is quarantined by the Controller composition. |
+| HCI SCO / ISO data plane | ABSENT | Generic transport packet representations exist, but no synchronous/isochronous stream routes them to radio execution. |
+| HCI Reset | IMPLEMENTED | Software bootstrap reset and selected active-role reset coordination exist. Complete powered reconstruction remains separate. |
+| Event masks | PARTIAL | Bootstrap retains Host masks; complete event production is not composed. |
+| Public BD_ADDR / LE Read Buffer Size | IMPLEMENTED | Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support. |
+| LE Set Random Address | PARTIAL | Bootstrap retains the request; hardware application is role-specific and does not establish privacy. |
+| LE Read Local Supported Features command | IMPLEMENTED | [Bootstrap](../../../bluetooth/hci/src/controller/bootstrap/state.rs) returns eight zero feature bytes. The query itself is implemented. |
+| Optional LE capability advertisement | FAIL-CLOSED | All optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement. |
+| LE Read Filter Accept List Size | IMPLEMENTED | Configured capacity is reported; list operation remains absent. |
+| Connection handles / Connection Complete / Disconnection Complete | ABSENT | No complete Host-visible connection lifecycle exists. |
+| Trouble Host integration | PARTIAL | [Portable HCI tests](../../../bluetooth/hci/Cargo.toml) use `bt-hci` 0.10.1 and development-only `trouble-host` 0.8.0 for bootstrap. No production Trouble runner or connected GATT interoperability composition exists. |
+## Controller scheduling, power and lifetime
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Controller scheduler timebase | PARTIAL | Always-awake event-driven time ownership exists. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete. |
+| Controller interrupt epoch | PARTIAL | IRQ routing, bounded hard-handler classification and task wake exist; unrelated finished-list and complete role dispatch remain incomplete. |
+| Controller SRAM ownership | PARTIAL | Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts. Missing role graphs and packet-engine contracts are not implied. |
+| Always-awake Controller | PARTIAL | Production selects standalone always-awake operation; incomplete role and maintenance lifetimes still apply. |
+| Bluetooth modem sleep / wake request | ABSENT | No controller sleep scheduler, RF/PHY/baseband stop/wake, retention or wake-request transaction is composed. |
+| Low-frequency sleep-clock operation | ABSENT | Production uses the standalone main-XTAL time profile. Portable SCA types do not implement a low-power clock/wake lifecycle. |
+| Powered shutdown | PARTIAL | Pre-publication rollback and selected HCI Reset paths exist. Complete hardware quiescence, PHY/client release and cold reconstruction remain incomplete. |
+## Coexistence
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Internal Wi-Fi/Bluetooth coexistence | PARTIAL | The [coexistence core](../coex/src/lib.rs), PAC and [Embassy mailbox](../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. Safe concurrent Wi-Fi/Bluetooth singleton ownership is not composed. |
+| Wi-Fi/Bluetooth/IEEE 802.15.4 radio coordination | PARTIAL | Shared arbitration infrastructure exists without a complete multi-radio production lifecycle. |
+| Hardware PTI coexistence | PARTIAL | Recovered priority/register machinery exists without a complete Bluetooth request/grant/release policy. |
+| External coexistence interface | ABSENT | The SoC declares advanced external coexistence hardware. No Bluetooth board-pin contract and external request/grant runtime is composed. |
+
+## Bluetooth Classic hardware scope
+
+The datasheet and `SOC_BT_CLASSIC_SUPPORTED` declare BR/EDR hardware.
+The open Controller implementation is LE-only; vendor Host availability does
+not determine whether Classic belongs in the silicon inventory. Shared RF,
+SRAM or HCI packet types do not implement a Classic protocol/runtime owner.
+
+## Bluetooth Classic PHY
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Basic Rate GFSK, 1 Mbit/s | ABSENT | No BR/EDR PHY-event or Baseband role exists. LE DTM does not exercise Classic. |
+| EDR pi/4-DQPSK, 2 Mbit/s | ABSENT | No EDR formatter/receiver owner exists. |
+| EDR 8DPSK, 3 Mbit/s | ABSENT | No EDR formatter/receiver owner exists. |
+| Hardware CCA | ABSENT | No Classic PHY/runtime owner drives channel assessment. |
+| Power Class 1 operation | ABSENT | No Classic TX power/runtime path establishes the advertised radio capability. |
+
+## Bluetooth Classic Link Controller
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Inquiry / Inquiry Scan | ABSENT | No Classic discovery role exists. |
+| Paging / Page Scan | ABSENT | No Classic connection-establishment owner exists. |
+| ACL links | ABSENT | No BR/EDR ACL connection or operational HCI data path exists. |
+| SCO links | ABSENT | No synchronous Classic link owner exists. |
+| eSCO links | ABSENT | No enhanced synchronous Classic link owner exists. |
+| Active mode | ABSENT | No Classic connected state exists. |
+| Sniff mode | ABSENT | No Classic low-duty connected scheduler exists. |
+| Sniff Subrating | ABSENT | No Classic subrating procedure exists. |
+| Role switching | ABSENT | No Classic piconet role manager exists. |
+| Channel classification | ABSENT | No Classic channel assessment/classification owner exists. |
+| Adaptive Frequency Hopping | ABSENT | No Classic hopping and channel-map lifecycle exists. |
+| Traditional Power Control | ABSENT | No Classic power-control procedure exists. |
+| Enhanced Power Control | ABSENT | No Classic enhanced power-control procedure exists. |
+| Ping | ABSENT | No Classic Link Manager transaction owner exists. |
+| Piconet management | ABSENT | No Classic piconet scheduler/link manager exists. |
+| Scatternet management | ABSENT | No multi-piconet scheduler exists. |
+| Multiple connections | ABSENT | No Classic link table or concurrent connection scheduler exists. |
+| Active Peripheral Broadcast | ABSENT | No Classic broadcast role exists. |
+
+## Bluetooth Classic security and audio
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Secure Simple Pairing (SSP) | ABSENT | No Classic Host/Link Manager pairing lifecycle exists. |
+| Secure Connections | ABSENT | No Classic connection/security owner exists. |
+| E0 encryption | ABSENT | No Classic encryption procedure and packet lifecycle exists. |
+| AES-CCM encryption | ABSENT | Generic crypto hardware does not establish a Classic encrypted link. |
+| A-law voice | ABSENT | No SCO/eSCO audio path exists. |
+| mu-law voice | ABSENT | No SCO/eSCO audio path exists. |
+| CVSD voice | ABSENT | No SCO/eSCO audio path exists. |
+| Transparent voice data | ABSENT | No synchronous Classic audio path exists. |
+| Voice over HCI | ABSENT | Packet framing exists, but no synchronous link routes voice over HCI. |
+| Voice over PCM/I2S | ABSENT | The SoC declares Bluetooth/I2S routing; no Classic synchronous-link composition owns it. |
+
+## Host-only product capabilities
+
+| Feature | Status | Current production boundary |
+| --- | --- | --- |
+| Bluetooth Mesh 1.1 | HOST-ONLY | Requires a Host/profile stack over an adequate LE Controller; no production Mesh integration is claimed. |
+| Enhanced Attribute Protocol (EATT) | HOST-ONLY | ATT/L2CAP Host function; no production Host integration is claimed. |
+| GATT Caching | HOST-ONLY | GATT Host function; no production Host integration is claimed. |
+| LE GATT Security Levels Characteristic | HOST-ONLY | GATT/security Host function; no production Host integration is claimed. |
+| BluFi | HOST-ONLY | Espressif application/profile protocol requiring LE and Wi-Fi integration; not supplied by this Controller. |
+| LE Audio Generic Audio Framework | HOST-ONLY | Profiles/services are Host-side; the missing ISO/CIS/BIS Controller transport is tracked separately above. |
+| Classic audio/data profiles | HOST-ONLY | A2DP/HFP and other Host profiles do not establish BR/EDR Controller support. |
+
+## Capability advertisement
+
+`LE Read Local Supported Features` currently returns eight zero feature bytes.
+Each optional bit requires the complete production Controller operation named
+by that feature. A recovered register, SRAM layout, portable parser, DTM-only
+PHY or vendor capability cannot grant advertisement. The command itself is
+implemented; its conservative result is not a claim of a complete Controller.
 
 ## Ownership
 

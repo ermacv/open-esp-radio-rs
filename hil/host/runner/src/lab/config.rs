@@ -260,12 +260,6 @@ impl LabConfig {
                     validate_shell_token("station_fixture.monitor_interface", interface)?;
                 }
                 validate_phys("open-wrt", phys)?;
-                if phys.as_slice() != [PhyExpectation::Ht40] {
-                    return Err(
-                        "the laboratory OpenWrt fixture is qualified only for `phys = [\"ht40\"]`; 20 MHz width alone does not prove HE"
-                            .into(),
-                    );
-                }
             }
             RawStationFixtureConfig::External { phys } => validate_phys("external", phys)?,
         }

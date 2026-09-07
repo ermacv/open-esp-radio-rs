@@ -1,5 +1,52 @@
 use super::*;
 
+fn openwrt_config(phys: &[&str]) -> tempfile::NamedTempFile {
+    use std::io::Write;
+
+    let mut config: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    config["station_fixture"]["phys"] = toml::Value::Array(
+        phys.iter()
+            .map(|phy| toml::Value::String((*phy).into()))
+            .collect(),
+    );
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(toml::to_string(&config).unwrap().as_bytes())
+        .unwrap();
+    file
+}
+
+#[test]
+fn openwrt_accepts_each_declared_phy_and_multiple_profiles() {
+    for phys in [
+        &["ht20"][..],
+        &["ht40"][..],
+        &["he20"][..],
+        &["ht20", "ht40", "he20"][..],
+    ] {
+        let file = openwrt_config(phys);
+        let config = LabConfig::load(file.path()).unwrap();
+        for phy in [
+            PhyExpectation::Ht20,
+            PhyExpectation::Ht40,
+            PhyExpectation::He20,
+        ] {
+            assert_eq!(
+                config.station_fixture.require_phy(phy).is_ok(),
+                phys.contains(&phy.id()),
+            );
+        }
+    }
+}
+
+#[test]
+fn openwrt_rejects_empty_duplicate_and_unknown_phy_profiles() {
+    for phys in [&[][..], &["ht40", "ht40"][..], &["unknown"][..]] {
+        let file = openwrt_config(phys);
+        assert!(LabConfig::load(file.path()).is_err());
+    }
+}
+
 #[test]
 fn parses_static_ipv4() {
     let parsed = parse_ipv4(RawIpv4Config::Static {

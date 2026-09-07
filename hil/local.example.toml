@@ -51,6 +51,9 @@ ssh_target = "open-radio-ap"
 wireless_interface = "phy0-ap0"
 ingress_interface = "br-lan"
 monitor_interface = "open-radio-mon"
+# Declare the modes supported by this fixture, for example
+# ["ht20", "ht40", "he20"]. Configure the OpenWrt radio for the scenario's
+# requested mode before running; HIL still checks the active PHY evidence.
 phys = ["ht40"]
 # Uses the laptop's Intel adapter as an independent passive observer while
 # OpenWrt remains the AP. Requires the schema-3 open-radio-net helper.

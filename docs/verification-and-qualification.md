@@ -24,6 +24,30 @@ Workspace tests and review are responsible for the declared source states.
 The evaluator lives in `qualification/evaluator`; its CLI is
 `cargo qualification validate|evaluate|gate`.
 
+## Agreement with feature inventories
+
+`FEATURES.md` and qualification describe the same implementation. For an
+identical scope, an `IMPLEMENTED` feature must agree with
+`implementation = "complete"`; missing vendor/HIL evidence may prevent readiness
+but is not an implementation gap. Conversely, a missing production owner must
+not be hidden by a complete lower register or protocol primitive.
+
+Qualification roots can cover a broader lifetime than individual feature rows.
+In that case, name the additional requirements in the root scope and gaps, and
+use `source-contracts` for the implemented subset. Link the feature inventory
+to those capability IDs so that an incomplete parent is not read as an absent
+child operation. `PARTIAL`, `FAIL-CLOSED` and `ABSENT` must retain their exact
+missing or rejected operations; none means the hardware cannot support them.
+`HOST-ONLY` rows do not create Controller qualification obligations.
+
+Changes to source coverage require review of both the inventory and applicable
+qualification scopes, source contracts and implementation gaps. Preserve
+vendor/HIL requirements and provenance; updating an implementation description
+does not supply evidence. A feature outside the target's scope has no readiness
+claim from that target. The evaluator validates structured declarations and
+references, not semantic agreement with Markdown; that agreement remains a
+source-review obligation.
+
 ## Vendor verification path
 
 A vendor comparison is qualification-eligible only when all of these hold:

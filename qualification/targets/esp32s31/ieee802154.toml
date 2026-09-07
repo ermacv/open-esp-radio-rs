@@ -88,10 +88,20 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/ieee802154-lifecycle.md",
 ]
 gaps = [
-  { axis = "implementation", id = "shared-phy-timer-lock-rf-wakeup-and-track-children-missing" },
+  { axis = "implementation", id = "shared-pll-rf-retune-and-tracking-lifetime-composition-missing" },
   { axis = "vendor", id = "rf-client-btbb-and-channel-composed-trace-missing" },
   { axis = "hil", id = "calibrated-ed-and-channel-retune-cell-missing" },
   { axis = "async", id = "rf-transition-executor-contract-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "ieee802154-registered-timing-entry"
+composition = "production"
+scope = "Dedicated target registration and client tracking retain the IEEE radio owner through common BTBB and protocol timing into foundation and static MAC policy"
+limits = "This lower target entry is not a public RF-ready service; shared PLL ownership RF retune and the IRQ/DMA operational lifetime remain incomplete as stated in the PHY consumer matrix"
+source-paths = [
+  "driver/chips/esp32s31/phy/src/registered_ieee802154.rs",
+  "driver/chips/esp32s31/phy/src/target_executor.rs",
 ]
 
 [[capabilities]]
@@ -129,4 +139,15 @@ gaps = [
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
   { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "ieee802154-mac-operation-subset"
+composition = "production"
+scope = "The lower MAC actor and executor own RX without automatic ACK direct or CCA-gated TX ACK reception and DMA completion transitions"
+limits = "Lower operation ownership does not compose the RF-ready public service; automatic ACK generation CSMA/CA source matching timed operations and security are not implied"
+source-paths = [
+  "driver/chips/esp32s31/ieee802154/mac/src/actor.rs",
+  "driver/chips/esp32s31/ieee802154/runtime/src/pac_command_executor.rs",
+  "driver/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
 ]

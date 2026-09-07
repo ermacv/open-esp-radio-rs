@@ -61,7 +61,11 @@ evaluator also derives a gap whenever required machine evidence is absent.
 A capability may attach `[[capabilities.source-contracts]]` reference entries
 to describe its hardware-facing implementation paths. The ESP32-S31 Wi-Fi
 manifest keeps SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache
-handoff boundaries under `rx-tx-dma`.
+handoff boundaries under `rx-tx-dma`. Cold calibration/cache, Bluetooth DTM and
+PHY lifetime, coexistence, and IEEE 802.15.4 lower operation contracts likewise
+make implemented subsets visible without promoting their broader parents.
+The [inventory agreement contract](../docs/verification-and-qualification.md#agreement-with-feature-inventories)
+requires matching implementation descriptions for the same scope.
 
 Each entry has a unique `id`, an explicit `scope`, `limits`, repository-relative
 `source-paths`, and a `composition`:

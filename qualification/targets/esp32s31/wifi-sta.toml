@@ -41,6 +41,26 @@ gaps = [
   { axis = "vendor", id = "registration-root-contract-blocked-by-bb-init" },
 ]
 
+[[capabilities.source-contracts]]
+id = "wifi-full-cold-calibration"
+composition = "production"
+scope = "Wi-Fi cold start executes full PHY calibration and exports a fresh semantic calibration cache"
+limits = "Every supplied cache selects FullAfterRejectedCache; this complete cold path does not implement retained hardware replay or resume from radio sleep"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/src/cold_start.rs",
+  "driver/chips/esp32s31/phy/src/calibration/registration.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "phy-cache-cold-replay"
+composition = "unimplemented"
+scope = "Restore retained calibration values into cold hardware and skip full calibration"
+limits = "Registration deliberately rejects cache reuse; snapshot representation and identity validation alone cannot restore hardware"
+source-paths = [
+  "driver/chips/esp32s31/phy/src/calibration/registration.rs",
+  "driver/chips/esp32s31/phy/src/state.rs",
+]
+
 [[capabilities]]
 id = "rf-bb-initialization"
 title = "RF and baseband initialization"

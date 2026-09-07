@@ -36,6 +36,26 @@ Host functions are listed separately below. Features beyond this hardware
 inventory, such as Monitoring Advertisers, must not be inferred from passive
 scanning or a Bluetooth version number.
 
+## Qualification scope mapping
+
+The [LE qualification program](../../../../qualification/targets/esp32s31/bluetooth-le.toml)
+uses broader Controller roots as well as narrow portable capabilities. These
+scopes must agree with the rows below; missing RF evidence alone does not make
+an implemented source operation incomplete.
+
+| Feature scope | Qualification capability / source contract | Boundary |
+| --- | --- | --- |
+| Initial PHY registration, acquisition and tracking | `common-phy-baseband` / `bluetooth-initial-phy-handoff` | Initial handoff is implemented; the parent also requires periodic tracking and physical release. |
+| Bounded DTM sessions | `packet-dataplane` / `bounded-dtm-session`; `dtm-*` roots | DTM source composition exists; the broad dataplane still lacks unrelated-list dispatch and the full Controller lifetime. |
+| HCI bootstrap and command/event handoff | `hci-bootstrap`, `hci-handoff-storage`, `hci-controller-endpoints` | Complete bounded interfaces do not establish `typed-hci-controller`, which also requires LL and ACL routing. |
+| Portable advertising / peripheral admission | `portable-legacy-advertising`, `portable-connectable-advertising`, `portable-peripheral-connection` | Portable readiness has no RF/HIL obligation and does not qualify a hardware advertising or ACL role. |
+| Passive scanning / complete Link Layer | `legacy-passive-scanning`, `le-link-layer` | Partial hardware roles remain incomplete at the broader runtime/reliable-link scope. |
+| Coexistence | `coexistence` / `coex-timer-validation-bridge`, `wifi-bluetooth-coex-runtime` | Diagnostic timer access exists; production joint-radio arbitration is unimplemented. |
+| Powered shutdown | `powered-teardown` | Selected cleanup paths do not close the complete last-owner lifetime. |
+
+The LE program does not qualify Classic, ISO or every silicon feature in this
+inventory. Absence of a dedicated qualification root is not evidence of support.
+
 ## LE PHY, RF and Direct Test Mode
 
 | Feature | Status | Current production boundary |

@@ -21,6 +21,21 @@ RF/channel readiness, active IRQ runtime and RX/TX dataplane composition
 incomplete. Complete static MAC policy or raw ED/CCA does not supply those
 missing boundaries.
 
+## Qualification scope mapping
+
+| Feature scope | Qualification capability | Agreement |
+| --- | --- | --- |
+| Clocks, reset and masked foundation | `clock-reset-foundation` | Complete finite source transition; hardware evidence is separate. |
+| CCA modes, threshold and primary PAN identity | `static-mac-policy` | Complete static policy/readback, not a complete receive service. |
+| Raw ED / standalone CCA | `polled-ed-cca` | Implementation is complete; async remains incomplete because the public path runs a finite synchronous poll budget. |
+| Registered PHY and protocol timing / channel operation | `rf-channel-readiness` | `ieee802154-registered-timing-entry` exists; shared PLL, RF retune and tracking lifetime composition remain incomplete. |
+| Active IRQ service | `active-interrupt-runtime` | Lower IRQ machinery does not close whole-radio route/runtime composition. |
+| Lower RX/TX actor and DMA / public dataplane | `rx-tx-dataplane` | `ieee802154-mac-operation-subset` exists; complete RF-ready public operation is still incomplete. |
+
+The [program](../../../../qualification/targets/esp32s31/ieee802154.toml) retains
+these scopes and source contracts. It does not qualify absent features such as
+CSMA/CA or CSL, and upper stacks remain outside the radio/MAC target.
+
 ## Capability sources and publication scope
 
 The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)

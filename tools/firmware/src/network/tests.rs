@@ -101,13 +101,18 @@ fn failed_build_restores_catalog_and_releases_workspace_ownership() {
     let lock = workspace.join("Cargo.lock");
     let original = b"version = 4\n[[package]]\nname = 'local'\nversion = '0.1.0'\n";
     fs::write(&lock, original).unwrap();
+    let inherited;
     {
         let _selection = Selection::acquire(root, &workspace, Integration::PatchedXarxa).unwrap();
+        // dup shares the same open file description as inheritance across
+        // fork. Keep it alive to reproduce the pre-exec child window exactly.
+        inherited = _selection._lease.0.try_clone().unwrap();
         assert!(Selection::acquire(root, &workspace, Integration::UpstreamXarxa).is_err());
         fs::write(&lock, "incomplete build output").unwrap();
     }
     assert_eq!(fs::read(&lock).unwrap(), original);
-    assert!(Selection::acquire(root, &workspace, Integration::UpstreamXarxa).is_ok());
+    Selection::acquire(root, &workspace, Integration::UpstreamXarxa).unwrap();
+    drop(inherited);
 }
 
 #[test]

@@ -86,8 +86,20 @@ pub struct Selection {
     original: Vec<u8>,
     integration: Integration,
     expected: String,
-    _lease: fs::File,
+    _lease: WorkspaceLease,
 }
+// Closing one descriptor does not release flock while a forked pre-exec
+// child still holds the shared open file description. Release ownership at
+// the owner's boundary, including failures after lock acquisition.
+struct WorkspaceLease(fs::File);
+impl Drop for WorkspaceLease {
+    fn drop(&mut self) {
+        if let Err(error) = FileExt::unlock(&self.0) {
+            eprintln!("release network build ownership: {error}");
+        }
+    }
+}
+
 impl Selection {
     pub fn acquire(root: &Path, workspace: &Path, integration: Integration) -> Result<Self> {
         let lease_dir = root
@@ -103,6 +115,7 @@ impl Selection {
         lease
             .try_lock_exclusive()
             .map_err(|e| format!("another firmware build owns {}: {e}", workspace.display()))?;
+        let lease = WorkspaceLease(lease);
         let lock = workspace.join("Cargo.lock");
         let original = fs::read(&lock)?;
         let config: toml::Value = toml::from_str(&fs::read_to_string(root.join(CONFIG))?)?;

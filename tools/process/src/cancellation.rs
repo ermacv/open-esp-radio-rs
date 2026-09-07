@@ -55,7 +55,7 @@ thread_local! { static CLEANUP: Cell<Option<Instant>> = const { Cell::new(None) 
 pub(crate) fn in_cleanup() -> bool {
     CLEANUP.get().is_some()
 }
-pub(crate) fn cleanup_deadline() -> Option<Instant> {
+pub fn cleanup_deadline() -> Option<Instant> {
     CLEANUP.get()
 }
 

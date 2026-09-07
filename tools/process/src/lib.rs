@@ -5,7 +5,11 @@ pub mod owned;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 mod cancellation;
-pub use cancellation::{Cancelled, check_cancelled, cleanup, is_cancelled, sleep};
+mod notification;
+pub use cancellation::{
+    Cancelled, check_cancelled, cleanup, cleanup_deadline, is_cancelled, sleep,
+};
+pub use notification::{CancellationNotification, notify_on_cancel};
 use std::{
     io::Read,
     process::{Command, Output, Stdio},
@@ -25,29 +29,39 @@ pub fn cancellation_requested() -> bool {
 
 pub struct SignalGuard {
     #[cfg(unix)]
-    handlers: Vec<signal_hook::SigId>,
+    handle: signal_hook::iterator::Handle,
+    #[cfg(unix)]
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 impl Drop for SignalGuard {
     fn drop(&mut self) {
         #[cfg(unix)]
-        for handler in self.handlers.drain(..) {
-            signal_hook::low_level::unregister(handler);
+        {
+            self.handle.close();
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
         }
     }
 }
 pub fn install_signal_handlers() -> Result<SignalGuard> {
     #[cfg(unix)]
     {
-        let mut guard = SignalGuard {
-            handlers: Vec::new(),
-        };
-        for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-            guard.handlers.push(signal_hook::flag::register(
-                signal,
-                Arc::clone(cancellation()),
-            )?);
-        }
-        Ok(guard)
+        let mut signals = signal_hook::iterator::Signals::new([
+            signal_hook::consts::SIGINT,
+            signal_hook::consts::SIGTERM,
+        ])?;
+        let handle = signals.handle();
+        let worker = std::thread::spawn(move || {
+            for _ in signals.forever() {
+                cancellation().store(true, Ordering::Relaxed);
+                notification::notify();
+            }
+        });
+        Ok(SignalGuard {
+            handle,
+            worker: Some(worker),
+        })
     }
     #[cfg(not(unix))]
     Err("host process-group cancellation is unsupported on this host".into())

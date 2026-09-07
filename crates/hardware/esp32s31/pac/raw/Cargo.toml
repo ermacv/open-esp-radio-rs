@@ -25,4 +25,5 @@ unsafe_op_in_unsafe_fn = "allow"
 [package.metadata.open-radio]
 scope = "production"
 layer = "hardware"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

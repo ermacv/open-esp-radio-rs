@@ -18,4 +18,5 @@ workspace = true
 [package.metadata.open-radio]
 scope = "development"
 layer = "verification"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

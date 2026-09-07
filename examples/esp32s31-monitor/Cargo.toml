@@ -46,4 +46,5 @@ oer-firmware = { path = "../../tools/firmware", default-features = false }
 [package.metadata.open-radio]
 scope = "development"
 layer = "application"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

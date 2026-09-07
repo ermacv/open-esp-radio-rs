@@ -16,22 +16,33 @@ default = ["wifi"]
 wifi = ["radio/wifi", "dep:mac", "dep:softmac", "dep:datapath", "dep:sta", "dep:ap", "dep:wpa2"]
 bluetooth = ["dep:hci", "dep:le-ll"]
 ieee802154 = ["dep:ieee802154"]
-esp32s31 = ["dep:chip-hal", "dep:chip-mac", "dep:chip-sta", "dep:chip-ap", "dep:chip-bluetooth"]
-embassy-esp32s31 = ["wifi", "esp32s31", "radio/wifi-embassy", "dep:composition"]
-upstream-xarxa = ["embassy-esp32s31", "composition/upstream-network"]
-owned-xarxa = ["embassy-esp32s31", "composition/owned-network"]
-embassy-smoltcp = ["embassy-esp32s31", "composition/compat-network"]
+esp32s31 = ["dep:chip-hal"]
+esp32s31-wifi = ["esp32s31", "wifi", "dep:chip-mac", "dep:chip-sta", "dep:chip-ap"]
+esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
+embassy-esp32s31-bluetooth = ["esp32s31-bluetooth", "dep:bluetooth-composition"]
+upstream-xarxa = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/upstream-network"]
+owned-xarxa = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/owned-network"]
+embassy-smoltcp = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/compat-network"]
 
 [package.metadata.open-radio]
 scope = "production"
 layer = "facade"
 platform = "portable"
 supported-feature-profiles = [
+    "wifi",
+    "bluetooth",
+    "ieee802154",
     "wifi,bluetooth,ieee802154",
-    "wifi,bluetooth,ieee802154,esp32s31",
+    "esp32s31",
+    "esp32s31-wifi",
+    "esp32s31-bluetooth",
+    "ieee802154,esp32s31",
+    "esp32s31-wifi,esp32s31-bluetooth,ieee802154",
+    "embassy-esp32s31-bluetooth",
     "upstream-xarxa",
     "owned-xarxa",
     "embassy-smoltcp",
+    "upstream-xarxa,embassy-esp32s31-bluetooth",
 ]
 
 [dependencies]
@@ -52,7 +63,8 @@ chip-mac = { package = "oer-esp32s31-wifi-mac", path = "../hardware/esp32s31/dri
 chip-sta = { package = "oer-esp32s31-wifi-sta", path = "../hardware/esp32s31/driver/ieee80211/sta", optional = true }
 chip-ap = { package = "oer-esp32s31-wifi-ap", path = "../hardware/esp32s31/driver/ieee80211/ap", optional = true }
 chip-bluetooth = { package = "oer-esp32s31-bluetooth", path = "../hardware/esp32s31/driver/bluetooth", optional = true }
-composition = { package = "oer-esp32s31-embassy-wifi", path = "../composition/esp32s31/embassy/ieee80211", default-features = false, optional = true }
+wifi-composition = { package = "oer-esp32s31-embassy-wifi", path = "../composition/esp32s31/embassy/ieee80211", default-features = false, optional = true }
+bluetooth-composition = { package = "oer-esp32s31-bluetooth-integration", path = "../composition/esp32s31/embassy/bluetooth", optional = true }
 
 [lints]
 workspace = true

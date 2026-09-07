@@ -10,7 +10,8 @@ description = "Product-level ESP32-S31 Wi-Fi composition for Embassy and esp-hal
 [package.metadata.open-radio]
 scope = "production"
 layer = "composition"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"
 # Cargo features are additive, while these integration leaves are
 # intentionally alternatives. Repository audits compile every declared
 # profile independently instead of constructing an invalid all-feature union.

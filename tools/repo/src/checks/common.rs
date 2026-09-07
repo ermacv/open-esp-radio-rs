@@ -84,10 +84,17 @@ pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
     Ok(packages)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Platform<'a> {
+    Portable,
+    Host,
+    Chip(&'a str),
+}
+
 pub struct Classification<'a> {
     pub scope: &'a str,
     pub layer: &'a str,
-    pub platform: &'a str,
+    pub platform: Platform<'a>,
 }
 
 /// Classification is required for every source package, regardless of its path.
@@ -99,10 +106,41 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| format!("package {} lacks open-radio.{name}", package.name))
     };
+    let scope = field("scope")?;
+    let layer = field("layer")?;
+    let chip = metadata.and_then(|value| value.get("chip"));
+    let platform = match (field("platform")?, chip) {
+        ("portable", None) => Platform::Portable,
+        ("host", None) => Platform::Host,
+        ("chip", Some(chip)) => {
+            let chip = chip
+                .as_str()
+                .filter(|chip| {
+                    chip.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+                        && chip
+                            .bytes()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "package {} has invalid open-radio.chip identifier",
+                        package.name
+                    )
+                })?;
+            Platform::Chip(chip)
+        }
+        _ => {
+            return Err(format!(
+                "package {} has inconsistent platform/chip classification",
+                package.name
+            )
+            .into());
+        }
+    };
     let class = Classification {
-        scope: field("scope")?,
-        layer: field("layer")?,
-        platform: field("platform")?,
+        scope,
+        layer,
+        platform,
     };
     let expected_scope = match class.layer {
         "contract" | "protocol" | "hardware" | "adapter" | "runtime" | "service"
@@ -113,8 +151,7 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
         }
         _ => return Err(format!("package {} has unknown architecture layer", package.name).into()),
     };
-    if class.scope != expected_scope || !matches!(class.platform, "portable" | "esp32s31" | "host")
-    {
+    if class.scope != expected_scope {
         return Err(format!(
             "package {} has inconsistent architecture classification",
             package.name
@@ -151,28 +188,64 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                 )
                 .into());
             }
-            if matches!(source_class.layer, "contract" | "protocol")
-                && !matches!(target_class.layer, "contract" | "protocol")
-            {
+            if !layer_allows(source_class.layer, target_class.layer) {
                 return Err(format!(
-                    "portable policy {} depends on upper layer {}",
-                    source.package.name, dependency.name
+                    "forbidden architecture edge {} -> {}: {} depends on {}",
+                    source_class.layer, target_class.layer, source.package.name, dependency.name
                 )
                 .into());
             }
-            if source_class.platform == "portable"
-                && target_class.platform == "esp32s31"
-                && source_class.layer != "facade"
-            {
+            let platform_allowed = match (source_class.platform, target_class.platform) {
+                (_, Platform::Portable) => true,
+                (Platform::Chip(source), Platform::Chip(target)) => source == target,
+                (Platform::Host, Platform::Host) => true,
+                _ => source_class.layer == "facade",
+            };
+            if !platform_allowed {
                 return Err(format!(
-                    "portable package {} depends on chip-specific {}",
-                    source.package.name, dependency.name
+                    "incompatible platform edge {:?} -> {:?}: {} depends on {}",
+                    source_class.platform,
+                    target_class.platform,
+                    source.package.name,
+                    dependency.name
                 )
                 .into());
             }
         }
     }
     Ok(())
+}
+
+/// Responsibilities are not a single stack: an adapter may implement a runtime
+/// interface, while a runtime may use an adapter for a lower executor contract.
+/// Neither may acquire the final composition or public facade above them.
+fn layer_allows(source: &str, target: &str) -> bool {
+    match source {
+        "contract" | "protocol" => matches!(target, "contract" | "protocol"),
+        "hardware" => matches!(target, "contract" | "protocol" | "hardware"),
+        "adapter" => matches!(
+            target,
+            "contract" | "protocol" | "hardware" | "adapter" | "runtime"
+        ),
+        "runtime" => matches!(
+            target,
+            "contract" | "protocol" | "hardware" | "adapter" | "runtime" | "service"
+        ),
+        "service" => matches!(target, "contract" | "protocol" | "adapter" | "service"),
+        "composition" | "facade" => target != "facade",
+        _ => false,
+    }
+}
+
+/// Default builds are always checked. The facade must also work with no
+/// features; lower compositions may require one of their declared alternatives.
+pub fn compilation_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
+    let mut profiles = vec![vec![]];
+    if declared_profiles(package)?.is_empty() || classification(package)?.layer == "facade" {
+        profiles.insert(0, vec!["--no-default-features".into()]);
+    }
+    profiles.extend(maximal_profiles(package)?);
+    Ok(profiles)
 }
 
 pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {

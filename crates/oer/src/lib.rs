@@ -38,8 +38,10 @@ pub mod chips {
         pub use chip_hal as hal;
 
         pub mod driver {
+            #[cfg(feature = "esp32s31-bluetooth")]
             pub use chip_bluetooth as bluetooth;
 
+            #[cfg(feature = "esp32s31-wifi")]
             pub mod ieee80211 {
                 pub use {chip_ap as ap, chip_mac as mac, chip_sta as sta};
             }
@@ -47,11 +49,25 @@ pub mod chips {
     }
 }
 
-#[cfg(feature = "embassy-esp32s31")]
+#[cfg(any(
+    feature = "upstream-xarxa",
+    feature = "owned-xarxa",
+    feature = "embassy-smoltcp",
+    feature = "embassy-esp32s31-bluetooth"
+))]
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
-            pub use composition as wifi;
+            #[cfg(any(
+                feature = "upstream-xarxa",
+                feature = "owned-xarxa",
+                feature = "embassy-smoltcp"
+            ))]
+            pub use wifi_composition as wifi;
+
+            /// Controller composition; API availability does not establish RF readiness.
+            #[cfg(feature = "embassy-esp32s31-bluetooth")]
+            pub use bluetooth_composition as bluetooth;
         }
     }
 }

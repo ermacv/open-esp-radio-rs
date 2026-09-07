@@ -2,6 +2,8 @@ use crate::{Context, Result, cargo, process};
 
 use super::{TARGET, common::*};
 
+mod facade;
+
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "oer-esp32s31-embassy-wifi";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
@@ -13,26 +15,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     validate_production_edges(&packages)?;
     let mut profile_count = 0;
     for item in &packages {
-        let declared = declared_profiles(&item.package)?;
-        let modes = if declared.is_empty() {
-            vec![
-                vec!["--no-default-features".into()],
-                vec![],
-                vec!["--all-features".into()],
-            ]
-        } else {
-            declared
-                .into_iter()
-                .map(|features| {
-                    vec![
-                        "--no-default-features".into(),
-                        "--features".into(),
-                        features,
-                    ]
-                })
-                .collect()
-        };
-        for mode in modes {
+        for mode in compilation_profiles(&item.package)? {
             process::run(
                 ctx.cargo()
                     .args([
@@ -50,6 +33,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         }
     }
     eprintln!("driver architecture compilation: {profile_count} isolated feature profiles");
+    facade::check(ctx)?;
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(TARGET), true)?;
     for name in [
         "oer-wifi-ap",
@@ -59,25 +43,6 @@ pub fn run(ctx: &Context) -> Result<()> {
         "oer-esp32s31-wifi-sta",
     ] {
         for package in closure(&graph, &id_for_name(&graph, name)?)? {
-            for path in [
-                "crates/adapters",
-                "crates/runtime",
-                "experiments/network-engine",
-                "crates/composition",
-                "hil",
-            ] {
-                if package
-                    .manifest_path
-                    .as_std_path()
-                    .starts_with(ctx.root.join(path))
-                {
-                    return Err(format!(
-                        "policy layer {name} depends on upper layer {}",
-                        package.name
-                    )
-                    .into());
-                }
-            }
             if package.name.as_str() == "esp-hal" || package.name.as_str().starts_with("embassy-") {
                 return Err(format!(
                     "policy layer {name} depends on platform runtime {}",
@@ -87,32 +52,7 @@ pub fn run(ctx: &Context) -> Result<()> {
             }
         }
     }
-    let radio_manifest = ctx.root.join("crates/radio/Cargo.toml");
-    let radio = cargo::metadata(ctx, &radio_manifest, &[], Some(TARGET), true)?;
-    let root = package_for_manifest(&radio.metadata, &radio_manifest)?
-        .id
-        .clone();
-    for package in closure(&radio, &root)? {
-        for path in [
-            "crates/hardware/esp32s31/driver",
-            "crates/adapters/esp-hal",
-            "crates/runtime/embassy/esp32s31",
-            "crates/composition/esp32s31",
-        ] {
-            if package
-                .manifest_path
-                .as_std_path()
-                .starts_with(ctx.root.join(path))
-            {
-                return Err(format!(
-                    "generic radio facade depends on concrete platform {}",
-                    package.name
-                )
-                .into());
-            }
-        }
-    }
-    check_composition(ctx)?;
+    check_esp32s31_composition(ctx)?;
     process::run(ctx.cargo().args([
         "test",
         "--quiet",
@@ -140,7 +80,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-fn check_composition(ctx: &Context) -> Result<()> {
+fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
     let manifest = ctx.root.join(INTEGRATION);
     let direct = cargo::metadata_no_deps(ctx, &manifest)?;
     let package = package_for_manifest(&direct, &manifest)?;

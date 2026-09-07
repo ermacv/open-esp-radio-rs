@@ -2928,6 +2928,7 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-integration",
  "oer-esp32s31-embassy-wifi",
  "oer-esp32s31-hal",
  "oer-esp32s31-wifi-ap",

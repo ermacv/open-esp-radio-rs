@@ -19,7 +19,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | Command | Contract |
 | --- | --- |
 | `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves |
-| `cargo xtask check architecture` | Compile supported feature profiles and check dependency ownership and composition contracts |
+| `cargo xtask check architecture` | Compile minimum/default and supported feature profiles; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts |
 | `cargo xtask check safety` | Compiler-enforced unsafe policy and reviewed hardware access boundaries |
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |

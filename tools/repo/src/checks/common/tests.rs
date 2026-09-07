@@ -137,3 +137,205 @@ fn unclassified_package_cannot_disappear_from_architecture_checks() {
         .to_string();
     assert!(error.contains("lacks open-radio.scope"), "{error}");
 }
+
+fn set_classification(
+    repository: &Path,
+    relative: &str,
+    layer: &str,
+    platform: &str,
+    chip: Option<&str>,
+) {
+    let manifest = repository.join(relative).join("Cargo.toml");
+    let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+    let metadata = doc["package"]["metadata"]["open-radio"]
+        .as_table_mut()
+        .unwrap();
+    metadata.insert("layer".into(), layer.into());
+    metadata.insert("platform".into(), platform.into());
+    metadata.remove("chip");
+    if let Some(chip) = chip {
+        metadata.insert("chip".into(), chip.into());
+    }
+    fs::write(manifest, toml::to_string(&doc).unwrap()).unwrap();
+}
+
+fn edge_result(repository: &Path) -> Result<()> {
+    let context = Context::new(repository)?;
+    validate_production_edges(&production_packages(&context)?)
+}
+
+#[test]
+fn portable_to_chip_rejection_does_not_depend_on_the_chip_name() {
+    for chip in ["esp32s31", "esp32c5"] {
+        let repository = architecture_repository("dependencies", "hardware");
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            "adapter",
+            "portable",
+            None,
+        );
+        set_classification(
+            repository.path(),
+            "crates/target",
+            "hardware",
+            "chip",
+            Some(chip),
+        );
+        let error = edge_result(repository.path()).unwrap_err().to_string();
+        assert!(error.contains("incompatible platform edge"), "{error}");
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            "facade",
+            "portable",
+            None,
+        );
+        edge_result(repository.path()).unwrap();
+    }
+}
+
+#[test]
+fn hardware_dependencies_cannot_cross_chip_identity() {
+    let repository = architecture_repository("dependencies", "hardware");
+    set_classification(
+        repository.path(),
+        "libraries/policy",
+        "hardware",
+        "chip",
+        Some("esp32s31"),
+    );
+    set_classification(
+        repository.path(),
+        "crates/target",
+        "hardware",
+        "chip",
+        Some("esp32c5"),
+    );
+    assert!(
+        edge_result(repository.path())
+            .unwrap_err()
+            .to_string()
+            .contains("incompatible platform edge")
+    );
+    set_classification(
+        repository.path(),
+        "crates/target",
+        "hardware",
+        "chip",
+        Some("esp32s31"),
+    );
+    edge_result(repository.path()).unwrap();
+}
+
+#[test]
+fn hardware_cannot_depend_on_execution_or_composition_even_optionally() {
+    for section in ["dependencies", "build-dependencies"] {
+        for layer in ["adapter", "runtime", "service", "composition"] {
+            let repository = architecture_repository(section, layer);
+            set_classification(
+                repository.path(),
+                "libraries/policy",
+                "hardware",
+                "chip",
+                Some("esp32c5"),
+            );
+            set_classification(
+                repository.path(),
+                "crates/target",
+                layer,
+                "chip",
+                Some("esp32c5"),
+            );
+            let error = edge_result(repository.path()).unwrap_err().to_string();
+            assert!(error.contains("forbidden architecture edge"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn platform_category_and_chip_identity_must_agree() {
+    for (platform, chip) in [
+        ("chip", None),
+        ("chip", Some("")),
+        ("chip", Some("ESP32-S31")),
+        ("chip", Some("esp32/s31")),
+        ("portable", Some("esp32s31")),
+        ("host", Some("esp32s31")),
+        ("esp32s31", None),
+    ] {
+        let repository = architecture_repository("dependencies", "contract");
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            "service",
+            platform,
+            chip,
+        );
+        assert!(
+            edge_result(repository.path()).is_err(),
+            "{platform} {chip:?}"
+        );
+    }
+}
+
+#[test]
+fn declared_alternatives_preserve_minimum_and_default_compilation() {
+    let repository = architecture_repository("dependencies", "contract");
+    set_classification(
+        repository.path(),
+        "libraries/policy",
+        "facade",
+        "portable",
+        None,
+    );
+    let manifest = repository.path().join("libraries/policy/Cargo.toml");
+    let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+    doc["package"]["metadata"]["open-radio"]
+        .as_table_mut()
+        .unwrap()
+        .insert(
+            "supported-feature-profiles".into(),
+            toml::Value::Array(vec!["left".into(), "right".into()]),
+        );
+    doc.as_table_mut().unwrap().insert(
+        "features".into(),
+        toml::toml! { left = [] right = [] }.into(),
+    );
+    fs::write(&manifest, toml::to_string(&doc).unwrap()).unwrap();
+    let context = Context::new(repository.path()).unwrap();
+    let packages = production_packages(&context).unwrap();
+    let package = &packages
+        .iter()
+        .find(|p| p.package.name == "policy")
+        .unwrap()
+        .package;
+    let profiles = compilation_profiles(package).unwrap();
+    assert!(profiles.contains(&vec![]));
+    assert!(profiles.contains(&vec!["--no-default-features".into()]));
+    assert!(
+        !profiles
+            .iter()
+            .flatten()
+            .any(|flag| flag == "--all-features")
+    );
+    assert!(
+        profiles
+            .iter()
+            .any(|flags| flags.last().is_some_and(|flag| flag == "left"))
+    );
+    assert!(
+        profiles
+            .iter()
+            .any(|flags| flags.last().is_some_and(|flag| flag == "right"))
+    );
+
+    // A lower composition can require a choice even though the facade must
+    // remain usable with no features. Its default is still a supported build.
+    let mut composition = package.clone();
+    composition.metadata["open-radio"]["layer"] = "composition".into();
+    let profiles = compilation_profiles(&composition).unwrap();
+    assert!(profiles.contains(&vec![]));
+    assert!(!profiles.contains(&vec!["--no-default-features".into()]));
+    assert_eq!(profiles.len(), 3);
+}

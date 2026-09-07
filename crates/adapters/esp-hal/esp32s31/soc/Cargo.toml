@@ -27,4 +27,5 @@ workspace = true
 [package.metadata.open-radio]
 scope = "production"
 layer = "adapter"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

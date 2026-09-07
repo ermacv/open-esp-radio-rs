@@ -18,4 +18,5 @@ open-esp-radio-hil-protocol = { path = "../../../protocol" }
 [package.metadata.open-radio]
 scope = "development"
 layer = "hil"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

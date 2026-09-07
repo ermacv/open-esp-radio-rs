@@ -69,4 +69,5 @@ embassy-time-driver = { version = "=0.2.2", registry = "crates-io" }
 [package.metadata.open-radio]
 scope = "development"
 layer = "application"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

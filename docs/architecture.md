@@ -26,10 +26,16 @@ catch-all owner for unrelated tools.
 
 Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
 and `platform`. Scope separates production, experimental and development
-packages. Layer describes responsibility; platform separately describes host,
-portable or ESP32-S31 applicability. These labels do not establish hardware
-qualification. `supported-feature-profiles` enumerates alternative compositions
-that cannot be checked as one Cargo feature union.
+packages. Layer describes responsibility; platform is `portable`, `host` or
+`chip`. Chip applicability requires a separate `chip` identifier, such as
+`esp32s31`; portable and host classifications must not carry one. The identifier
+starts with a lowercase ASCII letter and contains lowercase letters, digits or
+hyphens. It identifies applicability, not the compiler target or an implemented
+backend. These labels do not establish hardware qualification.
+`supported-feature-profiles` enumerates alternatives to an all-features union.
+Default builds are always checked as well. The facade also requires a minimum
+build without default features. Lower compositions with mandatory choices use
+their declared profiles; an empty feature set need not form a usable system.
 
 The architecture check discovers source manifests and workspace members before
 reading classification. Missing or inconsistent classification is an error.
@@ -37,12 +43,37 @@ Production path dependencies, including optional and build dependencies, must
 resolve to classified production packages. Test dependencies may compose an
 experimental engine with production owners. Protocol/contract packages cannot
 depend on hardware, adapters or execution. Internal packages cannot depend on
-the public facade. These rules are independent of directory names.
+the public facade. These rules are independent of directory names and chip IDs.
+
+| Source layer | Allowed production dependency layers |
+| --- | --- |
+| contract, protocol | contract, protocol |
+| hardware | contract, protocol, hardware |
+| adapter | contract, protocol, hardware, adapter, runtime |
+| runtime | contract, protocol, hardware, adapter, runtime, service |
+| service | contract, protocol, adapter, service |
+| composition, facade | all production layers except facade |
+
+An adapter can implement a runtime interface, while a runtime can consume
+an adapter's executor-neutral contract. Cargo still rejects actual dependency
+cycles. Neither layer can depend on the final composition.
+
+Portable packages cannot depend on chip or host packages; the public facade
+is the explicit selection boundary. Chip packages can depend on portable
+packages and packages for the same chip. Host packages can depend on portable
+or host packages. Cross-chip dependencies are rejected. S31-specific firmware,
+diagnostic and register-authority checks remain separate from these general
+rules; adding a chip does not make those hardware checks applicable to it.
 
 `open-esp-radio` provides the `oer` library. Its public modules reexport existing
 types; `oer-radio` owns the portable radio control lifecycle. The facade may
 depend on a selected composition, which depends on `oer-radio`, never on the
 facade. PAC access remains an explicit restricted dependency.
+
+`composition/` names the source ownership layer; `oer::systems` is its public
+namespace. Facade features select portable protocols, concrete chip backends
+and final Embassy compositions independently. Exporting a composition does not
+claim hardware qualification; component capability limits still apply.
 
 Internal radio packages use the `oer-` prefix and identify their domain and,
 where required, chip: `oer-memory`, `oer-wifi-sta`, `oer-esp32s31-hal`.

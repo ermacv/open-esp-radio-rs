@@ -36,4 +36,5 @@ unsafe_op_in_unsafe_fn = "deny"
 [package.metadata.open-radio]
 scope = "production"
 layer = "adapter"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

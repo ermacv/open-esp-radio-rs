@@ -16,8 +16,9 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   radio execution lives in `crates/runtime/embassy/esp32s31/`; the Embassy
   executor/time platform backend remains in `crates/adapters/`.
   Every package declares `package.metadata.open-radio` scope, layer and
-  platform. Architecture checks enforce the dependency graph independently
-  of source location. Internal libraries never depend on the `oer` facade.
+  platform (`portable`, `host` or `chip`), with a separate `chip` identifier
+  when platform is `chip`. Architecture checks enforce the dependency graph
+  independently of source location. Internal libraries never depend on the `oer` facade.
 - `platform/esp32s31/` owns shared board boot, staged runtime entry and linker
   placement for HIL and standalone examples. `tools/firmware/` owns host image
   packing and structural checks.

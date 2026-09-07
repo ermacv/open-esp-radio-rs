@@ -17,4 +17,5 @@ oer-esp32s31-board = { path = "../board" }
 [package.metadata.open-radio]
 scope = "development"
 layer = "platform"
-platform = "esp32s31"
+platform = "chip"
+chip = "esp32s31"

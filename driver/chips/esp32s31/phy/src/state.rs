@@ -226,8 +226,9 @@ pub struct PhyCalibrationCache {
 
 /// Stable, value-only boundary used by caller-selected persistence backends.
 ///
-/// This is not a memory image of vendor state. Each field is retained because
-/// a named calibration consumer reads it after a cold hardware reset.
+/// This is not a memory image of vendor state. It captures semantic results
+/// from the calibration consumers. Cold registration does not replay these
+/// values into hardware: supplied caches are replaced by full calibration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationSnapshot {
     pub schema: u16,

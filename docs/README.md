@@ -33,10 +33,10 @@ details live beside their owner; this directory contains shared contracts.
 - [Blobray](../tools/blobray/README.md), [memory analysis](../tools/memory-report/README.md)
   and [repository commands](../tools/repo/README.md).
 
-Implementation support is documented by the owning chip/role, including the
-[IEEE 802.11](../driver/chips/esp32s31/ieee80211/FEATURES.md) and
-[Bluetooth](../driver/chips/esp32s31/bluetooth/FEATURES.md) matrices. These
-references do not replace machine qualification or hardware evidence.
+The [ESP32-S31 radio capability map](../driver/chips/esp32s31/FEATURES.md) indexes
+shared lifecycle, PHY, coexistence and the Wi-Fi, Bluetooth and IEEE 802.15.4
+inventories. These source references do not replace machine qualification or
+hardware evidence.
 
 For API semantics, consult module/item rustdoc. From the repository root:
 

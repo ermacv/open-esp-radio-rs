@@ -4,8 +4,10 @@
 //! Executor-neutral coexistence policy, clock conversion and timer state.
 //!
 //! Platform register ownership deliberately lives outside this crate. The
-//! custom radio PAC owns the COEX timer bank, while the platform PAC owns the
-//! shared low-power clock selector sampled by [`CoexClockHardware`].
+//! custom radio PAC owns the COEX timer bank and the reviewed shared modem
+//! clock fields sampled through [`CoexClockHardware`]. The concrete timer HAL
+//! bridge is validation-only; live protocol runtimes do not compose this core
+//! into an operational coexistence service.
 
 #[cfg(test)]
 extern crate std;

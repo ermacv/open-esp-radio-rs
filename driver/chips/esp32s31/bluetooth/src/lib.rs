@@ -17,7 +17,8 @@
 //! the platform lease and neutral radio root. Complete powered teardown and
 //! long-running PHY maintenance remain separate requirements.
 //!
-//! See `FEATURES.md` for the implementation frontier and ordered closure plan.
+//! See the chip `FEATURES.md` for implemented scopes, unsupported operations
+//! and the distinction between source coverage and hardware qualification.
 
 #![no_std]
 #![deny(unsafe_code)]

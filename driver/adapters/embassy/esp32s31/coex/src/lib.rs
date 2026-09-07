@@ -3,9 +3,10 @@
 
 //! Embassy mailbox around the executor-neutral ESP32-S31 coexistence core.
 //!
-//! Exactly one [`CoexOwner`] mutates the hardware and core state. Wi-Fi and
-//! later Bluetooth integrations submit typed commands through [`CoexControl`]
-//! instead of sharing registers or reproducing the vendor RTOS callback table.
+//! Exactly one [`CoexOwner`] mutates the supplied hardware and core state.
+//! [`CoexControl`] exposes typed Wi-Fi/Bluetooth requests, but production radio
+//! runtimes do not yet submit them or compose a concrete hardware owner. The
+//! mailbox alone does not establish shared RF arbitration.
 
 #[cfg(test)]
 extern crate std;

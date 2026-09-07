@@ -11,9 +11,8 @@ host test or target build does not establish on-air readiness: the
 evidence. ESP32-C5 has investigation inputs, not a production radio backend.
 
 See [driver architecture](driver/README.md) for ownership and supported
-composition, and the [IEEE 802.11](driver/chips/esp32s31/ieee80211/FEATURES.md)
-and [Bluetooth](driver/chips/esp32s31/bluetooth/FEATURES.md) feature references
-for implementation coverage and limitations.
+composition, and the [ESP32-S31 radio capability map](driver/chips/esp32s31/FEATURES.md)
+for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
 ## Start here
 

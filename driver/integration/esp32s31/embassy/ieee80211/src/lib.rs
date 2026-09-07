@@ -330,8 +330,10 @@ impl Esp32s31RadioConfig {
         }
     }
 
-    /// Supply a caller-owned retained PHY calibration cache. The driver
-    /// validates its embedded identity before deciding whether it is reusable.
+    /// Supply a caller-owned retained PHY calibration cache. Cold registration
+    /// currently replaces every supplied cache with full calibration because
+    /// complete hardware replay is not implemented. A fresh cache is returned
+    /// after successful registration; this option does not skip calibration.
     pub fn with_calibration_cache(
         mut self,
         cache: open_esp_radio_esp32s31_phy::PhyCalibrationCache,

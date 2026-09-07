@@ -2,6 +2,8 @@
 #![no_std]
 #![recursion_limit = "256"]
 
+mod startup;
+
 #[cfg(not(feature = "advertising-smoke"))]
 use bt_hci::cmd::le::{LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2};
 #[cfg(feature = "advertising-smoke")]
@@ -137,7 +139,7 @@ async fn bluetooth_controller_task(
     ));
     let output = match startup.as_mut().await {
         Ok(output) => output,
-        Err(_) => panic!("Bluetooth Controller cold start failed"),
+        Err(error) => startup::fail(&error),
     };
     let BluetoothSystem { hci, runners } = output.system;
     let hardware_runner = runners.hardware;

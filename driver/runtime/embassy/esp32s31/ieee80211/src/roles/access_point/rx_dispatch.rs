@@ -245,6 +245,23 @@ impl AccessPointProtectedFrameDispatch {
             core0_ap_rx.record_leaf_admission(admission_cycles);
             now
         };
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            report.record_dispatch_rejection(outcome, ordered, now_micros);
+            if deferred.exhausted {
+                report.record_rx_rejection(
+                    AccessPointRxRejectionReason::DeferredOutputCapacity,
+                    ordered,
+                    now_micros,
+                );
+            } else if in_place.unsupported {
+                report.record_rx_rejection(
+                    AccessPointRxRejectionReason::InPlaceOutputUnsupported,
+                    ordered,
+                    now_micros,
+                );
+            }
+        }
         *produced_data |= observe_protected_dispatch(
             outcome,
             peer,
@@ -270,6 +287,7 @@ impl AccessPointProtectedFrameDispatch {
             open_esp_radio_esp32s31_wifi_ap::rx::Esp32s31ApOrdinaryPairwiseRxRequest,
         ) -> Esp32s31ApRxAdmission,
         _peer: [u8; 6],
+        #[cfg(any(feature = "diagnostics", test))] now_micros: u64,
         in_place: &mut InPlaceAccessPointRxSink,
         #[cfg(any(feature = "diagnostics", test))]
         report: &mut Esp32s31AccessPointControlObservation,
@@ -312,6 +330,14 @@ impl AccessPointProtectedFrameDispatch {
         };
         #[cfg(any(feature = "diagnostics", test))]
         {
+            report.record_dispatch_rejection(outcome, ordered, now_micros);
+            if in_place.unsupported {
+                report.record_rx_rejection(
+                    AccessPointRxRejectionReason::InPlaceOutputUnsupported,
+                    ordered,
+                    now_micros,
+                );
+            }
             let mut activity_peer = None;
             *produced_data |=
                 observe_protected_dispatch(outcome, Some(_peer), report, &mut activity_peer);

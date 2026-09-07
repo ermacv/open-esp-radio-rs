@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 80;
+pub const PROTOCOL_VERSION: u16 = 87;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1013,6 +1013,7 @@ pub enum WifiRxContinuationPolicy {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InitializationConfiguration {
+    pub ap_scheduler: WifiApScheduler,
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
@@ -1020,6 +1021,18 @@ pub struct InitializationConfiguration {
     pub tx_buffer: WifiTxBufferPolicy,
     pub rx_continuation: WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
+}
+
+/// Standalone AP scheduling experiment with one explicit response envelope.
+/// Both arms use 3000-us quantum, 100-us minimum and a 32-byte OFDM24 response
+/// plus 10-us SIFS per unicast publication. This is not measured airtime.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiApScheduler {
+    #[default]
+    Disabled,
+    RrHtResponse24,
+    DeficitHtResponse24,
 }
 
 impl InitializationConfiguration {
@@ -1660,6 +1673,12 @@ pub struct WifiAccessPointEvidence {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    #[serde(default)]
+    pub first_rx_protocol_rejection: Option<crate::WifiRxRejection>,
+    /// None when the image has no driver observer. Counts span the AP epoch,
+    /// independently of individual traffic measurement windows.
+    #[serde(default)]
+    pub tx_retention: Option<crate::WifiTxRetentionEvidence>,
 }
 
 /// Terminal evidence for one explicit same-channel STA+AP stop transaction.
@@ -2165,6 +2184,10 @@ pub struct Finished {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
+    /// AP-epoch modelled service accounting, emitted before the correlated stop.
+    WifiAirtimePeer(crate::WifiAirtimePeerEvidence),
+    /// Completeness of the preceding bounded peer records for this AP epoch.
+    WifiAirtimeReport(crate::WifiAirtimeReport),
     Hello(Capabilities),
     /// The radio and shared Wi-Fi owner are ready in the role-neutral idle
     /// state. The request ID correlates this edge with [`Command::Initialize`].

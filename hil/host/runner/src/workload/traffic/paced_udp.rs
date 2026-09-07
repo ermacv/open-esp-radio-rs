@@ -34,6 +34,28 @@ pub(crate) struct HostTransmission {
     pub(crate) deadline_resets: u64,
 }
 
+/// A failed sender still owns all admission evidence accumulated before failure.
+#[derive(Debug)]
+pub(crate) struct SendFailure {
+    pub(crate) progress: HostTransmission,
+    cause: Box<dyn std::error::Error + Send + Sync>,
+}
+
+impl std::fmt::Display for SendFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "UDP send failed after {} datagrams/{} bytes: {}",
+            self.progress.datagrams, self.progress.bytes, self.cause
+        )
+    }
+}
+impl std::error::Error for SendFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.cause)
+    }
+}
+
 impl HostTransmission {
     pub(crate) fn throughput_bps(self) -> u64 {
         self.bytes
@@ -91,38 +113,41 @@ fn send_with(
     let mut maximum_catch_up_datagrams = 1_u32;
     let mut deadline_resets = 0_u64;
 
-    while Instant::now() < deadline {
-        oer_process::check_cancelled()?;
-        wait_until(next)?;
-        let now = Instant::now();
-        let lateness = now.saturating_duration_since(next);
-        maximum_lateness = maximum_lateness.max(lateness);
-        if lateness > maximum_catch_up {
-            // Do not repay an arbitrary scheduler pause as a line-rate burst.
-            // One datagram is sent now and the next deadline starts one exact
-            // packet interval later.
-            next = now;
-            deadline_resets = deadline_resets.saturating_add(1);
-        } else {
-            let catch_up = u32::try_from(lateness.as_nanos() / interval.as_nanos())
-                .unwrap_or(u32::MAX)
-                .saturating_add(1);
-            maximum_catch_up_datagrams = maximum_catch_up_datagrams.max(catch_up);
+    let result: Result<()> = (|| {
+        while Instant::now() < deadline {
+            oer_process::check_cancelled()?;
+            wait_until(next)?;
+            let now = Instant::now();
+            let lateness = now.saturating_duration_since(next);
+            maximum_lateness = maximum_lateness.max(lateness);
+            if lateness > maximum_catch_up {
+                // Do not repay an arbitrary scheduler pause as a line-rate burst.
+                // One datagram is sent now and the next deadline starts one exact
+                // packet interval later.
+                next = now;
+                deadline_resets = deadline_resets.saturating_add(1);
+            } else {
+                let catch_up = u32::try_from(lateness.as_nanos() / interval.as_nanos())
+                    .unwrap_or(u32::MAX)
+                    .saturating_add(1);
+                maximum_catch_up_datagrams = maximum_catch_up_datagrams.max(catch_up);
+            }
+
+            packet[..4].copy_from_slice(&i32::try_from(datagrams & i32::MAX as u64)?.to_be_bytes());
+            let length = send_packet(&packet)?;
+            if length != packet.len() {
+                return Err(format!("short UDP send: {length}/{}", packet.len()).into());
+            }
+            bytes = bytes.saturating_add(length as u64);
+            datagrams = datagrams.saturating_add(1);
+            next += interval;
         }
 
-        packet[..4].copy_from_slice(&i32::try_from(datagrams & i32::MAX as u64)?.to_be_bytes());
-        let length = send_packet(&packet)?;
-        if length != packet.len() {
-            return Err(format!("short UDP send: {length}/{}", packet.len()).into());
-        }
-        bytes = bytes.saturating_add(length as u64);
-        datagrams = datagrams.saturating_add(1);
-        next += interval;
-    }
-
+        Ok(())
+    })();
     let elapsed = started.elapsed();
-    send_terminal_markers_with(&mut send_packet)?;
-    Ok(HostTransmission {
+    let result = result.and_then(|()| send_terminal_markers_with(&mut send_packet));
+    let progress = HostTransmission {
         source,
         bytes,
         datagrams,
@@ -130,7 +155,10 @@ fn send_with(
         maximum_lateness,
         maximum_catch_up_datagrams,
         deadline_resets,
-    })
+    };
+    result
+        .map(|()| progress)
+        .map_err(|cause| Box::new(SendFailure { progress, cause }) as _)
 }
 
 fn send_terminal_markers_with(

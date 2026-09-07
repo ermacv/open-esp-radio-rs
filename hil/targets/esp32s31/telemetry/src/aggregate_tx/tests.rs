@@ -347,3 +347,79 @@ fn incomplete_scheduler_trace_cannot_become_a_timing_sample() {
 
     assert_eq!(trace.take(), None);
 }
+#[test]
+fn ap_retention_losses_survive_traffic_windows_and_reset_only_with_the_ap_epoch() {
+    use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::NetworkTxRetentionDropReason;
+    let counters = AggregateTxCounters::new();
+    counters
+        .observe_access_point_retention_drop(NetworkTxRetentionDropReason::UnicastPowerSaveFull);
+    counters.begin_interval();
+    counters.observe_access_point_retention_drop(NetworkTxRetentionDropReason::GroupPowerSaveFull);
+    counters.observe_access_point_retention_drop(NetworkTxRetentionDropReason::ActiveQueueFull);
+    counters.begin_interval();
+    let evidence = counters.tx_retention.snapshot();
+    assert_eq!(evidence.unicast_power_save_full, 1);
+    assert_eq!(evidence.group_power_save_full, 1);
+    assert_eq!(evidence.active_queue_full, 1);
+    assert!(evidence.has_drops());
+    counters.tx_retention.reset();
+    assert!(!counters.tx_retention.snapshot().has_drops());
+}
+
+#[test]
+fn submitted_work_is_separate_from_delivery_and_exchange_time() {
+    let counters = AggregateTxCounters::new();
+    let before = counters.snapshot();
+    let mut work =
+        open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::default();
+    work.record(3_000, 3, core::num::NonZeroU32::new(150_000));
+    work.record(1_000, 1, None);
+    counters.observe(AggregateTxObservation::WorkCompleted { work });
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.work.exchanges, 1);
+    assert_eq!(delta.work.publications, 2);
+    assert_eq!(delta.work.psdu_bytes, 4_000);
+    assert_eq!(delta.work.mpdus, 4);
+    assert_eq!(delta.work.nominal_data_micros, 160);
+    assert_eq!(delta.work.unestimated_publications, 1);
+    assert_eq!(delta.work.saturated_exchanges, 0);
+    assert_eq!(delta.exchange_micros, 0);
+    assert_eq!(delta.subframes_acknowledged, 0);
+    let next = counters.snapshot();
+    assert_eq!(
+        next.wrapping_delta_since(next).work,
+        AggregateTxWorkSnapshot::default()
+    );
+}
+
+#[test]
+fn ordinary_receipts_do_not_recharge_aggregate_work() {
+    let counters = AggregateTxCounters::new();
+    let before = counters.snapshot();
+    let mut work =
+        open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::new();
+    work.record_publication(
+        1000,
+        1,
+        core::num::NonZeroU32::new(54000),
+        None,
+        Some(open_esp_radio_esp32s31_wifi_mac::tx::TxContention {
+            aifsn: 3,
+            backoff_slots: 7,
+        }),
+    );
+    counters.observe(AggregateTxObservation::OrdinaryWorkCompleted { work });
+    let after = counters.snapshot();
+    let delta = after.wrapping_delta_since(before);
+    assert_eq!(delta.ordinary_work.exchanges, 1);
+    assert_eq!(delta.ordinary_work.publications, 1);
+    assert_eq!(delta.ordinary_work.psdu_bytes, 1000);
+    assert_eq!(delta.ordinary_work.aifs_slots, 3);
+    assert_eq!(delta.ordinary_work.backoff_slots, 7);
+    assert_eq!(delta.ordinary_work.unreported_contention, 0);
+    assert_eq!(delta.work, Default::default());
+    assert_eq!(
+        after.wrapping_delta_since(after).ordinary_work,
+        Default::default()
+    );
+}

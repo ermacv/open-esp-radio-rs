@@ -76,6 +76,36 @@ epoch. The runner removes scoped forwarding/VIF state, restarts wireless and
 checks channel and width before resetting the DUT. The report records fixture
 preparation and its duration separately from the measured workload.
 
+AP workload evidence and qualification are separate. `cycle-progress.json`
+retains each available traffic, link and teardown result even if another stage
+fails; `access-point-report.json` retains completed boots/cycles and the boot
+error. Multi-client UDP additionally writes `delivery-progress.json` before
+applying gates, including partial host sends, target evidence and worker errors.
+
+Host UDP collectors finish from the correlated `Finished` transport count.
+Complete delivery returns immediately. If packets remain undelivered, a two-second
+delivery deadline bounds collection after that event; reaching it records
+`delivery-deadline`, never proof of a drained radio. Each `*-reception.json`
+retains the expected/unique/undelivered packet counts, partial bursts and the
+termination reason even on target failure, I/O error, cancellation or unwinding.
+There is no additional fixed reception window after the configured workload.
+
+Serial I/O waits for descriptor readiness or explicit command/shutdown events.
+SIGINT/SIGTERM notifications wake both serial protocol waiters and UDP collectors;
+periodic polling is unnecessary for cancellation. Physical USB reset timing and
+exclusive-port acquisition remain owned by the serial setup boundary.
+
+For multi-client RX offers, `minimum_host_offer_percent` independently checks
+bytes accepted by host UDP send calls over both the requested window and the
+sender's elapsed time. The AP comparison scenarios require 95%. An under-offer
+invalidates the requested load condition; it does not identify a DUT delivery
+fault. No criterion means `not-assessed`, never an implicit load validation.
+Host socket admission is not an on-air transmission measurement.
+
+Diagnostic image features can change scheduling and linked code placement.
+Compare performance only with the recorded image/configuration identity; a
+more instrumented image is a separate experiment, not interchangeable evidence.
+
 The Linux helper is installed separately because its narrowly scoped AP,
 managed-client, monitor and USB-reset operations require root privileges:
 

@@ -79,15 +79,15 @@ type CompatMonitor = open_esp_radio_embassy_net_compat::ResourceMonitor<
     ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
 >;
 #[cfg(feature = "compat-network")]
-static STATION_COMPAT_MONITOR: embassy_sync::blocking_mutex::Mutex<
-    CriticalSectionRawMutex,
-    core::cell::RefCell<Option<CompatMonitor>>,
-> = embassy_sync::blocking_mutex::Mutex::new(core::cell::RefCell::new(None));
+static COMPAT_MONITORS: crate::network_diagnostics::Monitors<CompatMonitor> =
+    crate::network_diagnostics::Monitors::new();
 
-/// Observe station queue ownership even if radio service is awaiting capacity.
+/// Observe the selected endpoint's ownership even while radio service awaits capacity.
 #[cfg(feature = "compat-network")]
-pub fn station_compat_resources() -> Option<open_esp_radio_embassy_net_compat::ResourceSnapshot> {
-    STATION_COMPAT_MONITOR.lock(|monitor| monitor.borrow().as_ref().map(CompatMonitor::snapshot))
+pub fn compat_resources(
+    interface: crate::NetworkInterface,
+) -> Option<open_esp_radio_embassy_net_compat::ResourceSnapshot> {
+    COMPAT_MONITORS.snapshot(interface, CompatMonitor::snapshot)
 }
 
 #[cfg(feature = "owned-network")]
@@ -136,7 +136,7 @@ pub(super) type RadioTxBacking = PinnedTxFrame<
     NETWORK_TX_QUEUE_DEPTH,
 >;
 #[cfg(feature = "owned-network")]
-pub(super) type RadioNetworkTxBacking = OwnedNetworkTxFrame;
+pub(super) type RadioNetworkTxBacking = OwnedNetworkTxFrame<'static, CriticalSectionRawMutex>;
 #[cfg(feature = "compat-network")]
 pub(super) type RadioNetworkTxBacking = CompatibilityTxFrame<
     'static,
@@ -550,12 +550,14 @@ pub(crate) fn initialize_network(
         STATION_COMPAT_RX_STORAGE.take(),
         STATION_COMPAT_TX_STORAGE.take(),
     );
-    STATION_COMPAT_MONITOR
-        .lock(|monitor| *monitor.borrow_mut() = Some(station_runner.resource_monitor()));
     let (access_point_device, access_point_runner) = access_point_resources.split(
         access_point_address,
         ACCESS_POINT_COMPAT_RX_STORAGE.take(),
         ACCESS_POINT_COMPAT_TX_STORAGE.take(),
+    );
+    COMPAT_MONITORS.initialize(
+        station_runner.resource_monitor(),
+        access_point_runner.resource_monitor(),
     );
     let runner = DualCompatibilityDatapathNetwork::new(
         station_interface,
@@ -597,7 +599,7 @@ use upstream::RadioNetworkRunner;
 #[cfg(feature = "upstream-network")]
 pub(crate) use upstream::initialize_network;
 #[cfg(feature = "upstream-network")]
-pub use upstream::{Esp32s31WifiNetworkDevice, station_rx_pool_drops};
+pub use upstream::{Esp32s31WifiNetworkDevice, rx_pool_drops};
 #[cfg(feature = "upstream-network")]
 pub(super) type RadioNetworkTxBacking =
     open_esp_radio_xarxa_upstream::TxFrame<'static, CriticalSectionRawMutex>;

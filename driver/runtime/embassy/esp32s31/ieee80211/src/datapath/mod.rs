@@ -530,6 +530,19 @@ where {
         self.has_prepared_tx()
     }
 
+    /// This role chooses owners directly in `advance_prepared_tx` when the
+    /// source exposes destination queues. The runner must not push an
+    /// unrelated owner into an already selected aggregate afterward.
+    fn pulls_tx_queues(&self) -> bool {
+        false
+    }
+
+    /// Queue whose publications can extend the current prepared transmission.
+    /// `None` allows the role to select its next destination.
+    fn prepared_tx_destination(&self) -> Option<[u8; 6]> {
+        None
+    }
+
     /// Advance a retained software-only preparation edge without claiming a
     /// new network frame. Ordinary synchronous roles need no such edge.
     fn advance_prepared_tx<I>(&mut self, _network: &I) -> Result<(), Self::Error>

@@ -263,13 +263,26 @@ performance gate passes; run bundles and qualification retain that authority.
 An AP serving two stations is the central workload for evaluating the owned
 TX boundary. Interleaved destinations require peer/TID selection before scarce
 SRAM admission so that one peer's frames can form an A-MPDU. The current owned
-adapter still accepts complete packets through a FIFO; it does not ask Xarxa
-to construct the next packet for a radio-selected peer. The shared AP scheduler
-can regroup already-admitted owners within bounded storage. Pool capacity and
-the mix of packets made available by the stack therefore limit its choices.
+adapter classifies complete packets into Ethernet-destination queues over one
+shared owner pool. The AP selects a destination before removing aggregate
+members, leaving other destinations at the source. FIFO-only compatibility
+sources retain bounded radio-side regrouping. Owned still does not ask Xarxa
+to construct a packet for a selected peer: pool capacity and the packets the
+stack publishes limit its choices. Inside a selected destination, the owned
+adapter round-robins classified TCP/UDP FIFOs while preserving each flow's
+order. Readiness still counts the whole destination so different flows can
+fill the same aggregate. This currently covers TID 0; classification limits,
+fragment handling and memory ownership are described in the
+[egress contract](wifi-egress.md#owned-tx-path). Power-save retention and failed
+physical-admission rollback remain radio-owned.
 
-This scheduling authority is separate from airtime fairness. The implemented
-flow selector uses round-robin, without airtime deficit accounting. Comparing
+Transport flows within a destination use round-robin. The outer AP destination
+selector also defaults to round-robin; an explicitly enabled experimental
+mode selects peers using modelled airtime deficits. It reserves preparation
+budgets and settles terminal publication work with a caller-supplied cost model.
+The [egress contract](wifi-egress.md) describes its ownership and limits; the
+[HIL target guide](../hil/targets/esp32s31/README.md) documents the comparable
+RR/deficit modes. This does not establish measured airtime fairness. Comparing
 equal throughput or aggregate counts cannot demonstrate equal airtime,
 especially when peers use different rates or retries. AP evidence must
 distinguish per-peer aggregate fill, delivered traffic, service gaps and airtime

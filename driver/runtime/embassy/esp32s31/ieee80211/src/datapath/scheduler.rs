@@ -311,6 +311,8 @@ where
                         let network_tx = self.network.tx_consumer(interface);
                         self.services.advance_prepared_tx(&network_tx)?;
                         if self.services.can_prepare_tx()
+                            && !(self.services.pulls_tx_queues()
+                                && network_tx.destination_queues().is_some())
                             && self.services.prepared_tx_start_ready()
                             && let Some(frame) = self.network.try_receive_tx(interface)
                         {

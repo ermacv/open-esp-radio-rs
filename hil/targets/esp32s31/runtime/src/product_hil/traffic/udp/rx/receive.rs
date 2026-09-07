@@ -82,10 +82,19 @@ pub(super) async fn run(
     let mut late_datagrams = 0_u64;
     let mut maximum_deadline_lateness = 0_u64;
     let mut task_poll_end = None;
+    #[cfg(any(feature = "upstream-network", feature = "compat-network"))]
+    let interface = match session.config.network_interface {
+        open_esp_radio_hil_protocol::WifiNetworkInterface::Station => {
+            open_esp_radio_esp32s31_embassy_wifi::NetworkInterface::Station
+        }
+        open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint => {
+            open_esp_radio_esp32s31_embassy_wifi::NetworkInterface::AccessPoint
+        }
+    };
     #[cfg(feature = "upstream-network")]
-    let pool_drops_start = open_esp_radio_esp32s31_embassy_wifi::station_rx_pool_drops();
+    let pool_drops_start = open_esp_radio_esp32s31_embassy_wifi::rx_pool_drops(interface);
     #[cfg(feature = "compat-network")]
-    let resources_start = open_esp_radio_esp32s31_embassy_wifi::station_compat_resources();
+    let resources_start = open_esp_radio_esp32s31_embassy_wifi::compat_resources(interface);
     loop {
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
@@ -160,17 +169,19 @@ pub(super) async fn run(
     let silence = window.summary();
     #[cfg(feature = "compat-network")]
     runtime_log_reliably(format_args!(
-        "ORX_RESOURCES session={} start={:?} end={:?}",
+        "ORX_RESOURCES session={} interface={:?} start={:?} end={:?}",
         session.session_id,
+        interface,
         resources_start,
-        open_esp_radio_esp32s31_embassy_wifi::station_compat_resources(),
+        open_esp_radio_esp32s31_embassy_wifi::compat_resources(interface),
     ))
     .await;
     #[cfg(feature = "upstream-network")]
     runtime_log_reliably(format_args!(
-        "ORX_POOL session={} rx_pool_drops={:?}",
+        "ORX_POOL session={} interface={:?} rx_pool_drops={:?}",
         session.session_id,
-        open_esp_radio_esp32s31_embassy_wifi::station_rx_pool_drops()
+        interface,
+        open_esp_radio_esp32s31_embassy_wifi::rx_pool_drops(interface)
             .zip(pool_drops_start)
             .map(|(end, start)| end.wrapping_sub(start)),
     ))

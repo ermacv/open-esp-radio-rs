@@ -252,6 +252,13 @@ pub(super) static PRODUCTION_RX_BLOCK_ACK:
         Ok(sessions) => sessions,
         Err(_) => panic!("the production RX BlockAck window is statically validated"),
     };
+// Software packet owners are retained across async polls, but never DMA-addressed.
+static AP_TX_STORAGE: StaticCell<
+    open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage<
+        RadioNetworkTxBacking,
+    >,
+> = StaticCell::new();
+static AP_AIRTIME_RESOURCES: StaticCell<AccessPointAirtimeResources> = StaticCell::new();
 static AP_RX_REORDER: StaticCell<Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>> =
     StaticCell::new();
 #[cfg(feature = "diagnostics")]
@@ -757,7 +764,15 @@ fn try_reclaim_production_station<'security>(
     })
 }
 
+// The board moves one affine reference through role transitions, not the
+// model callbacks or ledger. Both stay together in stable CPU storage.
+pub(super) struct AccessPointAirtimeResources {
+    configuration: open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+    storage: open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage,
+}
+
 pub(super) struct ProductionStationBoardResources {
+    pub(super) access_point_airtime: Option<&'static mut AccessPointAirtimeResources>,
     pub(super) interface: BoundVirtualInterface,
     pub(super) connected_datapath: &'static station::ConnectedDatapathMailbox,
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
@@ -790,6 +805,7 @@ pub async fn new(
     diagnostics_event!("open-radio: cold PHY start");
 
     let crate::Esp32s31RadioConfig {
+        access_point_airtime,
         station_mac,
         access_point_mac,
         calibration,
@@ -896,6 +912,10 @@ pub async fn new(
         ethernet: initialize_ethernet_frame(),
         network: station_network,
         board: ProductionStationBoardResources {
+            access_point_airtime: access_point_airtime.map(|configuration| AP_AIRTIME_RESOURCES.init_with(|| AccessPointAirtimeResources {
+                storage: open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage::new(configuration.quantum_micros).with_observer(configuration.observer),
+                configuration,
+            })),
             interface: station_interface,
             connected_datapath,
             rx_protocol_runtime: initialize_connected_rx_protocol_runtime(),
@@ -915,6 +935,7 @@ pub async fn new(
         physical,
         station,
         ProductionAccessPointResources {
+            tx_storage: AP_TX_STORAGE.init_with(open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage::new),
             address: access_point_mac.bytes(),
             beacon: memory.ap_beacon,
             rx_frame: AP_RX_FRAME.take().as_mut_slice(),

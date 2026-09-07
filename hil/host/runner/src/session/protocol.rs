@@ -154,7 +154,7 @@ impl SerialCapture {
     }
 
     fn wait_for_startup_artifact_after(&self, start: usize, timeout: Duration) -> Result<Vec<u8>> {
-        let deadline = Instant::now() + timeout;
+        let deadline = crate::transport::events::deadline_after(timeout);
         let mut cursor = start;
         let mut assembler = crate::session::startup_artifact::Assembler::new();
         loop {
@@ -189,6 +189,7 @@ impl SerialCapture {
         let response = self.send_command(
             0,
             Command::Initialize(open_esp_radio_hil_protocol::InitializationConfiguration {
+                ap_scheduler: context.settings.ap_scheduler,
                 ipv4: context.lab.station.ipv4(),
                 data_plane: context.settings.data_plane,
                 rx_checksum: context.settings.rx_checksum,
@@ -274,6 +275,7 @@ impl SerialCapture {
         self.outbound
             .send(Zeroizing::new(frame))
             .map_err(|_| LinkError::transport("serial worker stopped before HIL command"))?;
+        self.worker_wake.wake()?;
         self.wait_for_protocol_after(event_count, timeout, |message| {
             command_response_matches(
                 message,
@@ -385,7 +387,7 @@ impl SerialCapture {
         session: SessionHandle,
         timeout: Duration,
     ) -> Result<SessionEvidence> {
-        let deadline = Instant::now() + timeout;
+        let deadline = crate::transport::events::deadline_after(timeout);
         let evidence = self
             .wait_for_session_event(
                 session,
@@ -1229,7 +1231,7 @@ impl SerialCapture {
         timeout: Duration,
         predicate: impl Fn(&Envelope<Event>) -> bool,
     ) -> Result<Option<Envelope<Event>>> {
-        let deadline = Instant::now() + timeout;
+        let deadline = crate::transport::events::deadline_after(timeout);
         let mut state = self
             .protocol
             .state
@@ -1257,7 +1259,7 @@ impl SerialCapture {
             let (next, _) = self
                 .protocol
                 .changed
-                .wait_timeout(state, remaining.min(Duration::from_millis(20)))
+                .wait_timeout(state, remaining)
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state = next;
         }

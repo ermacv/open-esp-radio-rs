@@ -324,6 +324,9 @@ where
             self.prepared_tx_interface = Some(interface);
             return Ok(());
         }
+        if self.services.pulls_tx_queues() && network.destination_queues().is_some() {
+            return Ok(());
+        }
         let Some(frame) = self.network.try_receive_tx(interface) else {
             return Ok(());
         };
@@ -476,11 +479,22 @@ where
                     .max(1)
             });
             let network = &self.network;
+            let prepared_destination = self.services.prepared_tx_destination();
             let wait_network = async {
                 if let Some(minimum) = preparation_threshold {
                     let interface = active_tx_interface
                         .expect("active TX network preparation requires one VIF owner");
-                    network.wait_tx_queue_len_at_least(interface, minimum).await;
+                    let source = network.tx_consumer(interface);
+                    if let Some(destination) = prepared_destination
+                        && let Some(queues) = source.destination_queues()
+                    {
+                        core::future::poll_fn(|context| {
+                            queues.poll_ready_for(destination, minimum, context)
+                        })
+                        .await;
+                    } else {
+                        network.wait_tx_queue_len_at_least(interface, minimum).await;
+                    }
                 } else {
                     pending().await
                 }
@@ -516,6 +530,9 @@ where
                     self.services.advance_prepared_tx(&network)?;
                     if self.services.prepared_tx_start_ready() {
                         self.prepared_tx_interface = Some(interface);
+                        continue;
+                    }
+                    if self.services.pulls_tx_queues() && network.destination_queues().is_some() {
                         continue;
                     }
                     let Some(frame) = self.network.try_receive_tx(interface) else {

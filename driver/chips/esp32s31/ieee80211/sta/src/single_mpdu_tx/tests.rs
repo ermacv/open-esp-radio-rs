@@ -574,6 +574,13 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
     tx.start(&mut hardware, &ethernet()).unwrap();
+    let first_work = tx.work();
+    assert_eq!(first_work.publications, 1);
+    assert_eq!(first_work.mpdus, 1);
+    assert_eq!(first_work.aifs_slots, 3);
+    assert_eq!(first_work.backoff_slots, 8);
+    assert_eq!(first_work.unreported_contention, 0);
+    assert!(first_work.ppdu_micros > first_work.nominal_data_micros);
     hardware.completion = Some(completion(5));
 
     assert_eq!(
@@ -586,6 +593,12 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.publications, 2);
+    assert_eq!(tx.work().publications, 2);
+    assert_eq!(tx.work().aifs_slots, 6);
+    assert_eq!(tx.work().backoff_slots, 8 + 24);
+    assert_eq!(tx.work().unreported_contention, 0);
+    assert_eq!(tx.work().psdu_bytes, first_work.psdu_bytes * 2);
+    assert_eq!(tx.work().ppdu_micros, first_work.ppdu_micros * 2);
     let active = tx
         .ordinary
         .active_snapshot()
@@ -634,6 +647,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
     tx.start(&mut hardware, &ethernet()).unwrap();
+    let submitted = tx.work();
     hardware.timeout = true;
     let timeout = WifiTxWake::Interrupt {
         events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT,
@@ -684,6 +698,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
             .result,
         MacTxResult::HardwareTimeout
     );
+    assert_eq!(tx.work(), submitted);
 }
 
 #[test]
@@ -798,4 +813,5 @@ fn queue_rejection_cancels_the_unpublished_descriptor() {
     );
     assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
     assert_eq!(tx.ordinary.slot.descriptor_word0(), 0);
+    assert_eq!(tx.work(), Default::default());
 }

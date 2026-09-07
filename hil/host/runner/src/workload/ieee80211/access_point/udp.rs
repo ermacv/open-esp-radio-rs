@@ -2,7 +2,6 @@
 
 use std::{
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
-    thread,
     time::Duration,
 };
 
@@ -19,10 +18,10 @@ use crate::{
     Result, evidence,
     scenario::Direction,
     session::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
-    transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
+    transport::udp::configure_qualification_receive_buffer,
     workload::traffic::{
         paced_udp::{Config as UdpConfig, HostTransmission as UdpTransmission, send as send_udp},
-        tx_traffic::{Burst, receive_bursts},
+        tx_traffic::{Burst, Receiver},
     },
 };
 
@@ -46,6 +45,7 @@ pub(super) struct UdpEvidencePolicy {
 }
 
 pub(super) fn qualify_udp(
+    output: &std::path::Path,
     capture: &SerialCapture,
     config: &Config,
     context: &crate::execution::context::Context<'_>,
@@ -82,14 +82,30 @@ pub(super) fn qualify_udp(
         };
         let socket = UdpSocket::bind(SocketAddrV4::new(bind_address, UDP_HOST_PORT))?;
         configure_qualification_receive_buffer(&socket)?;
-        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
         socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
-        open_reverse_flow(&socket)?;
+        crate::session::prepare_udp_reverse_flow(
+            capture,
+            open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
+            &socket,
+            config.timeout,
+        )?;
         Some(socket)
     } else {
         None
     };
     let duration_millis = u32::try_from(duration.as_millis())?;
+    let receiver = socket
+        .as_ref()
+        .map(|socket| {
+            Receiver::start(
+                socket,
+                traffic_target,
+                config.timeout + duration + crate::session::SESSION_START_TIMEOUT,
+                output,
+                "primary",
+            )
+        })
+        .transpose()?;
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
@@ -126,30 +142,26 @@ pub(super) fn qualify_udp(
         duration,
         payload: payload_bytes,
     });
-    let receive_duration = duration.saturating_add(Duration::from_secs(2));
-    let data_plane = match (send_config, socket) {
-        (Some(send_config), Some(socket)) => {
-            let sender = thread::spawn(move || send_udp(send_config).map_err(|e| e.to_string()));
-            let received = receive_bursts(&socket, traffic_target, receive_duration);
-            let sent = sender
-                .join()
-                .map_err(|_| "AP UDP sender thread panicked")??;
-            Ok((Some(sent), Some(received?)))
-        }
-        (Some(send_config), None) => send_udp(send_config).map(|sent| (Some(sent), None)),
-        (None, Some(socket)) => receive_bursts(&socket, traffic_target, receive_duration)
-            .map(|received| (None, Some(received)))
-            .map_err(Into::into),
-        (None, None) => Err("AP UDP workload has no data direction".into()),
-    };
-
+    let host_tx = send_config.map(send_udp).transpose();
     let structured = capture.wait_for_session(session, config.timeout);
     let acknowledgement = structured
         .as_ref()
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
-    let (host_tx, host_rx) =
-        data_plane.map_err(|error| format!("AP UDP host path failed: {error}"))?;
+    let host_rx = receiver
+        .map(|receiver| {
+            receiver.finish(
+                structured
+                    .as_ref()
+                    .ok()
+                    .map(|evidence| evidence.transport.tx_units),
+            )
+        })
+        .transpose();
+    let host_tx =
+        host_tx.map_err(|error| crate::error::context("AP UDP host sender failed", error))?;
+    let host_rx =
+        host_rx.map_err(|error| crate::error::context("AP UDP host receiver failed", error))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
     acknowledgement?;
     let mut report = session_report(direction, &structured);

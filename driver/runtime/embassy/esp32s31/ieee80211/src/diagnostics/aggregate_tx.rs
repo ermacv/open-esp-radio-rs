@@ -4,6 +4,8 @@
 //! counters, histograms, storage or report formatting. Attaching an observer
 //! must not affect retry, queue, DMA ownership or scheduling decisions.
 
+pub use open_esp_radio_wifi_softmac::MacTxWork;
+
 /// Why a network frame used the ordinary MPDU path instead of starting an
 /// aggregate exchange.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +51,11 @@ pub enum PreparedTxSchedulerPhase {
 /// Value-only observations emitted by the production aggregate TX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxObservation {
+    /// Ordinary TX serviced through connected STA or AP network data, including
+    /// aggregate fallback. Separate from aggregate receipts: never double count.
+    OrdinaryWorkCompleted {
+        work: MacTxWork,
+    },
     /// One negotiated TX BlockAck agreement changed its operational state.
     /// This is a protocol-control edge, not evidence that an aggregate has
     /// already been published.
@@ -125,6 +132,11 @@ pub enum AggregateTxObservation {
     },
     HardwareTimeout,
     Collision,
+    /// Terminal aggregate publication work, excluding an ordinary fallback.
+    /// Emitted once per completed/aborted exchange, never once per retry.
+    WorkCompleted {
+        work: MacTxWork,
+    },
     ExchangeCompleted {
         micros: u64,
         /// Number of hardware aggregate publications required to reach the
@@ -156,6 +168,17 @@ pub trait AggregateTxObserver: Sync {
     /// The borrowed bytes are diagnostic input only and must not be retained.
     /// The default keeps ordinary production observers value-only.
     fn observe_access_point_network_claim(&self, _ethernet: &[u8]) {}
+
+    /// A previously admitted software owner was dropped by bounded AP
+    /// retention. This is a loss, not a producer capacity refusal or TX ACK.
+    fn observe_access_point_retention_drop(&self, _reason: NetworkTxRetentionDropReason) {}
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkTxRetentionDropReason {
+    ActiveQueueFull,
+    UnicastPowerSaveFull,
+    GroupPowerSaveFull,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

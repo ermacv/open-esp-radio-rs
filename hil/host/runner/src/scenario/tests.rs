@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn ap_scheduler_policy_is_archived_and_restricted_to_standalone_ht() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog.get("diagnostic-ap-mixed-tx-work").unwrap().clone();
+    assert_eq!(
+        scenario.ap_scheduler,
+        open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+    );
+    scenario.ap_scheduler = open_esp_radio_hil_protocol::WifiApScheduler::DeficitHtResponse24;
+    assert!(scenario.validate().is_ok());
+    let decoded: Scenario =
+        serde_json::from_str(&serde_json::to_string(&scenario).unwrap()).unwrap();
+    assert_eq!(decoded.ap_scheduler, scenario.ap_scheduler);
+    scenario.workload = Workload::BootSmoke;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
 fn ap_measurement_accepts_one_cycle_but_rejects_empty_lifecycle() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
@@ -876,4 +894,23 @@ fn access_point_direction_requires_matching_rates() {
     assert!(validate_direction_rates(Direction::Tx, Some(1), Some(1), scenario).is_err());
     assert!(validate_direction_rates(Direction::Bidirectional, Some(1), Some(1), scenario).is_ok());
     assert!(validate_direction_rates(Direction::Bidirectional, Some(1), None, scenario).is_err());
+}
+
+#[test]
+fn host_offer_gate_requires_a_measured_ap_rx_source_and_valid_percentage() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    for (id, has_rx) in [
+        ("ap-network-comparison-02-rx-balanced", true),
+        ("ap-network-comparison-01-tx-balanced", false),
+    ] {
+        let mut scenario = catalog.get(id).unwrap().clone();
+        for minimum in [0, 1, 95, 100, 101] {
+            scenario.criteria.minimum_host_offer_percent = Some(minimum);
+            assert_eq!(
+                scenario.validate().is_ok(),
+                has_rx && (1..=100).contains(&minimum)
+            );
+        }
+    }
 }

@@ -2812,6 +2812,7 @@ name = "open-esp-radio-hil-runner"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "critical-section",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2819,6 +2820,7 @@ dependencies = [
  "flate2",
  "fs2",
  "libc",
+ "mio",
  "object 0.39.1",
  "oer-firmware",
  "oer-process",
@@ -2835,6 +2837,7 @@ dependencies = [
  "tar",
  "tempfile",
  "toml",
+ "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc)",
  "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
  "zeroize",
 ]
@@ -2912,6 +2915,7 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-network",
+ "open-esp-radio-wifi-softmac",
 ]
 
 [[package]]

@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_wifi_softmac::MacTxWork;
+
 use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::types::{
@@ -247,6 +249,7 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     count: u8,
     prepared_length: u16,
     aggregate_length: u16,
+    work: MacTxWork,
     max_aggregate_bytes: u16,
     trigger_reservation: Option<MacHeTbLinkReservation>,
     trigger_publication_snapshot: Option<MacHeTriggerTxQueueSnapshot>,
@@ -282,6 +285,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             count: 0,
             prepared_length: 0,
             aggregate_length: 0,
+            work: MacTxWork::new(),
             // Conservative HT A-MPDU exponent zero until the peer capability
             // is installed by the association owner.
             max_aggregate_bytes: TX_AMPDU_DEFAULT_MAX_BYTES,
@@ -303,6 +307,12 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     pub const fn frame_count(&self) -> u8 {
         self.count
+    }
+
+    /// Work published by the retained DMA owner since the last successful
+    /// `begin`. Survives completion, detach and release. HE time is unestimated.
+    pub const fn work(&self) -> MacTxWork {
+        self.work
     }
 
     pub const fn aggregate_length(&self) -> u16 {
@@ -390,6 +400,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         *storage.count = 0;
         *storage.prepared_length = 0;
         *storage.aggregate_length = 0;
+        *storage.work = MacTxWork::new();
         *storage.trigger_reservation = None;
         *storage.trigger_publication_snapshot = None;
         *storage.detached = false;

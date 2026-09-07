@@ -8,6 +8,9 @@
 //! network-stack types onto these values without making radio policy depend on
 //! either integration.
 
+mod flow;
+pub use flow::TransportFlow;
+
 /// Ethernet header length, excluding an FCS.
 pub const ETHERNET_HEADER_LEN: usize = 14;
 

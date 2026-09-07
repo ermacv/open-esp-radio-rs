@@ -2,8 +2,9 @@
 //!
 //! This module contains no Wi-Fi scheduler. It moves complete [`PacketBuf`]
 //! owners between the network and radio execution domains through bounded
-//! queues. Peer/TID classification and SRAM promotion happen after the radio
-//! side claims a TX owner.
+//! queues. TX is indexed by Ethernet destination before publication. Radio
+//! policy selects a destination before claiming owners and validates peer/TID
+//! eligibility before SRAM promotion.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use core::task::{Context, Poll, Waker};
@@ -17,6 +18,13 @@ use owned_embassy_net_driver::{
     Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState as DriverLinkState,
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
+
+use open_esp_radio_wifi_datapath::{DestinationTxHead, DestinationTxQueues};
+
+mod tx_budget;
+mod tx_queue;
+use tx_budget::TxCredit;
+use tx_queue::TxQueue;
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId, RxEnqueueError};
 
@@ -104,14 +112,16 @@ struct QueuedPacket {
 ///
 /// Packet bytes do not live in this value. RX owners come from the allocator
 /// supplied to [`split`](Self::split); TX owners retain the general Xarxa pool
-/// selected by the application.
+/// selected by the application. `TX_QUEUE_DEPTH` bounds all admitted software
+/// owners, including frames retained by the radio after dequeue. Physical DMA
+/// storage has its own lifetime and budget.
 pub struct OwnedEndpointResources<
     M: RawMutex,
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > {
     rx: Channel<M, QueuedPacket, RX_QUEUE_DEPTH>,
-    tx: Channel<M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx: TxQueue<M, TX_QUEUE_DEPTH>,
     tx_published: Signal<M, ()>,
     rx_waiter: OnceLock<PacketPoolWaiter>,
     link: OwnedLinkState<M>,
@@ -125,7 +135,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
     pub const fn new() -> Self {
         Self {
             rx: Channel::new(),
-            tx: Channel::new(),
+            tx: TxQueue::new(),
             tx_published: Signal::new(),
             rx_waiter: OnceLock::new(),
             link: OwnedLinkState::new(),
@@ -169,7 +179,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
             OwnedNetworkDevice {
                 hardware_address,
                 rx: resources.rx.receiver(),
-                tx: resources.tx.sender(),
+                tx: &resources.tx,
                 tx_published: &resources.tx_published,
                 link: &resources.link,
                 checksum: ChecksumCapabilities::default(),
@@ -177,7 +187,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
             OwnedNetworkRunner {
                 interface,
                 rx: resources.rx.sender(),
-                tx: resources.tx.receiver(),
+                tx: &resources.tx,
                 tx_published: &resources.tx_published,
                 link: &resources.link,
                 rx_allocator,
@@ -204,7 +214,7 @@ pub struct OwnedNetworkDevice<
 > {
     hardware_address: [u8; 6],
     rx: Receiver<'resources, M, QueuedPacket, RX_QUEUE_DEPTH>,
-    tx: Sender<'resources, M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx: &'resources TxQueue<M, TX_QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources OwnedLinkState<M>,
     checksum: ChecksumCapabilities,
@@ -218,9 +228,10 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
         self.hardware_address
     }
 
-    /// Register the network runner's one level-state waker.
+    /// Register before each stack poll for link, RX and TX-capacity changes.
     pub fn register_waker(&mut self, waker: &Waker) {
         self.link.register_network_waker(waker);
+        self.tx.register_sender(waker);
     }
 
     /// Whether this interface currently belongs to an active role lifetime.
@@ -246,7 +257,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
         }
     }
 
-    /// Whether the bounded software TX ingress can accept one packet now.
+    /// Whether the shared software TX budget can admit one packet now.
     pub fn can_transmit(&self) -> bool {
         self.link.snapshot().up && !self.tx.is_full()
     }
@@ -261,7 +272,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
     /// consumer instead of violating the driver contract.
     pub fn transmit(&mut self, packet: PacketBuf) -> Result<(), PacketBuf> {
         let snapshot = self.link.snapshot();
-        match self.tx.try_send(QueuedPacket {
+        match self.tx.push(QueuedPacket {
             epoch: snapshot.epoch,
             packet,
         }) {
@@ -269,7 +280,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
                 self.tx_published.signal(());
                 Ok(())
             }
-            Err(TrySendError::Full(queued)) => Err(queued.packet),
+            Err(queued) => Err(queued.packet),
         }
     }
 }
@@ -313,9 +324,16 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Driv
 }
 
 /// One driver-owned TX packet claimed by the physical radio.
-pub struct OwnedNetworkTxFrame {
+///
+/// Its admission credit remains occupied through radio retention and rollback.
+/// Dropping the frame returns the packet first, then wakes a blocked producer.
+/// Borrowing the endpoint prevents either resource from outliving its storage.
+pub struct OwnedNetworkTxFrame<'resources, M: RawMutex> {
     interface: NetworkInterfaceId,
     packet: PacketBuf,
+    // Field order is intentional: return the packet to its pool before waking
+    // a producer which can immediately spend this software admission credit.
+    _credit: TxCredit<'resources, M>,
 }
 
 /// Copyable RX-only capability for a physical datapath service.
@@ -421,7 +439,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
     }
 }
 
-impl OwnedNetworkTxFrame {
+impl<M: RawMutex> OwnedNetworkTxFrame<'_, M> {
     /// Logical VIF which accepted this owner.
     pub const fn interface(&self) -> NetworkInterfaceId {
         self.interface
@@ -439,11 +457,6 @@ impl OwnedNetworkTxFrame {
     /// Complete Ethernet-II bytes before physical SRAM admission.
     pub fn as_slice(&self) -> &[u8] {
         self.ethernet()
-    }
-
-    /// Release the wrapper while retaining the exact packet owner.
-    pub fn into_packet(self) -> PacketBuf {
-        self.packet
     }
 }
 
@@ -482,7 +495,7 @@ pub struct OwnedNetworkRunner<
 > {
     interface: NetworkInterfaceId,
     rx: Sender<'resources, M, QueuedPacket, RX_QUEUE_DEPTH>,
-    tx: Receiver<'resources, M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx: &'resources TxQueue<M, TX_QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources OwnedLinkState<M>,
     rx_allocator: PacketBufAllocator,
@@ -494,10 +507,12 @@ pub struct OwnedNetworkRunner<
 /// The trait deliberately exposes no physical memory or scheduler policy. It
 /// lets a radio adapter compose the software owner queue with its private SRAM
 /// allocator without depending on the queue's compile-time depth.
-pub trait OwnedTxFrameSource {
+pub trait OwnedTxFrameSource<'resources, M: RawMutex + 'resources>:
+    DestinationTxQueues<Frame = OwnedNetworkTxFrame<'resources, M>>
+{
     fn interface(&self) -> NetworkInterfaceId;
     fn queue_len(&self) -> usize;
-    fn try_receive(&self) -> Option<OwnedNetworkTxFrame>;
+    fn try_receive(&self) -> Option<OwnedNetworkTxFrame<'resources, M>>;
 }
 
 impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
@@ -526,7 +541,7 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
         }
     }
 
-    /// Number of complete TX owners waiting before peer/TID classification.
+    /// Number of complete TX owners waiting in destination queues.
     pub fn tx_queue_len(&self) -> usize {
         self.tx.len()
     }
@@ -542,32 +557,36 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
     }
 
     /// Claim the next current-lifetime TX owner, dropping stale lifetimes.
-    pub fn try_receive_tx(&self) -> Option<OwnedNetworkTxFrame> {
-        loop {
-            let was_full = self.tx.is_full();
-            let queued = self.tx.try_receive().ok()?;
-            if was_full {
-                self.link.wake_network();
-            }
+    pub fn try_receive_tx(&self) -> Option<OwnedNetworkTxFrame<'resources, M>> {
+        self.take_tx(None)
+    }
+
+    fn take_tx(&self, destination: Option<[u8; 6]>) -> Option<OwnedNetworkTxFrame<'resources, M>> {
+        // Bound stale disposal even if another core keeps publishing during
+        // teardown. Packet destruction never runs under the metadata lock.
+        for _ in 0..TX_QUEUE_DEPTH {
+            let (queued, credit) = self.tx.pop(destination)?;
             let current = self.link.snapshot();
             if current.up && current.epoch == queued.epoch {
                 return Some(OwnedNetworkTxFrame {
                     interface: self.interface,
                     packet: queued.packet,
+                    _credit: credit,
                 });
             }
-            // Stale queued data is terminally dropped and returns to its
-            // general packet pool before looking at the next owner.
+            drop(queued);
+            drop(credit);
         }
+        None
     }
 
     /// Wait for and claim the next current-lifetime TX owner.
-    pub async fn receive_tx(&self) -> OwnedNetworkTxFrame {
+    pub async fn receive_tx(&self) -> OwnedNetworkTxFrame<'resources, M> {
         loop {
             if let Some(frame) = self.try_receive_tx() {
                 return frame;
             }
-            self.tx.ready_to_receive().await;
+            self.tx_published.wait().await;
         }
     }
 
@@ -595,8 +614,36 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
     }
 }
 
-impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> OwnedTxFrameSource
-    for OwnedNetworkRunner<'_, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
+    DestinationTxQueues for OwnedNetworkRunner<'resources, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+{
+    type Frame = OwnedNetworkTxFrame<'resources, M>;
+
+    fn next_head_after(&self, after: Option<[u8; 6]>) -> Option<([u8; 6], DestinationTxHead)> {
+        self.tx.next_head_after(after)
+    }
+
+    fn head_for(&self, destination: [u8; 6]) -> Option<DestinationTxHead> {
+        self.tx.head_for(destination)
+    }
+
+    fn try_take_for(&self, destination: [u8; 6]) -> Option<Self::Frame> {
+        self.take_tx(Some(destination))
+    }
+
+    fn poll_ready_for(
+        &self,
+        destination: [u8; 6],
+        minimum: usize,
+        context: &mut Context<'_>,
+    ) -> Poll<()> {
+        self.tx.poll_ready_for(destination, minimum, context)
+    }
+}
+
+impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
+    OwnedTxFrameSource<'resources, M>
+    for OwnedNetworkRunner<'resources, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn interface(&self) -> NetworkInterfaceId {
         OwnedNetworkRunner::interface(self)
@@ -606,7 +653,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Owne
         OwnedNetworkRunner::tx_queue_len(self)
     }
 
-    fn try_receive(&self) -> Option<OwnedNetworkTxFrame> {
+    fn try_receive(&self) -> Option<OwnedNetworkTxFrame<'resources, M>> {
         OwnedNetworkRunner::try_receive_tx(self)
     }
 }

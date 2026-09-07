@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn retention_gate_reports_loss_before_radio_instead_of_a_generic_delivery_failure() {
+    use open_esp_radio_hil_protocol::{WifiAccessPointEvidence, WifiTxRetentionEvidence};
+    let stopped = WifiAccessPointEvidence {
+        tx_retention: Some(WifiTxRetentionEvidence {
+            unicast_power_save_full: 3,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let error =
+        validate_access_point_observation(2, WifiAccessPointSecurity::Wpa2Personal, 2, &stopped)
+            .unwrap_err()
+            .to_string();
+    assert!(error.contains("TX retention dropped admitted frames"));
+    assert!(error.contains("unicast_power_save_full: 3"));
+}
+
+#[test]
+fn protocol_rejection_gate_names_the_exact_retained_failure() {
+    use open_esp_radio_hil_protocol::{
+        WifiAccessPointEvidence, WifiRxRejection, WifiRxRejectionReason,
+    };
+    let evidence = WifiAccessPointEvidence {
+        protected_data_protocol_rejected: 1,
+        first_rx_protocol_rejection: Some(WifiRxRejection {
+            reason: WifiRxRejectionReason::Replay {
+                packet_number: 5,
+                highest: 7,
+            },
+            at_micros: 1200,
+            transmitter: Some([2; 6]),
+            frame_control: Some(0x4188),
+            sequence_control: Some(32),
+            tid: Some(0),
+            key_id: Some(0),
+            packet_number: Some(5),
+            mpdu_length: 100,
+        }),
+        ..Default::default()
+    };
+    let error =
+        validate_access_point_observation(3, WifiAccessPointSecurity::Wpa2Personal, 2, &evidence)
+            .unwrap_err()
+            .to_string();
+    assert!(error.contains("AP cycle 3: 1 RX protocol rejection"));
+    assert!(error.contains("Replay { packet_number: 5, highest: 7 }"));
+    assert!(error.contains("at_micros: 1200"));
+}
+
+#[test]
 fn cleanup_annotation_preserves_fixture_cancellation_and_scenario_causes() {
     for (primary, expected, cancelled) in [
         (
@@ -558,6 +608,7 @@ fn performance_cycle_omits_unavailable_driver_observation() {
         fixture_preparation: None,
         boots: vec![BootReport {
             boot: 0,
+            error: None,
             cycles: vec![CycleReport {
                 cycle: 0,
                 traffic: TrafficReport::None,

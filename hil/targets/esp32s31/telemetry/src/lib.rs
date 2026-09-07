@@ -10,6 +10,7 @@
 extern crate std;
 
 pub mod aggregate_tx;
+pub mod airtime;
 pub mod mac_irq;
 pub mod rx_delivery;
 pub mod rx_evidence;
@@ -19,3 +20,6 @@ pub mod task_poll;
 pub mod tx_wait;
 pub mod udp_rx_window;
 pub mod wait;
+
+pub mod rx_rejection;
+pub mod tx_retention;

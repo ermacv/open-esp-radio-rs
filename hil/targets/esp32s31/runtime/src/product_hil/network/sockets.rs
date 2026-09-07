@@ -27,4 +27,5 @@ pub fn new_tcp<'a>(stack: Stack<'a>, rx: &'a mut [u8], tx: &'a mut [u8]) -> TcpS
 
 // Unidirectional HIL sockets allocate only the byte rings they use.
 pub type UdpRxStorage = UdpStorage<UDP_RX_QUEUE_DEPTH, 0>;
-pub type UdpTxStorage = UdpStorage<0, 16>;
+// One RX slot serves the unmeasured reverse-flow challenge before Start.
+pub type UdpTxStorage = UdpStorage<1, 16>;

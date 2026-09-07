@@ -311,6 +311,11 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
+    /// Submitted ordinary work, read before another exchange starts.
+    pub fn work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.transmit.work()
+    }
+
     pub fn new(
         engine: Esp32s31ApEngine<'beacon>,
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
@@ -371,6 +376,10 @@ where
     #[cfg(any(feature = "diagnostics", test))]
     pub fn observation(&self) -> Esp32s31ApMacObservation {
         self.observer.observation
+    }
+
+    pub fn pending_publication_kind(&self) -> Option<Esp32s31ApPendingPublicationKind> {
+        self.pending.map(PendingPublication::kind)
     }
 
     pub const fn tx_pending(&self) -> bool {

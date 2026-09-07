@@ -30,7 +30,7 @@ const TCP_TX_BUFFER_CAPACITY: usize = 131_072;
 
 struct ConnectedTrafficResources {
     udp_rx: ConstStaticCell<UdpRxStorage>,
-    udp_tx: ConstStaticCell<UdpTxStorage>,
+    udp_tx: ConstStaticCell<[UdpTxStorage; open_esp_radio_hil_protocol::SESSION_FLOW_CAPACITY]>,
     tcp_rx_buffer: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
     tcp_tx_buffer: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
     bidirectional_rx_sessions: BidirectionalSessionChannel,
@@ -44,7 +44,9 @@ impl ConnectedTrafficResources {
     const fn new() -> Self {
         Self {
             udp_rx: ConstStaticCell::new(UdpRxStorage::new()),
-            udp_tx: ConstStaticCell::new(UdpTxStorage::new()),
+            udp_tx: ConstStaticCell::new(
+                [const { UdpTxStorage::new() }; open_esp_radio_hil_protocol::SESSION_FLOW_CAPACITY],
+            ),
             tcp_rx_buffer: ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]),
             tcp_tx_buffer: ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]),
             bidirectional_rx_sessions: Channel::new(),
@@ -167,7 +169,6 @@ async fn udp_tx_task(
                 // generator from manufacturing a 31+1 burst boundary.
                 pacing_group_datagrams: UDP_TX_PACING_GROUP_DATAGRAMS,
                 multi_flow_burst_datagrams: multi_flow_burst_datagrams(),
-                drain: Duration::from_millis(250),
                 code_address: runtime_code_marker as *const () as usize,
                 session_source: UdpTxSessionSource {
                     sessions: &resources.bidirectional_tx_sessions,

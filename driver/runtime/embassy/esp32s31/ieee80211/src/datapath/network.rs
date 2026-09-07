@@ -564,7 +564,7 @@ impl<
 {
     type LinkController = OwnedLinkController<'resources, M>;
     type RxPublisher = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
-    type TxFrame = OwnedNetworkTxFrame;
+    type TxFrame = OwnedNetworkTxFrame<'resources, M>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
     type TxConsumer<'network>
@@ -598,12 +598,18 @@ impl<
         self.network.tx_queue_len()
     }
 
-    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<OwnedNetworkTxFrame> {
+    fn try_receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<OwnedNetworkTxFrame<'resources, M>> {
         self.assert_interface(interface);
         self.network.try_receive_tx()
     }
 
-    async fn receive_tx(&self, interface: NetworkInterfaceId) -> OwnedNetworkTxFrame {
+    async fn receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> OwnedNetworkTxFrame<'resources, M> {
         self.assert_interface(interface);
         self.network.receive_tx().await
     }
@@ -690,7 +696,7 @@ impl<
 {
     type LinkController = OwnedNetworkLinkControllers<'resources, M>;
     type RxPublisher = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
-    type TxFrame = OwnedNetworkTxFrame;
+    type TxFrame = OwnedNetworkTxFrame<'resources, M>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
     type TxConsumer<'network>
@@ -725,11 +731,17 @@ impl<
         self.endpoint(interface).tx_queue_len()
     }
 
-    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<OwnedNetworkTxFrame> {
+    fn try_receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<OwnedNetworkTxFrame<'resources, M>> {
         self.endpoint(interface).try_receive_tx()
     }
 
-    async fn receive_tx(&self, interface: NetworkInterfaceId) -> OwnedNetworkTxFrame {
+    async fn receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> OwnedNetworkTxFrame<'resources, M> {
         self.endpoint(interface).receive_tx().await
     }
 

@@ -26,9 +26,9 @@ use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, OwnedTxFrameSource};
 use open_esp_radio_network::NetworkInterfaceId;
 #[cfg(feature = "tx-phase-telemetry")]
 use open_esp_radio_wifi_datapath::MaterializationOwnershipSnapshot;
-#[cfg(feature = "owned-network")]
-use open_esp_radio_wifi_datapath::SelectedBurstMaterializer;
 use open_esp_radio_wifi_datapath::SoftwareTxFrame;
+#[cfg(feature = "owned-network")]
+use open_esp_radio_wifi_datapath::{MaterializedPairResult, SelectedBurstMaterializer};
 
 /// Permanently located storage for DMA-visible TX frames.
 pub type PinnedTxPool<
@@ -366,7 +366,7 @@ impl<
 > SelectedBurstMaterializer
     for DatapathTxConsumer<'source, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
-    type SoftwareFrame = OwnedNetworkTxFrame;
+    type SoftwareFrame = OwnedNetworkTxFrame<'resources, M>;
     type PhysicalFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
@@ -380,6 +380,13 @@ impl<
 
     fn try_take(&self) -> Option<Self::SoftwareFrame> {
         DatapathTxConsumer::try_receive(self)
+    }
+
+    fn destination_queues(
+        &self,
+    ) -> Option<&dyn open_esp_radio_wifi_datapath::DestinationTxQueues<Frame = Self::SoftwareFrame>>
+    {
+        Some(self.source)
     }
 
     fn try_materialize(
@@ -422,7 +429,7 @@ pub struct DatapathTxConsumer<
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
 > {
-    source: &'source dyn OwnedTxFrameSource,
+    source: &'source dyn OwnedTxFrameSource<'resources, M>,
     physical:
         PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
@@ -454,7 +461,7 @@ impl<
 > DatapathTxConsumer<'source, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
     pub fn new(
-        source: &'source dyn OwnedTxFrameSource,
+        source: &'source dyn OwnedTxFrameSource<'resources, M>,
         physical: PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -476,16 +483,16 @@ impl<
         self.source.queue_len()
     }
 
-    pub fn try_receive(&self) -> Option<OwnedNetworkTxFrame> {
+    pub fn try_receive(&self) -> Option<OwnedNetworkTxFrame<'resources, M>> {
         self.source.try_receive()
     }
 
     pub fn try_promote(
         &self,
-        frame: OwnedNetworkTxFrame,
+        frame: OwnedNetworkTxFrame<'resources, M>,
     ) -> Result<
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        OwnedNetworkTxFrame,
+        OwnedNetworkTxFrame<'resources, M>,
     > {
         self.physical.try_materialize(frame)
     }
@@ -503,7 +510,7 @@ impl<
 
     pub fn try_promote_batch<const BATCH: usize>(
         &self,
-        sources: &mut [Option<OwnedNetworkTxFrame>; BATCH],
+        sources: &mut [Option<OwnedNetworkTxFrame<'resources, M>>; BATCH],
         destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
                  BATCH],
     ) -> bool {
@@ -512,14 +519,11 @@ impl<
 
     pub fn try_promote_pair(
         &self,
-        first: OwnedNetworkTxFrame,
-        second: OwnedNetworkTxFrame,
-    ) -> Result<
-        (
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        ),
-        (OwnedNetworkTxFrame, OwnedNetworkTxFrame),
+        first: OwnedNetworkTxFrame<'resources, M>,
+        second: OwnedNetworkTxFrame<'resources, M>,
+    ) -> MaterializedPairResult<
+        OwnedNetworkTxFrame<'resources, M>,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     > {
         let mut sources = [Some(first), Some(second)];
         let mut destinations = [None, None];

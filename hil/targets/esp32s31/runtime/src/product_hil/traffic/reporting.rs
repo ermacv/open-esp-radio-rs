@@ -180,6 +180,33 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "OAMPW exchanges={} publications={} psdu_bytes={} mpdus={} nominal_data_us={} unestimated_publications={} saturated_exchanges={}",
+        aggregate.work.exchanges,
+        aggregate.work.publications,
+        aggregate.work.psdu_bytes,
+        aggregate.work.mpdus,
+        aggregate.work.nominal_data_micros,
+        aggregate.work.unestimated_publications,
+        aggregate.work.saturated_exchanges,
+    ))
+    .await;
+    yield_now().await;
+    for (kind, work) in [
+        ("ampdu", aggregate.work),
+        ("ordinary", aggregate.ordinary_work),
+    ] {
+        runtime_log_reliably(format_args!(
+            "OTXW kind={} exchanges={} publications={} psdu_bytes={} mpdus={} ppdu_us={} unknown_ppdus={} saturated_exchanges={}",
+            kind, work.exchanges, work.publications, work.psdu_bytes, work.mpdus,
+            work.ppdu_micros, work.unestimated_ppdus, work.saturated_exchanges,
+        )).await;
+        runtime_log_reliably(format_args!(
+            "OTXC kind={} aifs_slots={} backoff_slots={} unreported_publications={}",
+            kind, work.aifs_slots, work.backoff_slots, work.unreported_contention,
+        ))
+        .await;
+    }
+    runtime_log_reliably(format_args!(
         "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
          publication_max_us={} exchange_us={} exchange_max_us={} \
          first_exchanges={} first_exchange_us={} first_exchange_max_us={} \

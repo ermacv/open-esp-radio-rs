@@ -3,7 +3,18 @@
 use super::*;
 
 impl Scenario {
-    pub(super) fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.ap_scheduler != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+            && (!matches!(self.workload, Workload::AccessPoint { .. })
+                || !self.link.as_ref().is_some_and(|link| {
+                    matches!(link.phy, PhyExpectation::Ht20 | PhyExpectation::Ht40)
+                }))
+        {
+            return Err(
+                "AP scheduler comparison requires a standalone HT20/HT40 access-point workload"
+                    .into(),
+            );
+        }
         if self.schema != SCENARIO_SCHEMA {
             return Err(format!(
                 "{}: scenario schema {} is unsupported (expected {SCENARIO_SCHEMA})",
@@ -814,6 +825,16 @@ impl Scenario {
             if floor > offered_sum {
                 return self
                     .criteria_error("minimum_combined_bps cannot exceed the RX+TX offered rate");
+            }
+        }
+        if let Some(minimum) = self.criteria.minimum_host_offer_percent {
+            if !multi_client_udp || rx_offer.is_none() {
+                return self.criteria_error(
+                    "minimum_host_offer_percent requires an AP multi-client UDP RX offer",
+                );
+            }
+            if !(1..=100).contains(&minimum) {
+                return self.criteria_error("minimum_host_offer_percent must be within 1..=100");
             }
         }
         if let Some(floor) = self.criteria.minimum_bps_per_flow {

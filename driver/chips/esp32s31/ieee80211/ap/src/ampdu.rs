@@ -20,11 +20,15 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 use open_esp_radio_wifi_ap::ApAssociationIdentity;
+use open_esp_radio_wifi_softmac::MacTxWork;
 
 use crate::{
     engine::{Esp32s31ApAggregateBinding, Esp32s31ApAggregateFrame},
     tx::Esp32s31ApTx,
 };
+
+mod budget;
+pub use budget::Esp32s31ApAmpduBudget;
 
 /// AP peer decision captured before consuming a network lease into an
 /// aggregate transaction.
@@ -226,6 +230,11 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             state: ApAmpduState::Idle,
             attempt_limit,
         })
+    }
+
+    /// Published work retained through terminal release until the next begin.
+    pub fn work(&self) -> MacTxWork {
+        self.inner.work()
     }
 
     pub fn begin(

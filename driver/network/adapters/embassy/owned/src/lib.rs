@@ -20,7 +20,7 @@ pub use owned::{
     OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
 };
 
-impl open_esp_radio_wifi_datapath::SoftwareTxFrame for OwnedNetworkTxFrame {
+impl<M: RawMutex> open_esp_radio_wifi_datapath::SoftwareTxFrame for OwnedNetworkTxFrame<'_, M> {
     fn interface(&self) -> NetworkInterfaceId {
         OwnedNetworkTxFrame::interface(self)
     }

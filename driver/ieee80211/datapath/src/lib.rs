@@ -15,8 +15,13 @@ use open_esp_radio_dma::{
 };
 use open_esp_radio_network::NetworkInterfaceId;
 
+pub mod airtime;
+
 mod egress;
+mod queues;
 mod selected;
+
+pub use queues::TxQueues;
 
 pub use selected::{SelectedTxReport, SelectedTxSource};
 
@@ -210,6 +215,12 @@ pub trait SelectedBurstMaterializer {
 
     fn try_take(&self) -> Option<Self::SoftwareFrame>;
 
+    /// Optional direct access to queues classified before radio selection.
+    /// FIFO-only compatibility adapters leave this unavailable.
+    fn destination_queues(&self) -> Option<&dyn DestinationTxQueues<Frame = Self::SoftwareFrame>> {
+        None
+    }
+
     fn try_materialize(
         &self,
         frame: Self::SoftwareFrame,
@@ -254,4 +265,51 @@ pub trait SelectedBurstMaterializer {
                 .expect("successful pair publishes second owner"),
         ))
     }
+}
+
+/// Destination selection over software owners, before physical admission.
+///
+/// Destinations are Ethernet next hops, not association or security identities.
+/// Radio policy must still validate association lifetime, power save and TID.
+/// Implementations may schedule transport subflows inside one destination;
+/// counts and readiness still cover all of its aggregate-eligible frames.
+/// Current AP producers use TID 0; this interface does not assign additional
+/// TIDs. A missing match leaves every other destination untouched.
+pub trait DestinationTxQueues {
+    type Frame: SoftwareTxFrame;
+
+    /// Inspect the first destination strictly after `after` in address order,
+    /// wrapping to the lowest address. None means the source is empty. The
+    /// radio can merge this candidate with retained demand in the same order,
+    /// without depending on either source's metadata slots or moving owners.
+    fn next_head_after(&self, after: Option<[u8; 6]>) -> Option<([u8; 6], DestinationTxHead)>;
+    /// Read one coherent next-packet length/backlog snapshot. Inspection must
+    /// not dequeue, rotate transport flows, return credits or alter any wait.
+    /// The implementation's queue lock, if any, ends before this call returns.
+    /// This is demand metadata, not a reservation: link teardown, another
+    /// consumer or later publication may change the next dequeue. The radio
+    /// must revalidate the claimed frame before encoding or publication.
+    fn head_for(&self, destination: [u8; 6]) -> Option<DestinationTxHead>;
+    fn pending_for(&self, destination: [u8; 6]) -> usize {
+        self.head_for(destination)
+            .map_or(0, |head| head.pending_frames)
+    }
+    fn try_take_for(&self, destination: [u8; 6]) -> Option<Self::Frame>;
+    /// Register and check the selected queue atomically with publication.
+    fn poll_ready_for(
+        &self,
+        destination: [u8; 6],
+        minimum: usize,
+        context: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<()>;
+}
+
+/// CPU-only demand metadata, with no packet address or ownership transfer.
+/// Ethernet length includes its L2 header, not Wi-Fi/crypto/FCS expansion.
+/// A radio cost estimate must supply that geometry and its current PHY rate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DestinationTxHead {
+    pub ethernet_bytes: usize,
+    /// Total packets across all transport flows of this destination.
+    pub pending_frames: usize,
 }

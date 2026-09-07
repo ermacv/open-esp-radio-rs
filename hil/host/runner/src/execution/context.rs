@@ -50,6 +50,7 @@ impl<'a> Context<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Settings {
+    pub(crate) ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
     pub(crate) data_plane: WifiDataPlanePlacement,
     pub(crate) rx_checksum: WifiRxChecksumPolicy,
     pub(crate) tx_udp_checksum: WifiTxUdpChecksumPolicy,
@@ -61,6 +62,7 @@ pub(crate) struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            ap_scheduler: Default::default(),
             data_plane: WifiDataPlanePlacement::SplitRadioNetwork,
             rx_checksum: WifiRxChecksumPolicy::Software,
             tx_udp_checksum: WifiTxUdpChecksumPolicy::Software,
@@ -74,6 +76,7 @@ impl Default for Settings {
 impl From<&Scenario> for Settings {
     fn from(scenario: &Scenario) -> Self {
         Self {
+            ap_scheduler: scenario.ap_scheduler,
             data_plane: scenario.data_plane,
             rx_checksum: scenario.rx_checksum,
             tx_udp_checksum: scenario.tx_udp_checksum,

@@ -37,12 +37,18 @@ impl From<RxReorderStorageError> for Esp32s31AccessPointRxReorderError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AccessPointRxReorderDrop {
+    StorageExhausted,
+    FrameTooLong,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct Esp32s31AccessPointRxReorderProgress {
     pub active: bool,
     pub buffered: bool,
     pub duplicate: bool,
-    pub dropped: bool,
+    pub dropped: Option<AccessPointRxReorderDrop>,
     pub dispatched: u8,
     pub hardware_window_reset: Option<Esp32s31AccessPointRxWindowReset>,
 }
@@ -226,7 +232,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 Err(RxReorderStorageError::Exhausted) => {
                     return Ok(Esp32s31AccessPointRxReorderProgress {
                         active: true,
-                        dropped: true,
+                        dropped: Some(AccessPointRxReorderDrop::StorageExhausted),
                         ..Default::default()
                     });
                 }
@@ -237,7 +243,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 Err((RxReorderStorageError::TooLong(_), _reservation)) => {
                     return Ok(Esp32s31AccessPointRxReorderProgress {
                         active: true,
-                        dropped: true,
+                        dropped: Some(AccessPointRxReorderDrop::FrameTooLong),
                         ..Default::default()
                     });
                 }
@@ -263,7 +269,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             active: true,
             buffered: release.buffered,
             duplicate: release.rejected.is_some(),
-            dropped: false,
+            dropped: None,
             dispatched: resync_dispatched,
             hardware_window_reset,
         };

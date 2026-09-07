@@ -1,6 +1,52 @@
 use super::*;
 
 #[test]
+fn ap_scheduler_is_a_runtime_choice_and_can_reuse_the_same_firmware() {
+    for (name, expected) in [
+        (
+            "rr",
+            open_esp_radio_hil_protocol::WifiApScheduler::RrHtResponse24,
+        ),
+        (
+            "deficit",
+            open_esp_radio_hil_protocol::WifiApScheduler::DeficitHtResponse24,
+        ),
+    ] {
+        let cli = Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "diagnostic-ap-mixed-tx-work",
+            "--firmware-from",
+            "sealed-run",
+            "--ap-scheduler",
+            name,
+        ])
+        .unwrap();
+        let CliCommand::Run {
+            ap_scheduler: Some(policy),
+            ..
+        } = cli.command
+        else {
+            panic!("explicit policy expected")
+        };
+        assert_eq!(
+            open_esp_radio_hil_protocol::WifiApScheduler::from(policy),
+            expected
+        );
+    }
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "diagnostic-ap-mixed-tx-work",
+            "--ap-scheduler",
+            "unknown"
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn network_defaults_and_aliases_match_across_firmware_commands() {
     use crate::image::Integration;
 

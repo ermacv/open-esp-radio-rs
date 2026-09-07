@@ -68,12 +68,13 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 // token still retains one of those slots until Core 1 consumes it, while copied
 // reorder/reassembly frames use independent queue backing.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
-// Complete network-owned TX packets wait here before Core0 classifies them by
-// VIF/peer/TID. This software ownership horizon is intentionally independent
-// of the 67-slot DMA-capable execution pool and of the number of associated
-// AP peers. Phase-3 HIL will determine whether 128 is the final admission
-// bound; changing it must never resize the physical SRAM pool.
-pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize = 128;
+// Shared admission for complete network-owned TX packets, both queued and
+// retained by Core0 for scheduling or power-save. Dequeue keeps the credit;
+// releasing the software owner returns it. This bound is independent of the
+// 67-slot DMA execution pool and does not reserve capacity per AP peer.
+// Changing it must never resize the physical SRAM pool.
+pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize =
+    open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AP_SOFTWARE_TX_CAPACITY;
 // One independently polled Xarxa instance owns one general pool and one
 // driver-RX pool. The general pool covers the software TX horizon plus
 // neighbor/control transients. The RX pool covers the driver queue plus

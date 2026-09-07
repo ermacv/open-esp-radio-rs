@@ -25,6 +25,7 @@ use crate::{
 mod clients;
 mod icmp;
 mod multi_client;
+mod progress;
 mod report;
 mod tcp;
 mod udp;
@@ -127,10 +128,20 @@ pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Resul
             output.join(format!("boot-{boot:02}"))
         };
         fs::create_dir_all(&boot_output)?;
-        let cycles = context.with_capture(&boot_output, |capture| {
-            qualify(capture, &config, context, &boot_output)
-        })?;
-        report.boots.push(BootReport { boot, cycles });
+        let mut cycles = Vec::with_capacity(usize::from(config.cycles));
+        let result = context.with_capture(&boot_output, |capture| {
+            qualify(capture, &config, context, &boot_output, &mut cycles)
+        });
+        report.boots.push(BootReport {
+            boot,
+            cycles,
+            error: result.as_ref().err().map(|error| error.to_string()),
+        });
+        fs::write(
+            output.join("access-point-report.json"),
+            serde_json::to_vec_pretty(&report)?,
+        )?;
+        result?;
     }
     fs::write(
         output.join("access-point-report.json"),
@@ -144,7 +155,8 @@ fn qualify(
     config: &Config,
     context: &Context<'_>,
     output: &Path,
-) -> Result<Vec<CycleReport>> {
+    cycles: &mut Vec<CycleReport>,
+) -> Result<()> {
     let capabilities = capture.prepare_station(context, config.timeout)?;
     if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
         return Err("firmware does not advertise AP role control".into());
@@ -159,7 +171,6 @@ fn qualify(
         .into());
     }
 
-    let mut cycles = Vec::with_capacity(usize::from(config.cycles));
     for cycle in 0..config.cycles {
         // Validate all host-owned inputs before releasing the connected STA.
         // An invalid AP request must not strand the target in Idle.
@@ -291,6 +302,27 @@ fn qualify(
         } else {
             Ok(())
         };
+
+        let mut progress = progress::CycleProgress::new(cycle);
+        progress.record("traffic", &data_result);
+        progress.record("primary_client_link", &primary_link_result);
+        progress.record("secondary_client_link", &secondary_link_result);
+        progress.record("independent_air", &independent_air_result);
+        if let Some(result) = &secondary_probe_result {
+            progress.record("secondary_client_probe", result);
+        }
+        // Keep intrusive driver observations absent in the performance image.
+        // A successful stop is still recorded even without those observations.
+        progress.record(
+            "access_point_stop",
+            &stop_result
+                .as_ref()
+                .map(|stopped| config.require_driver_observation.then_some(stopped)),
+        );
+        progress.record("client_restore", &client_restore);
+        progress.record("stop_stack", &stop_stack_result);
+        progress.record("station_restart", &restart_result);
+        progress.save(&air_output)?;
 
         if let Err(error) = &data_result {
             let mut data_error = match stop_result.as_ref() {
@@ -454,7 +486,7 @@ fn qualify(
             access_point,
         });
     }
-    Ok(cycles)
+    Ok(())
 }
 
 fn validate_access_point_observation(
@@ -472,6 +504,19 @@ fn validate_access_point_observation(
                 .saturating_sub(stopped.deauthentications_acknowledged),
         );
     validate_rx_hardware_health(cycle, stopped)?;
+    if let Some(retention) = stopped.tx_retention.filter(|evidence| evidence.has_drops()) {
+        return Err(format!(
+            "AP cycle {cycle}: TX retention dropped admitted frames: {retention:?}"
+        )
+        .into());
+    }
+    if stopped.protected_data_protocol_rejected != 0 {
+        return Err(format!(
+            "AP cycle {cycle}: {} RX protocol rejection(s); first rejection: {:?}",
+            stopped.protected_data_protocol_rejected, stopped.first_rx_protocol_rejection,
+        )
+        .into());
+    }
     if stopped.beacons_transmitted == 0
             || stopped.missed_beacon_intervals != 0
             || stopped.maximum_beacon_lateness_micros >= 102_400
@@ -512,7 +557,6 @@ fn validate_access_point_observation(
             || stopped.rx_mic_failures != 0
             || stopped.rx_quarantined_frames != 0
             || stopped.protected_data_radio_rejected != 0
-            || stopped.protected_data_protocol_rejected != 0
     {
         return Err(
             format!("AP cycle {cycle} lacks peer-visible MAC evidence: {stopped:?}").into(),
@@ -662,6 +706,7 @@ fn qualify_data_plane(
             tx_rate_bps,
             payload_bytes,
         } => qualify_udp(
+            output,
             capture,
             config,
             context,
@@ -841,7 +886,11 @@ fn stop_access_point(
     generation: u32,
     context: &Context<'_>,
 ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
-    let evidence = capture.wait_access_point_stop(capture.request_access_point_stop()?, timeout)?;
+    let handle = capture.request_access_point_stop()?;
+    let evidence = capture.wait_access_point_stop(handle, timeout)?;
+    if context.settings.ap_scheduler != open_esp_radio_hil_protocol::WifiApScheduler::Disabled {
+        capture.require_access_point_airtime(handle)?;
+    }
     if evidence.generation != generation
         || evidence.channel != context.lab.access_point.channel()
         || evidence.bandwidth_mhz != context.lab.access_point.bandwidth_mhz()

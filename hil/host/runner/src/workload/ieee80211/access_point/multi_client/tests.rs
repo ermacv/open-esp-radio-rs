@@ -15,6 +15,7 @@ fn observation(target: Result<MultiClientTarget>) -> MultiClientObservation {
             },
         ],
         host_tx: [None, None],
+        host_requested_bps: [None, None],
         host_rx: [
             Some(vec![Burst {
                 bytes: 1472,
@@ -102,7 +103,7 @@ fn socket_setup_does_not_prime_an_unready_target() {
         error.kind(),
         std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
     ));
-    open_reverse_flow(&socket).unwrap();
+    socket.send(&[0]).unwrap();
     assert_eq!(peer.recv_from(&mut packet).unwrap().0, 1);
 }
 
@@ -124,4 +125,39 @@ fn failed_sender_keeps_successful_receiver_observations() {
             .unwrap();
     assert_eq!(saved["host_errors"][0], "flow 1 sender failed");
     assert_eq!(saved["host_rx"][0][0]["bytes"], 1472);
+}
+
+#[test]
+fn unmet_offer_preserves_delivery_and_reports_the_invalid_load_condition() {
+    let output = tempfile::tempdir().unwrap();
+    let mut observed = observation(Err("terminal timeout".into()));
+    observed.direction = Direction::Bidirectional;
+    observed.host_requested_bps = [Some(1_000_000), Some(1_000_000)];
+    observed.host_tx = [Some(UdpTransmission {
+        source: Ipv4Addr::LOCALHOST,
+        bytes: 750_000,
+        datagrams: 750,
+        elapsed: Duration::from_secs(12),
+        maximum_lateness: Duration::ZERO,
+        maximum_catch_up_datagrams: 1,
+        deadline_resets: 0,
+    }); 2];
+    let error = observed
+        .evaluate(
+            output.path(),
+            &Criteria {
+                minimum_host_offer_percent: Some(95),
+                ..Criteria::default()
+            },
+        )
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("offered load not met"));
+    let saved: serde_json::Value =
+        serde_json::from_slice(&fs::read(output.path().join("delivery-progress.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["host_offer"][0]["status"], "under-offered");
+    assert_eq!(saved["host_offer"][1]["accepted_bps_over_window"], 500_000);
+    assert_eq!(saved["host_rx"][0][0]["bytes"], 1472);
+    assert_eq!(saved["target_error"], "terminal timeout");
 }

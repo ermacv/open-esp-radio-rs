@@ -340,6 +340,18 @@ where
         )?))
     }
 
+    /// Ordinary work, including a single-MPDU fallback from an aggregate.
+    pub fn ordinary_work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.ordinary.work()
+    }
+
+    /// Published aggregate work in the selected arena. Read at the terminal
+    /// edge before preparing another exchange; a successful begin resets it.
+    /// Ordinary MPDU TX/fallback is outside this receipt.
+    pub fn aggregate_work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.ampdu.active().work()
+    }
+
     /// Take one terminal HMAC-visible aggregate exchange status.
     ///
     /// When HT retry policy detaches one missing MPDU into the ordinary owner,

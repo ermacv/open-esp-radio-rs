@@ -8,6 +8,9 @@ use open_esp_radio_esp32s31_wifi_embassy::datapath::{
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
+#[path = "owned_datapath_network/airtime.rs"]
+mod airtime;
+
 fn allocator<const N: usize>() -> PacketBufAllocator {
     let storage = Box::leak(Box::new(PacketPoolStorage::<N>::new()));
     Box::leak(Box::new(PacketPool::new(storage))).allocator()
@@ -93,10 +96,18 @@ fn owned_backlog_and_physical_dma_credits_remain_independent() {
     assert_eq!(network.tx_queue_len(interface), NETWORK_TX_DEPTH);
 
     let first = network.try_receive_tx(interface).expect("first owned TX");
+    assert!(
+        !device.can_transmit(),
+        "selection retains software admission"
+    );
     let physical = network.tx_consumer(interface);
     let first = physical
         .try_promote(first)
         .unwrap_or_else(|_| panic!("one physical SRAM credit is initially free"));
+    assert!(
+        device.can_transmit(),
+        "promotion releases software admission before DMA completion"
+    );
 
     let second = network.try_receive_tx(interface).expect("second owned TX");
     let second = match physical.try_promote(second) {
@@ -202,6 +213,10 @@ fn physical_batch_admission_never_moves_a_partial_prefix() {
     let mut destinations = [None, None];
 
     assert!(!consumer.try_promote_batch(&mut sources, &mut destinations));
+    assert!(
+        !device.can_transmit(),
+        "failed batch retains every software admission"
+    );
     assert!(destinations.iter().all(Option::is_none));
     assert_eq!(sources[0].as_ref().unwrap().as_slice(), &[0x61; 14]);
     assert_eq!(sources[1].as_ref().unwrap().as_slice(), &[0x62; 14]);

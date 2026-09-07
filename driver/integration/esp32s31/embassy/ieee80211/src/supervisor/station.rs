@@ -1415,6 +1415,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         }
     };
     let ProductionStationBoardResources {
+        access_point_airtime,
         interface,
         connected_datapath,
         rx_protocol_runtime,
@@ -1467,6 +1468,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                             frame,
                             ethernet,
                             ProductionStationBoardResources {
+                                access_point_airtime,
                                 interface,
                                 connected_datapath,
                                 rx_protocol_runtime,
@@ -1515,6 +1517,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                         frame,
                         ethernet,
                         ProductionStationBoardResources {
+                            access_point_airtime,
                             interface,
                             connected_datapath,
                             rx_protocol_runtime,
@@ -1558,6 +1561,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                         frame,
                         ethernet,
                         ProductionStationBoardResources {
+                            access_point_airtime,
                             interface,
                             connected_datapath,
                             rx_protocol_runtime,
@@ -1973,6 +1977,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 frame,
                 ethernet,
                 ProductionStationBoardResources {
+                    access_point_airtime,
                     interface,
                     connected_datapath,
                     rx_protocol_runtime,
@@ -2009,6 +2014,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 frame,
                 ethernet,
                 ProductionStationBoardResources {
+                    access_point_airtime,
                     interface,
                     connected_datapath,
                     rx_protocol_runtime,
@@ -2051,6 +2057,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             frame,
             ethernet,
             crate::supervisor::ProductionStationBoardResources {
+                access_point_airtime,
                 interface,
                 connected_datapath,
                 rx_protocol_runtime,

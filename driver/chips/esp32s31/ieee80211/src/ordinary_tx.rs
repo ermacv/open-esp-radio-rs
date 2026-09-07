@@ -445,6 +445,12 @@ where
         self.timer.wait_until(deadline)
     }
 
+    /// Submitted work for the current/last exchange, retained through retries
+    /// and timeout detach; independent of terminal delivery status.
+    pub fn work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.slot.as_ref().get_ref().work()
+    }
+
     pub fn take_last_outcome(&mut self) -> Option<OrdinaryTxOutcome> {
         self.last_outcome.take()
     }
@@ -574,6 +580,7 @@ where
             phase: OrdinaryTxPhase::Published,
             retries: OrdinaryTxRetryReport::default(),
         };
+        self.slot.as_mut().reset_work()?;
         self.publish_attempt(hardware, &mut active)?;
         self.last_outcome = None;
         self.active = Some(active);

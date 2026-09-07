@@ -120,6 +120,11 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
+    /// Submitted ordinary work, read before another exchange starts.
+    pub fn work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.ordinary.work()
+    }
+
     pub fn new(
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
         config: Esp32s31ApTxConfig,

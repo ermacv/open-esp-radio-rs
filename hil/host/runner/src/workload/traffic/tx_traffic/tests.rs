@@ -147,3 +147,60 @@ fn typed_configuration_preserves_workload_bounds() {
         .is_err()
     );
 }
+
+#[test]
+fn short_udp_datagram_does_not_reuse_a_previous_packets_sequence() {
+    let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(10)))
+        .unwrap();
+    let sender = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    sender
+        .send_to(&0_u32.to_be_bytes(), receiver.local_addr().unwrap())
+        .unwrap();
+    sender
+        .send_to(&[0], receiver.local_addr().unwrap())
+        .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let bursts = Receiver::start(
+        &receiver,
+        Ipv4Addr::LOCALHOST,
+        Duration::from_secs(1),
+        output.path(),
+        "short",
+    )
+    .unwrap()
+    .finish(Some(1))
+    .unwrap();
+    assert_eq!(bursts.len(), 1);
+    assert_eq!(bursts[0].datagrams, 1);
+    assert_eq!(bursts[0].duplicates, 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn connected_udp_error_is_not_silently_attributed_to_a_previous_epoch() {
+    let peer = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    socket.connect(peer.local_addr().unwrap()).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_millis(10)))
+        .unwrap();
+    drop(peer);
+    socket.send(&[0]).unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let error = Receiver::start(
+        &socket,
+        Ipv4Addr::LOCALHOST,
+        Duration::from_secs(1),
+        output.path(),
+        "error",
+    )
+    .unwrap()
+    .finish(Some(1))
+    .unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<std::io::Error>().unwrap().kind(),
+        std::io::ErrorKind::ConnectionRefused
+    );
+}

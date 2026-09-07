@@ -2,6 +2,7 @@
 //! The network TX owner retains every lease until commit, rollback or discard.
 
 use super::*;
+use crate::diagnostics::aggregate_tx::NetworkTxRetentionDropReason;
 
 impl<'observer, B, N> Esp32s31AccessPointNetworkTx<'observer, B, N>
 where
@@ -25,17 +26,19 @@ where
             if engine.group_downlink_disposition() == ApDownlinkDisposition::TransmitNow {
                 return Ok(Some((unbound_key, frame)));
             }
-            let Ok(index) = self.buffered_group.push(frame, &mut self.frame_arena) else {
-                // The caller-owned queue is deliberately bounded. Releasing
-                // this excess lease applies backpressure at the producer pool
-                // without claiming a TIM entry for payload we did not retain.
-                return Ok(None);
+            let index = match self.buffered_group.push(frame, &mut self.frame_arena) {
+                Ok(index) => index,
+                Err(frame) => {
+                    // Do not advertise a TIM entry for a dropped owner.
+                    self.discard_retention(NetworkTxRetentionDropReason::GroupPowerSaveFull, frame);
+                    return Ok(None);
+                }
             };
             if let Err(error) = engine.commit_buffered_group() {
-                let _ = self
-                    .buffered_group
-                    .take_at(index, &mut self.frame_arena)
-                    .expect("the just-inserted AP group lease is still owned");
+                self.buffered_group
+                    .take_at(index)
+                    .expect("the just-inserted AP group lease is still owned")
+                    .complete(&mut self.frame_arena);
                 return Err(Esp32s31AccessPointDatapathError::Control(
                     Esp32s31AccessPointControlError::from(error),
                 ));
@@ -55,20 +58,21 @@ where
             return Ok(Some((key, frame)));
         }
 
-        let Ok(index) = self
+        let index = match self
             .buffered_unicast
             .push(identity, frame, &mut self.frame_arena)
-        else {
-            // The bounded queue owns the complete default TX lease frontier.
-            // A custom larger producer cannot force an allocation or an
-            // unbounded retention path; its excess lease is released here.
-            return Ok(None);
+        {
+            Ok(index) => index,
+            Err(frame) => {
+                self.discard_retention(NetworkTxRetentionDropReason::UnicastPowerSaveFull, frame);
+                return Ok(None);
+            }
         };
         if let Err(error) = engine.commit_buffered_unicast(identity) {
-            let _ = self
-                .buffered_unicast
-                .take_at(index, &mut self.frame_arena)
-                .expect("the just-inserted AP power-save lease is still owned");
+            self.buffered_unicast
+                .take_at(index)
+                .expect("the just-inserted AP power-save lease is still owned")
+                .complete(&mut self.frame_arena);
             return Err(Esp32s31AccessPointDatapathError::Control(
                 Esp32s31AccessPointControlError::from(error),
             ));
@@ -76,10 +80,10 @@ where
         Ok(None)
     }
 
-    /// Reserve the oldest retained frame whose peer has returned to Active.
-    /// This mutates no frame bytes and leaves the TIM count unchanged until
-    /// terminal TX resolves the affine release token.
-    pub(in super::super) fn stage_awake_buffered_release<
+    /// Preserve a requested PS-Poll release and refresh awake readiness.
+    /// An ordinary wake edge does not reserve a peer or remove a queue entry;
+    /// its affine release is acquired only after common destination selection.
+    pub(in super::super) fn refresh_power_save_demand<
         P,
         E,
         T,
@@ -112,9 +116,13 @@ where
             if let Some(index) = self.buffered_unicast.oldest_index_for(identity) {
                 let buffered = self
                     .buffered_unicast
-                    .take_at(index, &mut self.frame_arena)
+                    .take_at(index)
                     .expect("the PS-Poll release names one retained lease");
-                self.prepared_buffered_release = Some(BufferedUnicastRelease { buffered, release });
+                self.prepared_buffered_release = Some(BufferedUnicastRelease {
+                    buffered,
+                    release,
+                    cause: BufferedReleaseCause::PsPoll,
+                });
                 return Ok(true);
             }
             control
@@ -125,47 +133,60 @@ where
                 .map_err(Esp32s31AccessPointDatapathError::Control)?;
         }
 
-        // Peer teardown clears the portable counters. Release matching caller
-        // leases at the same observation boundary instead of retaining stale
-        // addresses into a later association generation.
+        self.refresh_awake_demand(control.mac.engine());
+        Ok(self.awake_buffered_peer.is_some())
+    }
+
+    pub(in super::super) fn refresh_awake_demand(&mut self, engine: &Esp32s31ApEngine<'_>) {
+        if self.buffered_unicast.len == 0 {
+            self.awake_buffered_peer = None;
+            return;
+        }
         self.buffered_unicast
             .retain(&mut self.frame_arena, |identity| {
-                control.mac.engine().association_is_current(identity)
+                engine.association_is_current(identity)
             });
-        let Some(identity) = self.buffered_unicast.oldest_releasable_peer(|identity| {
-            control
-                .mac
-                .engine()
-                .association_status(identity)
-                .is_some_and(|status| {
-                    status.power_state == ApPeerPowerState::Active
-                        && !status.buffered_release_in_flight
-                })
-        }) else {
-            return Ok(false);
+        self.awake_buffered_peer =
+            self.buffered_unicast
+                .next_releasable_peer_after(self.last_destination, |identity| {
+                    engine.association_status(identity).is_some_and(|status| {
+                        status.power_state == ApPeerPowerState::Active
+                            && !status.buffered_release_in_flight
+                    })
+                });
+    }
+
+    pub(super) fn select_awake_buffered_release(
+        &mut self,
+        engine: &mut Esp32s31ApEngine<'_>,
+        identity: ApAssociationIdentity,
+    ) -> Result<Option<BufferedUnicastRelease>, Esp32s31AccessPointDatapathError> {
+        if !engine.association_status(identity).is_some_and(|status| {
+            status.power_state == ApPeerPowerState::Active && !status.buffered_release_in_flight
+        }) {
+            return Ok(None);
+        }
+        let Some(index) = self.buffered_unicast.oldest_index_for(identity) else {
+            return Ok(None);
         };
-        let Some(release) = control
-            .mac
-            .engine_mut()
+        let Some(release) = engine
             .begin_buffered_unicast_release(identity)
             .map_err(Esp32s31AccessPointControlError::from)
             .map_err(Esp32s31AccessPointDatapathError::Control)?
         else {
-            return Ok(false);
-        };
-        let Some(index) = self.buffered_unicast.oldest_index_for(identity) else {
-            let _ = control
-                .mac
-                .engine_mut()
-                .complete_buffered_unicast_release(release, false);
-            return Ok(false);
+            return Ok(None);
         };
         let buffered = self
             .buffered_unicast
-            .take_at(index, &mut self.frame_arena)
-            .expect("the selected AP power-save lease remains retained");
-        self.prepared_buffered_release = Some(BufferedUnicastRelease { buffered, release });
-        Ok(true)
+            .take_at(index)
+            .expect("selected PS head retains its arena slot");
+        self.last_destination = Some(identity.address());
+        self.refresh_awake_demand(engine);
+        Ok(Some(BufferedUnicastRelease {
+            buffered,
+            release,
+            cause: BufferedReleaseCause::Awake,
+        }))
     }
 
     pub(super) fn rollback_prepared_buffered_release<
@@ -195,12 +216,29 @@ where
         let Some(prepared) = self.prepared_buffered_release.take() else {
             return Ok(());
         };
-        let result = control
-            .mac
-            .engine_mut()
-            .complete_buffered_unicast_release(prepared.release, false);
-        self.buffered_unicast
-            .restore(prepared.buffered, &mut self.frame_arena);
+        self.finish_buffered_release(control.mac.engine_mut(), prepared, false)
+    }
+
+    pub(super) fn finish_buffered_release(
+        &mut self,
+        engine: &mut Esp32s31ApEngine<'_>,
+        owned: BufferedUnicastRelease,
+        delivered: bool,
+    ) -> Result<(), Esp32s31AccessPointDatapathError> {
+        if !engine.association_is_current(owned.release.identity()) {
+            // A new generation owns its own counters. Only the stale software
+            // owner is released; never apply its completion to the new peer.
+            owned.buffered.complete(&mut self.frame_arena);
+            self.refresh_awake_demand(engine);
+            return Ok(());
+        }
+        let result = engine.complete_buffered_unicast_release(owned.release, delivered);
+        if !delivered || result.is_err() {
+            self.buffered_unicast.restore(owned.buffered);
+        } else {
+            owned.buffered.complete(&mut self.frame_arena);
+        }
+        self.refresh_awake_demand(engine);
         result
             .map(|_| ())
             .map_err(Esp32s31AccessPointControlError::from)
@@ -235,19 +273,8 @@ where
         let Some(active) = self.active_buffered_release.take() else {
             return Ok(());
         };
-        let result = control
-            .mac
-            .engine_mut()
-            .complete_buffered_unicast_release(active.release, delivered);
-        if !delivered || result.is_err() {
-            self.buffered_unicast
-                .restore(active.buffered, &mut self.frame_arena);
-        }
-        result
-            .map(|_| ())
-            .map_err(Esp32s31AccessPointControlError::from)
-            .map_err(Esp32s31AccessPointDatapathError::Control)?;
-        let _ = self.stage_awake_buffered_release(control)?;
+        self.finish_buffered_release(control.mac.engine_mut(), active, delivered)?;
+        let _ = self.refresh_power_save_demand(control)?;
         Ok(())
     }
 
@@ -282,11 +309,34 @@ where
             .prepared_buffered_release
             .take()
             .expect("checked prepared AP power-save release");
+        if !prepared.can_publish(control.mac.engine()) {
+            if let Some(accounting) = self.airtime.as_mut() {
+                accounting
+                    .cancel_selection_for(ApTxFlowKey::associated(prepared.release.identity()))?;
+            }
+            self.finish_buffered_release(control.mac.engine_mut(), prepared, false)?;
+            return Ok(WifiTxProgress::Complete);
+        }
+        if let Some(accounting) = self.airtime.as_mut()
+            && let Err(error) = (|| {
+                if prepared.cause == BufferedReleaseCause::PsPoll {
+                    accounting.cancel_selection()?;
+                }
+                accounting.reserve_active(
+                    control.mac.engine(),
+                    ApTxFlowKey::associated(prepared.release.identity()),
+                )
+            })()
+        {
+            self.prepared_buffered_release = Some(prepared);
+            return Err(error.into());
+        }
         let result = control.start_network_tx_with_more_data(
             hardware,
-            prepared.buffered.frame.as_slice(),
+            prepared.buffered.frame(&self.frame_arena).as_slice(),
             prepared.release.more_data(),
         );
+        let result = self.ordinary_airtime_result(result);
         match result {
             Ok(WifiTxProgress::Pending) => {
                 self.active_buffered_release = Some(prepared);
@@ -300,7 +350,7 @@ where
             Err(error) => {
                 self.prepared_buffered_release = Some(prepared);
                 self.rollback_prepared_buffered_release(control)?;
-                Err(Esp32s31AccessPointDatapathError::Control(error))
+                Err(error)
             }
         }
     }
@@ -376,7 +426,7 @@ where
         };
         let buffered = self
             .buffered_group
-            .take_at(index, &mut self.frame_arena)
+            .take_at(index)
             .expect("the selected AP group lease remains retained");
         self.prepared_group_release = Some(BufferedGroupRelease { buffered, release });
         Ok(true)
@@ -414,8 +464,7 @@ where
             .mac
             .engine_mut()
             .complete_buffered_group_release(prepared.release, false);
-        self.buffered_group
-            .restore(prepared.buffered, &mut self.frame_arena);
+        self.buffered_group.restore(prepared.buffered);
         self.dtim_group_release_remaining = 0;
         result
             .map(|_| ())
@@ -456,10 +505,10 @@ where
             .engine_mut()
             .complete_buffered_group_release(active.release, published);
         if !published || result.is_err() {
-            self.buffered_group
-                .restore(active.buffered, &mut self.frame_arena);
+            self.buffered_group.restore(active.buffered);
             self.dtim_group_release_remaining = 0;
         } else {
+            active.buffered.complete(&mut self.frame_arena);
             self.dtim_group_release_remaining = self
                 .dtim_group_release_remaining
                 .checked_sub(1)
@@ -508,11 +557,26 @@ where
             .prepared_group_release
             .take()
             .expect("checked prepared AP DTIM group release");
+        if let Some(accounting) = self.airtime.as_mut()
+            && let Err(error) = (|| {
+                accounting.cancel_selection()?;
+                accounting.reserve_active(
+                    control.mac.engine(),
+                    ApTxFlowKey::unbound_from_ethernet(
+                        prepared.buffered.frame(&self.frame_arena).as_slice(),
+                    ),
+                )
+            })()
+        {
+            self.prepared_group_release = Some(prepared);
+            return Err(error.into());
+        }
         let result = control.start_network_tx_with_more_data(
             hardware,
-            prepared.buffered.frame.as_slice(),
+            prepared.buffered.frame(&self.frame_arena).as_slice(),
             prepared.release.more_data(),
         );
+        let result = self.ordinary_airtime_result(result);
         match result {
             Ok(WifiTxProgress::Pending) => {
                 self.active_group_release = Some(prepared);
@@ -531,7 +595,7 @@ where
             Err(error) => {
                 self.prepared_group_release = Some(prepared);
                 self.rollback_prepared_group_release(control)?;
-                Err(Esp32s31AccessPointDatapathError::Control(error))
+                Err(error)
             }
         }
     }
@@ -594,7 +658,7 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    fn stage_awake_release(
+    fn refresh_power_save_demand(
         &mut self,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
@@ -607,11 +671,16 @@ where
             TX_BUFFER_SIZE,
         >,
     ) -> Result<bool, Esp32s31AccessPointDatapathError> {
-        self.stage_awake_buffered_release(control)
+        self.refresh_power_save_demand(control)
+    }
+
+    fn refresh_awake_demand(&mut self, engine: &Esp32s31ApEngine<'_>) {
+        self.refresh_awake_demand(engine);
     }
 
     fn has_power_save_release(&self) -> bool {
         self.prepared_buffered_release.is_some()
+            || self.awake_buffered_peer.is_some()
             || self.active_buffered_release.is_some()
             || self.prepared_group_release.is_some()
             || self.active_group_release.is_some()

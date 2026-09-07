@@ -59,6 +59,14 @@ impl<B, const FRAME_CAPACITY: usize> IndexedLeaseArena<B, FRAME_CAPACITY> {
         Ok(index)
     }
 
+    pub(crate) const fn remaining_capacity(&self) -> usize {
+        if self.initialized {
+            self.free_len as usize
+        } else {
+            FRAME_CAPACITY
+        }
+    }
+
     pub(crate) fn take(&mut self, index: u8) -> B {
         let frame = self.frames[usize::from(index)]
             .take()
@@ -66,6 +74,22 @@ impl<B, const FRAME_CAPACITY: usize> IndexedLeaseArena<B, FRAME_CAPACITY> {
         self.free[usize::from(self.free_len)] = index;
         self.free_len += 1;
         frame
+    }
+
+    pub(crate) fn get(&self, index: u8) -> &B {
+        self.frames[usize::from(index)]
+            .as_ref()
+            .expect("queue or release index names one retained lease")
+    }
+
+    /// Release all software owners at an epoch boundary without moving the
+    /// backing array through the caller's stack. No queue indices may survive.
+    pub(crate) fn clear(&mut self) {
+        for frame in &mut self.frames {
+            drop(frame.take());
+        }
+        self.initialized = false;
+        self.free_len = 0;
     }
 }
 
@@ -196,6 +220,14 @@ where
     pub(crate) fn pop_key(&mut self, key: K) -> Option<u8> {
         let flow = self.flow_index(key)?;
         self.pop_flow_index(flow)
+    }
+
+    /// Inspect retained heads without advancing the scheduler or taking slots.
+    pub(crate) fn heads(&self) -> impl Iterator<Item = (K, u8)> + '_ {
+        self.flows
+            .iter()
+            .flatten()
+            .map(|flow| (flow.key, flow.head))
     }
 
     fn next_active_flow(&self) -> Option<usize> {

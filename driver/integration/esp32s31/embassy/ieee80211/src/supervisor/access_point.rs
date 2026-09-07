@@ -64,7 +64,13 @@ type ProductionAccessPointRxReorderStorage =
         },
     >;
 
+type ProductionAccessPointTxStorage =
+    open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage<
+        RadioNetworkTxBacking,
+    >;
+
 pub(super) struct ProductionAccessPointParked {
+    tx_storage: &'static mut ProductionAccessPointTxStorage,
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_epoch: &'static mut TxStorage,
     station: ProductionStationRoleResources,
@@ -152,6 +158,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
 
 /// Static resources reserved for one exclusive AP epoch.
 pub(super) struct ProductionAccessPointResources {
+    pub(super) tx_storage: &'static mut ProductionAccessPointTxStorage,
     pub(super) address: [u8; 6],
     pub(super) beacon: &'static mut [u8; open_esp_radio_ieee80211::beacon::WPA2_BEACON_CAPACITY],
     pub(super) rx_frame: &'static mut [u8],
@@ -347,6 +354,7 @@ impl ProductionWifiEpochRunner {
         let (ssid, security, channel, client_limit, inactive_timeout, beacon_interval, dtim_period) =
             request.into_parts();
         let ProductionAccessPointResources {
+            tx_storage,
             address,
             beacon,
             rx_frame,
@@ -402,6 +410,7 @@ impl ProductionWifiEpochRunner {
                         _transmit: transmit,
                         _engine: engine,
                         _parked: ProductionAccessPointParked {
+                            tx_storage,
                             dma,
                             tx_epoch,
                             station: ProductionStationRoleResources {
@@ -475,6 +484,7 @@ impl ProductionWifiEpochRunner {
             service,
             aggregate,
             parked: ProductionAccessPointParked {
+                tx_storage,
                 dma,
                 tx_epoch,
                 station: ProductionStationRoleResources {
@@ -521,6 +531,7 @@ impl ProductionWifiEpochRunner {
             }
         };
         let ProductionAccessPointParked {
+            tx_storage,
             dma,
             tx_epoch,
             mut station,
@@ -539,6 +550,7 @@ impl ProductionWifiEpochRunner {
                         _stopped: stopped,
                         _aggregate: aggregate,
                         _parked: ProductionAccessPointParked {
+                            tx_storage,
                             dma,
                             tx_epoch,
                             station,
@@ -576,6 +588,7 @@ impl ProductionWifiEpochRunner {
                     _observation_storage: stopped.observation_storage,
                     _engine: stopped.engine,
                     _parked: ProductionAccessPointParked {
+                        tx_storage,
                         dma,
                         tx_epoch,
                         station,
@@ -595,6 +608,7 @@ impl ProductionWifiEpochRunner {
         let address = service.address();
         let peer_storage = service.into_peer_storage();
         let access_point = ProductionAccessPointResources {
+            tx_storage,
             address,
             beacon: beacon_storage,
             rx_frame: stopped.rx_frame,
@@ -720,6 +734,11 @@ impl ProductionWifiEpochRunner {
                 return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
             }
         };
+        // Only a successfully prepared fresh role reaches this edge. A failed
+        // detach quarantines its board resources and cannot reset this ledger.
+        if let Some(airtime) = task.parked.station.board.access_point_airtime.as_mut() {
+            airtime.storage = open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage::new(airtime.configuration.quantum_micros).with_observer(airtime.configuration.observer);
+        }
         diagnostics_event!("open-radio: AP supervisor publishing start completion");
         endpoint
             .respond(EmbassyWifiSupervisorResponse::AccessPoint(Ok(
@@ -749,6 +768,8 @@ impl ProductionWifiEpochRunner {
                     &*platform,
                     network,
                     &mut task.aggregate,
+                    &mut *task.parked.tx_storage,
+                    task.parked.station.board.access_point_airtime.as_mut().map(|airtime| (&mut airtime.storage, airtime.configuration)),
                     #[cfg(feature = "diagnostics")]
                     task.parked
                         .station
@@ -859,11 +880,16 @@ impl ProductionWifiEpochRunner {
                 rx_delta.ack_interrupt,
                 rx_delta.rts_interrupt,
             );
-            diagnostics_event!(
-                "open-radio: access-point RX policy before={:?} after={:?}",
-                rx_policy_before,
-                rx_policy_after,
-            );
+            for (edge, policy) in [("before", rx_policy_before), ("after", rx_policy_after)] {
+                diagnostics_event!(
+                    "open-radio: access-point RX policy edge={} bssid={:02x?} address_check={} soft_ap={} enabled={}",
+                    edge,
+                    policy.bssid,
+                    policy.bssid_address_check_enabled,
+                    policy.interface_is_soft_ap,
+                    policy.interface_rx_policy_enabled,
+                );
+            }
             diagnostics_event!(
                 "open-radio: access-point RX match ax_bssid1={} ax_bssid0={} color_valid={} ampdu_auto_ack_valid={}",
                 rx_match_after.ax_match_bssid1,
@@ -872,7 +898,7 @@ impl ProductionWifiEpochRunner {
                 rx_match_after.rx_ampdu_auto_ack_valid,
             );
             diagnostics_event!(
-                "open-radio: access-point RX decode delta brx_agc={} brx={} nrx={} nrx_abort={} nrx_agc_exit={} nrx_baseband_off={} nrx_fdm_watchdog={} nrx_restart={} nrx_service={} nrx_tx_over={} nrx_unsupported={} nrx_he_format={} nrx_ht_sig={} nrx_he_unsupported={} nrx_he_sig_a_crc={} hang_rx={} hang_tx={} rx_tx_hang={} rx_tx_panic={}",
+                "open-radio: access-point RX decode delta brx_agc={} brx={} nrx={} nrx_abort={} nrx_agc_exit={} nrx_baseband_off={} nrx_fdm_watchdog={} nrx_restart={}",
                 rx_decode_delta.brx_agc,
                 rx_decode_delta.brx,
                 rx_decode_delta.nrx,
@@ -881,6 +907,9 @@ impl ProductionWifiEpochRunner {
                 rx_decode_delta.nrx_baseband_off,
                 rx_decode_delta.nrx_fdm_watchdog,
                 rx_decode_delta.nrx_restart,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX decode format nrx_service={} nrx_tx_over={} nrx_unsupported={} nrx_he_format={} nrx_ht_sig={} nrx_he_unsupported={} nrx_he_sig_a_crc={}",
                 rx_decode_delta.nrx_service,
                 rx_decode_delta.nrx_tx_over,
                 rx_decode_delta.nrx_unsupported,
@@ -888,6 +917,9 @@ impl ProductionWifiEpochRunner {
                 rx_decode_delta.nrx_ht_sig,
                 rx_decode_delta.nrx_he_unsupported,
                 rx_decode_delta.nrx_he_sig_a_crc,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX hang delta rx={} tx={} rx_tx_hang={} rx_tx_panic={}",
                 rx_hang_delta.rx,
                 rx_hang_delta.tx,
                 rx_hang_delta.rx_tx_hang,
@@ -943,18 +975,30 @@ impl ProductionWifiEpochRunner {
                 rx_dma.next_descriptor_low,
                 rx_dma.last_descriptor_low,
             );
-            diagnostics_event!(
-                "open-radio: access-point RX descriptors head={:?} second={:?} tail={:?}",
-                rx_head,
-                rx_second,
-                rx_tail,
-            );
-            diagnostics_event!(
-                "open-radio: access-point RX hardware descriptors base={:?} next={:?} last={:?}",
-                rx_base,
-                rx_next,
-                rx_last,
-            );
+            for (position, descriptor) in [
+                ("head", rx_head),
+                ("second", rx_second),
+                ("tail", rx_tail),
+                ("hardware-base", rx_base),
+                ("hardware-next", rx_next),
+                ("hardware-last", rx_last),
+            ] {
+                match descriptor {
+                    Some(descriptor) => diagnostics_event!(
+                        "open-radio: access-point RX descriptor position={} index={} address={:#010x} word0={:#010x} buffer={:#010x} next={:#010x}",
+                        position,
+                        descriptor.index,
+                        descriptor.address,
+                        descriptor.word0,
+                        descriptor.buffer_address,
+                        descriptor.next_address,
+                    ),
+                    None => diagnostics_event!(
+                        "open-radio: access-point RX descriptor position={} unavailable",
+                        position
+                    ),
+                }
+            }
             diagnostics_event!(
                 "open-radio: access-point RX hardware delta mpdu={} data={} other_unicast={} fcs={} abort={} abort_fcs_pass={} power_drop={} he_sig_b={} same_bm={} signal_field={} end={}",
                 rx_delta.mpdu_count,
@@ -979,10 +1023,29 @@ impl ProductionWifiEpochRunner {
         };
         #[cfg(feature = "diagnostics")]
         if let Ok(report) = &result {
-            diagnostics_event!(
-                "open-radio: access-point RX scheduler stop {:?}",
-                report.rx_scheduler,
-            );
+            if let Some(scheduler) = report.rx_scheduler {
+                diagnostics_event!(
+                    "open-radio: access-point RX scheduler stop recycle_start={} accepted_tail={} observed={:?}",
+                    scheduler.recycle_start,
+                    scheduler.accepted_tail,
+                    scheduler.observed_mask,
+                );
+                let topology = scheduler.topology;
+                diagnostics_event!(
+                    "open-radio: access-point RX topology stop base={:#010x} start={} head={:#010x} head_next={:#010x} tail_index={} tail={:#010x} visited={} terminal={} valid={}",
+                    topology.descriptor_base,
+                    topology.start_index,
+                    topology.head_address,
+                    topology.head_next_address,
+                    topology.tail_index,
+                    topology.tail_address,
+                    topology.visited_descriptors,
+                    topology.terminal_descriptors,
+                    topology.valid,
+                );
+            } else {
+                diagnostics_event!("open-radio: access-point RX scheduler stop unavailable");
+            }
         }
         if let Err(_error) = result {
             #[cfg(not(feature = "diagnostics"))]

@@ -40,6 +40,17 @@ impl PendingApBufferedReleases {
         Some(release)
     }
 
+    fn pop_current(&mut self, engine: &Esp32s31ApEngine<'_>) -> Option<ApBufferedUnicastRelease> {
+        while let Some(release) = self.pop() {
+            if engine.association_is_current(release.identity()) {
+                return Some(release);
+            }
+            // Association reset already retired the old reservation. Its
+            // caller-owned packet is reclaimed by the radio's generation fence.
+        }
+        None
+    }
+
     const fn is_empty(&self) -> bool {
         self.len == 0
     }

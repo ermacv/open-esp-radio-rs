@@ -8,7 +8,15 @@
 mod framing;
 mod memory_benchmark;
 mod message;
+mod wifi_airtime;
+mod wifi_rx;
+mod wifi_tx;
+pub use wifi_airtime::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
+pub use wifi_rx::{WifiRxRejection, WifiRxRejectionReason};
+pub use wifi_tx::WifiTxRetentionEvidence;
 mod stream_pattern;
+mod udp_probe;
+pub use udp_probe::UdpProbe;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
@@ -40,13 +48,13 @@ pub use message::{
     TimebaseProbeRequest, Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
     WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
     WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
-    WifiAccessPointRequestError, WifiAccessPointSecurity, WifiChannelWidth, WifiDataPlanePlacement,
-    WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorFrameChunkError,
-    WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiMonitorRequest,
-    WifiNetworkInterface, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
-    WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
+    WifiAccessPointRequestError, WifiAccessPointSecurity, WifiApScheduler, WifiChannelWidth,
+    WifiDataPlanePlacement, WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
+    WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
+    WifiMonitorRequest, WifiNetworkInterface, WifiRole, WifiRoleFailureEvidence,
+    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxChecksumPolicy,
+    WifiRxContinuationPolicy, WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
     WifiStationAccessPointStopEvidence, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody,
     WireKind,
 };

@@ -96,6 +96,8 @@ where
             AMPDU_SLOTS,
             AMPDU_BUFFER_SIZE,
         >,
+        tx_storage: &mut network_tx::AccessPointTxStorage<NR::TxFrame>,
+        airtime: Option<(&mut network_tx::AccessPointAirtimeStorage, network_tx::AccessPointAirtimeConfiguration)>,
         #[cfg(any(feature = "diagnostics", test))] aggregate_tx_observer: Option<
             &dyn AggregateTxObserver,
         >,
@@ -181,10 +183,24 @@ where
                 operational: false,
             });
         }
-        #[cfg(any(feature = "diagnostics", test))]
-        let network_tx = Esp32s31AccessPointNetworkTx::new(aggregate_tx_observer);
-        #[cfg(not(any(feature = "diagnostics", test)))]
-        let network_tx = Esp32s31AccessPointNetworkTx::new();
+        let network_tx = match airtime {
+            Some((storage, config)) => match config.selection {
+                network_tx::AccessPointAirtimeSelection::RoundRobin => Esp32s31AccessPointNetworkTx::new_with_airtime_admission(
+                    tx_storage,
+                    #[cfg(any(feature = "diagnostics", test))] aggregate_tx_observer,
+                    storage, config.minimum_exchange_micros, config.cost, config.block_ack_timing,
+                ),
+                network_tx::AccessPointAirtimeSelection::Deficit => Esp32s31AccessPointNetworkTx::new_with_airtime_scheduling(
+                    tx_storage,
+                    #[cfg(any(feature = "diagnostics", test))] aggregate_tx_observer,
+                    storage, config.minimum_exchange_micros, config.cost, config.block_ack_timing,
+                ),
+            },
+            None => Esp32s31AccessPointNetworkTx::new(
+                tx_storage,
+                #[cfg(any(feature = "diagnostics", test))] aggregate_tx_observer,
+            ),
+        };
         let services = Esp32s31AccessPointDatapathServices {
             control: self,
             hardware,
@@ -225,6 +241,7 @@ where
             Esp32s31AccessPointDatapathError::Network(error) => {
                 Esp32s31AccessPointRunError::Network(error)
             }
+            Esp32s31AccessPointDatapathError::Airtime(error) => Esp32s31AccessPointRunError::Airtime(error),
             Esp32s31AccessPointDatapathError::Aggregate(error) => {
                 Esp32s31AccessPointRunError::Aggregate(error)
             }

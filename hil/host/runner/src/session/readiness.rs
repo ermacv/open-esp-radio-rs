@@ -15,6 +15,54 @@ pub(super) fn session_ready_covers(
     direction_covers && requirements_met
 }
 
+/// Wait for both typed declarations from the current boot. The cursor is
+/// captured before inspecting state, so an event between inspection and sleep
+/// cannot be lost. A timeout is failure, never permission to use an IP hint.
+pub(super) fn wait_for_services(
+    capture: &SerialCapture,
+    interface: WifiNetworkInterface,
+    services: &[(Transport, Direction, u16)],
+    timeout: Duration,
+) -> Result<Ipv4Addr> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let cursor = capture.protocol_event_count();
+        capture.check_link()?;
+        if let Some(address) = capture.observed_protocol_ipv4(interface)
+            && services.iter().all(|&(transport, direction, port)| {
+                capture.observed_service(interface, transport, direction, port)
+            })
+        {
+            return Ok(address);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "device did not publish {interface:?} network and service readiness: {services:?}"
+            )
+            .into());
+        }
+        capture.wait_for_protocol_after(cursor, remaining, |_| true)?;
+    }
+}
+
+/// Prime only an event-confirmed bound UDP socket, before measured Start.
+pub(crate) fn prepare_udp_reverse_flow(
+    capture: &SerialCapture,
+    interface: WifiNetworkInterface,
+    socket: &UdpSocket,
+    timeout: Duration,
+) -> Result<()> {
+    wait_for_services(
+        capture,
+        interface,
+        &[(Transport::Udp, Direction::Tx, socket.peer_addr()?.port())],
+        timeout,
+    )?;
+    crate::transport::udp::confirm_reverse_flow(socket, timeout)?;
+    Ok(())
+}
+
 /// Wait for a runtime-configured TCP receive service and its current IPv4
 /// address. Unlike UDP, readiness does not inject a probe connection: the
 /// target begins listening only after the session `Start` transition, and the
@@ -39,26 +87,16 @@ pub(crate) fn await_tcp_ready(
     if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
         return Err("TCP RX requires runtime sessions and structured evidence".into());
     }
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        capture.check_link()?;
-        let address = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
-        if capture.observed_service(
-            WifiNetworkInterface::Station,
-            Transport::Tcp,
-            direction,
-            port,
-        ) && let Some(address) = address
-        {
-            return Ok(TcpReady { address });
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    Err(format!(
-        "device {address_hint}:{port} did not publish TCP {direction:?} readiness within {} seconds",
-        timeout.as_secs(),
+    let address = wait_for_services(
+        capture,
+        WifiNetworkInterface::Station,
+        &[(Transport::Tcp, direction, port)],
+        timeout,
     )
-    .into())
+    .map_err(|error| {
+        crate::error::context(format!("TCP readiness for {address_hint}:{port}"), error)
+    })?;
+    Ok(TcpReady { address })
 }
 
 /// Provisions the station and returns only the typed `NetworkReady` address.
@@ -68,19 +106,7 @@ pub(crate) fn await_network_ready(
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
     capture.prepare_station(context, timeout)?;
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        capture.check_link()?;
-        if let Some(address) = capture.observed_protocol_ipv4(WifiNetworkInterface::Station) {
-            return Ok(address);
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    Err(format!(
-        "device did not publish typed network readiness within {} seconds",
-        timeout.as_secs()
-    )
-    .into())
+    wait_for_services(capture, WifiNetworkInterface::Station, &[], timeout)
 }
 /// Wait until the target owns its IPv4 address and UDP RX service.
 ///
@@ -153,6 +179,7 @@ pub(crate) fn probe_udp_rx_ready_via(
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
+        let event_start = capture.protocol_event_count();
         capture.check_link()?;
         if let Some(discovered) = capture.observed_protocol_ipv4(network_interface)
             && discovered != address
@@ -170,7 +197,11 @@ pub(crate) fn probe_udp_rx_ready_via(
             || !tx_service_ready
             || capture.observed_protocol_ipv4(network_interface).is_none()
         {
-            thread::sleep(Duration::from_millis(20));
+            capture.wait_for_protocol_after(
+                event_start,
+                deadline.saturating_duration_since(Instant::now()),
+                |_| true,
+            )?;
             continue;
         }
 
@@ -181,16 +212,21 @@ pub(crate) fn probe_udp_rx_ready_via(
         packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
         socket.send(&packet)?;
         if capture
-            .wait_for_protocol_after(event_start, RX_PROBE_RESPONSE_TIMEOUT, |message| {
-                message.boot_id == boot_id
-                    && matches!(
-                        message.body,
-                        Event::ServiceReady(service)
-                            if service.transport == Transport::Udp
-                                && service.direction == Direction::Rx
-                                && service.local_port == port
-                    )
-            })?
+            .wait_for_protocol_after(
+                event_start,
+                RX_PROBE_RESPONSE_TIMEOUT.min(deadline.saturating_duration_since(Instant::now())),
+                |message| {
+                    message.boot_id == boot_id
+                        && matches!(
+                            message.body,
+                            Event::ServiceReady(service)
+                                if service.network_interface == network_interface
+                                    && service.transport == Transport::Udp
+                                    && service.direction == Direction::Rx
+                                    && service.local_port == port
+                        )
+                },
+            )?
             .is_some()
         {
             return Ok(UdpRxReady { address });
@@ -219,27 +255,14 @@ pub(crate) fn await_udp_tx_ready(
             "qualification firmware requires runtime sessions and structured evidence".into(),
         );
     }
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        capture.check_link()?;
-        if capture.observed_udp_service(WifiNetworkInterface::Station, Direction::Tx, 4_324) {
-            let discovery_deadline = Instant::now() + DHCP_DISCOVERY_GRACE;
-            while Instant::now() < discovery_deadline {
-                if let Some(address) = capture.observed_protocol_ipv4(WifiNetworkInterface::Station)
-                {
-                    return Ok(UdpTxReady { address });
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-            return Ok(UdpTxReady {
-                address: address_hint,
-            });
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    Err(format!(
-        "device did not publish typed UDP TX readiness within {} seconds",
-        timeout.as_secs(),
+    let address = wait_for_services(
+        capture,
+        WifiNetworkInterface::Station,
+        &[(Transport::Udp, Direction::Tx, 4_324)],
+        timeout,
     )
-    .into())
+    .map_err(|error| {
+        crate::error::context(format!("UDP TX readiness for {address_hint}"), error)
+    })?;
+    Ok(UdpTxReady { address })
 }

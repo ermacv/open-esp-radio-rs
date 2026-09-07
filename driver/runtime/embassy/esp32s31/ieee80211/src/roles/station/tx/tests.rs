@@ -1714,8 +1714,15 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         ),
         Ok(WifiTxProgress::Complete)
     );
+    let work = tx.aggregate_work();
+    let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(work.publications, 1);
+    assert_eq!(work.mpdus, 2);
+    assert!(work.psdu_bytes > 0);
+    assert!(work.nominal_data_micros > 0);
+    assert_eq!(work.unestimated_publications, 0);
     assert_eq!(
-        tx.take_last_aggregate_status(),
+        Some(status),
         Some(MacAmpduTxStatus {
             result: MacAmpduTxResult::Delivered,
             original_subframes: 2,
@@ -1790,8 +1797,15 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         ),
         Ok(WifiTxProgress::Complete)
     );
+    let work = tx.aggregate_work();
+    let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(work.publications, 2);
+    assert_eq!(work.mpdus, 5);
+    assert!(work.psdu_bytes > 0);
+    assert!(work.nominal_data_micros > 0);
+    assert_eq!(work.unestimated_publications, 0);
     assert_eq!(
-        tx.take_last_aggregate_status(),
+        Some(status),
         Some(MacAmpduTxStatus {
             result: MacAmpduTxResult::Delivered,
             original_subframes: 3,

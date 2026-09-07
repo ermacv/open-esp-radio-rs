@@ -219,6 +219,7 @@ pub(super) fn publish_access_point_observation(
         rx_reorder_gap_timeouts: control.rx_reorder_gap_timeouts,
         protected_data_radio_rejected: control.protected_data_radio_rejected,
         protected_data_protocol_rejected: control.protected_data_protocol_rejected,
+        first_rx_protocol_rejection: control.first_rx_protocol_rejection,
         security_mode_mismatches: control.security_mode_mismatches,
     });
 }

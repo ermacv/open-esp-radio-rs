@@ -78,6 +78,11 @@ where
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         if self.aggregate_phase.is_none() {
+            #[cfg(any(feature = "diagnostics", test))]
+            let data = control.mac.pending_publication_kind()
+                == Some(
+                    open_esp_radio_esp32s31_wifi_ap::mac::Esp32s31ApPendingPublicationKind::Data,
+                );
             let progress = match control.service_tx(hardware, wake) {
                 Ok(progress) => progress,
                 Err(error) => {
@@ -91,6 +96,17 @@ where
                 }
             };
             if progress == WifiTxProgress::Complete {
+                let airtime_result = if let Some(accounting) = self.airtime.as_mut() {
+                    accounting.complete_active(control.mac.work())
+                } else {
+                    Ok(())
+                };
+                #[cfg(any(feature = "diagnostics", test))]
+                if data && let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::OrdinaryWorkCompleted {
+                        work: control.mac.work(),
+                    });
+                }
                 let succeeded = control.take_last_terminal_tx_succeeded().unwrap_or(false);
                 if self.active_group_release.is_some() {
                     // A group MPDU has no ACK. `succeeded` is only terminal
@@ -103,8 +119,9 @@ where
                 }
                 let _ = self.stage_dtim_group_release(control)?;
                 if self.prepared_group_release.is_none() {
-                    let _ = self.stage_awake_buffered_release(control)?;
+                    let _ = self.refresh_power_save_demand(control)?;
                 }
+                airtime_result?;
             }
             return Ok(progress);
         }
@@ -142,6 +159,12 @@ where
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     observer.observe(AggregateTxObservation::HardwareTimeout);
+                    observer.observe(AggregateTxObservation::WorkCompleted {
+                        work: aggregate.active_mut().work(),
+                    });
+                }
+                if let Some(accounting) = self.airtime.as_mut() {
+                    accounting.complete_active(aggregate.active_mut().work())?;
                 }
                 return Ok(WifiTxProgress::Complete);
             }
@@ -170,6 +193,12 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
+                observer.observe(AggregateTxObservation::WorkCompleted {
+                    work: aggregate.active_mut().work(),
+                });
+            }
+            if let Some(accounting) = self.airtime.as_mut() {
+                accounting.complete_active(aggregate.active_mut().work())?;
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -233,7 +262,14 @@ where
         match aggregate_progress {
             Esp32s31ApAmpduProgress::CompletionReady(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
-                self.observe_completion_details(completion, false);
+                {
+                    self.observe_completion_details(completion, false);
+                    if let Some(observer) = self.observer {
+                        observer.observe(AggregateTxObservation::WorkCompleted {
+                            work: aggregate.active_mut().work(),
+                        });
+                    }
+                }
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
                 #[cfg(any(feature = "diagnostics", test))]
@@ -242,6 +278,7 @@ where
                     .active_mut()
                     .release_completed()
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                self.aggregate_phase = None;
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     let finished = observer.now_micros();
@@ -254,10 +291,12 @@ where
                     debug_assert!(self.terminal_acknowledged.is_none());
                     self.terminal_acknowledged = Some(completion.acknowledged);
                 }
-                self.aggregate_phase = None;
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.exchange_started_micros = None;
+                }
+                if let Some(accounting) = self.airtime.as_mut() {
+                    accounting.complete_active(aggregate.active_mut().work())?;
                 }
                 Ok(WifiTxProgress::Complete)
             }

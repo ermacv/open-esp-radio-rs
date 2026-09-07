@@ -4,6 +4,10 @@
 //! ownership. The production adapter publishes value-only events; this module
 //! selects the histogram, atomics and interval snapshot used by qualification.
 
+mod work;
+pub use work::AggregateTxWorkSnapshot;
+use work::WorkCounters;
+
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
@@ -326,6 +330,7 @@ impl PreparedTxSchedulerTimingCounters {
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    pub tx_retention: crate::tx_retention::TxRetentionCounters,
     #[cfg(feature = "tx-wait-probe")]
     pub wait_trace: crate::tx_wait::Trace,
     now_micros: fn() -> u64,
@@ -377,6 +382,8 @@ pub struct AggregateTxCounters {
     completion_core_lifetime_max_micros: AtomicU32,
     backing_release_micros: AtomicU32,
     backing_release_lifetime_max_micros: AtomicU32,
+    work: WorkCounters,
+    ordinary_work: WorkCounters,
     exchange_micros: AtomicU32,
     exchange_lifetime_max_micros: AtomicU32,
     single_publication_exchanges: AtomicU32,
@@ -424,6 +431,7 @@ impl AggregateTxCounters {
 
     pub const fn with_clock(now_micros: fn() -> u64) -> Self {
         Self {
+            tx_retention: crate::tx_retention::TxRetentionCounters::new(),
             #[cfg(feature = "tx-wait-probe")]
             wait_trace: crate::tx_wait::Trace::new(),
             now_micros,
@@ -475,6 +483,8 @@ impl AggregateTxCounters {
             completion_core_lifetime_max_micros: AtomicU32::new(0),
             backing_release_micros: AtomicU32::new(0),
             backing_release_lifetime_max_micros: AtomicU32::new(0),
+            work: WorkCounters::new(),
+            ordinary_work: WorkCounters::new(),
             exchange_micros: AtomicU32::new(0),
             exchange_lifetime_max_micros: AtomicU32::new(0),
             single_publication_exchanges: AtomicU32::new(0),
@@ -620,6 +630,8 @@ impl AggregateTxCounters {
             backing_release_lifetime_max_micros: self
                 .backing_release_lifetime_max_micros
                 .load(Ordering::Relaxed),
+            work: self.work.snapshot(),
+            ordinary_work: self.ordinary_work.snapshot(),
             exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
             single_publication_exchanges: self.single_publication_exchanges.load(Ordering::Relaxed),
@@ -955,6 +967,10 @@ impl AggregateTxObserver for AggregateTxCounters {
 
     fn observe(&self, observation: AggregateTxObservation) {
         match observation {
+            AggregateTxObservation::WorkCompleted { work } => self.work.record(work),
+            AggregateTxObservation::OrdinaryWorkCompleted { work } => {
+                self.ordinary_work.record(work)
+            }
             AggregateTxObservation::BlockAckOperational { tid, operational } => {
                 self.set_block_ack_operational(tid, operational);
             }
@@ -1071,6 +1087,13 @@ impl AggregateTxObserver for AggregateTxCounters {
                 self.record_exchange_time(micros, publications);
             }
         }
+    }
+
+    fn observe_access_point_retention_drop(
+        &self,
+        reason: open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
+    ) {
+        self.tx_retention.observe(reason);
     }
 
     fn observe_access_point_network_claim(&self, ethernet: &[u8]) {
@@ -1247,6 +1270,8 @@ pub struct AggregateTxCounterSnapshot {
     pub backing_release_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub backing_release_lifetime_max_micros: u32,
+    pub work: AggregateTxWorkSnapshot,
+    pub ordinary_work: AggregateTxWorkSnapshot,
     pub exchange_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub exchange_lifetime_max_micros: u32,
@@ -1393,6 +1418,8 @@ impl AggregateTxCounterSnapshot {
                 .backing_release_micros
                 .wrapping_sub(earlier.backing_release_micros),
             backing_release_lifetime_max_micros: self.backing_release_lifetime_max_micros,
+            work: self.work.delta_since(earlier.work),
+            ordinary_work: self.ordinary_work.delta_since(earlier.ordinary_work),
             exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
             single_publication_exchanges: self

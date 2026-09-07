@@ -19,6 +19,9 @@ upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "open-esp-radio-esp
 compat-network = ["dep:embassy-net-compat", "open-esp-radio-esp32s31-embassy-wifi/compat-network"]
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "open-esp-radio-esp32s31-embassy-wifi/owned-network"]
 open-radio-hil = [
+    "dep:open-esp-radio-wifi-softmac",
+    "dep:open-esp-radio-esp32s31-wifi-mac",
+    "dep:open-esp-radio-esp32s31-wifi-embassy",
     "oer-esp32s31-runtime/multicore",
     "dep:embassy-futures",
     "dep:embassy-sync",
@@ -114,6 +117,9 @@ ieee802154-ed-event-probe = [
 ]
 
 [dependencies]
+open-esp-radio-wifi-softmac = { workspace = true, optional = true }
+open-esp-radio-esp32s31-wifi-mac = { workspace = true, optional = true }
+open-esp-radio-esp32s31-wifi-embassy = { workspace = true, optional = true }
 xarxa-owned = { workspace = true, optional = true }
 xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true

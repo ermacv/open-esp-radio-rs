@@ -8,7 +8,13 @@
 //! assemble PAC, DMA, ISR or role transactions. The [`resources`] profile is also
 //! available on the host for product resource and ownership validation.
 
+mod network_diagnostics;
 pub mod resources;
+pub use network_diagnostics::NetworkInterface;
+#[cfg(target_arch = "riscv32")]
+pub use open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::{
+    AccessPointAirtimeConfiguration, AccessPointAirtimeSelection,
+};
 
 #[cfg(any(
     all(feature = "owned-network", feature = "compat-network"),
@@ -209,14 +215,14 @@ pub use radio_resources::Esp32s31WifiNetworkDevice;
 #[cfg(not(feature = "upstream-network"))]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::Esp32s31WifiStackResources;
+#[cfg(all(feature = "compat-network", target_arch = "riscv32"))]
+pub use radio_resources::compat_resources;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
-#[cfg(all(feature = "compat-network", target_arch = "riscv32"))]
-pub use radio_resources::station_compat_resources;
 #[cfg(feature = "upstream-network")]
 #[cfg(target_arch = "riscv32")]
-pub use radio_resources::station_rx_pool_drops;
+pub use radio_resources::rx_pool_drops;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::{
@@ -296,6 +302,7 @@ impl Esp32s31ConnectedDatapathPollObserver {
 /// responsibility; credentials are supplied separately to `start_station`.
 #[cfg(target_arch = "riscv32")]
 pub struct Esp32s31RadioConfig {
+    pub(crate) access_point_airtime: Option<open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration>,
     pub(crate) station_mac: open_esp_radio::WifiMacAddress,
     pub(crate) access_point_mac: open_esp_radio::WifiMacAddress,
     pub(crate) calibration: open_esp_radio_esp32s31_phy::PhyCalibrationIdentity,
@@ -318,6 +325,7 @@ impl Esp32s31RadioConfig {
     ) -> Self {
         Self {
             station_mac,
+            access_point_airtime: None,
             access_point_mac,
             calibration,
             initial_channel,
@@ -339,6 +347,16 @@ impl Esp32s31RadioConfig {
         cache: open_esp_radio_esp32s31_phy::PhyCalibrationCache,
     ) -> Self {
         self.calibration_cache = Some(cache);
+        self
+    }
+
+    /// Attach an explicit airtime model to standalone AP epochs. The board
+    /// retains the ledger through faults. Simultaneous STA+AP is outside this policy.
+    pub fn with_access_point_airtime(
+        mut self,
+        configuration: open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+    ) -> Self {
+        self.access_point_airtime = Some(configuration);
         self
     }
 
@@ -507,6 +525,7 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    pub first_rx_protocol_rejection: Option<AccessPointRxRejection>,
     /// Data MPDUs whose Protected bit contradicted the requested AP mode.
     pub security_mode_mismatches: u32,
 }
@@ -525,3 +544,7 @@ pub enum Esp32s31StationAttemptObservation {
         stage: open_esp_radio_wifi_sta::station::StaLifecycleStage,
     },
 }
+
+pub use open_esp_radio_esp32s31_wifi_embassy::roles::access_point::{
+    AccessPointRxRejection, AccessPointRxRejectionReason,
+};

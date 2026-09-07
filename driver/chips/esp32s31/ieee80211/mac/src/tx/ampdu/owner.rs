@@ -5,6 +5,8 @@ extern crate alloc;
 
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
+use open_esp_radio_wifi_softmac::tx_cost::TxContention;
+
 use core::{ops::Deref, pin::Pin};
 
 use open_esp_radio_dma::StableDmaBacking;
@@ -536,6 +538,16 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         *metadata.detached = false;
         *metadata.state = TxSlotState::HardwareOwned;
         publication.commit(|dma| hardware.start_bound_ht_tx(dma, queue_index));
+        storage.as_mut().project().work.record_publication(
+            prepared.aggregate.bytes,
+            prepared.aggregate.subframes,
+            core::num::NonZeroU32::new(config.rate.nominal_kbps()),
+            crate::tx::TxPhyRate::Ht(config.rate).ppdu_timing(),
+            Some(TxContention {
+                aifsn: config.aifsn,
+                backoff_slots: config.contention_window,
+            }),
+        );
         Ok(())
     }
 
@@ -592,6 +604,16 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         *metadata.detached = false;
         *metadata.state = TxSlotState::HardwareOwned;
         publication.commit(|dma| hardware.start_bound_he_tx(dma, queue_index));
+        storage.as_mut().project().work.record_publication(
+            prepared.aggregate.bytes,
+            prepared.aggregate.subframes,
+            None,
+            None,
+            Some(TxContention {
+                aifsn: config.aifsn,
+                backoff_slots: config.contention_window,
+            }),
+        );
         Ok(())
     }
 

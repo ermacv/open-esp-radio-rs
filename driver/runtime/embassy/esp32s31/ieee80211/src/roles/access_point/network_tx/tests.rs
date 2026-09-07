@@ -3,6 +3,25 @@ use super::{
     ApTxFlowKey, aggregate_adapter_available,
 };
 
+#[cfg(feature = "owned-network")]
+mod power_save_admission;
+#[cfg(feature = "owned-network")]
+mod selection;
+#[cfg(feature = "owned-network")]
+mod support;
+
+mod retention;
+
+#[cfg(feature = "owned-network")]
+impl<N> super::ApTxSelection<N> {
+    fn expect_frame(self) -> (ApTxFlowKey, N) {
+        match self {
+            Self::Frame(key, frame) => (key, frame),
+            Self::Buffered(_) => panic!("expected an unbuffered selected frame"),
+        }
+    }
+}
+
 struct TestActiveArena<B> {
     leases: ApFrameLeaseArena<B>,
     queues: ApActiveFrameQueues,
@@ -122,7 +141,9 @@ fn power_save_queue_drops_only_the_stale_association_generation() {
     assert_eq!(queue.len, 1);
     assert_eq!(queue.oldest_index_for(first), None);
     let index = queue.oldest_index_for(replacement).unwrap();
-    assert_eq!(queue.take_at(index, &mut leases).unwrap().frame, 20);
+    let release = queue.take_at(index).unwrap();
+    assert_eq!(*release.frame(&leases), 20);
+    release.complete(&mut leases);
 }
 
 #[test]
@@ -138,3 +159,6 @@ fn active_arena_reuses_every_bounded_frame_slot() {
     arena.push(FLOW_B, 42).unwrap();
     assert_eq!(arena.pop_key(FLOW_B), Some(42));
 }
+
+#[cfg(feature = "owned-network")]
+mod airtime;

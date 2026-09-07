@@ -50,7 +50,7 @@ fn measurements_survive_link_failure_and_unwinding_capture() {
 #[test]
 fn observation_discovers_a_running_boot_without_initializing_or_clearing_results() {
     let output = Output::new();
-    let (input, rx) = mpsc::channel();
+    let (input, rx) = serial_pair();
     let (writes, commands) = mpsc::channel();
     let capture =
         SerialCapture::start_transport_at(&output.0, CaptureOrigin::Attachment, move || {
@@ -223,21 +223,56 @@ impl Drop for Output {
 }
 
 struct Serial {
-    input: mpsc::Receiver<io::Result<Vec<u8>>>,
+    input: TestRead,
     fail_write: bool,
     writes: Option<mpsc::Sender<Vec<u8>>>,
 }
 
+struct TestRead {
+    stream: std::os::unix::net::UnixStream,
+    failure: Arc<Mutex<Option<io::Error>>>,
+}
+#[derive(Clone)]
+struct Input {
+    stream: Arc<std::os::unix::net::UnixStream>,
+    failure: Arc<Mutex<Option<io::Error>>>,
+}
+impl Input {
+    fn send(&self, input: io::Result<Vec<u8>>) -> io::Result<()> {
+        match input {
+            Ok(bytes) => (&*self.stream).write_all(&bytes),
+            Err(error) => {
+                *self.failure.lock().unwrap() = Some(error);
+                self.stream.shutdown(std::net::Shutdown::Write)
+            }
+        }
+    }
+}
+fn serial_pair() -> (Input, TestRead) {
+    let (host, peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    host.set_nonblocking(true).unwrap();
+    let failure = Arc::new(Mutex::new(None));
+    (
+        Input {
+            stream: Arc::new(peer),
+            failure: Arc::clone(&failure),
+        },
+        TestRead {
+            stream: host,
+            failure,
+        },
+    )
+}
+impl AsRawFd for Serial {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.input.stream.as_raw_fd()
+    }
+}
 impl Read for Serial {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        match self.input.recv_timeout(Duration::from_millis(10)) {
-            Ok(result) => {
-                let bytes = result?;
-                buffer[..bytes.len()].copy_from_slice(&bytes);
-                Ok(bytes.len())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(io::ErrorKind::TimedOut.into()),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(0),
+        match self.input.stream.read(buffer) {
+            Ok(0) => self.input.failure.lock().unwrap().take().map_or(Ok(0), Err),
+            result => result,
         }
     }
 }
@@ -260,11 +295,8 @@ impl Write for Serial {
     }
 }
 
-fn capture(
-    output: &Output,
-    fail_write: bool,
-) -> (SerialCapture, mpsc::Sender<io::Result<Vec<u8>>>) {
-    let (input, rx) = mpsc::channel();
+fn capture(output: &Output, fail_write: bool) -> (SerialCapture, Input) {
+    let (input, rx) = serial_pair();
     let capture = SerialCapture::start_transport(&output.0, move || {
         Ok(Serial {
             input: rx,
@@ -280,7 +312,7 @@ fn frame(event: Envelope<Event>) -> Vec<u8> {
     FrameEncoder::new().encode(&event).unwrap().to_vec()
 }
 
-fn activate(capture: &SerialCapture, input: &mpsc::Sender<io::Result<Vec<u8>>>) {
+fn activate(capture: &SerialCapture, input: &Input) {
     input.send(Ok(frame(hello(7, 0)))).unwrap();
     capture
         .wait_for_protocol_after(0, Duration::from_secs(2), |message| {
@@ -306,7 +338,7 @@ fn failure(capture: &SerialCapture, kind: ErrorKind) -> String {
 #[test]
 fn open_failure_wakes_hello_wait_and_survives_finish() {
     let output = Output::new();
-    let capture = SerialCapture::start_transport::<io::Cursor<Vec<u8>>>(&output.0, || {
+    let capture = SerialCapture::start_transport::<Serial>(&output.0, || {
         Err(LinkError::transport("cannot open test device"))
     })
     .unwrap();
@@ -356,10 +388,9 @@ fn end_of_stream_is_a_transport_failure() {
 #[test]
 fn worker_panic_wakes_waiters() {
     let output = Output::new();
-    let capture = SerialCapture::start_transport::<io::Cursor<Vec<u8>>>(&output.0, || {
-        panic!("injected worker panic")
-    })
-    .unwrap();
+    let capture =
+        SerialCapture::start_transport::<Serial>(&output.0, || panic!("injected worker panic"))
+            .unwrap();
     assert_eq!(
         failure(&capture, ErrorKind::Transport),
         "serial worker panicked"
@@ -626,12 +657,7 @@ fn result_events(rx_frames: u32) -> Vec<Event> {
         .collect()
 }
 
-fn publish_result(
-    input: &mpsc::Sender<io::Result<Vec<u8>>>,
-    sequence: u32,
-    request: u32,
-    rx_frames: u32,
-) {
+fn publish_result(input: &Input, sequence: u32, request: u32, rx_frames: u32) {
     for (offset, event) in result_events(rx_frames).into_iter().enumerate() {
         input
             .send(Ok(frame(Envelope::new(
@@ -654,7 +680,7 @@ fn receive_command(writes: &mpsc::Receiver<Vec<u8>>) -> Envelope<Command> {
 
 fn replay_before_acknowledgement(changed: bool) {
     let output = Output::new();
-    let (input, rx) = mpsc::channel();
+    let (input, rx) = serial_pair();
     let (writes, commands) = mpsc::channel();
     let capture = SerialCapture::start_transport(&output.0, move || {
         Ok(Serial {
@@ -723,4 +749,197 @@ fn acknowledgement_requires_an_identical_replay() {
 #[test]
 fn changed_replay_is_rejected_before_result_removal() {
     replay_before_acknowledgement(true);
+}
+
+#[test]
+fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
+    use open_esp_radio_hil_protocol::{NetworkInfo, ServiceInfo};
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    let peer = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    peer.set_read_timeout(Some(Duration::from_millis(20)))
+        .unwrap();
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    socket.connect(peer.local_addr().unwrap()).unwrap();
+    let network = |interface| {
+        Event::NetworkReady(NetworkInfo {
+            network_interface: interface,
+            address: [10, 43, 0, 1],
+            prefix_length: 24,
+            gateway: None,
+        })
+    };
+    let source_port = peer.local_addr().unwrap().port();
+    let service = |local_port| {
+        Event::ServiceReady(ServiceInfo {
+            network_interface: WifiNetworkInterface::AccessPoint,
+            transport: Transport::Udp,
+            direction: Direction::Tx,
+            local_port,
+            maximum_payload_bytes: 1472,
+        })
+    };
+    for (sequence, event) in [
+        (1, service(source_port.wrapping_add(1))),
+        (2, network(WifiNetworkInterface::Station)),
+    ] {
+        input
+            .send(Ok(frame(Envelope::new(7, sequence, 0, 0, event))))
+            .unwrap();
+    }
+    capture
+        .wait_for_protocol_after(0, Duration::from_secs(1), |event| {
+            event.message_sequence == 2
+        })
+        .unwrap()
+        .unwrap();
+    assert!(
+        prepare_udp_reverse_flow(
+            &capture,
+            WifiNetworkInterface::AccessPoint,
+            &socket,
+            Duration::ZERO
+        )
+        .is_err()
+    );
+    assert!(
+        peer.recv(&mut [0; 4]).is_err(),
+        "neither service alone nor another interface's IP permits a probe"
+    );
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            3,
+            0,
+            0,
+            network(WifiNetworkInterface::AccessPoint),
+        ))))
+        .unwrap();
+    capture
+        .wait_for_protocol_after(0, Duration::from_secs(1), |event| {
+            event.message_sequence == 3
+        })
+        .unwrap()
+        .unwrap();
+    assert!(
+        prepare_udp_reverse_flow(
+            &capture,
+            WifiNetworkInterface::AccessPoint,
+            &socket,
+            Duration::ZERO
+        )
+        .is_err()
+    );
+    assert!(
+        peer.recv(&mut [0; 4]).is_err(),
+        "another TX port must not authorize this flow"
+    );
+    input
+        .send(Ok(frame(Envelope::new(7, 4, 0, 0, service(source_port)))))
+        .unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    let responder = std::thread::spawn(move || {
+        let mut bytes = [0; open_esp_radio_hil_protocol::UdpProbe::LENGTH];
+        let (length, source) = peer.recv_from(&mut bytes).unwrap();
+        let mut probe = open_esp_radio_hil_protocol::UdpProbe::decode(&bytes[..length]).unwrap();
+        assert!(!probe.response);
+        probe.response = true;
+        peer.send_to(&probe.encode(), source).unwrap();
+    });
+    prepare_udp_reverse_flow(
+        &capture,
+        WifiNetworkInterface::AccessPoint,
+        &socket,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    responder.join().unwrap();
+    // Already received declarations are state, not an edge that must happen again.
+    super::super::readiness::wait_for_services(
+        &capture,
+        WifiNetworkInterface::AccessPoint,
+        &[(Transport::Udp, Direction::Tx, source_port)],
+        Duration::ZERO,
+    )
+    .unwrap();
+    drop(capture);
+}
+
+struct CountedStream {
+    stream: std::os::unix::net::UnixStream,
+    reads: Arc<AtomicU32>,
+}
+impl AsRawFd for CountedStream {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.stream.as_raw_fd()
+    }
+}
+impl Read for CountedStream {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.reads.fetch_add(1, Ordering::Relaxed);
+        self.stream.read(bytes)
+    }
+}
+impl Write for CountedStream {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.write(bytes)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+#[test]
+fn queued_commands_make_progress_without_inbound_bytes_or_read_timeouts() {
+    let output = Output::new();
+    let (mut host, mut peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    host.set_nonblocking(true).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    // Fill the real kernel send buffer to exercise partial writes and POLLOUT.
+    let mut padding = 0;
+    loop {
+        match host.write(&[0x11; 4096]) {
+            Ok(length) => padding += length,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+            result => panic!("unexpected prefill result: {result:?}"),
+        }
+    }
+    let reads = Arc::new(AtomicU32::new(0));
+    let worker_reads = Arc::clone(&reads);
+    let capture = SerialCapture::start_transport(&output.0, move || {
+        Ok(CountedStream {
+            stream: host,
+            reads: worker_reads,
+        })
+    })
+    .unwrap();
+    let frames = [vec![0x22; 80_000], vec![0x33; 80_000]];
+    for frame in &frames {
+        capture
+            .outbound
+            .send(Zeroizing::new(frame.clone()))
+            .unwrap();
+    }
+    capture.worker_wake.wake().unwrap();
+    let mut received = vec![0; padding + 160_000];
+    peer.read_exact(&mut received).unwrap();
+    assert!(received[..padding].iter().all(|&byte| byte == 0x11));
+    assert_eq!(&received[padding..padding + 80_000], &frames[0]);
+    assert_eq!(&received[padding + 80_000..], &frames[1]);
+    assert_eq!(
+        reads.load(Ordering::Relaxed),
+        0,
+        "idle serial input must not be polled"
+    );
+    let started = Instant::now();
+    drop(capture);
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "shutdown must wake the reactor"
+    );
+    assert!(
+        fs::read(output.0.join("uart.bin")).unwrap().is_empty(),
+        "outbound data must not enter the transcript"
+    );
 }

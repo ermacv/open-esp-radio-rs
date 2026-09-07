@@ -12,7 +12,6 @@ use std::{
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
     path::Path,
-    thread,
     time::Duration,
 };
 
@@ -33,11 +32,11 @@ use crate::{
     },
     lab::config::StationFixtureConfig,
     session::{SessionEvidence, await_udp_rx_ready},
-    transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
+    transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
     workload::traffic::{
         host_network::BenchmarkIpv4Route,
         paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
-        tx_traffic::{Burst, describe_bursts, receive_bursts},
+        tx_traffic::{Burst, Receiver, describe_bursts},
     },
 };
 
@@ -163,7 +162,6 @@ pub(crate) fn run(
     fs::create_dir_all(output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
-    tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
     let capture = context.capture(output)?;
     let discovered_address = match await_udp_rx_ready(
         &capture,
@@ -193,8 +191,8 @@ pub(crate) fn run(
     host_route.verify_socket_source(host_address)?;
     host_route.record(output, options.address, host_address)?;
     // Admit the reverse flow through stateful host firewalls before `Start`.
-    if let Err(error) = open_reverse_flow(&tx_sink) {
-        return capture.finish_with(Err(error.into()));
+    if let Err(error) = confirm_reverse_flow(&tx_sink, Duration::from_secs(5)) {
+        return capture.finish_with(Err(error));
     }
     let fixture_capture = RxCapture::start(
         &context.lab.station_fixture,
@@ -249,6 +247,13 @@ pub(crate) fn run(
     } else {
         None
     };
+    let receiver = Receiver::start(
+        &tx_sink,
+        options.address,
+        options.duration + Duration::from_secs(5) + crate::session::SESSION_START_TIMEOUT,
+        output,
+        "station",
+    )?;
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -276,10 +281,6 @@ pub(crate) fn run(
         ],
         link_requirements: SessionLinkRequirements::tx_block_ack(0),
     })?;
-    let receiver_duration = options.duration.saturating_add(Duration::from_secs(2));
-    let expected_device = options.address;
-    let receiver =
-        thread::spawn(move || receive_bursts(&tx_sink, expected_device, receiver_duration));
     let host_result = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,
@@ -287,20 +288,21 @@ pub(crate) fn run(
         duration: options.duration,
         payload: options.payload,
     });
-    let tx_bursts = receiver
-        .join()
-        .map_err(|_| "bidirectional host TX receiver panicked")??;
+    let structured = capture.wait_for_session(session, Duration::from_secs(5));
+    let tx_bursts = receiver.finish(
+        structured
+            .as_ref()
+            .ok()
+            .map(|evidence| evidence.transport.tx_units),
+    )?;
     let host = host_result?;
-    // Host delivery remains evidence even if the target never finishes its session.
     fs::write(
         output.join("delivery-progress.json"),
         serde_json::to_vec_pretty(&progress::snapshot(host, &tx_bursts, None))?,
     )?;
-    let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
+    let structured = match structured {
         Ok(evidence) => evidence,
-        Err(error) => {
-            return capture.finish_with(Err(error));
-        }
+        Err(error) => return capture.finish_with(Err(error)),
     };
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));

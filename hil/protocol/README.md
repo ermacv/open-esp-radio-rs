@@ -1,6 +1,6 @@
-# HIL protocol v80
+# HIL protocol v84
 
-Host and firmware must both use version 80. Other versions are rejected
+Host and firmware must both use version 84. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
@@ -59,6 +59,29 @@ Configure -> Arm -> Start -> SessionReady -> Evidence -> Finished(CRC)
           -> ReplayResult -> Evidence -> Finished(same CRC)
           -> AcknowledgeResult -> Idle
 ```
+
+UDP `ServiceReady` is published after the socket is bound. The host waits for
+both this declaration and `NetworkReady` for the same interface before sending
+an unmeasured `UdpProbe` challenge on the exact TX flow. Only its matching
+nonce response confirms the reverse path; a successful host `send()` does not.
+The target services probes while idle, before `Start`, using its bound TX
+socket. Requests retry on a deadline within an absolute failure bound. Probe
+responses never contribute to measured sequence counts, including late copies.
+The host starts its socket collectors before `Start`. `SessionReady` confirms that the requested
+workers and link preconditions are ready for the measured session. Readiness
+has no fallback IP, settle delay or success-on-timeout path. USB serialization
+completion and BlockAck readiness wake their waiters on state changes.
+The host serial reactor wakes on descriptor readiness, queued commands or
+shutdown. Protocol waiters also receive cancellation notifications; their
+timeout is a failure bound rather than a periodic readiness poll.
+
+`Finished` counts stack admissions, not on-air delivery. Host UDP collectors
+use its TX count to complete as soon as every datagram arrives, or record a
+delivery deadline and the remaining deficit. A missing terminal result and a
+fully delivered stream are distinct outcomes. Each `*-reception.json` records
+Linux socket drop deltas (`SO_MEMINFO`), including losses with no later packet.
+A nonzero delta invalidates the measurement as `host-overflow`; unavailable
+accounting on another platform is `null`, never an asserted zero.
 
 The target retains the complete result before its first publication, including
 fixed link and stack snapshots. `ReplayResult` changes only the response

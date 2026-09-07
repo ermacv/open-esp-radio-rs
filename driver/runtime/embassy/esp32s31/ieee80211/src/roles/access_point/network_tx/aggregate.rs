@@ -122,8 +122,8 @@ where
         self.retain_active_frame(control.mac.engine_mut(), frame)?;
 
         // The AP-specific peer, power-save and key checks remain per frame.
-        // The Core0 arena, rather than the immutable cross-core FIFO order,
-        // now defines the same-peer aggregate frontier.
+        // Destination sources are pulled directly by advance_prepared;
+        // FIFO-only sources enter the bounded radio retention path here.
         self.prepare_ready_standby(aggregate, control, network)?;
         Ok(())
     }
@@ -171,9 +171,43 @@ where
                 .prepared_standby
                 .take()
                 .expect("checked stale AP standby batch remains owned");
+            if let Some(accounting) = self.airtime.as_mut() {
+                accounting.cancel_standby()?;
+            }
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::StandbyCancelled);
+            }
+        }
+        self.reconsider_airtime_frontier()?;
+        self.refresh_awake_demand(control.mac.engine());
+        if (self.awake_buffered_peer.is_some()
+            || (self
+                .airtime
+                .as_ref()
+                .is_some_and(airtime::Accounting::selects_peers)
+                && !self.aggregate_pending()))
+            && self.prepared_standby.is_none()
+            && self.prepared_first.is_none()
+            && self.prepared_second.is_none()
+            && self.prepared_buffered_release.is_none()
+            && self.prepared_group_release.is_none()
+            && self.active_group_release.is_none()
+            && self.dtim_group_release_remaining == 0
+            && !control.tx_pending()
+        {
+            // Wake-only work must make progress even without an A-MPDU
+            // standby arena. First selection needs no physical reservation.
+            match self.take_scheduled_active_or_network(control.mac.engine_mut(), network)? {
+                Some(ApTxSelection::Buffered(release)) => {
+                    self.prepared_buffered_release = Some(release);
+                    return Ok(());
+                }
+                Some(ApTxSelection::Frame(key, frame)) => {
+                    self.prepared_first_key = Some(key);
+                    self.prepared_first = Some(frame);
+                }
+                None => {}
             }
         }
         while self.can_prepare(aggregate, control.tx_pending()) {
@@ -188,12 +222,19 @@ where
                     .prepared_first_key
                     .expect("prepared AP frame retains its flow key");
                 self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
-                    .map(|frame| (key, frame))
+                    .map(|frame| ApTxSelection::Frame(key, frame))
             } else {
                 self.take_scheduled_active_or_network(control.mac.engine_mut(), network)?
             };
-            let Some((key, frame)) = selected else {
+            let Some(selected) = selected else {
                 break;
+            };
+            let (key, frame) = match selected {
+                ApTxSelection::Frame(key, frame) => (key, frame),
+                ApTxSelection::Buffered(release) => {
+                    self.prepared_buffered_release = Some(release);
+                    break;
+                }
             };
             if !self.prepare_retained_one(aggregate, control, key, frame, network)? {
                 break;
@@ -249,6 +290,15 @@ where
         if burst_limit == 0 {
             return Ok(false);
         }
+        let mut length_budget = aggregate
+            .standby_mut()
+            .expect("checked standby arena")
+            .length_budget(admission.rate())
+            .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+        if let Some(accounting) = self.airtime.as_ref() {
+            accounting.cap_standby_aggregate(admission.rate(), &mut length_budget)?;
+        }
+        let mut capacity_limited = false;
         let mut count = 0;
         while count < burst_limit {
             let Some(frame) =
@@ -257,6 +307,19 @@ where
                 break;
             };
             debug_assert!(admission.accepts_ethernet(frame.as_slice()));
+            if !length_budget
+                .admit_ethernet(frame.as_slice())
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?
+            {
+                // The next unencoded owner is the closed batch's frontier.
+                // Existing can_prepare ownership checks stop further pulls;
+                // no independent full flag can disagree with that owner.
+                debug_assert!(self.prepared_first.is_none());
+                self.prepared_first_key = Some(key);
+                self.prepared_first = Some(frame);
+                capacity_limited = true;
+                break;
+            }
             frames[count] = Some(frame);
             count += 1;
         }
@@ -268,6 +331,14 @@ where
         let started = self.observer.map(AggregateTxObserver::now_micros);
         let mut promoted = [const { None }; SLOTS];
         if !network.try_materialize_batch(&mut frames, &mut promoted) {
+            if capacity_limited {
+                let frontier = self
+                    .prepared_first
+                    .take()
+                    .expect("length refusal retains its owner");
+                self.prepared_first_key = None;
+                self.restore_active_frame_front(key, frontier);
+            }
             for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
                 self.restore_active_frame_front(key, frame);
             }
@@ -352,18 +423,146 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        #[cfg(any(feature = "diagnostics", test))]
-        let started = self.observer.map(AggregateTxObserver::now_micros);
-        if let Some(batch) = self.prepared_standby.as_ref() {
-            let admission = batch.admission;
-            if key != ApTxFlowKey::associated(admission.association())
-                || !admission.accepts_ethernet(frame.as_slice())
-            {
-                debug_assert!(self.prepared_first.is_none());
+        let result = (|| {
+            #[cfg(any(feature = "diagnostics", test))]
+            let started = self.observer.map(AggregateTxObserver::now_micros);
+            if let Some(batch) = self.prepared_standby.as_ref() {
+                let admission = batch.admission;
+                if key != ApTxFlowKey::associated(admission.association())
+                    || !admission.accepts_ethernet(frame.as_slice())
+                {
+                    debug_assert!(self.prepared_first.is_none());
+                    self.prepared_first_key = Some(key);
+                    self.prepared_first = Some(frame);
+                    return Ok(true);
+                }
+                {
+                    let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                        Esp32s31AccessPointDatapathError::Control(
+                            Esp32s31AccessPointControlError::Mac(error),
+                        )
+                    })?;
+                    ordinary
+                        .require_unprotected_ht_aggregate(admission.rate())
+                        .map_err(Esp32s31ApAmpduError::Protection)
+                        .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                }
+                let mut length_budget = aggregate
+                    .standby_mut()
+                    .expect("checked standby arena")
+                    .length_budget(admission.rate())
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                if let Some(accounting) = self.airtime.as_ref() {
+                    accounting.cap_standby_aggregate(admission.rate(), &mut length_budget)?;
+                }
+                if !length_budget
+                    .admit_ethernet(frame.as_slice())
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?
+                {
+                    debug_assert!(self.prepared_first.is_none());
+                    self.prepared_first_key = Some(key);
+                    self.prepared_first = Some(frame);
+                    return Ok(false);
+                }
+                let mut frame = match network.try_materialize(frame) {
+                    Ok(frame) => frame,
+                    Err(frame) => {
+                        self.restore_active_frame_front(key, frame);
+                        return Ok(false);
+                    }
+                };
+                let peer = admission.peer();
+                let offset = frame.ethernet_offset();
+                let length = frame.ethernet_length();
+                let encoded = control
+                    .mac
+                    .engine_mut()
+                    .encode_aggregate_ethernet_in_place(
+                        admission.binding(),
+                        frame.storage_mut(),
+                        offset,
+                        length,
+                    )
+                    .map_err(|error| {
+                        Esp32s31AccessPointDatapathError::Control(
+                            Esp32s31AccessPointControlError::from(error),
+                        )
+                    })?;
+                aggregate
+                    .standby_mut()
+                    .expect("checked standby arena")
+                    .push(peer, frame, encoded)
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                let batch = self
+                    .prepared_standby
+                    .as_mut()
+                    .expect("checked AP standby batch");
+                batch.admitted += 1;
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    batch.preparation_micros = batch.preparation_micros.saturating_add(
+                        self.observer
+                            .map(|observer| {
+                                observer.now_micros().saturating_sub(started.unwrap_or(0))
+                            })
+                            .unwrap_or(0),
+                    );
+                }
+                return Ok(true);
+            }
+
+            let Some(first) = self.prepared_first.take() else {
                 self.prepared_first_key = Some(key);
                 self.prepared_first = Some(frame);
                 return Ok(true);
+            };
+            let first_key = self
+                .prepared_first_key
+                .take()
+                .expect("prepared AP frame retains its flow key");
+            let admission = control.mac.aggregate_admission(first.as_slice());
+            let Some(admission) = admission.filter(|admission| {
+                first_key == key
+                    && first_key == ApTxFlowKey::associated(admission.association())
+                    && admission.accepts_ethernet(frame.as_slice())
+            }) else {
+                debug_assert!(self.prepared_second.is_none());
+                self.prepared_first_key = Some(first_key);
+                self.prepared_first = Some(first);
+                self.prepared_second_key = Some(key);
+                self.prepared_second = Some(frame);
+                return Ok(true);
+            };
+            if let Some(accounting) = self.airtime.as_mut() {
+                accounting.reserve_standby(control.mac.engine(), first_key)?;
             }
+            let mut length_budget = aggregate
+                .standby_mut()
+                .expect("checked standby arena")
+                .length_budget(admission.rate())
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            if let Some(accounting) = self.airtime.as_ref() {
+                accounting.cap_standby_aggregate(admission.rate(), &mut length_budget)?;
+            }
+            if !length_budget
+                .admit_ethernet(first.as_slice())
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?
+                || !length_budget
+                    .admit_ethernet(frame.as_slice())
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?
+            {
+                if let Some(accounting) = self.airtime.as_mut() {
+                    accounting.defer_standby()?;
+                }
+                // Keep a publishable ordinary frontier. Restoring the pair into
+                // active queues alone would retry this same impossible aggregate.
+                self.prepared_first_key = Some(first_key);
+                self.prepared_first = Some(first);
+                self.prepared_second_key = Some(key);
+                self.prepared_second = Some(frame);
+                return Ok(false);
+            }
+            let peer = admission.peer();
             {
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                     Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -375,14 +574,57 @@ where
                     .map_err(Esp32s31ApAmpduError::Protection)
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             }
-            let mut frame = match network.try_materialize(frame) {
-                Ok(frame) => frame,
-                Err(frame) => {
-                    self.restore_active_frame_front(key, frame);
+            let (mut first, mut frame) = match network.try_materialize_pair(first, frame) {
+                Ok(frames) => frames,
+                Err((first, frame)) => {
+                    self.restore_active_pair_front(first_key, first, frame);
+                    if let Some(accounting) = self.airtime.as_mut() {
+                        accounting.cancel_standby()?;
+                    }
                     return Ok(false);
                 }
             };
-            let peer = admission.peer();
+            let first_offset = first.ethernet_offset();
+            let first_length = first.ethernet_length();
+            let first_encoded = control
+                .mac
+                .engine_mut()
+                .encode_aggregate_ethernet_in_place(
+                    admission.binding(),
+                    first.storage_mut(),
+                    first_offset,
+                    first_length,
+                )
+                .map_err(|error| {
+                    Esp32s31AccessPointDatapathError::Control(
+                        Esp32s31AccessPointControlError::from(error),
+                    )
+                })?;
+            let policy = admission
+                .bind_policy(first_encoded.hardware_key_selector, SLOTS)
+                .map_err(Esp32s31ApAmpduError::from)
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            let standby = aggregate.standby_mut().expect("checked standby arena");
+            standby
+                .begin(
+                    peer,
+                    policy.rate(),
+                    first_encoded.sequence_number,
+                    policy.role().hardware_key_selector,
+                )
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            self.prepared_standby = Some(PreparedStandby {
+                admission,
+                policy,
+                admitted: 0,
+                #[cfg(feature = "tx-phase-telemetry")]
+                mismatch_claims: 0,
+                #[cfg(any(feature = "diagnostics", test))]
+                preparation_micros: 0,
+            });
+            standby
+                .push(peer, first, first_encoded)
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
@@ -407,129 +649,29 @@ where
             let batch = self
                 .prepared_standby
                 .as_mut()
-                .expect("checked AP standby batch");
-            batch.admitted += 1;
+                .expect("AP standby construction owns its metadata");
+            batch.admitted = 2;
             #[cfg(any(feature = "diagnostics", test))]
             {
-                batch.preparation_micros = batch.preparation_micros.saturating_add(
-                    self.observer
-                        .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
-                        .unwrap_or(0),
-                );
+                batch.preparation_micros = self
+                    .observer
+                    .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
+                    .unwrap_or(0);
             }
-            return Ok(true);
-        }
 
-        let Some(first) = self.prepared_first.take() else {
-            self.prepared_first_key = Some(key);
-            self.prepared_first = Some(frame);
-            return Ok(true);
-        };
-        let first_key = self
-            .prepared_first_key
-            .take()
-            .expect("prepared AP frame retains its flow key");
-        let admission = control.mac.aggregate_admission(first.as_slice());
-        let Some(admission) = admission.filter(|admission| {
-            first_key == key
-                && first_key == ApTxFlowKey::associated(admission.association())
-                && admission.accepts_ethernet(frame.as_slice())
-        }) else {
-            debug_assert!(self.prepared_second.is_none());
-            self.prepared_first_key = Some(first_key);
-            self.prepared_first = Some(first);
-            self.prepared_second_key = Some(key);
-            self.prepared_second = Some(frame);
-            return Ok(true);
-        };
-        let peer = admission.peer();
-        {
-            let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
-                Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
-                    error,
-                ))
-            })?;
-            ordinary
-                .require_unprotected_ht_aggregate(admission.rate())
-                .map_err(Esp32s31ApAmpduError::Protection)
-                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        }
-        let (mut first, mut frame) = match network.try_materialize_pair(first, frame) {
-            Ok(frames) => frames,
-            Err((first, frame)) => {
-                self.restore_active_pair_front(first_key, first, frame);
-                return Ok(false);
-            }
-        };
-        let first_offset = first.ethernet_offset();
-        let first_length = first.ethernet_length();
-        let first_encoded = control
-            .mac
-            .engine_mut()
-            .encode_aggregate_ethernet_in_place(
-                admission.binding(),
-                first.storage_mut(),
-                first_offset,
-                first_length,
-            )
-            .map_err(|error| {
-                Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::from(
-                    error,
-                ))
-            })?;
-        let policy = admission
-            .bind_policy(first_encoded.hardware_key_selector, SLOTS)
-            .map_err(Esp32s31ApAmpduError::from)
-            .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        let standby = aggregate.standby_mut().expect("checked standby arena");
-        standby
-            .begin(
-                peer,
-                policy.rate(),
-                first_encoded.sequence_number,
-                policy.role().hardware_key_selector,
-            )
-            .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        standby
-            .push(peer, first, first_encoded)
-            .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        let offset = frame.ethernet_offset();
-        let length = frame.ethernet_length();
-        let encoded = control
-            .mac
-            .engine_mut()
-            .encode_aggregate_ethernet_in_place(
-                admission.binding(),
-                frame.storage_mut(),
-                offset,
-                length,
-            )
-            .map_err(|error| {
-                Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::from(
-                    error,
-                ))
-            })?;
-        aggregate
-            .standby_mut()
-            .expect("checked standby arena")
-            .push(peer, frame, encoded)
-            .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        self.prepared_standby = Some(PreparedStandby {
-            admission,
-            policy,
-            admitted: 2,
-            #[cfg(feature = "tx-phase-telemetry")]
-            mismatch_claims: 0,
             #[cfg(any(feature = "diagnostics", test))]
-            preparation_micros: self
-                .observer
-                .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
-                .unwrap_or(0),
-        });
-        #[cfg(any(feature = "diagnostics", test))]
-        if let Some(observer) = self.observer {
-            observer.observe(AggregateTxObservation::StandbyPrepared);
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::StandbyPrepared);
+            }
+            Ok(true)
+        })();
+        if result.is_err()
+            && self.prepared_standby.is_none()
+            && let Some(accounting) = self.airtime.as_mut()
+        {
+            accounting.cancel_standby()?;
+            accounting.cancel_selection()?;
         }
-        Ok(true)
+        result
     }
 }

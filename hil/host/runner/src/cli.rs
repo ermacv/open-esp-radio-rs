@@ -50,6 +50,9 @@ pub(crate) enum CliCommand {
     /// Build, flash and execute one catalog scenario.
     Run {
         scenario: String,
+        /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
+        #[arg(long, value_enum)]
+        ap_scheduler: Option<ApScheduler>,
         /// Use the scenario's image class from a sealed earlier HIL run.
         #[arg(long, value_name = "RUN_ID")]
         firmware_from: Option<String>,
@@ -70,6 +73,21 @@ pub(crate) enum CliCommand {
         #[arg(long)]
         tag: Vec<String>,
     },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum ApScheduler {
+    Rr,
+    Deficit,
+}
+
+impl From<ApScheduler> for open_esp_radio_hil_protocol::WifiApScheduler {
+    fn from(value: ApScheduler) -> Self {
+        match value {
+            ApScheduler::Rr => Self::RrHtResponse24,
+            ApScheduler::Deficit => Self::DeficitHtResponse24,
+        }
+    }
 }
 
 #[derive(Debug, Args)]

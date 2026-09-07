@@ -1,6 +1,7 @@
 //! Host/oracle tests for A-MPDU protocol, formatting and ownership.
 
 use super::*;
+mod length_budget;
 use crate::tx::runtime::{AmpduRetryDecision, AmpduRetryPolicy, AmpduRetryState};
 use crate::tx::{
     HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate, TxHardware,
@@ -87,6 +88,7 @@ struct DetachingCompletionHardware {
     completion: Option<MacHtAmpduCompletionObservation>,
     abort_requested: bool,
     detach_failed: bool,
+    reject_publication: bool,
 }
 
 impl DetachingCompletionHardware {
@@ -98,6 +100,7 @@ impl DetachingCompletionHardware {
         Self {
             abort_requested: false,
             detach_failed: false,
+            reject_publication: false,
             completion: Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,
@@ -122,7 +125,7 @@ impl TxHardware for DetachingCompletionHardware {
     fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
     fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
-        true
+        !self.reject_publication
     }
 
     fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
@@ -496,8 +499,23 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
     let (last, _) = owner.completed_frame(cookie, 0).unwrap();
     assert_eq!(last[0], 3);
     assert_eq!(last[1], 0x49);
+    let work = owner.work();
+    assert_eq!(work.publications, 3);
+    assert_eq!(work.aifs_slots, 6);
+    assert_eq!(work.backoff_slots, 0);
+    assert_eq!(work.unreported_contention, 0);
+    assert_eq!(work.mpdus, 4 + 2 + 1);
+    assert_eq!(
+        work.psdu_bytes,
+        u32::from(aggregate.bytes) + u32::from(retained.bytes) + u32::from(retry.bytes)
+    );
+    assert!(work.psdu_bytes < 3 * u32::from(aggregate.bytes));
     owner.release_completed(cookie).unwrap();
+    assert_eq!(owner.work(), work);
     assert_eq!(pool.claimed_slots(), 0);
+    let next = owner.begin().unwrap();
+    assert_eq!(owner.work(), Default::default());
+    owner.cancel(next).unwrap();
 }
 
 fn block_ack_parameters(tid: u8, window: u16, amsdu: bool) -> [u8; 2] {
@@ -1485,3 +1503,7 @@ fn batch_never_exceeds_negotiated_or_static_window() {
     batch.push(0).unwrap();
     assert_eq!(batch.push(1), Err(TxAmpduBatchError::Full));
 }
+
+mod work;
+
+mod exchange_budget;

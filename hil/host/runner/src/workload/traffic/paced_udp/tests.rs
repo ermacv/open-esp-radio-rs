@@ -31,3 +31,35 @@ fn terminal_marker_is_redundant_and_bounded() {
         assert_eq!(i32::from_be_bytes(marker), -1);
     }
 }
+
+#[test]
+fn failed_sender_retains_admitted_bytes_and_original_io_cause() {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let mut calls = 0;
+    let error = send_with(
+        Config {
+            address: Ipv4Addr::LOCALHOST,
+            port: 4323,
+            rate_bps: 1_000_000,
+            duration: Duration::from_secs(1),
+            payload: 100,
+        },
+        &socket,
+        |packet| {
+            calls += 1;
+            if calls == 3 {
+                Err(std::io::ErrorKind::ConnectionRefused.into())
+            } else {
+                Ok(packet.len())
+            }
+        },
+    )
+    .unwrap_err();
+    let failure = error.downcast_ref::<SendFailure>().unwrap();
+    assert_eq!(failure.progress.datagrams, 2);
+    assert_eq!(failure.progress.bytes, 200);
+    assert_eq!(
+        crate::execution::classify(&*error).kind,
+        crate::evidence::run::FailureKind::Infrastructure
+    );
+}

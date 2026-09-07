@@ -15,7 +15,7 @@ use crate::{
     scenario::Direction,
 };
 
-pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 5;
+pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 6;
 
 #[derive(Serialize)]
 pub(super) struct AccessPointReport {
@@ -28,6 +28,7 @@ pub(super) struct AccessPointReport {
 pub(super) struct BootReport {
     pub(super) boot: u8,
     pub(super) cycles: Vec<CycleReport>,
+    pub(super) error: Option<String>,
 }
 
 #[derive(Serialize)]

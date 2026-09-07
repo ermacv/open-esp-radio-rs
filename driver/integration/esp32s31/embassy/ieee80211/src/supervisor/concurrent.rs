@@ -634,6 +634,7 @@ impl ProductionWifiEpochRunner {
         let common_rx = Esp32s31StaApRxService::new(paired_rx, paired_consumer);
 
         let ProductionStationBoardResources {
+            access_point_airtime,
             interface,
             connected_datapath,
             rx_protocol_runtime,
@@ -742,6 +743,7 @@ impl ProductionWifiEpochRunner {
             dtim_period,
         ) = access_point_request.into_parts();
         let ProductionAccessPointResources {
+            tx_storage: ap_tx_storage,
             address,
             beacon,
             rx_frame,
@@ -838,6 +840,7 @@ impl ProductionWifiEpochRunner {
         );
         let access_point_network_tx =
             Esp32s31AccessPointNetworkTx::<RadioTxBacking, RadioNetworkTxBacking>::new(
+                ap_tx_storage,
                 #[cfg(feature = "diagnostics")]
                 diagnostics.map(|hooks| hooks.aggregate_tx),
             );
@@ -1031,6 +1034,9 @@ impl ProductionWifiEpochRunner {
             security_material: _access_point_security_material,
             physical_tx,
         } = access_point_finished;
+        // All physical AP publications have detached. Return software leases
+        // before handing the reusable storage back to the stopped AP owner.
+        let ap_tx_storage = _access_point_network_tx.into_storage();
         crate::status::publish_access_point_stopped();
         #[cfg(feature = "diagnostics")]
         if let Some(hooks) = diagnostics {
@@ -1119,6 +1125,7 @@ impl ProductionWifiEpochRunner {
                 frame,
                 ethernet,
                 ProductionStationBoardResources {
+                    access_point_airtime,
                     interface,
                     connected_datapath,
                     rx_protocol_runtime,
@@ -1141,6 +1148,7 @@ impl ProductionWifiEpochRunner {
             security: _,
         } = access_point_stopped.engine;
         let access_point = ProductionAccessPointResources {
+            tx_storage: ap_tx_storage,
             address: service.address(),
             beacon: beacon_storage,
             rx_frame: access_point_stopped.rx_frame,

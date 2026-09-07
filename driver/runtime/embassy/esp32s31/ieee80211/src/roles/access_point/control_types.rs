@@ -71,6 +71,7 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    pub first_rx_protocol_rejection: Option<AccessPointRxRejection>,
     /// Data MPDUs whose Protected bit contradicted the requested AP mode.
     pub security_mode_mismatches: u32,
 }
@@ -124,6 +125,7 @@ pub enum Esp32s31AccessPointDatapathError {
     Control(Esp32s31AccessPointControlError),
     Network(FrameLengthError),
     Aggregate(Esp32s31ApAmpduError),
+    Airtime(network_tx::AccessPointAirtimeError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,6 +135,7 @@ pub enum Esp32s31AccessPointRunError<E> {
     InterruptQuiesce(Esp32s31MacInterruptEpochQuiesceError<E>),
     Network(FrameLengthError),
     Aggregate(Esp32s31ApAmpduError),
+    Airtime(network_tx::AccessPointAirtimeError),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

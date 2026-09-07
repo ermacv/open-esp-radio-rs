@@ -1,6 +1,8 @@
 //! Host receiver and report writer for the production UDP TX qualification.
 
 mod progress;
+mod receiver;
+pub(crate) use receiver::Receiver;
 
 use crate::execution::context::Context;
 use std::{
@@ -29,7 +31,7 @@ use crate::{
     lab::config::StationFixtureConfig,
     scenario::PhyExpectation,
     session::await_udp_tx_ready,
-    transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
+    transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
     workload::traffic::{
         bidirectional::{
             AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TaskPollSet, TxQualification,
@@ -200,7 +202,6 @@ pub(crate) fn run(
     fs::create_dir_all(output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
-    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
     let capture = context.capture(output)?;
     let discovered_address =
         match await_udp_tx_ready(&capture, context, options.device, DEVICE_READY_TIMEOUT) {
@@ -224,12 +225,10 @@ pub(crate) fn run(
     };
     host_route.verify_socket_source(host_address)?;
     host_route.record(output, options.device, host_address)?;
-    // Admit the reverse benchmark flow through stateful host firewalls
-    // without changing firewall policy. The TX-only firmware owns a bounded
-    // one-packet RX queue on this port, so the probe cannot grow unbounded or
-    // enter the measured radio TX accounting.
-    if let Err(error) = open_reverse_flow(&socket) {
-        return capture.finish_with(Err(error.into()));
+    // Confirm the exact reverse flow and neighbor resolution before load.
+    // The response is outside the measured session and uses this same socket.
+    if let Err(error) = confirm_reverse_flow(&socket, Duration::from_secs(5)) {
+        return capture.finish_with(Err(error));
     }
     let pre_workload_channel_utilization = match (
         options.maximum_idle_channel_utilization_255,
@@ -266,6 +265,14 @@ pub(crate) fn run(
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
 
+    let timeout = options.duration.saturating_add(Duration::from_secs(5));
+    let receiver = Receiver::start(
+        &socket,
+        options.device,
+        timeout + crate::session::SESSION_START_TIMEOUT,
+        output,
+        "station",
+    )?;
     let session = match capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -294,14 +301,18 @@ pub(crate) fn run(
             return capture.finish_with(Err(error));
         }
     };
-    let receive_duration = options.duration.saturating_add(Duration::from_secs(2));
-    let bursts = receive_bursts(&socket, options.device, receive_duration)?;
-    let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
+    let structured = capture.wait_for_session(session, timeout);
+    let bursts = receiver.finish(
+        structured
+            .as_ref()
+            .ok()
+            .map(|evidence| evidence.transport.tx_units),
+    );
+    let structured = match structured {
         Ok(evidence) => evidence,
-        Err(error) => {
-            return capture.finish_with(Err(error));
-        }
+        Err(error) => return capture.finish_with(Err(error)),
     };
+    let bursts = bursts?;
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
     }
@@ -691,58 +702,6 @@ impl Config {
 
         Ok(self)
     }
-}
-
-pub(crate) fn receive_bursts(
-    socket: &UdpSocket,
-    expected_device: Ipv4Addr,
-    duration: Duration,
-) -> std::io::Result<Vec<Burst>> {
-    let deadline = Instant::now() + duration;
-    let mut packet = [0_u8; 2_048];
-    let mut active: Option<ActiveBurst> = None;
-    let mut bursts = Vec::new();
-    let mut ignored_reverse_probe_error = false;
-    while Instant::now() < deadline {
-        oer_process::check_cancelled().map_err(std::io::Error::other)?;
-        match socket.recv_from(&mut packet) {
-            Ok((length, source)) => {
-                if !matches!(source, SocketAddr::V4(source) if *source.ip() == expected_device) {
-                    continue;
-                }
-                let Some(encoded) = packet.get(..4).and_then(|bytes| bytes.try_into().ok()) else {
-                    continue;
-                };
-                let sequence = u32::from_be_bytes(encoded);
-                let now = Instant::now();
-                match &mut active {
-                    Some(active) => active.push(sequence, length, now),
-                    None => active = Some(ActiveBurst::new(sequence, length, now)),
-                }
-            }
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
-            // The only host-to-target datagram on this connected socket is a
-            // one-byte conntrack probe. A reset-separated run can associate
-            // its delayed ICMP Port Unreachable with the reused four-tuple.
-            // Ignore at most that single asynchronous error; burst count and
-            // sequence validation still reject absent or defective TX data.
-            Err(error)
-                if error.kind() == std::io::ErrorKind::ConnectionRefused
-                    && !ignored_reverse_probe_error =>
-            {
-                ignored_reverse_probe_error = true;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    if let Some(active) = active {
-        bursts.push(active.finish());
-    }
-    Ok(bursts)
 }
 
 pub(crate) fn describe_bursts(bursts: &[Burst]) -> String {

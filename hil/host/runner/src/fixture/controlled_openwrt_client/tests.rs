@@ -73,3 +73,19 @@ fn link_snapshot_parser_and_counter_delta_are_strict() {
     );
     assert!(optional_counter_delta("duration", Some(20), None).is_err());
 }
+
+#[cfg(unix)]
+#[test]
+fn failed_link_snapshot_keeps_exit_status_even_without_remote_diagnostics() {
+    use std::os::unix::process::ExitStatusExt;
+    let error = parse_link_snapshot(std::process::Output {
+        status: std::process::ExitStatus::from_raw(1 << 8),
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+    })
+    .err()
+    .unwrap();
+    let text = error.to_string();
+    assert!(text.contains("exit status: 1"), "{text}");
+    assert!(text.contains("stdout=\"\" stderr=\"\""), "{text}");
+}

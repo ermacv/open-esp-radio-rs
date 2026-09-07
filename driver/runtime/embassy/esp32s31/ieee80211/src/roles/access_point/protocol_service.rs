@@ -58,16 +58,6 @@ fn retain_ap_power_save_action(
 ) -> Result<(), Esp32s31AccessPointControlError> {
     let release = match action {
         ApPowerSaveAction::ReleaseOne(release) => Some(release),
-        ApPowerSaveAction::StateChanged {
-            peer,
-            state: ApPeerPowerState::Active,
-            buffered_frames,
-        } if buffered_frames != 0 => match engine.peer_status(peer) {
-            Some(status) if !status.buffered_release_in_flight => {
-                engine.begin_buffered_unicast_release(status.association_identity())?
-            }
-            Some(_) | None => None,
-        },
         ApPowerSaveAction::None | ApPowerSaveAction::StateChanged { .. } => None,
     };
     let Some(release) = release else {
@@ -217,6 +207,8 @@ where
                 admission
             },
             key.peer,
+            #[cfg(any(feature = "diagnostics", test))]
+            now_micros,
             &mut in_place,
             #[cfg(any(feature = "diagnostics", test))]
             observation,
@@ -556,7 +548,16 @@ where
         observation.rx_reorder_dispatched_mpdus = observation
             .rx_reorder_dispatched_mpdus
             .saturating_add(u32::from(reorder_progress.dispatched));
-        if reorder_progress.dropped {
+        if let Some(reason) = reorder_progress.dropped {
+            let reason = match reason {
+                rx_reorder::AccessPointRxReorderDrop::StorageExhausted => {
+                    AccessPointRxRejectionReason::ReorderStorageExhausted
+                }
+                rx_reorder::AccessPointRxReorderDrop::FrameTooLong => {
+                    AccessPointRxRejectionReason::ReorderFrameTooLong
+                }
+            };
+            observation.record_rx_rejection(reason, segment, now_micros);
             observation.protected_data_protocol_rejected = observation
                 .protected_data_protocol_rejected
                 .saturating_add(1);
@@ -1050,13 +1051,13 @@ where
     }
 
     pub(super) fn take_pending_buffered_release(&mut self) -> Option<ApBufferedUnicastRelease> {
-        self.pending_buffered_releases.pop()
+        self.state.pending_buffered_releases.pop_current(self.mac.engine())
     }
 
     pub(super) fn rollback_pending_buffered_releases(
         &mut self,
     ) -> Result<(), Esp32s31AccessPointControlError> {
-        while let Some(release) = self.pending_buffered_releases.pop() {
+        while let Some(release) = self.take_pending_buffered_release() {
             self.mac
                 .engine_mut()
                 .complete_buffered_unicast_release(release, false)?;
@@ -1538,6 +1539,17 @@ where
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                report.record_dispatch_rejection(outcome, segment, now_micros);
+                if sink.exhausted {
+                    report.record_rx_rejection(
+                        AccessPointRxRejectionReason::DeferredOutputCapacity,
+                        segment,
+                        now_micros,
+                    );
+                }
+            }
             let _ = observe_protected_dispatch(
                 outcome,
                 peer,
@@ -1601,6 +1613,17 @@ where
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                report.record_dispatch_rejection(outcome, segment, now_micros);
+                if sink.exhausted {
+                    report.record_rx_rejection(
+                        AccessPointRxRejectionReason::DeferredOutputCapacity,
+                        segment,
+                        now_micros,
+                    );
+                }
+            }
             let _ = observe_protected_dispatch(
                 outcome,
                 peer,
@@ -1620,6 +1643,17 @@ where
                     |request| mac.engine_mut().admit_rx_data(request),
                     &mut sink,
                 );
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    report.record_dispatch_rejection(outcome, segment, now_micros);
+                    if sink.exhausted {
+                        report.record_rx_rejection(
+                            AccessPointRxRejectionReason::DeferredOutputCapacity,
+                            segment,
+                            now_micros,
+                        );
+                    }
+                }
                 let _ = observe_protected_dispatch(
                     outcome,
                     peer,

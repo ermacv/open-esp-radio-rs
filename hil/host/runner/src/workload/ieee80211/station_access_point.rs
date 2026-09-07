@@ -24,12 +24,12 @@ use crate::{
         local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
     },
     session::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
-    transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
+    transport::udp::configure_qualification_receive_buffer,
     workload::{
         ieee80211::control::{report_stack, require_transition, stop_station},
         traffic::{
             paced_udp::{Config as UdpConfig, HostTransmission, send as send_udp},
-            tx_traffic::{Burst, receive_bursts},
+            tx_traffic::{Burst, Receiver},
         },
     },
 };
@@ -189,18 +189,16 @@ fn qualify(
         ACCESS_POINT_HOST_PORT,
         access_point_target,
     )?;
-    let receiver_duration = config.duration.saturating_add(Duration::from_secs(5));
-    let station_receiver = target_transmits(config.direction)
-        .then(|| spawn_receiver(&station_flow, receiver_duration))
-        .transpose()?;
-    let access_point_receiver = target_transmits(config.direction)
-        .then(|| spawn_receiver(&access_point_flow, receiver_duration))
-        .transpose()?;
-
-    // Give both target sessions two seconds beyond the simultaneous host
-    // offer. This absorbs sequential command/readiness setup without making
-    // either endpoint's measured transport depend on UART latency.
-    let target_duration = config.duration.saturating_add(Duration::from_secs(2));
+    let [station_receiver, access_point_receiver] = prepare_receivers(
+        [&station_flow, &access_point_flow],
+        config.direction,
+        config.duration + config.timeout,
+        output,
+        |interface, socket| {
+            crate::session::prepare_udp_reverse_flow(capture, interface, socket, config.timeout)
+        },
+    )?;
+    let target_duration = config.duration;
     let station_session = start_session(capture, &station_flow, config, target_duration)?;
     let access_point_session = start_session(capture, &access_point_flow, config, target_duration)?;
     let access_point_air_capture = config
@@ -232,11 +230,17 @@ fn qualify(
         .map(LocalAirMonitorCapture::finish)
         .transpose()?;
 
+    if let Some(receiver) = &station_receiver {
+        receiver.target_finished(Some(station_evidence.transport.tx_units));
+    }
+    if let Some(receiver) = &access_point_receiver {
+        receiver.target_finished(Some(access_point_evidence.transport.tx_units));
+    }
     let station_host_rx = station_receiver
-        .map(|receiver| join_receiver(receiver, "station"))
+        .map(|receiver| receiver.finish(Some(station_evidence.transport.tx_units)))
         .transpose()?;
     let access_point_host_rx = access_point_receiver
-        .map(|receiver| join_receiver(receiver, "access-point"))
+        .map(|receiver| receiver.finish(Some(access_point_evidence.transport.tx_units)))
         .transpose()?;
     let station = interface_report(station_evidence, station_host_tx, station_host_rx)?;
     let access_point = interface_report(
@@ -335,12 +339,36 @@ pub(crate) fn wait_for_endpoints(
     Err("paired role did not publish both network endpoints".into())
 }
 
+/// Preflight is the sole reader of both sockets until both paths are ready.
+/// Collector deadlines begin afterwards, before either target session starts.
+fn prepare_receivers(
+    flows: [&HostFlow; 2],
+    direction: crate::scenario::Direction,
+    maximum_wait: Duration,
+    output: &Path,
+    mut ready: impl FnMut(WifiNetworkInterface, &UdpSocket) -> Result<()>,
+) -> Result<[Option<Receiver>; 2]> {
+    for (interface, flow) in [
+        (WifiNetworkInterface::Station, flows[0]),
+        (WifiNetworkInterface::AccessPoint, flows[1]),
+    ] {
+        ready(interface, &flow.socket)?;
+    }
+    let start = |flow: &HostFlow, label: &str| {
+        target_transmits(direction)
+            .then(|| Receiver::start(&flow.socket, flow.target, maximum_wait, output, label))
+            .transpose()
+    };
+    Ok([
+        start(flows[0], "station")?,
+        start(flows[1], "access-point")?,
+    ])
+}
+
 fn reverse_flow(bind: Ipv4Addr, port: u16, target: Ipv4Addr) -> Result<HostFlow> {
     let socket = UdpSocket::bind(SocketAddrV4::new(bind, port))?;
     configure_qualification_receive_buffer(&socket)?;
-    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
     socket.connect(SocketAddrV4::new(target, TARGET_TX_SOURCE_PORT))?;
-    open_reverse_flow(&socket)?;
     let peer = match socket.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
         SocketAddr::V6(_) => return Err("UDP qualification selected an IPv6 source".into()),
@@ -399,17 +427,6 @@ fn start_session(
     })
 }
 
-fn spawn_receiver(
-    flow: &HostFlow,
-    duration: Duration,
-) -> Result<thread::JoinHandle<std::io::Result<Vec<Burst>>>> {
-    let socket = flow.socket.try_clone()?;
-    let target = flow.target;
-    Ok(thread::spawn(move || {
-        receive_bursts(&socket, target, duration)
-    }))
-}
-
 fn spawn_sender(
     flow: &HostFlow,
     config: Config,
@@ -435,16 +452,6 @@ fn join_sender(
     sender
         .join()
         .map_err(|_| format!("{name} UDP sender panicked"))?
-        .map_err(Into::into)
-}
-
-fn join_receiver(
-    receiver: thread::JoinHandle<std::io::Result<Vec<Burst>>>,
-    name: &str,
-) -> Result<Vec<Burst>> {
-    receiver
-        .join()
-        .map_err(|_| format!("{name} UDP receiver panicked"))?
         .map_err(Into::into)
 }
 

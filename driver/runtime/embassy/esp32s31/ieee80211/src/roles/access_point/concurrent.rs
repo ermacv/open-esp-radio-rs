@@ -1558,6 +1558,12 @@ where
                     )
                 })? {
                 crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed => {
+                    self.network_tx
+                        .refresh_awake_demand(parked.processor.mac.engine());
+                    if self.network_tx.has_power_save_release() {
+                        self.activate_tx(physical_tx)
+                            .map_err(Esp32s31StaApAccessPointPairedRxError::Ownership)?;
+                    }
                     self.observe_role_state();
                     return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed);
                 }
@@ -1593,9 +1599,11 @@ where
                 .protocol
                 .active_mut()
                 .expect("AP RX retains the activated protocol owner");
+            self.network_tx
+                .refresh_awake_demand(active.processor.mac.engine());
             if !active.processor.tx_pending() {
                 self.network_tx
-                    .stage_awake_release(&mut active.processor)
+                    .refresh_power_save_demand(&mut active.processor)
                     .map_err(Esp32s31StaApAccessPointPairedRxError::PowerSave)?;
             }
         }
@@ -1643,6 +1651,10 @@ where
                     Esp32s31StaApAccessPointRxError::Control(error),
                 )
             });
+        if result.is_ok() {
+            self.network_tx
+                .refresh_awake_demand(active.processor.mac.engine());
+        }
         self.observe_role_state();
         result
     }

@@ -42,6 +42,12 @@ where
                     self.active = ConnectedTxActive::Ordinary;
                 } else {
                     self.observe_ordinary_rate_control();
+                    #[cfg(any(feature = "diagnostics", test))]
+                    if let Some(observer) = self.observer {
+                        observer.observe(AggregateTxObservation::OrdinaryWorkCompleted {
+                            work: self.ordinary.work(),
+                        });
+                    }
                 }
                 if progress != WifiTxProgress::Pending
                     && let Some(mut aggregate) = self.pending_ordinary_retry.take()
@@ -94,7 +100,7 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::HardwareTimeout);
-            Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
+            self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
         }
         Ok(WifiTxProgress::Complete)
     }
@@ -229,7 +235,7 @@ where
                         acknowledged: active.retry.acknowledged(),
                         individual_retry: true,
                     });
-                    Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
+                    self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
                 }
                 self.active = ConnectedTxActive::Ordinary;
                 return Ok(progress);
@@ -255,7 +261,7 @@ where
                     acknowledged: active.retry.acknowledged(),
                     individual_retry: false,
                 });
-                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
+                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -319,7 +325,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
-                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
+                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -341,11 +347,15 @@ where
     }
 
     #[cfg(any(feature = "diagnostics", test))]
-    fn record_exchange_time(
+    fn observe_terminal_exchange(
+        &self,
         observer: &dyn AggregateTxObserver,
         active: &AggregateActive<SLOTS>,
         finished_micros: u64,
     ) {
+        observer.observe(AggregateTxObservation::WorkCompleted {
+            work: self.ampdu.active().work(),
+        });
         if let Some(started_micros) = active.first_publication_micros {
             observer.observe(AggregateTxObservation::ExchangeCompleted {
                 micros: finished_micros.wrapping_sub(started_micros),

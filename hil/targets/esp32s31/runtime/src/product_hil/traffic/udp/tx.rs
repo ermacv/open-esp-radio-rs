@@ -68,191 +68,75 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     /// batch.
     pub pacing_group_datagrams: u8,
     /// Number of consecutive successful publications offered to one flow
-    /// before rotating to the next ready flow. One preserves the ordinary
-    /// datagram round-robin producer; BA-sized values isolate pre-DMA queue
-    /// selection without changing driver or radio backing.
+    /// before rotating to the next ready flow. A blocked socket ends its
+    /// burst immediately; other flows retain independent pacing and progress.
     pub multi_flow_burst_datagrams: u8,
-    pub drain: Duration,
     pub code_address: usize,
     pub session_source: UdpTxSessionSource,
 }
 
-#[derive(Clone, Copy)]
-struct MultiTxFlowState {
-    flow_id: u8,
-    server: Ipv4Address,
-    server_port: u16,
-    payload_bytes: usize,
-    offered_rate_bps: Option<u64>,
-    pacing_group_datagrams: u8,
-    next_send: Instant,
-    bytes: u64,
-    datagrams: u64,
-    errors: u32,
-}
-
-fn multi_tx_flow_states(
-    session_config: SessionConfig,
-    started: Instant,
-    default_pacing_group_datagrams: u8,
-) -> [Option<MultiTxFlowState>; SESSION_FLOW_CAPACITY] {
-    session_config.flows.map(|flow| {
-        flow.map(|flow| {
-            let peer = flow
-                .peer
-                .expect("validated multi-flow TX session carries a peer");
-            let target_tx = flow
-                .target_tx
-                .expect("validated multi-flow TX session carries a TX flow");
-            MultiTxFlowState {
-                flow_id: flow.flow_id,
-                server: Ipv4Address::from_octets(peer.address),
-                server_port: peer.port,
-                payload_bytes: usize::from(target_tx.payload_bytes),
-                offered_rate_bps: target_tx.offered_rate_bps,
-                pacing_group_datagrams: target_tx
-                    .pacing_group_datagrams
-                    .unwrap_or(default_pacing_group_datagrams),
-                next_send: started,
-                bytes: 0,
-                datagrams: 0,
-                errors: 0,
-            }
-        })
-    })
-}
-
-fn ready_multi_tx_flow(
-    states: &[Option<MultiTxFlowState>; SESSION_FLOW_CAPACITY],
-    cursor: usize,
-    now: Instant,
-) -> Option<usize> {
-    (0..SESSION_FLOW_CAPACITY)
-        .map(|offset| (cursor + offset) % SESSION_FLOW_CAPACITY)
-        .find(|index| {
-            states[*index]
-                .is_some_and(|state| state.offered_rate_bps.is_none() || state.next_send <= now)
-        })
-}
-
-fn earliest_multi_tx_deadline(
-    states: &[Option<MultiTxFlowState>; SESSION_FLOW_CAPACITY],
-) -> Option<Instant> {
-    states
-        .iter()
-        .flatten()
-        .filter(|state| state.offered_rate_bps.is_some())
-        .map(|state| state.next_send)
-        .min()
-}
+#[path = "multi_tx.rs"]
+mod multi_tx;
 
 async fn transmit_multi_flow(
-    socket: &mut UdpSocket<'_>,
+    sockets: [&mut UdpSocket<'_>; SESSION_FLOW_CAPACITY],
     session_config: SessionConfig,
     started: Instant,
     duration: Duration,
     pacing_group_datagrams: u8,
     multi_flow_burst_datagrams: u8,
 ) -> [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY] {
-    assert!(
-        multi_flow_burst_datagrams != 0,
-        "multi-flow burst cannot be empty"
+    use core::{
+        future::{Future, poll_fn},
+        task::Poll,
+    };
+    let mut producer = multi_tx::Producer::new(
+        session_config,
+        started.as_micros(),
+        duration.as_micros(),
+        pacing_group_datagrams,
+        multi_flow_burst_datagrams,
     );
-    let mut states = multi_tx_flow_states(session_config, started, pacing_group_datagrams);
-    let mut cursor = 0_usize;
-    let mut burst_flow: Option<usize> = None;
-    let mut burst_remaining = 0_u8;
-    let _session_elapsed = with_timeout(duration, async {
-        loop {
-            let now = Instant::now();
-            let continuing = burst_flow.filter(|index| {
-                burst_remaining != 0
-                    && states[*index].is_some_and(|state| {
-                        state.offered_rate_bps.is_none() || state.next_send <= now
-                    })
-            });
-            let Some(index) = continuing.or_else(|| ready_multi_tx_flow(&states, cursor, now))
-            else {
-                if let Some(deadline) = earliest_multi_tx_deadline(&states) {
-                    Timer::at(deadline).await;
-                }
-                continue;
-            };
-            if continuing.is_none() {
-                burst_flow = Some(index);
-                burst_remaining = multi_flow_burst_datagrams;
-            }
-            let state = states[index].expect("selected multi-flow TX state remains active");
-            let sequence = (state.datagrams as u32).to_be_bytes();
-            let publication = socket
-                .send_to_with(
-                    state.payload_bytes,
-                    (state.server, state.server_port),
+    poll_fn(|cx| {
+        let result = producer.poll(
+            cx,
+            || Instant::now().as_micros(),
+            |index, publication, cx| {
+                // The pinned stack implementations register their socket waker on
+                // Pending before constructing/publishing the payload. No lease or
+                // partially built datagram escapes this one cancellation-safe poll.
+                let send = sockets[index].send_to_with(
+                    publication.payload_bytes,
+                    (
+                        Ipv4Address::from_octets(publication.peer.address),
+                        publication.peer.port,
+                    ),
                     |payload| {
-                        payload[..sequence.len()].copy_from_slice(&sequence);
-                        (state.payload_bytes, ())
+                        payload[..4].copy_from_slice(&publication.sequence.to_be_bytes());
+                        (publication.payload_bytes, ())
                     },
-                )
-                .await;
-
-            let state = states[index]
-                .as_mut()
-                .expect("selected multi-flow TX state remains active");
-            match publication {
-                Ok(()) => {
-                    state.bytes = state.bytes.saturating_add(state.payload_bytes as u64);
-                    state.datagrams = state.datagrams.saturating_add(1);
-                    if let Some(rate_bps) = state.offered_rate_bps
-                        && state
-                            .datagrams
-                            .is_multiple_of(u64::from(state.pacing_group_datagrams))
-                    {
-                        let group_nanos = u64::from(state.pacing_group_datagrams)
-                            .saturating_mul(u64::try_from(state.payload_bytes).unwrap_or(u64::MAX))
-                            .saturating_mul(8_000_000_000)
-                            .saturating_add(rate_bps - 1)
-                            / rate_bps;
-                        let group_duration = Duration::from_nanos(group_nanos);
-                        state.next_send += group_duration;
-                        let now = Instant::now();
-                        if now > state.next_send
-                            && now - state.next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS
-                        {
-                            state.next_send = now;
-                        }
-                    }
-                    burst_remaining = burst_remaining.saturating_sub(1);
-                }
-                Err(_) => {
-                    state.errors = state.errors.saturating_add(1);
-                    burst_remaining = 0;
-                }
-            }
-            if burst_remaining == 0 {
-                burst_flow = None;
-                cursor = (index + 1) % SESSION_FLOW_CAPACITY;
-            }
+                );
+                core::pin::pin!(send).as_mut().poll(cx)
+            },
+        );
+        if result.is_ready() {
+            return result;
         }
+        let timer = Timer::at(Instant::from_micros(producer.deadline()));
+        if core::pin::pin!(timer).as_mut().poll(cx).is_ready() {
+            // A pacing/session edge elapsed while servicing the sockets.
+            cx.waker().wake_by_ref();
+        }
+        Poll::Pending
     })
     .await;
-    let elapsed_micros = started.elapsed().as_micros().max(1);
-    states.map(|state| {
-        state.map(|state| FlowTransportEvidence {
-            flow_id: state.flow_id,
-            rx_bytes: 0,
-            tx_bytes: state.bytes,
-            rx_units: 0,
-            tx_units: state.datagrams,
-            elapsed_micros,
-            transport_errors: state.errors,
-        })
-    })
+    producer.evidence(Instant::now().as_micros())
 }
 
 /// Device-to-host UDP load through Embassy and the open TX scheduler.
 pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
-    storage: &'a mut UdpTxStorage,
+    storage: &'a mut [UdpTxStorage; SESSION_FLOW_CAPACITY],
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
     #[cfg(any(
@@ -261,45 +145,76 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     ))]
     l1_cache: &'static L1CachePerformanceCounters,
 ) -> ! {
-    // Complete the connected-data-path settle before advertising readiness.
-    // `Start` must mean the benchmark task can consume its session without a
-    // hidden post-acceptance delay.
-    Timer::after_secs(1).await;
-    publish_event_reliably(
-        0,
-        0,
-        HilEvent::ServiceReady(ServiceInfo {
-            network_interface: config.network_interface,
-            transport: HilTransport::Udp,
-            direction: HilDirection::Tx,
-            local_port: config.source_port,
-            maximum_payload_bytes: config.payload_capacity as u16,
-        }),
-    )
-    .await;
+    // ServiceReady attests a bound socket, so host firewall/neighbor probes
+    // may arrive before Start without hitting an unopened UDP port.
+    let [primary_storage, secondary_storage] = storage;
+    let mut socket = new_udp(stack, primary_storage);
+    let mut secondary_socket = new_udp(stack, secondary_storage);
+    secondary_socket
+        .bind(
+            config
+                .source_port
+                .checked_add(1)
+                .expect("second UDP source port"),
+        )
+        .unwrap_or_else(|error| panic!("secondary UDP TX socket bind failed: {error:?}"));
+    socket
+        .bind(config.source_port)
+        .unwrap_or_else(|error| panic!("production UDP TX socket bind failed: {error:?}"));
+    for source_port in [config.source_port, config.source_port + 1] {
+        publish_event_reliably(
+            0,
+            0,
+            HilEvent::ServiceReady(ServiceInfo {
+                network_interface: config.network_interface,
+                transport: HilTransport::Udp,
+                direction: HilDirection::Tx,
+                local_port: source_port,
+                maximum_payload_bytes: config.payload_capacity as u16,
+            }),
+        )
+        .await;
+    }
     runtime_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
          source_port={} payload_capacity={} tx_mode=ampdu session_protocol=required",
         config.source_port, config.payload_capacity,
     ));
-    // Receive the first typed session before exposing the socket owner.
-    // Xarxa allocates packet owners per send; smoltcp uses the byte rings
-    // supplied by the workload's static socket storage.
-    let first_session = config.session_source.sessions.receive().await;
-    let mut socket = new_udp(stack, storage);
-    if let Err(error) = socket.bind(config.source_port) {
-        runtime_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=FAIL stage=udp-tx-bind error={error:?}"
-        ));
-        loop {
-            Timer::after_secs(60).await;
-        }
-    }
-    let mut first_session = Some(first_session);
     loop {
-        let session = match first_session.take() {
-            Some(session) => session,
-            None => config.session_source.sessions.receive().await,
+        let session = loop {
+            let mut probe = [0_u8; open_esp_radio_hil_protocol::UdpProbe::LENGTH + 1];
+            let mut secondary_probe = [0_u8; open_esp_radio_hil_protocol::UdpProbe::LENGTH + 1];
+            match embassy_futures::select::select3(
+                config.session_source.sessions.receive(),
+                socket.recv_from(&mut probe),
+                secondary_socket.recv_from(&mut secondary_probe),
+            )
+            .await
+            {
+                embassy_futures::select::Either3::First(session) => break session,
+                embassy_futures::select::Either3::Second(Ok((length, peer))) => {
+                    if let Some(mut request) =
+                        open_esp_radio_hil_protocol::UdpProbe::decode(&probe[..length])
+                        && !request.response
+                    {
+                        request.response = true;
+                        // This is unmeasured traffic on the bound TX socket.
+                        // Only its receipt at the host establishes reverse readiness.
+                        let _ = socket.send_to(&request.encode(), peer).await;
+                    }
+                }
+                embassy_futures::select::Either3::Third(Ok((length, peer))) => {
+                    if let Some(mut request) =
+                        open_esp_radio_hil_protocol::UdpProbe::decode(&secondary_probe[..length])
+                        && !request.response
+                    {
+                        request.response = true;
+                        let _ = secondary_socket.send_to(&request.encode(), peer).await;
+                    }
+                }
+                embassy_futures::select::Either3::Second(Err(_))
+                | embassy_futures::select::Either3::Third(Err(_)) => {}
+            }
         };
         wait_session_link_requirements(session.config.link_requirements, config.network_interface)
             .await;
@@ -383,11 +298,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let tx_promotion_start = TX_PERFORMANCE.snapshot();
-        // TX owns A-MPDU evidence because its post-measurement drain proves
-        // that the last publication reached a terminal BlockAck outcome.
-        // The RX sibling can finish on the host terminal datagram while a
-        // target aggregate is still in flight, so sampling there can tear one
-        // logical publication across independent diagnostic atomics.
+        // TX owns this diagnostic interval. Socket admission does not prove
+        // radio completion; the terminal role report owns final MAC outcomes.
         let aggregate_start = if crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
             && session.config.direction != HilDirection::Rx
         {
@@ -474,7 +386,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             )
         } else {
             let flows = transmit_multi_flow(
-                &mut socket,
+                [&mut socket, &mut secondary_socket],
                 session.config,
                 started,
                 duration,
@@ -507,11 +419,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             .saturating_mul(1_000)
             .checked_div(elapsed_us)
             .unwrap_or(0);
-        // Send completion is stack admission, not confirmation of transmission:
-        // upstream Xarxa may retain a packet for neighbor resolution, while
-        // smoltcp queues its bytes. Allow terminal radio/BlockAck progress
-        // outside the measured workload before sampling hardware evidence.
-        Timer::after(config.drain).await;
+        // Snapshot the requested interval without guessing when stack/radio
+        // queues have drained. Delivery is independently measured by the host.
         let qualification_end = qualification_sample(QualificationRequester::UdpTx).await;
         let tx_vector = qualification_end.tx_vector;
         #[cfg(feature = "mac-irq-telemetry")]

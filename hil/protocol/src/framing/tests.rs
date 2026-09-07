@@ -1,4 +1,5 @@
 use super::*;
+mod airtime;
 use crate::{
     Command, Completion, Direction, Envelope, Event, FlowConfig, Ieee802154EdEventProbeEvidence,
     Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop, Ieee802154EventStatusProbeEvidence,
@@ -19,6 +20,39 @@ fn command(sequence: u32) -> Envelope<Command> {
         sequence,
         Command::Start,
     )
+}
+
+#[test]
+fn initialization_preserves_each_explicit_ap_scheduler_policy() {
+    for ap_scheduler in [
+        crate::WifiApScheduler::Disabled,
+        crate::WifiApScheduler::RrHtResponse24,
+        crate::WifiApScheduler::DeficitHtResponse24,
+    ] {
+        let expected = Envelope::new(
+            1,
+            1,
+            0,
+            1,
+            Command::Initialize(crate::InitializationConfiguration {
+                ap_scheduler,
+                ipv4: crate::NetworkIpv4Configuration::Dhcp,
+                data_plane: Default::default(),
+                rx_checksum: Default::default(),
+                tx_udp_checksum: Default::default(),
+                tx_buffer: Default::default(),
+                rx_continuation: Default::default(),
+                l1_cache_counters: false,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+            observed = Some(result.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
 }
 
 #[test]
@@ -394,6 +428,29 @@ fn access_point_retry_evidence_fits_and_round_trips() {
         tx_cts_timeout_retries: u32::MAX,
         tx_collision_retries: u32::MAX,
         ..WifiAccessPointEvidence::default()
+    };
+    let evidence = crate::WifiAccessPointEvidence {
+        first_rx_protocol_rejection: Some(crate::WifiRxRejection {
+            reason: crate::WifiRxRejectionReason::FragmentRetryPacketNumberMismatch {
+                fragment_number: u8::MAX,
+                expected: u64::MAX,
+                observed: u64::MAX,
+            },
+            at_micros: u64::MAX,
+            transmitter: Some([u8::MAX; 6]),
+            frame_control: Some(u16::MAX),
+            sequence_control: Some(u16::MAX),
+            tid: Some(u8::MAX),
+            key_id: Some(u8::MAX),
+            packet_number: Some(u64::MAX),
+            mpdu_length: u32::MAX,
+        }),
+        tx_retention: Some(crate::WifiTxRetentionEvidence {
+            active_queue_full: u32::MAX,
+            unicast_power_save_full: u32::MAX,
+            group_power_save_full: u32::MAX,
+        }),
+        ..evidence
     };
     let expected = Envelope::new(7, 3, 9, 2, Event::WifiAccessPointStopped(evidence));
     let mut encoder = FrameEncoder::new();

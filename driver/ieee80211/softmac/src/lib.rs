@@ -25,6 +25,9 @@ pub mod extensions;
 pub use extensions::espressif::esp_now::{protocol as esp_now, security as esp_now_security};
 pub mod interface;
 pub mod monitor;
+pub mod tx_work;
+
+pub use tx_work::MacTxWork;
 
 pub use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -66,3 +69,6 @@ pub use contract::{
     MacOperationOwnership, MacResourceLimits, MacRxCryptoStatus, MacRxEvidence, MacRxMetadata,
     MacServiceCapabilities, MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus,
 };
+
+/// Transmission-time prediction independent of memory and chip topology.
+pub mod tx_cost;

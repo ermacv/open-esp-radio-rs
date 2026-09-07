@@ -210,11 +210,27 @@ fn run() -> Result<()> {
         },
         CliCommand::Run {
             scenario: id,
+            ap_scheduler,
             firmware_from,
             network,
         } => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
-            let selected = catalog.get(&id)?.clone();
+            let mut selected = catalog.get(&id)?.clone();
+            if let Some(policy) = ap_scheduler {
+                selected.ap_scheduler = policy.into();
+            }
+            selected.validate()?;
+            if selected.ap_scheduler != open_esp_radio_hil_protocol::WifiApScheduler::Disabled {
+                if !matches!(
+                    selected.workload,
+                    crate::scenario::Workload::AccessPoint { .. }
+                ) {
+                    return Err("--ap-scheduler requires a standalone access-point scenario".into());
+                }
+                if firmware_from.is_none() && network != crate::image::Integration::OwnedXarxa {
+                    return Err("--ap-scheduler requires --network owned-xarxa or a compatible archived image".into());
+                }
+            }
             let firmware = match firmware_from {
                 Some(run_id) => {
                     RunFirmware::Replay(Box::new(crate::evidence::verify::archived_firmware(

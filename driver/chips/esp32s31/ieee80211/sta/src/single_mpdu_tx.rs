@@ -237,6 +237,11 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
+    /// Ordinary publications, including per-attempt length/rate and retries.
+    pub fn work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.ordinary.work()
+    }
+
     pub fn new(
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
         handoff: ConnectedTxHandoff,

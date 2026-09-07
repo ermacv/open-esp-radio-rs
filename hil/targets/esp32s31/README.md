@@ -12,6 +12,61 @@ API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in
 `driver/`.
 
+Standalone HT AP scenarios accept a runtime scheduling comparison:
+
+```console
+cargo hil run diagnostic-ap-mixed-tx-work --network owned-xarxa --ap-scheduler rr
+cargo hil run diagnostic-ap-mixed-tx-work --firmware-from <RR_RUN_ID> --ap-scheduler deficit
+```
+
+Both commands use the same firmware and network implementation. Initialization
+carries the selected policy; the immutable scenario snapshot and command records
+retain `rr-ht-response24` or `deficit-ht-response24`. Omitting the option preserves
+the ordinary unmetered RR default. The shared experiment uses a 3000-us quantum,
+100-us minimum and HT aggregate admission against the issued grant. Terminal
+cost is modelled PPDU time plus 10-us SIFS and a 32-byte OFDM24 response per
+unicast publication; group publications add no response. The same response
+envelope deliberately applies to ordinary ACK and aggregate BlockAck exchanges.
+It is not measured response PHY, airtime, CCA waiting, protection or hidden MAC
+retry time. Unknown PPDU work or saturated receipts fail closed.
+
+This comparison requires `owned-xarxa` and a standalone HT20/HT40 AP workload.
+Other network images reject the policy during initialization; simultaneous
+STA+AP is rejected while it is selected. The fixture configuration owns the
+channel; set its AP channel to 13 with HT40-below for the channel-13 comparison.
+Changing policy requires a fresh initialization, not a firmware rebuild. The
+driver owns candidate selection, grants and cancellation; HIL supplies only
+the explicit comparison model and workload.
+
+`diagnostic-ap-balanced-airtime` offers 130 Mbit/s to each of two AP clients for
+one 12-second window. It accepts the same `--ap-scheduler rr|deficit` comparison.
+This workload does not force different peer PHY rates: AP downlink selection
+uses each station's advertised receive capabilities. An OpenWrt transmit MCS
+mask controls the opposite direction and is not evidence of downlink asymmetry.
+Multi-flow UDP uses one socket per flow slot, with independent pacing and
+sequence counters. Source ports are 4324 and 4325; UDP 4325 is distinct from the
+TCP service on that port. Both sockets are bound before readiness, and each host
+receiver confirms its own reverse path before Start. The OpenWrt fixture forwards
+both UDP ports. A pending publication skips only its own flow for the current
+poll. The producer parks on socket events or the earliest future pacing/session
+deadline; it yields after a bounded quantum of successful publications.
+Terminal send errors stop that flow and remain in its transport evidence.
+
+Per-socket storage is separate, while stack packet pools and driver admission
+remain shared resources of the selected integration. Their pressure can still
+limit both flows. Offered rates alone do not prove continuous driver backlog
+or airtime fairness between unequal peers.
+
+With a scheduling comparison enabled, `WifiAirtimePeer` records and a final
+`WifiAirtimeReport` precede the correlated AP stop event. They count the whole AP
+epoch, including its ordinary traffic and teardown, rather than only the UDP
+window. The target accumulates at most eight distinct association/group keys;
+it retains old generations and reports dropped events or saturation explicitly.
+No per-packet diagnostic text is emitted. The runner requires complete records
+and reconciliation of reservation counts and budgets, with no outstanding work
+at successful stop. A negative balance is permitted: it is modelled service
+debt, not leaked packet ownership. The raw typed records remain in `protocol.jsonl`.
+
 The released Embassy/smoltcp and owned Embassy/Xarxa compositions enable
 `auto-icmp-echo-reply` explicitly for the HIL ping workload because these
 dependencies disable default features. Echo response is independent of DHCP,
@@ -22,6 +77,50 @@ UDP/TCP sockets and the radio adapter.
 
 [Shared platform](../../../platform/esp32s31/README.md) owns the board profile,
 bootstrap, linker scripts and stage-two entry used by HIL and examples.
+
+Diagnostic AP evidence retains `first_rx_protocol_rejection` for each AP epoch.
+It identifies the exact data/replay/fragmentation failure or internal
+reorder/output-capacity refusal, with radio monotonic time and available
+transmitter, frame-control, sequence-control, TID and CCMP PN/key-ID metadata.
+Retained reorder frames report their own metadata at the time of rejection.
+No payload or key material is stored; subsequent failures do not overwrite the
+first record. The aggregate counter retains its existing scope. The typed stop event
+carries the record independently of diagnostic text delivery. A null record
+means no recorded reason, not proof that an aggregate rejection count is zero.
+
+Diagnostic AP stop evidence also carries `tx_retention`: counts of admitted
+software owners dropped by active, unicast power-save or group power-save
+storage exhaustion. These counters span the AP epoch and survive traffic
+window resets. They are separate from on-air delivery failures. The AP gate
+reports these specific losses before evaluating aggregate delivery evidence.
+Without a driver observer this field is absent (`null`), rather than zero.
+
+Images with `driver-observation` include `OAMPW`: terminal aggregate exchanges,
+actual software publications, submitted PSDU bytes and MPDUs including selective
+retries, nominal data serialization time, unestimated publications and saturated
+receipts. It uses the same frozen observation window as other aggregate text.
+An exchange contributes at its terminal completion/abort edge, so an in-flight
+exchange crossing the window boundary is not split between windows. Ordinary
+MPDU TX/fallback is excluded. These fields are diagnostic text, not qualification
+criteria or a typed traffic-result extension. `nominal_data_us` is not measured
+airtime; its scope is defined in the [egress contract](../../../docs/wifi-egress.md).
+Delivery and exchange wall time remain separate counters.
+`OTXW kind=ampdu|ordinary` reports separate terminal work banks: publications,
+PSDU bytes, MPDUs, modelled PPDU microseconds, unknown PPDU publications and
+saturated receipts. Ordinary includes connected-STA service and AP network
+MPDUs, including fallback and buffered/group release; it is not a census of
+all management/control or autonomous hardware responses. Both banks use the
+same frozen observation interval. `ppdu_us` is incomplete when `unknown_ppdus`
+is nonzero and never claims measured airtime. ACK/BlockAck, protection and
+contention belong to the explicit [cost model](../../../docs/wifi-egress.md),
+not implicit multipliers in these counters.
+`OTXC kind=ampdu|ordinary` uses the same terminal window to report summed
+programmed AIFSN, selected backoff slots and publications without contention
+evidence. The counts exclude SIFS and do not measure waiting, CCA freezes or
+internal hardware retries. They inherit the corresponding `OTXW` saturation
+flag. A zero backoff with zero unknown publications is a known selection.
+The `diagnostic-tx-architecture` image omits this observer; use a scenario with
+`diagnostic-task-poll` to collect the aggregate work receipt.
 
 `performance` contains no driver observer or scheduler instrumentation.
 RF calibration details are retained only by the PHY `registration-diagnostics`
@@ -46,10 +145,10 @@ scheduling latency and is not CPU time. The measurements do not timestamp
 individual packets inside the radio queue. The MAC IRQ image emits `hil-irq`
 entry classification for UDP TX, including interrupts with no pending status,
 alongside its existing sampled publication/IRQ/service timings. The interval
-ends before the terminal drain; summaries are printed after traffic.
+ends with the traffic window; summaries are printed after traffic.
 
 MAC IRQ diagnostic TX workloads also emit `hil-tx-ingress` RX progress from
-before traffic through the terminal drain. These records separate hardware
+before traffic through the final diagnostic snapshot. These records separate hardware
 completion, protocol processing, reorder release and network publication;
 `pool_exhausted` counts the subset of publication drops caused by allocation
 failure. Incoming ARP replies are required for UDP egress to an unresolved
@@ -73,13 +172,14 @@ identifies the last receive error when errors occurred.
 Silence means no data reached the UDP consumer; it does not identify an RF,
 stack or driver cause. `ORX_POOL` reports shared Xarxa allocation refusals;
 `ORX_RESOURCES` reports compatibility RX/TX free and queued slots plus cumulative
-`rx_queue_full` publication refusals. These observations can be
+`rx_queue_full` publication refusals. Both records name the selected STA/AP
+interface; unavailable monitors remain absent rather than reporting zero. These observations can be
 read even when the radio executor is blocked. Slot snapshots include neither
 held tokens nor a claim of atomic observation across all queues. RX task-poll
 observation closes at the window boundary, before terminal grace and reporting.
 
 UDP TX task-poll intervals close at the end of the measured workload, before
-the terminal drain or report output. Aggregate evidence closes after the drain;
+report output. Aggregate evidence closes at the final diagnostic snapshot;
 text and structured reports share the same frozen aggregate snapshot. Waiting
 for diagnostic output capacity therefore cannot extend these intervals.
 
@@ -178,6 +278,16 @@ default capacity.
 and emergency writer lifecycle. Its `radio` child supplies the product-facing
 startup, session and Wi-Fi completion endpoints; memory-only images exclude
 that child while retaining the common command admission rules.
+The asynchronous USB owner waits for writer release; cancelling that wait
+releases its priority. Emergency output remains nonblocking. Diagnostic images
+with `driver-observation` reserve 32 text records for synchronous role-transition
+bursts; other images reserve eight. Both queues remain bounded SRAM storage.
+Overflow warnings distinguish queue exhaustion, immediate-writer contention
+and USB write errors, and retain the first queue rejection. Required reports
+await admission outside measured work; ordinary radio logging never waits for
+USB capacity. Extra diagnostic queue storage costs 9,408 SRAM bytes and does
+not change radio pools. Arbitrary sustained logging can still overflow and is
+reported, rather than treated as complete diagnostic evidence.
 
 The `diagnostic-memory-benchmark` image excludes `product_hil` and its radio
 and network tasks at compile time. It keeps the shared two-core boot,

@@ -215,6 +215,8 @@ const AP_PROTOCOL_ACTION_CAPACITY: usize = 8;
 const AP_PROTOCOL_ACTIONS_PER_RX_FRAME: usize = 1;
 
 include!("access_point/control_types.rs");
+mod rx_rejection;
+pub use rx_rejection::{AccessPointRxRejection, AccessPointRxRejectionReason};
 include!("access_point/rx_dispatch.rs");
 include!("access_point/protocol_owner.rs");
 include!("access_point/control_owner.rs");

@@ -25,12 +25,12 @@ use crate::{
     Result,
     scenario::{Criteria, Direction},
     session::{SerialCapture, probe_udp_rx_ready_via},
-    transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
+    transport::udp::configure_qualification_receive_buffer,
     workload::traffic::{
         paced_udp::{
             Config as UdpConfig, HostTransmission as UdpTransmission, send_on as send_udp_on,
         },
-        tx_traffic::{Burst, receive_bursts},
+        tx_traffic::{Burst, Receiver},
     },
 };
 
@@ -80,8 +80,10 @@ fn multi_client_host_flows(
      -> Result<_> {
         let socket = open_multi_client_socket(
             SocketAddrV4::new(bind_address, port),
-            target_transmits(direction)
-                .then_some(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT)),
+            target_transmits(direction).then_some(SocketAddrV4::new(
+                traffic_target,
+                UDP_TX_SOURCE_PORT + u16::from(flow_id),
+            )),
         )?;
         Ok(MultiClientHostFlow {
             flow_id,
@@ -112,7 +114,6 @@ fn open_multi_client_socket(
 ) -> Result<UdpSocket> {
     let socket = UdpSocket::bind(bind)?;
     configure_qualification_receive_buffer(&socket)?;
-    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
     if let Some(peer) = reverse_peer {
         socket.connect(peer)?;
     }
@@ -155,8 +156,34 @@ pub(super) fn qualify_multi_client_udp(
         }
     }
 
+    if target_transmits(direction) {
+        for flow in &flows {
+            crate::session::prepare_udp_reverse_flow(
+                capture,
+                open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
+                &flow.socket,
+                config.timeout,
+            )?;
+        }
+    }
+
     let payload_bytes_u16 =
         u16::try_from(payload_bytes).expect("validated multi-client UDP payload");
+    let mut receivers = Vec::with_capacity(SESSION_FLOW_CAPACITY);
+    if target_transmits(direction) {
+        for flow in &flows {
+            receivers.push((
+                flow.flow_id,
+                Receiver::start(
+                    &flow.socket,
+                    flow.traffic_target,
+                    config.timeout + duration + crate::session::SESSION_START_TIMEOUT,
+                    output,
+                    &format!("flow-{}", flow.flow_id),
+                )?,
+            ));
+        }
+    }
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
@@ -194,30 +221,6 @@ pub(super) fn qualify_multi_client_udp(
         link_requirements: SessionLinkRequirements::NONE,
     })?;
 
-    // start_session waits for both requested directions to report readiness.
-    // Priming before that can elicit Port Unreachable from the unbound target
-    // TX port; either side of this shared socket can consume the late error.
-    if target_transmits(direction) {
-        for flow in &flows {
-            open_reverse_flow(&flow.socket)?;
-        }
-    }
-    let receive_duration = duration.saturating_add(Duration::from_secs(2));
-    let mut receiver_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
-    if target_transmits(direction) {
-        for flow in &flows {
-            let socket = flow.socket.try_clone()?;
-            let expected_target = flow.traffic_target;
-            let flow_id = flow.flow_id;
-            receiver_threads.push((
-                flow_id,
-                thread::spawn(move || {
-                    receive_bursts(&socket, expected_target, receive_duration)
-                        .map_err(|error| error.to_string())
-                }),
-            ));
-        }
-    }
     let mut sender_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
     if target_receives(direction) {
         for (index, flow) in flows.iter().enumerate() {
@@ -238,9 +241,7 @@ pub(super) fn qualify_multi_client_udp(
             };
             sender_threads.push((
                 flow_id,
-                thread::spawn(move || {
-                    send_udp_on(&socket, send_config).map_err(|error| error.to_string())
-                }),
+                thread::spawn(move || send_udp_on(&socket, send_config)),
             ));
         }
     }
@@ -248,14 +249,17 @@ pub(super) fn qualify_multi_client_udp(
     let mut host_errors = Vec::new();
     let mut host_tx = [None; SESSION_FLOW_CAPACITY];
     for (flow_id, sender) in sender_threads {
-        match sender
-            .join()
-            .map_err(|_| format!("AP UDP flow {flow_id} sender thread panicked"))
-            .and_then(|result| {
-                result.map_err(|error| format!("AP UDP flow {flow_id} sender failed: {error}"))
-            }) {
-            Ok(sent) => host_tx[usize::from(flow_id)] = Some(sent),
-            Err(error) => host_errors.push(error),
+        match sender.join() {
+            Ok(Ok(sent)) => host_tx[usize::from(flow_id)] = Some(sent),
+            Ok(Err(error)) => {
+                if let Some(failure) =
+                    error.downcast_ref::<crate::workload::traffic::paced_udp::SendFailure>()
+                {
+                    host_tx[usize::from(flow_id)] = Some(failure.progress);
+                }
+                host_errors.push(format!("AP UDP flow {flow_id} sender failed: {error}"));
+            }
+            Err(_) => host_errors.push(format!("AP UDP flow {flow_id} sender thread panicked")),
         }
     }
 
@@ -265,15 +269,26 @@ pub(super) fn qualify_multi_client_udp(
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
     let mut host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY] = [None, None];
-    for (flow_id, receiver) in receiver_threads {
-        match receiver
-            .join()
-            .map_err(|_| format!("AP UDP flow {flow_id} receiver thread panicked"))
-            .and_then(|result| {
-                result.map_err(|error| format!("AP UDP flow {flow_id} receiver failed: {error}"))
-            }) {
+    for (flow_id, receiver) in &receivers {
+        receiver.target_finished(
+            structured
+                .as_ref()
+                .ok()
+                .and_then(|evidence| evidence.flow_transport[usize::from(*flow_id)])
+                .map(|flow| flow.tx_units),
+        );
+    }
+    for (flow_id, receiver) in receivers {
+        let expected = structured
+            .as_ref()
+            .ok()
+            .and_then(|evidence| evidence.flow_transport[usize::from(flow_id)])
+            .map(|flow| flow.tx_units);
+        match receiver.finish(expected) {
             Ok(received) => host_rx[usize::from(flow_id)] = Some(received),
-            Err(error) => host_errors.push(error),
+            Err(error) => {
+                host_errors.push(format!("AP UDP flow {flow_id} receiver failed: {error}"))
+            }
         }
     }
 
@@ -281,6 +296,7 @@ pub(super) fn qualify_multi_client_udp(
         direction,
         duration,
         peers: flows.each_ref().map(|flow| flow.peer),
+        host_requested_bps: [rx_rate_bps, secondary_rx_rate_bps.or(rx_rate_bps)],
         host_tx,
         host_rx,
         host_errors,
@@ -304,6 +320,7 @@ struct MultiClientObservation {
     duration: Duration,
     peers: [Ipv4Endpoint; SESSION_FLOW_CAPACITY],
     host_tx: [Option<UdpTransmission>; SESSION_FLOW_CAPACITY],
+    host_requested_bps: [Option<u64>; SESSION_FLOW_CAPACITY],
     host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY],
     target: Result<MultiClientTarget>,
     host_errors: Vec<String>,
@@ -313,8 +330,19 @@ impl MultiClientObservation {
     fn evaluate(self, output: &Path, criteria: &Criteria) -> Result<TrafficReport> {
         // Preserve delivery even when terminal evidence or a later gate fails.
         // Raw per-flow host observations must not depend on qualification.
+        let host_offer: [_; SESSION_FLOW_CAPACITY] = std::array::from_fn(|index| {
+            self.host_requested_bps[index].map(|rate| {
+                crate::workload::traffic::offered_load::Assessment::new(
+                    rate,
+                    self.duration,
+                    self.host_tx[index],
+                    criteria.minimum_host_offer_percent,
+                )
+            })
+        });
         let progress = serde_json::json!({
-            "schema": 1,
+            "schema": 2,
+            "host_offer": host_offer,
             "direction": self.direction,
             "duration_micros": u64::try_from(self.duration.as_micros())?,
             "peers": self.peers,
@@ -339,6 +367,11 @@ impl MultiClientObservation {
         )?;
         if !self.host_errors.is_empty() {
             return Err(self.host_errors.join("; ").into());
+        }
+        for (index, offer) in host_offer.iter().enumerate() {
+            if let Some(offer) = offer {
+                offer.validate(index)?;
+            }
         }
         let structured = self
             .target

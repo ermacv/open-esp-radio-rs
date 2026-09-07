@@ -464,15 +464,16 @@ fn install_forwarding(
          nft 'add chain inet {FORWARD_TABLE} prerouting {{ type nat hook prerouting priority -101; policy accept; }}'; \
          nft 'add chain inet {FORWARD_TABLE} postrouting {{ type nat hook postrouting priority 101; policy accept; }}'; \
          nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" udp dport {UDP_RX_PORT} dnat ip to {target}; \
-         nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" udp dport {UDP_TX_PORT} dnat ip to {target}; \
+         nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" udp dport {{ {UDP_TX_PORT}, {UDP_TX_SECONDARY_PORT} }} dnat ip to {target}; \
          nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} udp dport {UDP_RX_PORT} snat ip to {client}; \
-         nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} udp dport {UDP_TX_PORT} snat ip to {client}; \
+         nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} udp dport {{ {UDP_TX_PORT}, {UDP_TX_SECONDARY_PORT} }} snat ip to {client}; \
          nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" icmp type echo-request dnat ip to {target}; \
          nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} icmp type echo-request snat ip to {client}; \
          trap - EXIT; \
          printf 'forward_address=%s\\n' \"$management_ip\"",
         UDP_RX_PORT = 4_323,
         UDP_TX_PORT = 4_324,
+        UDP_TX_SECONDARY_PORT = 4_325,
     );
     let output = ssh(fixture, &script)?;
     if !output.status.success() {
@@ -489,10 +490,10 @@ fn install_forwarding(
 fn snapshot_link(fixture: &OpenWrtConfig) -> Result<OpenWrtClientLinkSnapshot> {
     let script = format!(
         "set -eu; \
-         stats=$(iw dev {INTERFACE} station dump); \
-         test -n \"$stats\"; \
+         stats=$(iw dev {INTERFACE} station dump) || {{ echo 'link-snapshot: station dump failed' >&2; exit 1; }}; \
+         if test -z \"$stats\"; then echo 'link-snapshot: no associated station' >&2; exit 1; fi; \
          set -- /sys/kernel/debug/ieee80211/*/netdev:{INTERFACE}/stations/*/aqm; \
-         test \"$#\" -eq 1; test -r \"$1\"; aqm=\"$1\"; \
+         if test \"$#\" -ne 1 || ! test -r \"$1\"; then echo 'link-snapshot: AQM counters unavailable or ambiguous' >&2; exit 1; fi; aqm=\"$1\"; \
          printf 'rx_bytes=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*rx bytes:/ {{print $3}}')\"; \
          printf 'rx_packets=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*rx packets:/ {{print $3}}')\"; \
          printf 'rx_duration=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*rx duration:/ {{print $3}}')\"; \
@@ -505,10 +506,15 @@ fn snapshot_link(fixture: &OpenWrtConfig) -> Result<OpenWrtClientLinkSnapshot> {
          printf 'tx_duration=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx duration:/ {{print $3}}')\"; \
          printf 'tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$aqm\")\""
     );
-    let output = ssh(fixture, &script)?;
+    parse_link_snapshot(ssh(fixture, &script)?)
+}
+
+fn parse_link_snapshot(output: std::process::Output) -> Result<OpenWrtClientLinkSnapshot> {
     if !output.status.success() {
         return Err(format!(
-            "cannot snapshot controlled OpenWrt AP-client link counters: {}",
+            "cannot snapshot controlled OpenWrt AP-client link counters: status={} stdout={:?} stderr={:?}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout).trim(),
             String::from_utf8_lossy(&output.stderr).trim(),
         )
         .into());

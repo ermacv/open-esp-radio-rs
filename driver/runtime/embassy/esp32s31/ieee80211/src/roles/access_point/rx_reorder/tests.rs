@@ -468,7 +468,10 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
             |_| panic!("exhausted backing cannot publish out of order"),
         )
         .unwrap();
-    assert!(progress.dropped);
+    assert_eq!(
+        progress.dropped,
+        Some(super::AccessPointRxReorderDrop::StorageExhausted)
+    );
     assert!(!progress.buffered);
     assert_eq!(reorder.discard_all(), RX_REORDER_BACKING_SLOT_COUNT as u8);
     assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);

@@ -269,6 +269,9 @@ pub struct Criteria {
     pub minimum_tx_bps: Option<u64>,
     pub minimum_combined_bps: Option<u64>,
     pub minimum_bps_per_flow: Option<u64>,
+    /// Minimum fraction of each configured AP multi-client RX offer actually
+    /// accepted by host UDP send calls. Independent of DUT delivery criteria.
+    pub minimum_host_offer_percent: Option<u8>,
     pub maximum_flow_skew_percent: Option<u8>,
     /// Host-observed upper bound between consecutive datagrams of the second
     /// AP TX flow. Used by sparse-peer service tests, not as an air-latency
@@ -316,6 +319,8 @@ pub struct FixtureMutationConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
+    #[serde(default)]
+    pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
     pub schema: u16,
     pub id: String,
     pub description: String,

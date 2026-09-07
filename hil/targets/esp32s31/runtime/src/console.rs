@@ -4,15 +4,15 @@
 //! output remains available for the boot and panic paths, where the executor
 //! and the asynchronous logging transport may not be running yet.
 
+mod progress;
+mod writer;
+
 use core::{
     cell::RefCell,
     fmt::{Arguments, Write},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use embassy_futures::{
-    select::{Either, Either3, select, select3},
-    yield_now,
-};
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
     channel::Channel,
@@ -46,6 +46,12 @@ pub(crate) use radio::*;
 
 pub(crate) const STARTUP_ARTIFACT_CAPACITY: usize = 512;
 const MESSAGE_CAPACITY: usize = 384;
+// Diagnostic role transitions emit synchronous register/status bursts before
+// the logger can run. Reserve bounded burst storage only in observer images;
+// production-like measurements retain the smaller logging footprint.
+#[cfg(feature = "driver-observation")]
+const QUEUE_CAPACITY: usize = 32;
+#[cfg(not(feature = "driver-observation"))]
 const QUEUE_CAPACITY: usize = 8;
 const DRAIN_BATCH: usize = 4;
 const COMMAND_QUEUE_CAPACITY: usize = 4;
@@ -53,13 +59,20 @@ const EVENT_QUEUE_CAPACITY: usize = 8;
 const USB_RX_CHUNK_BYTES: usize = 128;
 
 #[unsafe(link_section = ".critical.data.logging")]
-static WRITER_ACTIVE: AtomicBool = AtomicBool::new(false);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_WRITER_WAITING: AtomicBool = AtomicBool::new(false);
+static WRITER: writer::Writer = writer::Writer::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static RUNTIME_ACTIVE: AtomicBool = AtomicBool::new(false);
 #[unsafe(link_section = ".critical.data.logging")]
 static DROPPED_RECORDS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static QUEUE_FULL_RECORDS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static WRITER_BUSY_RECORDS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static WRITE_ERROR_RECORDS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static FIRST_QUEUE_LOSS: Mutex<CriticalSectionRawMutex, RefCell<Option<TextBuffer<160>>>> =
+    Mutex::new(RefCell::new(None));
 #[unsafe(link_section = ".critical.data.logging")]
 static TRUNCATED_RECORDS: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
@@ -90,7 +103,7 @@ static PROTOCOL_RX_OVERFLOWS: AtomicU32 = AtomicU32::new(0);
 /// One plus the last event sequence fully written to the USB endpoint.
 /// Zero means that no event from the current boot has crossed that boundary.
 #[unsafe(link_section = ".critical.data.logging")]
-static SERIALIZED_WIFI_EVENT_NEXT: AtomicU32 = AtomicU32::new(0);
+static SERIALIZED_WIFI_EVENTS: progress::SerializedEvents = progress::SerializedEvents::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static WIFI_ROLE_STATE: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
@@ -181,6 +194,7 @@ pub struct ActiveSession {
     )
 )]
 pub struct StartupConfiguration {
+    pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
     pub request_id: u32,
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
@@ -362,6 +376,7 @@ unsafe extern "C" {
     static __EXTERNAL_INTERRUPTS: u8;
 }
 
+#[derive(Clone, Copy)]
 struct TextBuffer<const N: usize> {
     bytes: [u8; N],
     len: usize,
@@ -706,7 +721,7 @@ pub fn init_protocol(boot_id: u64) {
     BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
     BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
     EVENT_SEQUENCE.store(0, Ordering::Relaxed);
-    SERIALIZED_WIFI_EVENT_NEXT.store(0, Ordering::Relaxed);
+    SERIALIZED_WIFI_EVENTS.publish_next(0);
     WIFI_ROLE_STATE.store(0, Ordering::Relaxed);
 }
 
@@ -883,6 +898,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // opaque session ID and no two live slots may target the same interface.
     let mut sessions = [None::<ProtocolSession>; 2];
     let mut startup_artifact = StartupArtifactAssembler::new();
+    let mut ap_scheduler = open_esp_radio_hil_protocol::WifiApScheduler::Disabled;
     loop {
         match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
             Either::First(command) => {
@@ -1079,12 +1095,18 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 ieee802154_diagnostic_requested,
                             ) {
                             (Event::Rejected(reason), false)
+                        } else if configuration.ap_scheduler
+                            != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+                            && !cfg!(feature = "owned-network")
+                        {
+                            (Event::Rejected(RejectReason::Unsupported), false)
                         } else if !configuration.validate()
                             || startup_artifact.started_but_incomplete()
                         {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
+                                ap_scheduler: configuration.ap_scheduler,
                                 request_id,
                                 ipv4: configuration.ipv4,
                                 data_plane: configuration.data_plane,
@@ -1100,6 +1122,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             (Event::Rejected(RejectReason::Busy), false)
                         } else {
                             initialized = true;
+                            ap_scheduler = configuration.ap_scheduler;
                             (Event::Accepted, true)
                         };
                         publish_event_reliably(session_id, request_id, response).await;
@@ -1536,6 +1559,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     Command::StartStationAccessPoint(request) => {
                         let response = if !capabilities.features.simultaneous_station_access_point {
                             Event::Rejected(RejectReason::Unsupported)
+                        } else if ap_scheduler
+                            != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+                        {
+                            Event::Rejected(RejectReason::Unsupported)
                         } else if request.validate().is_err() {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
@@ -1895,7 +1922,7 @@ async fn write_event_async(
         PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
     };
-    let _guard = WriterGuard::acquire_protocol().await;
+    let _guard = WRITER.acquire_async().await;
     if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
         PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
         if matches!(
@@ -1911,8 +1938,7 @@ async fn write_event_async(
                 | Event::WifiStationAccessPointStopped(_)
                 | Event::WifiRoleFailed(_)
         ) {
-            SERIALIZED_WIFI_EVENT_NEXT
-                .store(event.message_sequence.wrapping_add(1), Ordering::Release);
+            SERIALIZED_WIFI_EVENTS.publish_next(event.message_sequence.wrapping_add(1));
         }
     } else {
         PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
@@ -1930,8 +1956,16 @@ async fn report_health_changes(
         return;
     }
 
+    let first = FIRST_QUEUE_LOSS.lock(|first| *first.borrow());
+    let first = first
+        .as_ref()
+        .and_then(|record| core::str::from_utf8(record.as_bytes()).ok())
+        .unwrap_or("");
     let record = format_record(format_args!(
-        "[WARN logger] dropped_total={dropped} truncated_total={truncated}"
+        "[WARN logger] dropped_total={dropped} truncated_total={truncated} queue_full={} writer_busy={} write_errors={} first_queue_drop={first:?}",
+        QUEUE_FULL_RECORDS.load(Ordering::Relaxed),
+        WRITER_BUSY_RECORDS.load(Ordering::Relaxed),
+        WRITE_ERROR_RECORDS.load(Ordering::Relaxed),
     ));
     write_record_async(tx, &record).await;
     *reported_dropped = dropped;
@@ -1947,6 +1981,15 @@ fn format_record(args: Arguments<'_>) -> TextBuffer<MESSAGE_CAPACITY> {
     message
 }
 
+fn record_queue_loss(args: Arguments<'_>) {
+    if QUEUE_FULL_RECORDS.fetch_add(1, Ordering::Relaxed) == 0 {
+        let mut first = TextBuffer::new();
+        let _ = first.write_fmt(args);
+        FIRST_QUEUE_LOSS.lock(|slot| *slot.borrow_mut() = Some(first));
+    }
+    DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
+}
+
 fn submit_line(args: Arguments<'_>) {
     if RUNTIME_ACTIVE.load(Ordering::Acquire) {
         // Under sustained pressure, avoid paying even the formatting cost for
@@ -1954,12 +1997,12 @@ fn submit_line(args: Arguments<'_>) {
         // best-effort fast path; try_send below remains the authoritative race-
         // safe capacity check.
         if RECORDS.is_full() {
-            DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
+            record_queue_loss(args);
             return;
         }
         let record = format_record(args);
         if RECORDS.try_send(record).is_err() {
-            DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
+            record_queue_loss(args);
         }
     } else {
         let record = format_record(args);
@@ -1973,7 +2016,8 @@ fn write_line_immediate(args: Arguments<'_>) {
 }
 
 fn write_record_immediate(message: &TextBuffer<MESSAGE_CAPACITY>) {
-    let Ok(_guard) = WriterGuard::acquire() else {
+    let Some(_guard) = WRITER.try_acquire() else {
+        WRITER_BUSY_RECORDS.fetch_add(1, Ordering::Relaxed);
         DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
         return;
     };
@@ -1987,54 +2031,13 @@ async fn write_record_async(
     tx: &mut UsbSerialJtagTx<'static, Async>,
     message: &TextBuffer<MESSAGE_CAPACITY>,
 ) {
-    let Ok(_guard) = WriterGuard::acquire() else {
-        DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
-        return;
-    };
+    let _guard = WRITER.acquire_async().await;
 
     // The HAL submits at most one 64-byte USB packet at a time. If the endpoint
     // is busy, this await parks the task until SERIAL_IN_EMPTY wakes it.
-    let _ = tx.write_all(message.as_bytes()).await;
-    let _ = tx.write_all(b"\r\n").await;
-}
-
-struct WriterGuard;
-
-impl WriterGuard {
-    fn acquire() -> Result<Self, ()> {
-        if PROTOCOL_WRITER_WAITING.load(Ordering::Acquire) {
-            return Err(());
-        }
-        WRITER_ACTIVE
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .map(|_| Self)
-            .map_err(|_| ())
-    }
-
-    /// Give an admitted protocol frame priority over new best-effort text.
-    ///
-    /// The only concurrent holder is the synchronous ROM text writer; it
-    /// cannot await while holding the guard. Once this intent flag is visible,
-    /// new diagnostics fail fast and the protocol owner acquires on the next
-    /// finite release rather than discarding a correlated response.
-    async fn acquire_protocol() -> Self {
-        PROTOCOL_WRITER_WAITING.store(true, Ordering::Release);
-        loop {
-            if WRITER_ACTIVE
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                PROTOCOL_WRITER_WAITING.store(false, Ordering::Release);
-                return Self;
-            }
-            yield_now().await;
-        }
-    }
-}
-
-impl Drop for WriterGuard {
-    fn drop(&mut self) {
-        WRITER_ACTIVE.store(false, Ordering::Release);
+    if tx.write_all(message.as_bytes()).await.is_err() || tx.write_all(b"\r\n").await.is_err() {
+        WRITE_ERROR_RECORDS.fetch_add(1, Ordering::Relaxed);
+        DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
     }
 }
 

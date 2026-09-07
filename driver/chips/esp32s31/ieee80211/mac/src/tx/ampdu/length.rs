@@ -42,6 +42,19 @@ pub struct HtAmpduLengthAccumulator {
 }
 
 impl HtAmpduLengthAccumulator {
+    /// Intersect a prospective prefix with an additional byte ceiling.
+    /// Zero closes an empty budget. An already admitted prefix cannot be
+    /// shortened: refusal leaves both the prefix and its limits unchanged.
+    pub fn cap_bytes(&mut self, maximum_bytes: u16) -> Result<(), HtAmpduLengthError> {
+        let maximum_bytes = self.max_bytes.min(maximum_bytes);
+        let bytes = self.bytes_with_tail - u32::from(self.tail_bytes);
+        if bytes > u32::from(maximum_bytes) {
+            return Err(HtAmpduLengthError::AggregateTooLong(bytes));
+        }
+        self.max_bytes = maximum_bytes;
+        Ok(())
+    }
+
     pub const fn new(max_subframes: u8, max_bytes: u16) -> Result<Self, HtAmpduLengthError> {
         if max_subframes == 0 || max_subframes as usize > TX_AMPDU_SLOT_CAPACITY || max_bytes == 0 {
             return Err(HtAmpduLengthError::InvalidLimits);
@@ -117,6 +130,39 @@ impl HtAmpduLengthAccumulator {
 }
 
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
+    /// Snapshot the software-owned prefix for prospective HT burst admission.
+    /// Appending to this value consumes no descriptor, sequence number or PN.
+    /// It checks length only; publication still validates backing and ownership.
+    /// Discard the snapshot after changing the real prefix or its limits.
+    pub fn ht_length_budget(
+        &self,
+        rate: crate::tx::HtRate,
+    ) -> Result<HtAmpduLengthAccumulator, HtAmpduTxError> {
+        if !matches!(
+            self.state,
+            crate::tx::TxSlotState::Free | crate::tx::TxSlotState::Reserved
+        ) {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let max_bytes = rate
+            .vendor_ampdu_byte_limit()
+            .map_or(self.max_aggregate_bytes, |limit| {
+                limit.min(self.max_aggregate_bytes)
+            });
+        let max_subframes = u8::try_from(SLOTS)
+            .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits))?;
+        let mut budget = HtAmpduLengthAccumulator::new(max_subframes, max_bytes)
+            .map_err(HtAmpduTxError::Length)?;
+        if self.count != 0 {
+            let last = usize::from(self.count - 1);
+            let tail = (4 - (self.psdu_lengths[last] & 3)) & 3;
+            budget.tail_bytes = tail + u16::from(self.empty_delimiters[last]) * 4;
+            budget.bytes_with_tail = u32::from(self.prepared_length) + u32::from(budget.tail_bytes);
+            budget.count = self.count;
+        }
+        Ok(budget)
+    }
+
     /// Return the final A-MPDU length after appending one PSDU.
     ///
     /// The previous final MPDU gains its four-byte alignment and requested

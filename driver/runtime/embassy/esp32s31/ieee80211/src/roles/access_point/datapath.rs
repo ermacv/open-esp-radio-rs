@@ -480,6 +480,8 @@ where
                         self.delivery_observer,
                     )
                     .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                self.network_tx
+                    .refresh_awake_demand(self.control.mac.engine());
                 let serviced = usize::try_from(
                     self.control
                         .serviced_rx_frames()
@@ -610,6 +612,8 @@ where
                         self.delivery_observer,
                     )
                     .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                self.network_tx
+                    .refresh_awake_demand(self.control.mac.engine());
                 let serviced = usize::try_from(
                     self.control
                         .serviced_rx_frames()
@@ -631,7 +635,7 @@ where
                 self.observe_role_state();
                 self.observe_tx_started();
                 if !self.control.tx_pending() {
-                    let _ = self.network_tx.stage_awake_buffered_release(self.control)?;
+                    let _ = self.network_tx.refresh_power_save_demand(self.control)?;
                 }
 
                 if network_backpressured {
@@ -805,6 +809,14 @@ where
 
     fn prepared_tx_start_ready(&self) -> bool {
         self.network_tx.prepared_start_ready()
+    }
+
+    fn pulls_tx_queues(&self) -> bool {
+        true
+    }
+
+    fn prepared_tx_destination(&self) -> Option<[u8; 6]> {
+        self.network_tx.prepared_destination()
     }
 
     fn advance_prepared_tx<I>(&mut self, network: &I) -> Result<(), Self::Error>

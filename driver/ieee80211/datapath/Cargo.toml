@@ -17,3 +17,6 @@ ownership-telemetry = []
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+open-esp-radio-wifi-softmac = { path = "../softmac" }

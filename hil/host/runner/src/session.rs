@@ -30,11 +30,14 @@ use open_esp_radio_hil_protocol::{
 use zeroize::Zeroizing;
 
 use crate::Result;
+mod airtime;
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
-const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
+// Configure, Arm, Start and up to two directional SessionReady waits. The
+// collector runs before these operations and must cover their failure bounds.
+pub(crate) const SESSION_START_TIMEOUT: Duration = PROTOCOL_READY_TIMEOUT.saturating_mul(5);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
 const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
@@ -198,6 +201,8 @@ pub(crate) struct SerialCapture {
     bytes: Arc<Mutex<Vec<u8>>>,
     protocol: Arc<ProtocolEvents>,
     outbound: mpsc::Sender<Zeroizing<Vec<u8>>>,
+    worker_wake: Arc<mio::Waker>,
+    _cancellation: oer_process::CancellationNotification,
     next_host_sequence: AtomicU32,
     next_session_id: AtomicU64,
     worker: Option<thread::JoinHandle<()>>,
@@ -269,15 +274,12 @@ pub(crate) struct MonitorCaptureEvidence {
     pub(crate) summary: WifiMonitorEvidence,
 }
 
-fn open_serial_after_busy_release(
-    port: &Path,
-) -> serialport::Result<Box<dyn serialport::SerialPort>> {
+fn open_serial_after_busy_release(port: &Path) -> serialport::Result<serialport::TTYPort> {
     let deadline = Instant::now() + SERIAL_OPEN_BUSY_TIMEOUT;
     loop {
         match serialport::new(port.to_string_lossy(), 115_200)
-            .timeout(Duration::from_millis(20))
             .preserve_dtr_on_open()
-            .open()
+            .open_native()
         {
             Ok(serial) => return Ok(serial),
             Err(error)
@@ -326,7 +328,7 @@ use protocol::beacon_loss_count_in;
 use readiness::session_ready_covers;
 pub(crate) use readiness::{
     await_network_ready, await_tcp_ready, await_udp_rx_ready, await_udp_tx_ready,
-    probe_udp_rx_ready_via,
+    prepare_udp_reverse_flow, probe_udp_rx_ready_via,
 };
 use validation::validate_stack_usage;
 

@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub use open_esp_radio_wifi_softmac::tx_cost::TxContention;
+
 use core::{
     num::{NonZeroU32, NonZeroU64},
     pin::Pin,
@@ -41,6 +43,8 @@ use crate::{
         RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
     },
 };
+
+mod cost;
 
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
@@ -3155,6 +3159,7 @@ impl LegacyTxConfig {
 pub struct TxSlot<const BUFFER_SIZE: usize> {
     dma: PinnedTxDmaStorage<BUFFER_SIZE>,
     generation_cursor: u32,
+    work: open_esp_radio_wifi_softmac::MacTxWork,
     active: TxCookie,
     queue: LegacyTxQueue,
 }
@@ -3165,6 +3170,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         Self {
             dma,
             generation_cursor: 0,
+            work: open_esp_radio_wifi_softmac::MacTxWork::new(),
             active: TxCookie(0),
             queue: LegacyTxQueue::Voice,
         }
@@ -3184,6 +3190,21 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             TxDmaStorage::pin_static_model(storage, MODEL_DESCRIPTOR_ADDRESS, MODEL_BUFFER_ADDRESS)
                 .expect("native TX model addresses cover the complete allocation");
         Self::from_dma(dma)
+    }
+
+    /// Receipt remains in pinned CPU metadata across retry detach/abort. Read
+    /// at the terminal edge before a new ordinary exchange resets it.
+    pub const fn work(&self) -> open_esp_radio_wifi_softmac::MacTxWork {
+        self.work
+    }
+
+    pub fn reset_work(self: Pin<&mut Self>) -> Result<(), TxError> {
+        let slot = self.get_mut();
+        if slot.state() != TxSlotState::Free {
+            return Err(TxError::Busy);
+        }
+        slot.work = open_esp_radio_wifi_softmac::MacTxWork::new();
+        Ok(())
     }
 
     pub fn state(&self) -> TxSlotState {
@@ -3310,6 +3331,16 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         publication.commit(|start| {
             hardware.start_bound_legacy_tx(start, index);
         });
+        slot.work.record_publication(
+            config.signal,
+            1,
+            NonZeroU32::new(config.rate.nominal_kbps()),
+            TxPhyRate::Legacy(config.rate).ppdu_timing(),
+            Some(TxContention {
+                aifsn: config.aifsn,
+                backoff_slots: config.contention_window,
+            }),
+        );
         Ok(())
     }
 
@@ -3342,6 +3373,16 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         publication.commit(|start| {
             hardware.start_bound_ht_tx(start, index);
         });
+        slot.work.record_publication(
+            config.length,
+            1,
+            NonZeroU32::new(config.rate.nominal_kbps()),
+            TxPhyRate::Ht(config.rate).ppdu_timing(),
+            Some(TxContention {
+                aifsn: config.aifsn,
+                backoff_slots: config.contention_window,
+            }),
+        );
         Ok(())
     }
 
@@ -3376,6 +3417,17 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
         slot.queue = queue;
         publication.commit(|start| hardware.start_bound_he_tx(start, index));
+        // HE S-MPDU has a four-byte delimiter and a hardware-generated FCS.
+        slot.work.record_publication(
+            config.apep_length(),
+            1,
+            None,
+            None,
+            Some(TxContention {
+                aifsn: config.aifsn,
+                backoff_slots: config.contention_window,
+            }),
+        );
         Ok(())
     }
 

@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+open-esp-radio-wifi-softmac = { path = "../../../driver/ieee80211/softmac" }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # Original network stack; HIL exercises the public upstream driver contract.

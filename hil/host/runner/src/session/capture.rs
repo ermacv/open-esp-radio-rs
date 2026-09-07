@@ -2,6 +2,11 @@
 
 use super::protocol::decode_counters_are_clean;
 use super::*;
+use crate::transport::events::EventPoll;
+use std::{
+    collections::VecDeque,
+    os::fd::{AsRawFd, FromRawFd, IntoRawFd},
+};
 
 impl SerialCapture {
     pub(crate) fn record_into(
@@ -16,8 +21,9 @@ impl SerialCapture {
     pub(crate) fn attach(port: &Path, output: &Path) -> Result<Self> {
         let port = port.to_owned();
         Self::start_transport_at(output, CaptureOrigin::Attachment, move || {
-            open_serial_after_busy_release(&port)
-                .map_err(|error| LinkError::transport(format!("serial attach failed: {error}")))
+            let serial = open_serial_after_busy_release(&port)
+                .map_err(|error| LinkError::transport(format!("serial attach failed: {error}")))?;
+            nonblocking_serial(serial)
         })
     }
 
@@ -32,21 +38,21 @@ impl SerialCapture {
                     port.display()
                 ))
             })?;
-            reset_usb_serial_jtag(&mut *serial).map_err(|error| {
+            reset_usb_serial_jtag(&mut serial).map_err(|error| {
                 LinkError::transport(format!("serial target reset failed: {error}"))
             })?;
-            Ok(serial)
+            nonblocking_serial(serial)
         })
     }
 
-    fn start_transport<T: Read + Write + 'static>(
+    fn start_transport<T: Read + Write + AsRawFd + 'static>(
         output: &Path,
         open: impl FnOnce() -> std::result::Result<T, LinkError> + Send + 'static,
     ) -> Result<Self> {
         Self::start_transport_at(output, CaptureOrigin::Boot, open)
     }
 
-    fn start_transport_at<T: Read + Write + 'static>(
+    fn start_transport_at<T: Read + Write + AsRawFd + 'static>(
         output: &Path,
         origin: CaptureOrigin,
         open: impl FnOnce() -> std::result::Result<T, LinkError> + Send + 'static,
@@ -63,6 +69,16 @@ impl SerialCapture {
             .health
             .origin = origin;
         let (outbound, outbound_rx) = mpsc::channel();
+        let poll = EventPoll::new()?;
+        let worker_wake = poll.waker();
+        let notify = Arc::clone(&protocol);
+        let cancellation = oer_process::notify_on_cancel(move || {
+            let _state = notify
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            notify.changed.notify_all();
+        });
         let worker_stop = Arc::clone(&stop);
         let worker_bytes = Arc::clone(&bytes);
         let worker_protocol = Arc::clone(&protocol);
@@ -76,6 +92,7 @@ impl SerialCapture {
                     &worker_bytes,
                     &worker_protocol,
                     outbound_rx,
+                    poll,
                 )
             }));
             let failure = match result {
@@ -89,6 +106,8 @@ impl SerialCapture {
             bytes,
             protocol,
             outbound,
+            worker_wake,
+            _cancellation: cancellation,
             next_host_sequence: AtomicU32::new(1),
             next_session_id: AtomicU64::new(1),
             worker: Some(worker),
@@ -103,9 +122,15 @@ impl SerialCapture {
     pub(crate) fn wait_for_boot_smoke(&self, timeout: Duration) -> Result<()> {
         const PASS: &[u8] = b"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS";
         const PANIC: &[u8] = b"OPEN_RADIO_HIL runtime=PANIC";
-        let deadline = Instant::now() + timeout;
+        let deadline = crate::transport::events::deadline_after(timeout);
+        let mut state = self
+            .protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         while Instant::now() < deadline {
-            self.check_link()?;
+            oer_process::check_cancelled()?;
+            state.check()?;
             let bytes = self
                 .bytes
                 .lock()
@@ -120,7 +145,11 @@ impl SerialCapture {
                 return Ok(());
             }
             drop(bytes);
-            thread::sleep(Duration::from_millis(10));
+            (state, _) = self
+                .protocol
+                .changed
+                .wait_timeout(state, deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
         Err("boot-smoke timer completion was not observed".into())
     }
@@ -257,6 +286,7 @@ impl SerialCapture {
 
     pub(super) fn stop_and_join(&mut self) {
         self.stop.store(true, Ordering::Release);
+        let _ = self.worker_wake.wake();
         if let Some(worker) = self.worker.take()
             && worker.join().is_err()
         {
@@ -266,33 +296,95 @@ impl SerialCapture {
     }
 }
 
+fn nonblocking_serial(serial: serialport::TTYPort) -> std::result::Result<fs::File, LinkError> {
+    // SAFETY: into_raw_fd transfers sole ownership from TTYPort to this File.
+    let file = unsafe { fs::File::from_raw_fd(serial.into_raw_fd()) };
+    // SAFETY: fcntl operates on the live, exclusively owned serial descriptor.
+    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+    if flags < 0
+        || unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+    {
+        return Err(LinkError::transport(format!(
+            "cannot configure nonblocking serial I/O: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok(file)
+}
+
 fn capture_serial(
-    serial: &mut (impl Read + Write),
+    serial: &mut (impl Read + Write + AsRawFd),
     mut raw: fs::File,
     stop: &AtomicBool,
     bytes: &Mutex<Vec<u8>>,
     protocol: &ProtocolEvents,
     outbound: mpsc::Receiver<Zeroizing<Vec<u8>>>,
+    mut poll: EventPoll,
 ) -> std::result::Result<(), LinkError> {
+    poll.register(serial, false)
+        .map_err(|error| LinkError::transport(error.to_string()))?;
     let mut decoder = FrameDecoder::new();
     let mut buffer = [0_u8; 2_048];
-    while !stop.load(Ordering::Acquire) {
-        while let Ok(frame) = outbound.try_recv() {
-            serial
-                .write_all(&frame)
-                .map_err(|error| LinkError::transport(format!("serial write failed: {error}")))?;
+    let mut pending = VecDeque::<Zeroizing<Vec<u8>>>::new();
+    let mut offset = 0;
+    let mut write_deadline = None;
+    let mut writable_interest = false;
+    let mut readable = false;
+    loop {
+        if stop.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        pending.extend(outbound.try_iter());
+        while let Some(frame) = pending.front() {
+            let deadline =
+                *write_deadline.get_or_insert_with(|| Instant::now() + PROTOCOL_READY_TIMEOUT);
+            if Instant::now() >= deadline {
+                return Err(LinkError::transport(
+                    "serial command write deadline exceeded",
+                ));
+            }
+            match serial.write(&frame[offset..]) {
+                Ok(0) => return Err(LinkError::transport("serial writer made no progress")),
+                Ok(length) => {
+                    offset += length;
+                    if offset == frame.len() {
+                        pending.pop_front();
+                        offset = 0;
+                        write_deadline = None;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    return Err(LinkError::transport(format!(
+                        "serial write failed: {error}"
+                    )));
+                }
+            }
+        }
+        let wants_write = !pending.is_empty();
+        if wants_write != writable_interest {
+            poll.interest(serial, wants_write)
+                .map_err(|error| LinkError::transport(error.to_string()))?;
+            writable_interest = wants_write;
+        }
+        if !readable {
+            readable = poll
+                .wait(write_deadline)
+                .map_err(|error| LinkError::transport(error.to_string()))?
+                .readable;
+            if !readable {
+                continue;
+            }
         }
         let length = match serial.read(&mut buffer) {
             Ok(0) => return Err(LinkError::transport("serial reader reached end of stream")),
             Ok(length) => length,
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
-                ) =>
-            {
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                readable = false;
                 continue;
             }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(error) => return Err(LinkError::transport(format!("serial read failed: {error}"))),
         };
         let chunk = &buffer[..length];
@@ -355,7 +447,6 @@ fn capture_serial(
             return Err(error.clone());
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

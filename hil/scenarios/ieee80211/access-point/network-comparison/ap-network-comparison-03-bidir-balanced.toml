@@ -26,6 +26,7 @@ rx_rate_bps_per_flow = 32500000
 tx_rate_bps_per_flow = 32500000
 
 [criteria]
+minimum_host_offer_percent = 95
 exact_delivery = false
 minimum_bps_per_flow = 1
 minimum_concurrent_ap_clients = 2

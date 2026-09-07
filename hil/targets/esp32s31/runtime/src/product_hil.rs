@@ -92,9 +92,11 @@ use crate::console::{
 use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 use open_esp_radio_hil_protocol::StationLifecycleEvent;
 
+mod ap_scheduler;
 mod ieee802154;
 mod network;
 mod rx_qualification;
+mod rx_rejection;
 mod traffic;
 
 #[cfg(not(feature = "driver-observation"))]
@@ -189,7 +191,11 @@ static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
     [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
-static STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS: AtomicU32 = AtomicU32::new(0);
+static STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS: embassy_sync::watch::Watch<
+    CriticalSectionRawMutex,
+    u32,
+    2,
+> = embassy_sync::watch::Watch::new_with(0);
 static AP_TX_BLOCK_ACK_OPERATIONAL_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_SMALLEST_WINDOW: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_LARGEST_WINDOW: AtomicU32 = AtomicU32::new(0);
@@ -492,6 +498,7 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_RX_REORDER_GAP_TIMEOUTS.store(observation.rx_reorder_gap_timeouts, Ordering::Release);
     AP_PROTECTED_DATA_RADIO_REJECTED
         .store(observation.protected_data_radio_rejected, Ordering::Release);
+    rx_rejection::observe(observation.first_rx_protocol_rejection);
     AP_PROTECTED_DATA_PROTOCOL_REJECTED.store(
         observation.protected_data_protocol_rejected,
         Ordering::Release,
@@ -501,6 +508,8 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
 fn reset_access_point_evidence() {
     #[cfg(feature = "driver-observation")]
     {
+        rx_rejection::reset();
+        AGGREGATE_TX.tx_retention.reset();
         observe_access_point(Esp32s31AccessPointObservation::default());
         let rx = RX_PIPELINE.snapshot();
         AP_RX_COMPLETED_UNITS_BASELINE.store(rx.completed_units, Ordering::Release);
@@ -530,6 +539,8 @@ fn access_point_evidence(
     #[cfg(not(feature = "driver-observation"))]
     let rx_hardware = WifiMacRxHardwareEvidence::default();
     WifiAccessPointEvidence {
+        tx_retention: cfg!(feature = "driver-observation")
+            .then(|| AGGREGATE_TX.tx_retention.snapshot()),
         generation,
         channel: if observed_channel == 0 {
             requested_channel
@@ -674,6 +685,7 @@ fn access_point_evidence(
             .load(Ordering::Acquire),
         rx_reorder_gap_timeouts: AP_RX_REORDER_GAP_TIMEOUTS.load(Ordering::Acquire),
         protected_data_radio_rejected: AP_PROTECTED_DATA_RADIO_REJECTED.load(Ordering::Acquire),
+        first_rx_protocol_rejection: rx_rejection::snapshot(),
         protected_data_protocol_rejected: AP_PROTECTED_DATA_PROTOCOL_REJECTED
             .load(Ordering::Acquire),
     }
@@ -1213,10 +1225,9 @@ async fn station_lifecycle_task(mut status: Esp32s31StationStatus) {
     loop {
         let edge = match select(status.changed(), STATION_LIFECYCLE.receive()).await {
             Either::First(snapshot) => {
-                STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS.store(
-                    u32::from(snapshot.tx_block_ack_operational_tids),
-                    Ordering::Release,
-                );
+                STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS
+                    .sender()
+                    .send(u32::from(snapshot.tx_block_ack_operational_tids));
                 station_status_edge(snapshot.state)
             }
             Either::Second(edge) => Some(edge),
@@ -1468,6 +1479,7 @@ pub async fn run(
         }
     };
     let crate::console::StartupConfiguration {
+        ap_scheduler,
         request_id: initialization_request_id,
         ipv4: startup_ipv4,
         data_plane,
@@ -1548,6 +1560,12 @@ pub async fn run(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
+    let config = if let Some(model) = ap_scheduler::configuration(ap_scheduler) {
+        config.with_access_point_airtime(model)
+    } else {
+        config
+    };
+    runtime_log(format_args!("OPEN_RADIO_HIL ap_scheduler={ap_scheduler:?}"));
     #[cfg(feature = "connected-datapath-poll-telemetry")]
     let config = config.with_connected_datapath_poll_observer(
         Esp32s31ConnectedDatapathPollObserver::new(320, record_connected_datapath_poll_batch),
@@ -1967,6 +1985,7 @@ async fn wifi_role_task(
                         )
                         .await;
                         set_wifi_role(WifiRole::Idle);
+                        ap_scheduler::report(request_id).await;
                         complete_access_point_stop(
                             request_id,
                             access_point_evidence(generation, channel, bandwidth_mhz),
@@ -2054,6 +2073,7 @@ async fn wifi_role_task(
                     request,
                 } => {
                     reset_access_point_evidence();
+                    ap_scheduler::reset();
                     DIAGNOSTIC_STAGE.store(40, Ordering::Release);
                     let channel = request.channel;
                     let bandwidth_mhz = request.channel_width.bandwidth_mhz();

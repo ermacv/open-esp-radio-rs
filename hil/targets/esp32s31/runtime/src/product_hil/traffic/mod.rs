@@ -13,7 +13,6 @@ mod tcp;
 mod udp;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use embassy_time::Timer;
 use open_esp_radio_hil_protocol::SessionLinkRequirements;
 use open_esp_radio_hil_protocol::Transport;
 use open_esp_radio_hil_protocol::WifiNetworkInterface;
@@ -61,13 +60,10 @@ async fn wait_session_link_requirements(
     let bit = 1_u32
         .checked_shl(u32::from(tid))
         .expect("validated BlockAck TID fits the functional status bitmap");
-    while crate::product_hil::STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS
-        .load(core::sync::atomic::Ordering::Acquire)
-        & bit
-        == 0
-    {
-        Timer::after_millis(10).await;
-    }
+    let mut receiver = crate::product_hil::STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS
+        .receiver()
+        .expect("station UDP and TCP link waiters");
+    receiver.get_and(|operational| operational & bit != 0).await;
 }
 
 pub(super) use bidirectional::{

@@ -248,10 +248,7 @@ pub async fn complete_monitor_capture(request_id: u32, evidence: WifiMonitorEvid
 }
 
 async fn wait_until_serialized(sequence: u32) {
-    let target = sequence.wrapping_add(1);
-    while SERIALIZED_WIFI_EVENT_NEXT.load(Ordering::Acquire) != target {
-        yield_now().await;
-    }
+    SERIALIZED_WIFI_EVENTS.wait_for(sequence).await;
 }
 
 /// Reliably publish one unsolicited station generation/link edge.
@@ -260,13 +257,7 @@ async fn wait_until_serialized(sequence: u32) {
 /// unlike UART text, it cannot be dropped under diagnostic pressure.
 pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
     let sequence = queue_event_reliably(0, 0, Event::StationLifecycle(event)).await;
-    let target = sequence.wrapping_add(1);
-    // A lifecycle edge is qualification evidence, not a best-effort trace.
-    // Queue admission alone is insufficient at a terminal station exit: the
-    // producing task may return before the independent USB worker runs again.
-    while SERIALIZED_WIFI_EVENT_NEXT.load(Ordering::Acquire) != target {
-        yield_now().await;
-    }
+    wait_until_serialized(sequence).await;
 }
 
 /// Hands a completed in-memory measurement back to the protocol owner.

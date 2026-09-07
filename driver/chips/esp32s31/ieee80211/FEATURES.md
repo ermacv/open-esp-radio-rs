@@ -35,19 +35,31 @@ Source ownership follows the [chip STA composition](sta/README.md),
 role policy remain in [`driver/ieee80211`](../../../ieee80211/README.md);
 concrete execution belongs to the [Embassy runtime](../../../runtime/README.md).
 
+The hardware scope follows the [ESP32-S31 datasheet v0.5, section 4.3.2](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf).
+The [S31 ESP-IDF Wi-Fi API](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/network/esp_wifi.html)
+also describes vendor protocol/API surfaces such as NAN/USD, CSI and LR;
+these are inventory inputs, not evidence of open-driver support. Hardware
+crypto engines and software authentication protocols are separate boundaries.
+HE40 and HE SoftAP are outside the documented silicon scope: HE is 20 MHz-only
+non-AP. Their absence is not an unfinished supported hardware mode.
+
 ## Interfaces and operating modes
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | Four virtual Wi-Fi interfaces | PARTIAL | The service owns exactly one STA VIF and one AP VIF on one channel context. Hardware address-match slots do not create protocol VIFs. ESP-NOW borrows the STA VIF and monitor mode is a tap, not another VIF. |
 | Infrastructure station | IMPLEMENTED | Scan, authentication, association, Open/WPA2 data, reconnect, HT20/HT40 and HE20 station paths are present. |
 | SoftAP | IMPLEMENTED | Open and WPA2-Personal AP service, association table, per-peer keys, beaconing, data, power-save buffering and teardown are present. The AP path is legacy/HT, not HE. |
 | Simultaneous STA + SoftAP | IMPLEMENTED | One physical RX/TX/IRQ owner serves one STA and one AP on the same channel. A mismatch is rejected. During concurrent start, STA discovery is constrained to the AP channel; dynamic SoftAP channel following during a general STA scan is not implemented. |
 | Promiscuous mode | PARTIAL | Standalone normalized monitor capture is implemented. Raw-DMA capture, protocol-validated capture, and monitor operation concurrent with STA/AP are not published capabilities. |
+| NAN / Wi-Fi Aware | ABSENT | No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime. |
+| NAN unsynchronized service discovery (USD) | ABSENT | No cluster-independent Publish/Subscribe, discovery-channel scheduling or service lifecycle is composed. |
+| Wi-Fi CSI capture | ABSENT | [MAC RX](mac/src/rx.rs) understands CSI-dependent descriptor geometry, and reviewed register fields exist, but production STA, scan, AP and monitor RX use `csi_config: 0`. There is no capture configuration, sample-buffer lifecycle or application delivery owner; recovered metadata is not a CSI mode. |
+| Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence | PARTIAL | The [coexistence core](../coex/src/lib.rs), PAC timer controls and [Embassy mailbox](../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. The Wi-Fi runtime does not compose a complete shared-radio request/grant/release lifecycle with the other radios; end-to-end coexistence is not a published capability. |
 
 ## Legacy and HT MAC behavior
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | RTS protection | FAIL-CLOSED | ERP Use Protection, all HT protection modes and finite HE TXOP-duration RTS thresholds are retained as typed BSS/peer policy. The initial rate and every retry rate are preflighted before sequence, PN or DMA publication; a protection-required transaction returns `PhysicalPublicationUnverified`. There is no complete RTS formatter, queue image or completion owner, and no on-air capability is claimed. |
 | CTS-to-Self protection | FAIL-CLOSED | Typed TX-protection policy identifies group exchanges that require CTS-to-Self and rejects them before sequence, PN or DMA publication. There is no CTS frame, queue-publication or completion owner; an `SW_CTS` register name or cold queue bit is not a physical implementation. |
@@ -62,30 +74,37 @@ concrete execution belongs to the [Embassy runtime](../../../runtime/README.md).
 
 ## Security
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | Open BSS | IMPLEMENTED | STA and AP plaintext management/data paths are present. |
 | WPA2-Personal / CCMP | IMPLEMENTED | STA supplicant and AP authenticator paths own the four-way handshake, strict RSN selection, pairwise/group keys, CCMP PN exhaustion, RX replay admission and key teardown. STA GTK rekey is atomic; AP GTK rotation has no complete Group-Key Handshake/acknowledgement owner. |
 | WPA2-Enterprise | ABSENT | There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner. |
 | WPA3-Personal / WPA3-Enterprise | ABSENT | SAE, transition policy, enterprise authentication and their lifecycle are not present. |
+| Opportunistic Wireless Encryption (OWE) | ABSENT | No OWE key exchange, association selection or key lifecycle exists. Open BSS support does not provide Enhanced Open. |
 | BIP / protected management frames | ABSENT | PMF negotiation, IGTK/BIGTK ownership, management replay and BIP MIC verification/publication are not present. |
 | GCMP, TKIP, WAPI and WEP | ABSENT | The public security domain intentionally exposes only Open and WPA2-Personal/CCMP. No other cipher is advertised or selected by fallback. |
 
 ## TSF, beacon monitoring, and power saving
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | Hardware TSF | IMPLEMENTED | Coherent station TSF reads, AP TSF lifecycle and beacon timestamps are owned. |
 | Automatic hardware beacon monitoring | FAIL-CLOSED | Software beacon-loss monitoring, active probe recovery and TIM/DTIM parsing are implemented, but they are not the automatic hardware feature. A one-shot epoch binds BSSID+AID to STA-policy readback and validates the four-bit miss limit, then stops before MMIO; `automatic_monitor_active()` remains false because raw timeout units, automatic-filter lifecycle and the exact WDEVPWR cause are unproven. |
 | Legacy station power save | PARTIAL | PM=1/PM=0 transitions are ACK-gated; TIM/DTIM/listen interval, PS-Poll and doze permits are source-owned. The S31 boundary probes and rolls back only reviewed wake-prefix fields and does not claim RF/PHY/BB/clock sleep. Passive connected ESP-NOW RX is rejected when this policy is enabled, and concurrent STA+AP remains always awake. |
+| Full modem sleep | ABSENT | Legacy station power-save policy does not compose RF/PHY/baseband shutdown, clock gating, retention and restoration into a hardware sleep/wake lifecycle. |
+| Disconnected-state Wi-Fi sleep | ABSENT | No disconnected radio sleep/wake owner composes RF/PHY/baseband and clock transitions. Radio teardown alone does not establish resumable sleep. |
+| Connectionless power save | ABSENT | No hardware wake-window/interval owner is composed for ESP-NOW or other connectionless exchanges. Standalone ESP-NOW RX remains awake; FTM itself remains fail-closed. |
 | TWT requester | FAIL-CLOSED | Portable individual-TWT parsing, bounded requester state, deadlines, teardown and TSF wake planning exist. Explicit agreements are not activated: a local explicit proposal reports the missing TWT Information action/update semantics, and a peer-accepted explicit agreement is queued for immediate teardown rather than installed. S31 implicit agreement admit/install/remove also stops before schedule activation because coexistence mapping, wake compare, retention and restore ordering are missing; the capability bit stays clear. |
 | Intra-PPDU power save | FAIL-CLOSED | HE peer setup writes the recovered MAC intra-PPDU and BSS-color-check bits, but no connected owner binds detection to a safe RF/PHY/BB/clock stop/wake transaction. Register setup alone is not a power-saving operation, so no runtime or energy capability is claimed. |
 
 ## 802.11ax / HE
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | HE20 non-AP, 1T1R, MCS0-MCS9 | IMPLEMENTED | Associated STA HE20 SU S-MPDU/A-MPDU, BCC/LDPC, supported GI/LTF combinations and DCM profiles are source-owned. The SoftAP does not advertise or transmit HE. |
+| HE guard intervals: 0.8 / 1.6 / 3.2 microseconds | IMPLEMENTED | HE20 SU STA TX/RX owns the supported GI/LTF combinations. This does not establish HE-TB or arbitrary GI/LTF combinations. |
+| HE dual carrier modulation (DCM) | IMPLEMENTED | The bounded HE20 SU STA DCM profiles are source-owned; DCM is not a claim for every MCS or for trigger-based TX. |
+| RX STBC, one spatial stream | IMPLEMENTED | The HE20 SU STA profile retains RX STBC and [RX normalization](mac/src/rx.rs) distinguishes two space-time streams from one spatial stream. Reviewed [HIL provenance](../../../../registers/esp32s31/evidence/hil-open.toml) includes `HIL_OPEN_HE20_STBC_NSTS_2026_07_30` observations on the open RX path. This bounded RX claim does not imply TX STBC, two spatial streams or qualification of every STBC mode. |
 | Multiple BSSIDs | ABSENT | The capability bit is clear, association programs BSSID index zero, and there is no nontransmitted-profile scan/association owner. |
 | Triggered response scheduling | FAIL-CLOSED | Basic Trigger parsing, association/AID validation, bounded response deadlines and queue/MPLEN/BSR preparation exist. Production configuration disables the path, and the final HE-TB PHY vector/doorbell transition is explicitly unverified. |
 | MU-RTS, MU-BAR, Multi-STA BA | ABSENT | Trigger-type parsing alone is present. There is no complete scheduling, response, bitmap, timeout or retry owner for these exchanges. |
@@ -98,26 +117,28 @@ concrete execution belongs to the [Embassy runtime](../../../runtime/README.md).
 | TXOP-duration RTS threshold | FAIL-CLOSED | A finite peer threshold is parsed and retained in the STA TX-protection policy. A missing HE duration or an exchange requiring RTS is rejected before sequence, PN or DMA publication rather than treated as disabled or as a generic byte threshold; the protected physical image remains unproven. |
 | UORA | ABSENT | Cold initialization writes the recovered 7/31 contention-window defaults, and portable Trigger parsing can recognize random-access RU fields. Neither is a UORA owner: there is no OBO/backoff, RU eligibility, attempt/result state machine or UL-OFDMA random-access publication path. |
 | Uplink OFDMA | FAIL-CLOSED | The Trigger/RU schedule can reach the prepared-queue frontier, but the HE-TB PHY publication oracle is missing. |
-| Downlink OFDMA / MU-MIMO | PARTIAL | HE-MU common metadata and bounded HE20 SIG-B user decoding exist. There is no dated production payload qualification or complete wider-bandwidth layout, so metadata parsing is not promoted to a connectivity claim. |
-| Beamformee | FAIL-CLOSED | NDPA detection, association binding and report-rate hardware setup exist. Feedback formatting/publication is unverified and all dependent capability bits are cleared. |
+| Downlink OFDMA / MU-MIMO | PARTIAL | HE-MU common metadata and bounded HE20 SIG-B user decoding exist. Production HE20 payload reception for these multi-user modes is not qualified; bounded SIG-B decoding alone is not a complete receive-service claim. This does not require HE40 support. |
+| SU/MU beamformee | FAIL-CLOSED | NDPA detection, association binding and report-rate hardware setup exist. Feedback formatting/publication is unverified and all dependent capability bits are cleared. |
+| Channel quality indication (CQI) feedback | ABSENT | No triggered or non-triggered report producer exists. The [STA HE profile](sta/src/profile.rs) clears both CQI advertisements independently of beamformee feedback; RX metadata does not implement a feedback exchange. |
 
-## Frequency, antenna, FTM, and ESP-NOW
+## Frequency, TX power, antenna, FTM, and ESP-NOW
 
-| Data-sheet feature | Status | Current production boundary |
+| Hardware / protocol feature | Status | Current production boundary |
 | --- | --- | --- |
 | 2412-2484 MHz | PARTIAL | Channels 1-13 are implemented. Channel 14 / 2484 MHz is representable in portable types but is rejected by the S31 PHY while the required channel-14 MIC/RF/regulatory behavior is unproven. |
+| Adjustable TX power ceiling | IMPLEMENTED | [Cold-start configuration](src/cold_start.rs) carries a quarter-dBm ceiling into the [PHY per-rate power profile](../phy/src/tx/power.rs), bounded by the init-data maximum before MAC power-code publication. This is a configured ceiling, not a live power-control API or proof of absolute radiated power/vendor gain-table equivalence. |
 | Antenna diversity | FAIL-CLOSED | PAC/HAL own a reviewed enable bit and cold antenna initialization, but there is no public RF/GPIO antenna-selection owner, runtime policy, board contract or HIL claim. |
 | 802.11mc FTM | FAIL-CLOSED | Allocation-free Public Action codecs and a bounded single-burst ASAP requester own peer/token identity, retries, deadlines and raw four-timestamp exchanges. The S31 frontier validates a prepared request and can reversibly probe the recovered PHY-enable leaf, then rejects before connected Action publication. RX/TX antenna-point timestamps, clock and calibration contracts, capability advertisement, distance results and on-air operation remain unclaimed. |
 | ESP-NOW v1/v2 plaintext | IMPLEMENTED | Bounded peer/channel ownership, v1/v2 encode/decode, standard DSSS1M, OFDM and HT20 MCS0-MCS7 LGI/SGI TX/RX paths and retry publication are present on the STA VIF. Standalone RX is always awake; connected passive RX is admitted only when legacy station power save is disabled because it has no independent wake owner. |
 | ESP-NOW encrypted peers | FAIL-CLOSED | Portable LMK/peer ownership exists, but S31 key-selector and Action-frame AAD/CCMP contract are unproven, so encrypted publication is rejected. |
-| ESP-NOW Long Range PHY | FAIL-CLOSED | Exact low-rate identities, retry records and a reversible low-rate-gate probe are retained. Physical TX requires an affine gate epoch spanning enable, doorbell, completion/retries and exact restore; RX needs matching gate ownership and descriptor-rate normalization. Those contracts plus the LR PLCP/queue vector are missing, so LR never publishes or masquerades as a standard observed PHY. |
+| Espressif Long Range Wi-Fi PHY | FAIL-CLOSED | Exact low-rate identities, retry records and a reversible low-rate-gate probe are retained. Physical TX requires an affine gate epoch spanning enable, doorbell, completion/retries and exact restore; RX needs matching gate ownership and descriptor-rate normalization. Those contracts plus the LR PLCP/queue vector are missing, so LR never publishes or masquerades as a standard observed PHY. The recovered frontier is exercised through ESP-NOW; STA/AP have no LR association/service integration. LR is a separate proprietary PHY, not an ESP-NOW-only feature. |
 
 ## Physical publication preconditions
 
 The following contracts are absent or unverified at their production boundary.
 Each corresponding path rejects activation or keeps its capability bit clear:
 
-1. MCS32 and ESP-NOW LR descriptor, PLCP, queue, power and retry images, plus
+1. MCS32 and Espressif LR descriptor, PLCP, queue, power and retry images, plus
    an affine LR gate epoch through completion and RX normalization;
 2. RTS/CTS duration, basic-rate, power, retry and completion ownership after
    the typed protection-policy frontier;

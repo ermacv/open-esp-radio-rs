@@ -13,7 +13,7 @@ phy = "he20"
 kind = "udp"
 direction = "tx"
 duration_seconds = 16
-tx_rate_bps = 80000000
+tx_rate_bps = 100000000
 payload_bytes = 1472
 
 [criteria]

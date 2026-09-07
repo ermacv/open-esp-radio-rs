@@ -1,5 +1,8 @@
 # ESP32-S31 Wi-Fi source capabilities
 
+See the [whole-radio capability map](../FEATURES.md) for shared ownership,
+clock/power lifecycle and cross-protocol composition limits.
+
 This document describes the source-owned production boundary. It is not a
 copy of the chip data sheet and it is not a hardware-qualification claim.
 Register setters, frame parsers, diagnostics, and host-only state machines do

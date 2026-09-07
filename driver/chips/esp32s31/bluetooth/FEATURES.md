@@ -1,5 +1,8 @@
 # ESP32-S31 Bluetooth source capabilities
 
+See the [whole-radio capability map](../FEATURES.md) for shared ownership,
+clock/power lifecycle and cross-protocol composition limits.
+
 This inventory describes source-owned Bluetooth paths and their composition
 limits. It does not claim RF delivery, interoperable connectivity or Bluetooth
 qualification. Status applies only to the exact scope of each row.

@@ -1,5 +1,8 @@
 # ESP32-S31 IEEE 802.15.4 source capabilities
 
+See the [whole-radio capability map](../FEATURES.md) for shared ownership,
+clock/power lifecycle and cross-protocol composition limits.
+
 This inventory describes silicon features, source-owned operations and their
 composition limits. It does not claim a complete IEEE 802.15.4-2015 stack,
 calibrated RF operation or on-air qualification.

@@ -8,10 +8,9 @@ vendor artifacts and qualification policy live outside this tree. See the
 [network implementation guide](../docs/network-implementations.md) explains
 stack choices, their crates, defaults and reasons for patches.
 
-ESP32-S31 source capability inventories: [Wi-Fi](chips/esp32s31/ieee80211/FEATURES.md),
-[Bluetooth](chips/esp32s31/bluetooth/FEATURES.md) and
-[IEEE 802.15.4](chips/esp32s31/ieee802154/FEATURES.md).
-Readiness remains controlled by the qualification specifications linked there.
+The [ESP32-S31 radio capability map](chips/esp32s31/FEATURES.md) indexes shared
+lifecycle, PHY, coexistence and protocol inventories alongside their current
+qualification authorities.
 
 ## Source map
 
@@ -189,8 +188,8 @@ internal SRAM; placement checks enforce this boundary.
 ## Feature scope and verification
 
 Protocol limits, security modes and live/partial/fail-closed boundaries belong
-in the [Wi-Fi source capability matrix](chips/esp32s31/ieee80211/FEATURES.md) and
-[Bluetooth LE source capability matrix](chips/esp32s31/bluetooth/FEATURES.md). A parser,
+in the domain inventories indexed by the
+[radio capability map](chips/esp32s31/FEATURES.md). A parser,
 register setter, descriptor or host test alone does not establish an
 operational radio feature. Do not infer concurrent-radio support or new
 capabilities from structural reuse.

@@ -16,7 +16,7 @@ esp_bootloader_esp_idf::esp_app_desc!(
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
 use oer_esp32s31_board as board;
-use open_esp_radio_esp32s31_platform_pac::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
+use oer_esp32s31_soc::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
 use static_cell::ConstStaticCell;
 
 const RUNTIME_MAGIC: u32 = 0x3247_5453;

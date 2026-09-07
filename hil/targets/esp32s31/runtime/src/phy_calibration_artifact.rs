@@ -3,7 +3,7 @@
 //! The driver exposes semantic values only. HIL chooses postcard as its
 //! persistence format and the host deliberately treats these bytes as opaque.
 
-use open_esp_radio_esp32s31_phy::{
+use oer_esp32s31_phy::{
     PhyBluetoothCalibration, PhyCalibrationCache, PhyCalibrationIdentity, PhyCalibrationSnapshot,
     PhyCommonCalibration, PhyWifiCalibration,
 };

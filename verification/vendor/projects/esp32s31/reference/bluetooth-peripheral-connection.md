@@ -2,7 +2,7 @@
 
 This reference describes reviewed hardware-facing facts consumed by the Rust
 driver. Vendor Controller architecture does not define the open ownership model.
-Portable Link Layer policy remains in `driver/bluetooth/le/ll`; this document
+Portable Link Layer policy remains in `crates/protocols/bluetooth/le/ll`; this document
 identifies the S31 controller-SRAM fields and event edges that a chip backend
 must lower.
 
@@ -53,11 +53,11 @@ result is an on-air packet-start time, not a packet-end time and not an
 ordinary observation of controller `now()`.
 
 The controller-memory codec copies that word into an opaque
-`BluetoothLePacketCapturedTime` beside the received PDU and RSSI. It exposes
+`LePacketCapturedTime` beside the received PDU and RSSI. It exposes
 no field mask or scheduler-time claim. The published task service performs
 the only permitted conversion: the opaque value enters the retained S31
 scheduler epoch without re-anchoring it and then the initialized PHY
-calibration. The result is a single-use `BluetoothLe1MPacketStartTiming`; no
+calibration. The result is a single-use `Le1MPacketStartTiming`; no
 raw tick or scheduler image escapes that operation.
 
 The calibration is not implicit zero state. Current `ble_phy_module_init`
@@ -165,7 +165,7 @@ or make the vendor's connection aggregate an ABI.
 The complete `ble_lll_conn_peripheral_new` body derives its receive-wait value
 as `WinSize * 1.25 ms + 2 * timing_guard + 61 us`. Every valid legacy
 transmit window fits its short descriptor form, whose encoding is private
-to `BluetoothPeripheralConnectionReceiveWait`. No upper layer accepts the
+to `PeripheralConnectionReceiveWait`. No upper layer accepts the
 duration/configuration word.
 
 The event remains deliberately CPU-owned. Complete current and named

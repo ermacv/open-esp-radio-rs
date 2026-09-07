@@ -4,14 +4,14 @@ use crate::product_hil::network::sockets::{Ipv4Address, Stack, UdpSocket, UdpTxS
 use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+use oer_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::TX_PERFORMANCE;
+use oer_esp32s31_embassy_wifi::TX_PERFORMANCE;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
+use oer_esp32s31_soc::L1CachePerformanceCounters;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,

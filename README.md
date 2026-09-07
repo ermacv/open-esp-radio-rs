@@ -10,14 +10,15 @@ host test or target build does not establish on-air readiness: the
 [qualification evaluator](qualification/README.md) derives that from accepted
 evidence. ESP32-C5 has investigation inputs, not a production radio backend.
 
-See [driver architecture](driver/README.md) for ownership and supported
-composition, and the [ESP32-S31 radio capability map](driver/chips/esp32s31/FEATURES.md)
+See [driver architecture](crates/README.md) for ownership and supported
+composition, and the [ESP32-S31 radio capability map](crates/hardware/esp32s31/driver/FEATURES.md)
 for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
 ## Start here
 
 | Task | Documentation |
 | --- | --- |
+| Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
 | Build a station application | [Station example](examples/esp32s31-station/README.md) |
 | Build another radio role | [AP](examples/esp32s31-access-point/README.md), [monitor](examples/esp32s31-monitor/README.md), [Bluetooth controller](examples/esp32s31-bluetooth-controller/README.md) |
@@ -32,7 +33,7 @@ for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
 | Path | Owner |
 | --- | --- |
-| `driver/` | Shipping protocol, chip, adapter, runtime and integration code |
+| `crates/` | Shipping protocol, chip, adapter, runtime and integration code |
 | `platform/` | Shared board boot, staged entry and memory placement |
 | `examples/` | Application/board composition and API examples |
 | `hil/` | Hardware protocol, runner, fixtures, scenarios and test images |
@@ -40,6 +41,7 @@ for shared lifecycle, PHY, coexistence and all three protocol inventories.
 | `registers/` | Reviewed hardware descriptions and PAC publication inputs |
 | `verification/` | Chip knowledge and concrete vendor comparison projects |
 | `tools/` | Blobray, memory analysis and `cargo xtask` repository operations |
+| `experiments/` | Experimental engines and their host compositions |
 | `docs/` | Cross-component contracts and documentation conventions |
 
 Applications own board startup, credentials, network stacks, DHCP and sockets.

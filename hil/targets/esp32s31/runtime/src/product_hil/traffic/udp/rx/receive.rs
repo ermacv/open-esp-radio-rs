@@ -85,16 +85,16 @@ pub(super) async fn run(
     #[cfg(any(feature = "upstream-network", feature = "compat-network"))]
     let interface = match session.config.network_interface {
         open_esp_radio_hil_protocol::WifiNetworkInterface::Station => {
-            open_esp_radio_esp32s31_embassy_wifi::NetworkInterface::Station
+            oer_esp32s31_embassy_wifi::NetworkInterface::Station
         }
         open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint => {
-            open_esp_radio_esp32s31_embassy_wifi::NetworkInterface::AccessPoint
+            oer_esp32s31_embassy_wifi::NetworkInterface::AccessPoint
         }
     };
     #[cfg(feature = "upstream-network")]
-    let pool_drops_start = open_esp_radio_esp32s31_embassy_wifi::rx_pool_drops(interface);
+    let pool_drops_start = oer_esp32s31_embassy_wifi::rx_pool_drops(interface);
     #[cfg(feature = "compat-network")]
-    let resources_start = open_esp_radio_esp32s31_embassy_wifi::compat_resources(interface);
+    let resources_start = oer_esp32s31_embassy_wifi::compat_resources(interface);
     loop {
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
@@ -173,7 +173,7 @@ pub(super) async fn run(
         session.session_id,
         interface,
         resources_start,
-        open_esp_radio_esp32s31_embassy_wifi::compat_resources(interface),
+        oer_esp32s31_embassy_wifi::compat_resources(interface),
     ))
     .await;
     #[cfg(feature = "upstream-network")]
@@ -181,7 +181,7 @@ pub(super) async fn run(
         "ORX_POOL session={} interface={:?} rx_pool_drops={:?}",
         session.session_id,
         interface,
-        open_esp_radio_esp32s31_embassy_wifi::rx_pool_drops(interface)
+        oer_esp32s31_embassy_wifi::rx_pool_drops(interface)
             .zip(pool_drops_start)
             .map(|(end, start)| end.wrapping_sub(start)),
     ))

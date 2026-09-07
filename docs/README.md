@@ -7,7 +7,7 @@ details live beside their owner; this directory contains shared contracts.
 
 - [Repository ownership](architecture.md): production, tooling, register,
   HIL, verification and qualification responsibilities.
-- [Driver architecture](../driver/README.md): layers, resources and application
+- [Driver architecture](../crates/README.md): layers, resources and application
   integration.
 - [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
   Bluetooth and module naming.
@@ -33,7 +33,7 @@ details live beside their owner; this directory contains shared contracts.
 - [Blobray](../tools/blobray/README.md), [memory analysis](../tools/memory-report/README.md)
   and [repository commands](../tools/repo/README.md).
 
-The [ESP32-S31 radio capability map](../driver/chips/esp32s31/FEATURES.md) indexes
+The [ESP32-S31 radio capability map](../crates/hardware/esp32s31/driver/FEATURES.md) indexes
 shared lifecycle, PHY, coexistence and the Wi-Fi, Bluetooth and IEEE 802.15.4
 inventories. These source references do not replace machine qualification or
 hardware evidence.

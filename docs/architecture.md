@@ -8,7 +8,8 @@ commands belong to each component's README and Rust documentation.
 
 | Owner | Responsibility | Boundary |
 | --- | --- | --- |
-| [Driver](../driver/README.md) | Protocol state, typed hardware access, radio execution and application integration | Shipping behavior lives here, not in probes or HIL |
+| [Radio libraries](../crates/README.md) | Portable protocols, typed hardware access, adapters, execution and final composition | Internal libraries depend on specific contracts; only applications depend on the public facade |
+| [Network experiments](../experiments/network-engine/README.md) | Experimental synchronous networking and ownership models | Allowed in host test composition; excluded from production dependencies |
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, bounded comparisons and register publication | Generic engine; target facts are selected through providers and projects |
 | [Memory tools](../tools/memory-report/README.md) | ELF memory and stack analysis | The consumer chooses the image budget and acceptance policy |
@@ -22,6 +23,37 @@ A directory identifies an owner. A Cargo workspace identifies a joint build
 and lockfile boundary. They need not coincide, and a logical module does not
 require a new crate. `validation` is an operation on a domain's inputs, not a
 catch-all owner for unrelated tools.
+
+Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
+and `platform`. Scope separates production, experimental and development
+packages. Layer describes responsibility; platform separately describes host,
+portable or ESP32-S31 applicability. These labels do not establish hardware
+qualification. `supported-feature-profiles` enumerates alternative compositions
+that cannot be checked as one Cargo feature union.
+
+The architecture check discovers source manifests and workspace members before
+reading classification. Missing or inconsistent classification is an error.
+Production path dependencies, including optional and build dependencies, must
+resolve to classified production packages. Test dependencies may compose an
+experimental engine with production owners. Protocol/contract packages cannot
+depend on hardware, adapters or execution. Internal packages cannot depend on
+the public facade. These rules are independent of directory names.
+
+`open-esp-radio` provides the `oer` library. Its public modules reexport existing
+types; `oer-radio` owns the portable radio control lifecycle. The facade may
+depend on a selected composition, which depends on `oer-radio`, never on the
+facade. PAC access remains an explicit restricted dependency.
+
+Internal radio packages use the `oer-` prefix and identify their domain and,
+where required, chip: `oer-memory`, `oer-wifi-sta`, `oer-esp32s31-hal`.
+Rust imports use those dependency names; internal crates do not route imports
+through `oer`. Module paths carry context so types can use names such as
+`sta::association::{PhyMode, Preference}`. State names retain ownership and
+publication distinctions.
+
+A type has one defining owner. For example, association modes are defined in
+the lower IEEE 802.11 wire-codec crate and reexported by the station policy
+module and facade. The encoder never depends on the station policy or facade.
 
 ## Data and decisions
 

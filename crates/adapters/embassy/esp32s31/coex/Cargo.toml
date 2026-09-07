@@ -1,0 +1,23 @@
+[package]
+name = "oer-esp32s31-coex-embassy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Single-owner Embassy adapter for ESP32-S31 coexistence"
+
+[dependencies]
+embassy-sync = "0.8.0"
+oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
+
+[dev-dependencies]
+embassy-futures = "0.1.2"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "adapter"
+platform = "esp32s31"

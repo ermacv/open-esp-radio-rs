@@ -1,0 +1,27 @@
+[package]
+name = "oer-embassy-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Owned-packet boundary for the optimized open ESP radio Embassy/Xarxa integration"
+
+[dependencies]
+owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91" }
+embassy-sync = "0.8.0"
+oer-network = { path = "../../../network/interface" }
+oer-wifi-datapath = { path = "../../../protocols/ieee80211/datapath" }
+xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "adapter"
+platform = "portable"

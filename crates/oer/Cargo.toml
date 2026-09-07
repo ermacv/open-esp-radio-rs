@@ -1,0 +1,58 @@
+[package]
+name = "open-esp-radio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Public radio protocols, chip backends and system compositions"
+readme = "README.md"
+
+[lib]
+name = "oer"
+
+[features]
+default = ["wifi"]
+wifi = ["radio/wifi", "dep:mac", "dep:softmac", "dep:datapath", "dep:sta", "dep:ap", "dep:wpa2"]
+bluetooth = ["dep:hci", "dep:le-ll"]
+ieee802154 = ["dep:ieee802154"]
+esp32s31 = ["dep:chip-hal", "dep:chip-mac", "dep:chip-sta", "dep:chip-ap", "dep:chip-bluetooth"]
+embassy-esp32s31 = ["wifi", "esp32s31", "radio/wifi-embassy", "dep:composition"]
+upstream-xarxa = ["embassy-esp32s31", "composition/upstream-network"]
+owned-xarxa = ["embassy-esp32s31", "composition/owned-network"]
+embassy-smoltcp = ["embassy-esp32s31", "composition/compat-network"]
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "facade"
+platform = "portable"
+supported-feature-profiles = [
+    "wifi,bluetooth,ieee802154",
+    "wifi,bluetooth,ieee802154,esp32s31",
+    "upstream-xarxa",
+    "owned-xarxa",
+    "embassy-smoltcp",
+]
+
+[dependencies]
+radio = { package = "oer-radio", path = "../radio", default-features = false }
+memory = { package = "oer-memory", path = "../memory" }
+network = { package = "oer-network", path = "../network/interface" }
+mac = { package = "oer-ieee80211", path = "../protocols/ieee80211/mac", optional = true }
+softmac = { package = "oer-wifi-softmac", path = "../protocols/ieee80211/softmac", optional = true }
+datapath = { package = "oer-wifi-datapath", path = "../protocols/ieee80211/datapath", optional = true }
+sta = { package = "oer-wifi-sta", path = "../protocols/ieee80211/sta", optional = true }
+ap = { package = "oer-wifi-ap", path = "../protocols/ieee80211/ap", optional = true }
+wpa2 = { package = "oer-wpa2", path = "../protocols/ieee80211/security/wpa2", optional = true }
+hci = { package = "oer-bluetooth-hci", path = "../protocols/bluetooth/hci", optional = true }
+le-ll = { package = "oer-bluetooth-ll", path = "../protocols/bluetooth/le/ll", optional = true }
+ieee802154 = { package = "oer-ieee802154", path = "../protocols/ieee802154", optional = true }
+chip-hal = { package = "oer-esp32s31-hal", path = "../hardware/esp32s31/hal", optional = true }
+chip-mac = { package = "oer-esp32s31-wifi-mac", path = "../hardware/esp32s31/driver/ieee80211/mac", optional = true }
+chip-sta = { package = "oer-esp32s31-wifi-sta", path = "../hardware/esp32s31/driver/ieee80211/sta", optional = true }
+chip-ap = { package = "oer-esp32s31-wifi-ap", path = "../hardware/esp32s31/driver/ieee80211/ap", optional = true }
+chip-bluetooth = { package = "oer-esp32s31-bluetooth", path = "../hardware/esp32s31/driver/bluetooth", optional = true }
+composition = { package = "oer-esp32s31-embassy-wifi", path = "../composition/esp32s31/embassy/ieee80211", default-features = false, optional = true }
+
+[lints]
+workspace = true

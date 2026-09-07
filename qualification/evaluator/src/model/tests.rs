@@ -113,8 +113,8 @@ fn async_not_applicable_requires_a_reason_and_no_gap() {
 
 #[test]
 fn rejects_parent_paths() {
-    assert!(validate_relative_path(Path::new("../driver/src/lib.rs")).is_err());
-    assert!(validate_relative_path(Path::new("driver/src/lib.rs")).is_ok());
+    assert!(validate_relative_path(Path::new("../crates/src/lib.rs")).is_err());
+    assert!(validate_relative_path(Path::new("crates/src/lib.rs")).is_ok());
 }
 
 #[test]

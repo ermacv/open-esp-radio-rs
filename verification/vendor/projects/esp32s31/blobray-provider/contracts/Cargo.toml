@@ -14,3 +14,8 @@ open-radio-vendor-chip-contracts-esp32s31-rev0 = { path = "../../../../chips/esp
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "esp32s31"

@@ -34,29 +34,33 @@ fn source(metadata: &mut Value, name: &str, source: &str) {
 
 fn product() -> Fixture {
     let fixture = Fixture::new();
-    fixture.package("adapter", "network-adapter-fixture", r#"
+    fixture.package(
+        "adapter",
+        "network-adapter-fixture",
+        r#"
 [dependencies]
 api = { package = "embassy-net", path = "../stack" }
 device = { package = "embassy-net-driver", path = "../helper" }
-platform = { package = "esp-hal", path = "../driver/chips/test-radio" }
-compat = { package = "open-esp-radio-embassy-net-compat", path = "../compat", optional = true }
-bridge = { package = "open-esp-radio-esp32s31-wifi-embassy-compat", path = "../bridge", optional = true }
-owned = { package = "open-esp-radio-embassy-net", path = "../owned", optional = true }
+platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
+compat = { package = "oer-embassy-net-compat", path = "../compat", optional = true }
+bridge = { package = "oer-esp32s31-wifi-embassy-compat", path = "../bridge", optional = true }
+owned = { package = "oer-embassy-net", path = "../owned", optional = true }
 [features]
 default = ["compat-network"]
 compat-network = ["dep:compat", "dep:bridge"]
 owned-network = ["dep:owned"]
-"#);
+"#,
+    );
     fixture.package("helper", "embassy-net-driver", "");
     fixture.write(
         "helper/Cargo.toml",
         "[package]\nname = \"embassy-net-driver\"\nversion = \"0.2.0\"\nedition = \"2024\"\n",
     );
     fixture.package("stack", "embassy-net", "");
-    fixture.package("driver/chips/test-radio", "esp-hal", "");
-    fixture.package("compat", "open-esp-radio-embassy-net-compat", "");
-    fixture.package("bridge", "open-esp-radio-esp32s31-wifi-embassy-compat", "");
-    fixture.package("owned", "open-esp-radio-embassy-net", "");
+    fixture.package("crates/hardware/test-radio", "esp-hal", "");
+    fixture.package("compat", "oer-embassy-net-compat", "");
+    fixture.package("bridge", "oer-esp32s31-wifi-embassy-compat", "");
+    fixture.package("owned", "oer-embassy-net", "");
     fixture
 }
 
@@ -147,8 +151,8 @@ fn research_rejects_transitive_build_stack_but_allows_dev_only_stack() {
         "[dev-dependencies]\nexecutor = { package = \"embassy-sync\", path = \"../helper\" }\n",
     );
     audit(&fixture, fixture.metadata(), Boundary::Research).unwrap();
-    fixture.package("adapter", "network-adapter-fixture", "[dependencies]\nfacade = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n");
-    fixture.package("driver/chips/test-radio", "device-registers", "[build-dependencies]\ngenerator = { package = \"embassy-sync\", path = \"../../../helper\" }\n");
+    fixture.package("adapter", "network-adapter-fixture", "[dependencies]\nfacade = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
+    fixture.package("crates/hardware/test-radio", "device-registers", "[build-dependencies]\ngenerator = { package = \"embassy-sync\", path = \"../../../helper\" }\n");
     let error = audit(&fixture, fixture.metadata(), Boundary::Research)
         .unwrap_err()
         .to_string();
@@ -171,8 +175,8 @@ helper = { package = "packet-helper", path = "../helper", optional = true }
 worker = ["helper/executor"]
 "#,
     );
-    fixture.package("helper", "packet-helper", "[dependencies]\nexecutor = { package = \"embassy-sync\", path = \"../driver/chips/test-radio\", optional = true }\n");
-    fixture.package("driver/chips/test-radio", "embassy-sync", "");
+    fixture.package("helper", "packet-helper", "[dependencies]\nexecutor = { package = \"embassy-sync\", path = \"../crates/hardware/test-radio\", optional = true }\n");
+    fixture.package("crates/hardware/test-radio", "embassy-sync", "");
     fixture.metadata();
     let lock = std::fs::read(fixture.root().join("Cargo.lock")).unwrap();
     for (flags, accepted) in [(vec![], true), (vec!["--all-features".into()], false)] {

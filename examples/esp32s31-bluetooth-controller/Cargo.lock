@@ -1108,10 +1108,147 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-hci"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-sync 0.8.0",
+ "embedded-io 0.7.1",
+]
+
+[[package]]
+name = "oer-bluetooth-ll"
+version = "0.1.0"
+
+[[package]]
+name = "oer-esp32s31-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-sync 0.8.0",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-pac",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-integration"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-embassy",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-radio-platform-esp-hal",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-memory"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "pin-project",
+ "vcell",
+]
+
+[[package]]
 name = "oer-esp32s31-board"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-coex"
+version = "0.1.0"
+
+[[package]]
+name = "oer-esp32s31-embassy-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-time-driver",
+ "embassy-time-queue-utils",
+ "esp-hal",
+ "esp-sync",
+ "portable-atomic",
+ "riscv",
+]
+
+[[package]]
+name = "oer-esp32s31-hal"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-coex",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-pac",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-irq"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-pac",
+]
+
+[[package]]
+name = "oer-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-pac-raw",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-phy"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-radio-platform-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
 ]
 
 [[package]]
@@ -1127,41 +1264,14 @@ name = "oer-firmware"
 version = "0.1.0"
 
 [[package]]
+name = "oer-memory"
+version = "0.1.0"
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "open-esp-radio-bluetooth-hci"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-sync 0.8.0",
- "embedded-io 0.7.1",
-]
-
-[[package]]
-name = "open-esp-radio-bluetooth-ll"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-dma"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-sync 0.8.0",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth-memory",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
- "open-esp-radio-esp32s31-phy",
-]
 
 [[package]]
 name = "open-esp-radio-esp32s31-bluetooth-controller-example"
@@ -1174,125 +1284,15 @@ dependencies = [
  "esp-backtrace",
  "esp-hal",
  "esp-println",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-embassy",
+ "oer-esp32s31-bluetooth-integration",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-embassy-runtime",
+ "oer-esp32s31-radio-platform-esp-hal",
  "oer-esp32s31-runtime",
  "oer-firmware",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-bluetooth-embassy",
- "open-esp-radio-esp32s31-bluetooth-integration",
- "open-esp-radio-esp32s31-bluetooth-memory",
- "open-esp-radio-esp32s31-embassy-runtime",
- "open-esp-radio-esp32s31-radio-platform-esp-hal",
  "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-phy",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-integration"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "esp-hal",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-bluetooth-embassy",
- "open-esp-radio-esp32s31-bluetooth-memory",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-radio-platform-esp-hal",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-memory"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-coex"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-esp32s31-embassy-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-executor",
- "embassy-time-driver",
- "embassy-time-queue-utils",
- "esp-hal",
- "esp-sync",
- "portable-atomic",
- "riscv",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-hal"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-coex",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac-raw",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac-raw"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-phy"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-radio-platform-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
 ]
 
 [[package]]

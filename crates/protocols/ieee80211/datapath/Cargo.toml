@@ -1,0 +1,27 @@
+[package]
+name = "oer-wifi-datapath"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Radio-native packet ownership and materialization contracts"
+
+[dependencies]
+oer-memory = { path = "../../../memory" }
+oer-network = { path = "../../../network/interface" }
+
+[features]
+default = []
+ownership-telemetry = []
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+oer-wifi-softmac = { path = "../softmac" }
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "protocol"
+platform = "portable"

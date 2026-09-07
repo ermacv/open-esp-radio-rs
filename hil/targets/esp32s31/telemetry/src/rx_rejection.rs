@@ -1,11 +1,11 @@
 //! Translate driver-owned failures to the target-neutral HIL wire contract.
-use open_esp_radio_esp32s31_wifi_embassy::roles::access_point::{
+use oer_esp32s31_wifi_embassy::roles::access_point::{
     AccessPointRxRejection, AccessPointRxRejectionReason as DriverReason,
 };
-use open_esp_radio_hil_protocol::{WifiRxRejection, WifiRxRejectionReason as Reason};
-use open_esp_radio_ieee80211::{
+use oer_ieee80211::{
     ccmp::CcmpReplayError, data::DataDecapError, fragmentation::OpenDataFragmentError,
 };
+use open_esp_radio_hil_protocol::{WifiRxRejection, WifiRxRejectionReason as Reason};
 
 pub fn evidence(record: AccessPointRxRejection) -> WifiRxRejection {
     let reason = match record.reason {

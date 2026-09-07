@@ -11,7 +11,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
         "--locked",
         "--offline",
         "-p",
-        "open-esp-radio-esp32s31-platform-pac",
+        "oer-esp32s31-soc",
         "--features",
         "axi-gdma-mem2mem",
         "--target",
@@ -21,7 +21,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
     let mut metadata = None;
     for message in Message::parse_stream(Cursor::new(&output.stdout)) {
         if let Message::CompilerArtifact(artifact) = message?
-            && artifact.target.name == "open_esp_radio_esp32s31_platform_pac"
+            && artifact.target.name == "oer_esp32s31_soc"
         {
             metadata = artifact
                 .filenames
@@ -47,10 +47,10 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             ])
             .arg(
                 ctx.root
-                    .join("driver/adapters/esp-hal/esp32s31/soc/tests/ui/forget_borrowed_dma.rs"),
+                    .join("crates/adapters/esp-hal/esp32s31/soc/tests/ui/forget_borrowed_dma.rs"),
             )
             .arg("--extern")
-            .arg(format!("open_esp_radio_esp32s31_platform_pac={metadata}"))
+            .arg(format!("oer_esp32s31_soc={metadata}"))
             .arg("-L")
             .arg(format!("dependency={target_deps}"))
             .arg("-L")

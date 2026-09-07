@@ -7,7 +7,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
+use oer_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
     RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
     RxReorderAgreementObservation, RxReorderAgreementObserver, RxServiceObservation,
     RxStageDiscard,

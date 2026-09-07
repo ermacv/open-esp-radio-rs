@@ -3,7 +3,7 @@
 This reference describes the implemented network/radio boundary. The radio
 owns peer and physical execution state; network adapters own their packet
 storage and stack-facing contract. Source support limits are listed in the
-[ESP32-S31 IEEE 802.11 feature reference](../driver/chips/esp32s31/ieee80211/FEATURES.md).
+[ESP32-S31 IEEE 802.11 feature reference](../crates/hardware/esp32s31/driver/ieee80211/FEATURES.md).
 Hardware readiness is decided by [qualification](../qualification/README.md).
 
 For the reason each stack is retained, public selection names and current
@@ -13,13 +13,13 @@ availability, see [Network implementation choices](network-implementations.md).
 
 | Component | Owns | Does not own |
 | --- | --- | --- |
-| `driver/network/interface` | Logical interfaces, link state and frame/admission errors | Queues, allocator, executor or hardware |
-| `driver/network/adapters/embassy/compat` | Released `embassy-net-driver` tokens and bounded complete-frame staging | Radio peer/BA state or final SRAM slots |
-| `driver/network/adapters/embassy/owned` | Owned `PacketBuf` handoff and stack wake registration | Radio scheduling or DMA descriptors |
-| `driver/network/adapters/xarxa/upstream` | Original Xarxa driver API, bounded packet-owner queues and link epochs | Packet-pool implementation, IP policy or physical radio state |
-| `driver/ieee80211/datapath` | Software/physical ownership traits and selected-burst contracts | Concrete allocator, stack or executor |
-| `driver/runtime/embassy/esp32s31/ieee80211` | Physical radio runner, SRAM promotion, completion and executor waits | Application sockets or a second network stack |
-| `driver/network/research` | Synchronous bounded protocol engine and selected-work construction | Production network integration or hardware qualification |
+| `crates/network/interface` | Logical interfaces, link state and frame/admission errors | Queues, allocator, executor or hardware |
+| `crates/adapters/embassy-net/compat` | Released `embassy-net-driver` tokens and bounded complete-frame staging | Radio peer/BA state or final SRAM slots |
+| `crates/adapters/embassy-net/owned` | Owned `PacketBuf` handoff and stack wake registration | Radio scheduling or DMA descriptors |
+| `crates/adapters/xarxa/upstream` | Original Xarxa driver API, bounded packet-owner queues and link epochs | Packet-pool implementation, IP policy or physical radio state |
+| `crates/protocols/ieee80211/datapath` | Software/physical ownership traits and selected-burst contracts | Concrete allocator, stack or executor |
+| `crates/runtime/embassy/esp32s31/ieee80211` | Physical radio runner, SRAM promotion, completion and executor waits | Application sockets or a second network stack |
+| `experiments/network-engine` | Synchronous bounded protocol engine and selected-work construction | Production network integration or hardware qualification |
 
 The ESP32-S31 product selects exactly one of `upstream-network`, `owned-network`
 and `compat-network` at compile time. All compose the same physical radio runner
@@ -48,7 +48,7 @@ patchset against that Git baseline does not imply drop-in compatibility with
 the registry release. Package name and version alone do not identify either
 contract: Cargo source identity and the pinned revision also matter.
 
-The [product manifest](../driver/integration/esp32s31/embassy/ieee80211/Cargo.toml)
+The [product manifest](../crates/composition/esp32s31/embassy/ieee80211/Cargo.toml)
 and its lockfile define the exact selected versions and revisions. Its
 lockfile includes the optional network alternatives; an inactive dependency
 can still participate in Cargo resolution. The released-network guarantee
@@ -64,7 +64,7 @@ which itself pins that Xarxa revision. In `upstream-xarxa`, no network source is
 fork or locally edited copy. The full revisions appear in the manifests and
 are checked against Cargo's resolved production graph.
 
-`Esp32s31WifiDevice::into_upstream()` transfers the device to the application.
+`WifiDevice::into_upstream()` transfers the device to the application.
 The application places the driver and `StackStorage`, creates the original
 Embassy `Stack`, and calls `add_iface`. IP configuration belongs to that
 interface. Upstream supports multiple interfaces in one stack; the radio
@@ -212,7 +212,7 @@ but keeps the packet in its original arena slot through terminal TX. Rollback
 restores only queue metadata; concurrent admission cannot consume that slot.
 Successful release frees the slot and original packet owner exactly once.
 `AccessPointTxStorage` owns this CPU-only arena outside the movable AP service
-future. Each `Esp32s31AccessPointNetworkTx` borrows it exclusively for one AP
+future. Each `AccessPointNetworkTx` borrows it exclusively for one AP
 epoch; queue indices cannot cross that epoch. Dropping the epoch releases all
 remaining retained packets. After physical TX has detached, `into_storage`
 returns the same empty storage for reuse. The production supervisor carries
@@ -281,7 +281,7 @@ flows. Callers supply each eligible peer's minimum useful exchange cost.
 destination backlog across the owned adapter's synchronization boundary. The
 snapshot copies only metadata; it does not rotate flows, claim a packet, return
 admission credits or change readiness registration. AP geometry admission can
-use `Esp32s31ApAmpduBudget::admit_ethernet_len` before borrowing payload bytes.
+use `ApAmpduBudget::admit_ethernet_len` before borrowing payload bytes.
 This snapshot does not reserve the head: teardown, another consumer or
 publication can change the queue, so the claimed packet still needs geometry,
 association-generation and security validation. Ethernet length alone does not
@@ -316,10 +316,10 @@ old and new generations. Capacity errors preserve accounts and require a real
 release edge. Host tests cover the ledger and real AP runtime publication/completion methods
 with model hardware and real software/DMA pools.
 
-AP `Esp32s31AccessPointNetworkTx::new_with_airtime_accounting` optionally binds
+AP `AccessPointNetworkTx::new_with_airtime_accounting` optionally binds
 an `AccessPointAirtimeStorage` and an explicit `AccessPointAirtimeCost` callback.
 The ordinary constructor leaves accounting disabled. Board compositions default
-to that constructor; `Esp32s31RadioConfig::with_access_point_airtime` attaches an
+to that constructor; `RadioConfig::with_access_point_airtime` attaches an
 explicit standalone-AP model and selection policy. The board retains its ledger
 through role transitions and faults; only a successfully prepared fresh AP epoch
 resets it. Accounting mode measures the destination already
@@ -651,7 +651,7 @@ The research engine implements resolved-route IPv4 UDP transmission,
 synchronous UDP reception, ARP requests/replies and ICMP echo replies with
 bounded canonical work storage. Its domain code is allocation-free and
 synchronous, without PAC, executor or network-stack dependencies. The
-[research component reference](../driver/network/research/README.md) defines
+[research component reference](../experiments/network-engine/README.md) defines
 its payload ownership APIs and copying boundaries. `receive_parts` accepts
 decoded Ethernet addresses, EtherType and borrowed payload without assembling
 an Ethernet frame. UDP callbacks borrow the caller's receive storage for the

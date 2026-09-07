@@ -19,7 +19,7 @@ results, work plans or product readiness declarations.
 
 The [project](../README.md) owns input selection, scopes and comparison policy.
 [Registers](../../../../../registers/README.md) owns reviewed hardware models
-and publication. Production behavior belongs to [driver](../../../../../driver/README.md);
+and publication. Production behavior belongs to [driver](../../../../../crates/README.md);
 [qualification](../../../../../qualification/README.md) determines readiness
 from its declared evidence. Source hashes and artifact identities are
 provenance constraints, not a claim that the implementation is equivalent.

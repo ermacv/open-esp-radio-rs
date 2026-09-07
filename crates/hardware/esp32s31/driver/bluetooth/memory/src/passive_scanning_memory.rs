@@ -1,0 +1,1263 @@
+//! Fixed controller-SRAM memory graph for legacy passive scanning.
+//!
+//! The vendor allocator is deliberately absent. This module owns the reviewed
+//! two-node header/packet topology, private SRAM encoding and affine
+//! publication boundary needed by the first passive LE 1M scanner.
+
+#![forbid(unsafe_code)]
+
+use core::{marker::PhantomPinned, pin::Pin};
+
+use crate::{
+    le_rx_packet::{
+        BLUETOOTH_LE_RX_PACKET_BYTES, BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES,
+        BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, LeReceivedBatch, LeRxError, LeRxNodeStorage,
+        LeRxPacketAddress, extract_completed_rx_batch,
+    },
+    passive_scanning_event_image::{
+        BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, PassiveScanLinkStateImage,
+        PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanRxHeadProjection,
+        PassiveScanSchedulerItemWords, PassiveScanSchedulerWindow, PassiveScanStartSelection,
+    },
+    rx_memory_list::RxMemoryListClass,
+    scheduler_context::SchedulerContextStorage,
+    sram_link::{
+        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
+        ControllerSramLinkAddress,
+    },
+};
+
+use oer_esp32s31_hal::{
+    bluetooth::{
+        BluetoothControllerLatchedTime, BluetoothScanStartPublished,
+        BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
+        BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
+        RxMemoryListPublished,
+    },
+    types::{
+        BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+        BluetoothMemoryListSelector,
+    },
+};
+
+use pin_project::pin_project;
+
+use vcell::VolatileCell;
+
+/// Number of independently backed receive nodes in the first passive scanner.
+pub const BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT: usize = 2;
+/// Number of scheduler-item allocations retained by the scanner graph.
+pub const BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT: usize = 3;
+/// Bytes preceding a received Link Layer payload in one controller allocation.
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES: usize =
+    BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES;
+/// Maximum Link Layer payload admitted by the first scanner graph.
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY: usize = BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
+/// Complete logical receive-packet allocation size.
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES: usize = BLUETOOTH_LE_RX_PACKET_BYTES;
+
+const LINK_STATE_RX_HEAD_WORD: usize = 0x68 / 4;
+const LINK_STATE_RX_TAIL_WORD: usize = 0x70 / 4;
+const LINK_STATE_RX_SWAP_RESERVE_WORD: usize = 0x78 / 4;
+const LINK_STATE_SCHEDULER_HEAD_WORD: usize = 0x64 / 4;
+const SCHEDULER_ITEM_BYTES: usize = 0x60;
+const SCHEDULER_ITEM_WORDS: usize = SCHEDULER_ITEM_BYTES / 4;
+const SCHEDULER_ITEM_HARDWARE_NEXT_WORD: usize = 0;
+const SCHEDULER_ITEM_CONTEXT_WORD: usize = 1;
+const SCHEDULER_ITEM_LINK_STATE_WORD: usize = 0x08 / 4;
+const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
+const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD: usize = 0x1c / 4;
+const SCHEDULER_ITEM_ALLOCATION_CONFIG_WORD: usize = 0x20 / 4;
+const SCHEDULER_ITEM_POSITIONAL_24_WORD: usize = 0x24 / 4;
+const SCHEDULER_ITEM_EVENT_CLASS_WORD: usize = 0x2c / 4;
+const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
+const SCHEDULER_ITEM_WORD_44: usize = 0x44 / 4;
+const SCHEDULER_ITEM_WORD_48: usize = 0x48 / 4;
+const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
+const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x0fdf_ffff;
+const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
+const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
+const SCHEDULER_ITEM_ALLOCATION_CONFIG_MAX: u32 = 0x0fff;
+const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
+
+/// Product-owned limits consumed by the passive-scanner item allocator.
+///
+/// The private codec adds one and the zero-based item index exactly as the
+/// reviewed S31 allocator does. Construction rejects a combination that
+/// cannot fit every one of the graph's three scheduler items.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PassiveScanSchedulerAllocationConfig {
+    extended_advertising_instances: u16,
+    connections: u16,
+}
+
+impl PassiveScanSchedulerAllocationConfig {
+    /// Validate the source-owned Controller capacity limits.
+    pub const fn new(extended_advertising_instances: u16, connections: u16) -> Option<Self> {
+        let largest_image = (extended_advertising_instances as u32)
+            .wrapping_add(1)
+            .wrapping_add(connections as u32)
+            .wrapping_add((BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1) as u32);
+        if largest_image <= SCHEDULER_ITEM_ALLOCATION_CONFIG_MAX {
+            Some(Self {
+                extended_advertising_instances,
+                connections,
+            })
+        } else {
+            None
+        }
+    }
+
+    const fn item_image(self, index: usize) -> u32 {
+        (self.extended_advertising_instances as u32)
+            .wrapping_add(1)
+            .wrapping_add(self.connections as u32)
+            .wrapping_add(index as u32)
+    }
+}
+
+/// Semantic non-sentinel status written to the scanner scheduler item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PassiveScanSchedulerItemCompletionStatus {
+    Zero,
+    NonZero(core::num::NonZeroU32),
+}
+
+/// Private controller-shared scanner link state.
+#[repr(C, align(4))]
+struct PassiveScanLinkStateStorage {
+    words: [VolatileCell<u32>; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+}
+
+impl PassiveScanLinkStateStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+        }
+    }
+
+    fn install(&self, image: PassiveScanLinkStateImage) {
+        for (cell, word) in self.words.iter().zip(image.words()) {
+            cell.set(word);
+        }
+    }
+
+    fn install_receive_graph(
+        &self,
+        head: BluetoothControllerSramAddress,
+        tail: BluetoothControllerSramAddress,
+    ) {
+        self.words[LINK_STATE_RX_HEAD_WORD].set(head.address());
+        self.words[LINK_STATE_RX_TAIL_WORD].set(tail.address());
+        self.words[LINK_STATE_RX_SWAP_RESERVE_WORD].set(0);
+    }
+
+    fn install_scheduler_head(&self, head: BluetoothControllerSramAddress) {
+        self.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(head.address());
+    }
+
+    fn image(&self) -> PassiveScanLinkStateImage {
+        PassiveScanLinkStateImage::from_words(core::array::from_fn(|index| self.words[index].get()))
+    }
+
+    fn update_controller_time(&self, controller_time: BluetoothControllerLatchedTime) {
+        self.install(self.image().with_controller_time(controller_time));
+    }
+
+    #[cfg(test)]
+    fn receive_graph(
+        &self,
+    ) -> (
+        BluetoothControllerSramAddress,
+        BluetoothControllerSramAddress,
+        Option<BluetoothControllerSramAddress>,
+    ) {
+        let address = |word: usize| {
+            BluetoothControllerSramAddress::new(self.words[word].get())
+                .expect("the installed scanner graph retains validated addresses")
+        };
+        let reserve = self.words[LINK_STATE_RX_SWAP_RESERVE_WORD].get();
+        (
+            address(LINK_STATE_RX_HEAD_WORD),
+            address(LINK_STATE_RX_TAIL_WORD),
+            (reserve != 0).then(|| address(LINK_STATE_RX_SWAP_RESERVE_WORD)),
+        )
+    }
+
+    #[cfg(test)]
+    fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        BluetoothControllerSramAddress::new(self.words[LINK_STATE_SCHEDULER_HEAD_WORD].get())
+            .expect("the scanner link state retains a validated scheduler head")
+    }
+}
+
+/// Private hardware-shared scheduler item for one scanner event.
+#[repr(C, align(4))]
+struct PassiveScanSchedulerItemStorage {
+    words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
+}
+
+impl PassiveScanSchedulerItemStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
+        }
+    }
+
+    fn initialize_graph(
+        &self,
+        index: usize,
+        allocation: PassiveScanSchedulerAllocationConfig,
+        predecessor: Option<ControllerSramLinkAddress>,
+        scheduler_context: ControllerSramLinkAddress,
+        link_state: ControllerSramLinkAddress,
+    ) {
+        for word in &self.words {
+            word.set(0);
+        }
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(
+            SCHEDULER_ITEM_ALLOCATION_PREFIX
+                | predecessor.map_or(0, ControllerSramLinkAddress::compressed_image),
+        );
+        self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(scheduler_context.compressed_image());
+        self.words[SCHEDULER_ITEM_LINK_STATE_WORD]
+            .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
+        self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
+        self.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_WORD].set(allocation.item_image(index));
+        self.words[SCHEDULER_ITEM_POSITIONAL_24_WORD].set(SCHEDULER_ITEM_POSITIONAL_24_IMAGE);
+        self.words[SCHEDULER_ITEM_EVENT_CLASS_WORD].set(SCHEDULER_ITEM_EVENT_CLASS_IMAGE);
+    }
+
+    fn reviewed_words(&self) -> PassiveScanSchedulerItemWords {
+        PassiveScanSchedulerItemWords {
+            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get(),
+            word_04: self.words[SCHEDULER_ITEM_CONTEXT_WORD].get(),
+            word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
+            word_18: self.words[SCHEDULER_ITEM_WORD_18].get(),
+            word_38: self.words[SCHEDULER_ITEM_WORD_38].get(),
+            raw_start_word_44: self.words[SCHEDULER_ITEM_WORD_44].get(),
+            raw_end_word_48: self.words[SCHEDULER_ITEM_WORD_48].get(),
+        }
+    }
+
+    fn detach_hardware_predecessor(&self) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
+            .set(self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & !SCHEDULER_ITEM_LINK_MASK);
+    }
+
+    fn mark_in_flight(&self) {
+        self.words[SCHEDULER_ITEM_WORD_38].set(u32::MAX);
+    }
+
+    fn restore_cpu_owned_status(&self) {
+        self.words[SCHEDULER_ITEM_WORD_38].set(0);
+    }
+
+    fn completion_status(&self) -> Option<PassiveScanSchedulerItemCompletionStatus> {
+        let status = self.words[SCHEDULER_ITEM_WORD_38].get();
+        if status == u32::MAX {
+            None
+        } else if status == 0 {
+            Some(PassiveScanSchedulerItemCompletionStatus::Zero)
+        } else {
+            Some(PassiveScanSchedulerItemCompletionStatus::NonZero(
+                core::num::NonZeroU32::new(status)
+                    .expect("a nonzero scheduler status constructs a nonzero value"),
+            ))
+        }
+    }
+
+    fn restore_hardware_predecessor(&self, predecessor: ControllerSramLinkAddress) {
+        let image = self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get();
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
+            .set((image & !SCHEDULER_ITEM_LINK_MASK) | predecessor.compressed_image());
+    }
+
+    fn write_reviewed_words(&self, words: PassiveScanSchedulerItemWords) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(words.word_00);
+        self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(words.word_04);
+        self.words[SCHEDULER_ITEM_WORD_14].set(words.word_14);
+        self.words[SCHEDULER_ITEM_WORD_18].set(words.word_18);
+        self.words[SCHEDULER_ITEM_WORD_38].set(words.word_38);
+        self.words[SCHEDULER_ITEM_WORD_44].set(words.raw_start_word_44);
+        self.words[SCHEDULER_ITEM_WORD_48].set(words.raw_end_word_48);
+    }
+
+    #[cfg(test)]
+    fn retains_graph(
+        &self,
+        predecessor: Option<ControllerSramLinkAddress>,
+        scheduler_context: ControllerSramLinkAddress,
+        link_state: ControllerSramLinkAddress,
+    ) -> bool {
+        let predecessor = predecessor.map_or(0, ControllerSramLinkAddress::compressed_image);
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & 0x000f_ffff == predecessor
+            && self.words[SCHEDULER_ITEM_CONTEXT_WORD].get() == scheduler_context.compressed_image()
+            && self.words[SCHEDULER_ITEM_LINK_STATE_WORD].get() & 0x000f_ffff
+                == link_state.compressed_image()
+    }
+}
+
+/// Complete no-heap allocation for the first passive-scanner memory graph.
+///
+/// The storage has no address or publication methods until a unique static
+/// allocation is pinned and validated against physical S31 SRAM.
+#[pin_project]
+#[repr(C)]
+pub struct PassiveScanMemoryGraphStorage {
+    link_state: PassiveScanLinkStateStorage,
+    scheduler_context: SchedulerContextStorage,
+    scheduler_items: [PassiveScanSchedulerItemStorage; BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
+    nodes: [LeRxNodeStorage; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+    #[pin]
+    _pin: PhantomPinned,
+}
+
+const MEMORY_GRAPH_BYTES: u32 = core::mem::size_of::<PassiveScanMemoryGraphStorage>() as u32;
+const RX_NODE_BYTES: u32 = core::mem::size_of::<LeRxNodeStorage>() as u32;
+const RX_NODES_OFFSET: u32 = core::mem::offset_of!(PassiveScanMemoryGraphStorage, nodes) as u32;
+const SCHEDULER_CONTEXT_OFFSET: u32 =
+    core::mem::offset_of!(PassiveScanMemoryGraphStorage, scheduler_context) as u32;
+const SCHEDULER_ITEMS_OFFSET: u32 =
+    core::mem::offset_of!(PassiveScanMemoryGraphStorage, scheduler_items) as u32;
+const RX_PACKET_OFFSET: u32 = core::mem::offset_of!(LeRxNodeStorage, packet) as u32;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PassiveScanRxNodeBinding {
+    header: ControllerSramLinkAddress,
+    packet: LeRxPacketAddress,
+}
+
+/// Why a static passive-scanner allocation cannot become CPU-owned.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PassiveScanMemoryGraphBindError {
+    /// A target pointer cannot be represented by the S31 32-bit address space.
+    AddressWidth,
+    /// One component is outside the compressed controller-address domain.
+    InvalidAddress(BluetoothControllerSramAddressError),
+    /// Some byte of the complete graph is outside physical internal SRAM.
+    ExtentOutsidePhysicalSram,
+    /// A required graph component would encode as the unbound zero link.
+    ZeroCompressedLink,
+}
+
+struct PassiveScanMemoryGraphBinding {
+    base: BluetoothControllerSramAddress,
+    end_exclusive: u32,
+    link_state: ControllerSramLinkAddress,
+    scheduler_context: ControllerSramLinkAddress,
+    scheduler_items: [ControllerSramLinkAddress; BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
+    nodes: [PassiveScanRxNodeBinding; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+}
+
+impl PassiveScanMemoryGraphBinding {
+    fn new(base: u32) -> Result<Self, PassiveScanMemoryGraphBindError> {
+        let base_address = BluetoothControllerSramAddress::new(base)
+            .map_err(PassiveScanMemoryGraphBindError::InvalidAddress)?;
+        let end_exclusive = base
+            .checked_add(MEMORY_GRAPH_BYTES)
+            .ok_or(PassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
+        if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
+            || end_exclusive > BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH
+        {
+            return Err(PassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram);
+        }
+        let link_state = ControllerSramLinkAddress::new(base)
+            .map_err(|_| PassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
+        let bound_link = |offset: u32| {
+            let address = base
+                .checked_add(offset)
+                .ok_or(PassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
+            ControllerSramLinkAddress::new(address)
+                .map_err(|_| PassiveScanMemoryGraphBindError::ZeroCompressedLink)
+        };
+        let scheduler_context = bound_link(SCHEDULER_CONTEXT_OFFSET)?;
+        let scheduler_items = [
+            bound_link(SCHEDULER_ITEMS_OFFSET)?,
+            bound_link(SCHEDULER_ITEMS_OFFSET + SCHEDULER_ITEM_BYTES as u32)?,
+            bound_link(SCHEDULER_ITEMS_OFFSET + 2 * SCHEDULER_ITEM_BYTES as u32)?,
+        ];
+
+        let node = |index: u32| {
+            let node_base = base
+                .checked_add(RX_NODES_OFFSET)
+                .and_then(|address| address.checked_add(index * RX_NODE_BYTES))
+                .ok_or(PassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
+            let header = ControllerSramLinkAddress::new(node_base)
+                .map_err(|_| PassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
+            let packet = LeRxPacketAddress::new(
+                node_base
+                    .checked_add(RX_PACKET_OFFSET)
+                    .ok_or(PassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?,
+            )
+            .map_err(PassiveScanMemoryGraphBindError::InvalidAddress)?;
+            if packet.compressed_image() == 0 {
+                return Err(PassiveScanMemoryGraphBindError::ZeroCompressedLink);
+            }
+            Ok(PassiveScanRxNodeBinding { header, packet })
+        };
+
+        Ok(Self {
+            base: base_address,
+            end_exclusive,
+            link_state,
+            scheduler_context,
+            scheduler_items,
+            nodes: [node(0)?, node(1)?],
+        })
+    }
+
+    const fn head(&self) -> BluetoothControllerSramAddress {
+        self.nodes[0].header.controller_address()
+    }
+
+    const fn link_state(&self) -> BluetoothControllerSramAddress {
+        self.link_state.controller_address()
+    }
+
+    const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.scheduler_items[BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1].controller_address()
+    }
+
+    const fn range(&self) -> (u32, u32) {
+        (self.base.address(), self.end_exclusive)
+    }
+}
+
+/// Failed static binding retaining the exact allocation unchanged.
+#[must_use = "failed binding still owns the scanner memory graph"]
+pub struct PassiveScanMemoryGraphBindFailure {
+    storage: &'static mut PassiveScanMemoryGraphStorage,
+    error: PassiveScanMemoryGraphBindError,
+}
+
+impl PassiveScanMemoryGraphBindFailure {
+    /// Return the finite binding failure reason.
+    pub const fn error(&self) -> PassiveScanMemoryGraphBindError {
+        self.error
+    }
+
+    /// Recover the unchanged allocation and its failure reason.
+    pub fn into_parts(
+        self,
+    ) -> (
+        &'static mut PassiveScanMemoryGraphStorage,
+        PassiveScanMemoryGraphBindError,
+    ) {
+        (self.storage, self.error)
+    }
+}
+
+impl core::fmt::Debug for PassiveScanMemoryGraphBindFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("PassiveScanMemoryGraphBindFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Synthetic physical-SRAM base for native ownership tests.
+#[cfg(not(target_arch = "riscv32"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PassiveScanMemoryGraphModelAddress(BluetoothControllerSramAddress);
+
+#[cfg(not(target_arch = "riscv32"))]
+impl PassiveScanMemoryGraphModelAddress {
+    /// Validate one deterministic controller-SRAM model address.
+    pub const fn new(address: u32) -> Result<Self, BluetoothControllerSramAddressError> {
+        match BluetoothControllerSramAddress::new(address) {
+            Ok(address) => Ok(Self(address)),
+            Err(error) => Err(error),
+        }
+    }
+
+    const fn address(self) -> u32 {
+        self.0.address()
+    }
+}
+
+/// CPU-owned, initialized scanner graph not visible to hardware.
+#[must_use = "the initialized scanner graph owns its static allocation"]
+pub struct PassiveScanMemoryGraphCpuOwned {
+    storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+}
+
+impl PassiveScanMemoryGraphCpuOwned {
+    /// Return the complete physical SRAM range occupied by the graph.
+    pub const fn range(&self) -> (u32, u32) {
+        self.binding.range()
+    }
+
+    /// Lower the first accepted passive LE 1M window into the current item.
+    pub fn prepare_first_event(
+        mut self,
+        channel: PassiveScanPrimaryChannel,
+        window: PassiveScanSchedulerWindow,
+        start_selection: PassiveScanStartSelection,
+        controller_time: BluetoothControllerLatchedTime,
+    ) -> PassiveScanMemoryGraphEventPrepared {
+        let item_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let graph = self.storage.as_mut().project();
+        graph.link_state.update_controller_time(controller_time);
+        let words = graph.scheduler_items[item_index]
+            .reviewed_words()
+            .prepare_first_event(graph.link_state.image(), channel, window, start_selection);
+        graph.scheduler_items[item_index].write_reviewed_words(words);
+        PassiveScanMemoryGraphEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel,
+            window,
+        }
+    }
+}
+
+/// CPU-owned scanner graph carrying one complete first-event image.
+#[must_use = "the prepared scanner event must be admitted or retained"]
+pub struct PassiveScanMemoryGraphEventPrepared {
+    storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphEventPrepared {
+    /// Primary channel retained by this exact event.
+    pub const fn channel(&self) -> PassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by this exact event.
+    pub const fn window(&self) -> PassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Return an unpublished event image to ordinary CPU ownership.
+    ///
+    /// A later preparation overwrites every event-specific field before the
+    /// graph can become visible to hardware.
+    #[doc(hidden)]
+    pub fn into_cpu_owned(self) -> PassiveScanMemoryGraphCpuOwned {
+        PassiveScanMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+
+    /// Detach the prepared item from the private free chain before admission.
+    ///
+    /// This transition remains CPU-only and is cancellable. It advances the
+    /// private free head to the retained predecessor while clearing the
+    /// selected item's hardware-next link.
+    pub fn prepare_scheduler_admission(
+        mut self,
+    ) -> PassiveScanMemoryGraphSchedulerAdmissionPrepared {
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let predecessor = self.binding.scheduler_items[selected_index - 1];
+        let graph = self.storage.as_mut().project();
+        graph.scheduler_items[selected_index].detach_hardware_predecessor();
+        graph.scheduler_items[selected_index].mark_in_flight();
+        graph
+            .link_state
+            .install_scheduler_head(predecessor.controller_address());
+        PassiveScanMemoryGraphSchedulerAdmissionPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// CPU-owned scanner graph whose selected item is detached from its free chain.
+#[must_use = "the detached scanner item must be published or restored"]
+pub struct PassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    /// Exact selected item that may consume one common scheduler list.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Restore the exact private chain before any MMIO publication.
+    pub fn cancel(mut self) -> PassiveScanMemoryGraphEventPrepared {
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let selected = self.binding.scheduler_items[selected_index];
+        let predecessor = self.binding.scheduler_items[selected_index - 1];
+        let graph = self.storage.as_mut().project();
+        graph.scheduler_items[selected_index].restore_hardware_predecessor(predecessor);
+        graph.scheduler_items[selected_index].restore_cpu_owned_status();
+        graph
+            .link_state
+            .install_scheduler_head(selected.controller_address());
+        PassiveScanMemoryGraphEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+
+    /// Freeze CPU initialization before an upper controller owner performs the
+    /// ordered RX-list publication.
+    pub fn prepare_publication(self) -> PassiveScanMemoryGraphPublicationPrepared {
+        PassiveScanMemoryGraphPublicationPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// Initialized pinned graph ready for selector-one list publication.
+#[must_use = "the prepared scanner graph must be published or retained"]
+pub struct PassiveScanMemoryGraphPublicationPrepared {
+    storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphPublicationPrepared {
+    /// Return the memory-layer mapping for the passive-scanner RX list.
+    #[doc(hidden)]
+    pub const fn selector(&self) -> BluetoothMemoryListSelector {
+        RxMemoryListClass::Scanning.selector()
+    }
+
+    /// Return the validated first header for the HAL publication operation.
+    #[doc(hidden)]
+    pub const fn head(&self) -> BluetoothControllerSramAddress {
+        self.binding.head()
+    }
+
+    /// Return the private scanner link-state address for the matching
+    /// scheduler-item codec. This grants no dereference or publication access.
+    #[doc(hidden)]
+    pub const fn link_state(&self) -> BluetoothControllerSramAddress {
+        self.binding.link_state()
+    }
+
+    /// Return the validated first event item retained by the scanner graph.
+    /// This grants no scheduler-list publication authority.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Consume a matching affine HAL publication into hardware ownership.
+    #[doc(hidden)]
+    pub fn into_published(
+        self,
+        publication: RxMemoryListPublished,
+    ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
+        let error = if publication.selector() != self.selector() {
+            Some(PassiveScanMemoryGraphPublicationError::SelectorMismatch)
+        } else if publication.head() != self.head() {
+            Some(PassiveScanMemoryGraphPublicationError::HeadMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(PassiveScanMemoryGraphPublicationMismatch {
+                prepared: self,
+                publication,
+                error,
+            });
+        }
+        Ok(PassiveScanMemoryGraphPublished {
+            _storage: self.storage,
+            binding: self.binding,
+            publication,
+            channel: self.channel,
+            window: self.window,
+        })
+    }
+}
+
+/// Why a HAL receive-list publication does not name this scanner graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PassiveScanMemoryGraphPublicationError {
+    /// The publication belongs to another positional memory list.
+    SelectorMismatch,
+    /// The publication names another pinned arena head.
+    HeadMismatch,
+}
+
+/// Failed publication join retaining both affine owners.
+#[must_use = "a mismatched publication still owns both the graph and HAL token"]
+pub struct PassiveScanMemoryGraphPublicationMismatch {
+    prepared: PassiveScanMemoryGraphPublicationPrepared,
+    publication: RxMemoryListPublished,
+    error: PassiveScanMemoryGraphPublicationError,
+}
+
+impl PassiveScanMemoryGraphPublicationMismatch {
+    /// Return the finite mismatch reason.
+    pub const fn error(&self) -> PassiveScanMemoryGraphPublicationError {
+        self.error
+    }
+
+    /// Recover both unchanged affine owners.
+    pub fn into_parts(
+        self,
+    ) -> (
+        PassiveScanMemoryGraphPublicationPrepared,
+        RxMemoryListPublished,
+    ) {
+        (self.prepared, self.publication)
+    }
+}
+
+impl core::fmt::Debug for PassiveScanMemoryGraphPublicationMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("PassiveScanMemoryGraphPublicationMismatch")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Pinned scanner graph visible to and exclusively retained by hardware.
+#[must_use = "the published scanner graph remains hardware-owned"]
+pub struct PassiveScanMemoryGraphPublished {
+    _storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    publication: RxMemoryListPublished,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphPublished {
+    /// Return the exact retained receive-list head without exposing SRAM contents.
+    pub const fn head(&self) -> BluetoothControllerSramAddress {
+        self.binding.head()
+    }
+
+    /// Borrow the matching HAL publication proof.
+    #[doc(hidden)]
+    pub const fn publication(&self) -> &RxMemoryListPublished {
+        &self.publication
+    }
+
+    /// Primary channel retained by the hardware-owned event.
+    pub const fn channel(&self) -> PassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by the hardware-owned event.
+    pub const fn window(&self) -> PassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Join the matching restricted scan command while retaining the graph.
+    pub fn into_scan_command_published(
+        self,
+        command: BluetoothScanStartPublished,
+    ) -> PassiveScanMemoryGraphCommandPublished {
+        PassiveScanMemoryGraphCommandPublished {
+            _storage: self._storage,
+            binding: self.binding,
+            rx_publication: self.publication,
+            _command: command,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// Scanner graph whose RX list and standard-backoff command are hardware-visible.
+///
+/// The scheduler item remains outside a hardware list until the common
+/// scheduler epoch consumes this state.
+#[must_use = "the command-published scanner graph must enter the common scheduler"]
+pub struct PassiveScanMemoryGraphCommandPublished {
+    _storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    rx_publication: RxMemoryListPublished,
+    _command: BluetoothScanStartPublished,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphCommandPublished {
+    /// Exact detached scheduler item prepared by this graph.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Borrow the retained selector-one RX-list publication.
+    #[doc(hidden)]
+    pub const fn rx_publication(&self) -> &RxMemoryListPublished {
+        &self.rx_publication
+    }
+
+    /// Primary channel retained by the hardware-visible event.
+    pub const fn channel(&self) -> PassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by the hardware-visible event.
+    pub const fn window(&self) -> PassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Join the exact common RUN proof and retain hardware ownership.
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> PassiveScanMemoryGraphRunning {
+        assert_eq!(
+            run.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "the restricted scanner uses the primary scheduler list"
+        );
+        assert_eq!(
+            run.head().address(),
+            Some(self.scheduler_head()),
+            "the RUN proof must retain this scanner item"
+        );
+        PassiveScanMemoryGraphRunning {
+            storage: self._storage,
+            binding: self.binding,
+            _rx_publication: self.rx_publication,
+            _command: self._command,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// Hardware-owned scanner graph admitted through the common RUN transaction.
+#[must_use = "the running scanner graph must advance through fenced completion"]
+pub struct PassiveScanMemoryGraphRunning {
+    storage: Pin<&'static mut PassiveScanMemoryGraphStorage>,
+    binding: PassiveScanMemoryGraphBinding,
+    _rx_publication: RxMemoryListPublished,
+    _command: BluetoothScanStartPublished,
+    channel: PassiveScanPrimaryChannel,
+    window: PassiveScanSchedulerWindow,
+}
+
+impl PassiveScanMemoryGraphRunning {
+    /// Exact scanner item retained by the hardware-owned graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Primary advertising channel retained by this event.
+    pub const fn channel(&self) -> PassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Exact scheduler window retained by this event.
+    pub const fn window(&self) -> PassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Consume one fresh finished-list observation and inspect the item status.
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> PassiveScanMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return PassiveScanMemoryGraphCompletionObservation::ListMismatch {
+                running: self,
+                observed,
+            };
+        }
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let Some(status) =
+            self.storage.as_ref().get_ref().scheduler_items[selected_index].completion_status()
+        else {
+            return PassiveScanMemoryGraphCompletionObservation::StillInFlight(self);
+        };
+        PassiveScanMemoryGraphCompletionObservation::CompletionObserved(
+            PassiveScanMemoryGraphCompletionObserved {
+                running: self,
+                status,
+            },
+        )
+    }
+}
+
+/// One bounded observation of a running scanner graph.
+#[must_use = "the graph and any unrelated finished-list token remain owned"]
+pub enum PassiveScanMemoryGraphCompletionObservation {
+    ListMismatch {
+        running: PassiveScanMemoryGraphRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(PassiveScanMemoryGraphRunning),
+    CompletionObserved(PassiveScanMemoryGraphCompletionObserved),
+}
+
+/// Scanner graph after a non-sentinel scheduler status was observed.
+#[must_use = "the completed scanner graph must pass scheduler unlink before CPU access"]
+pub struct PassiveScanMemoryGraphCompletionObserved {
+    running: PassiveScanMemoryGraphRunning,
+    status: PassiveScanSchedulerItemCompletionStatus,
+}
+
+impl PassiveScanMemoryGraphCompletionObserved {
+    /// Exact item whose scheduler status left the in-flight sentinel.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.running.scheduler_item_address()
+    }
+
+    /// Semantic scheduler completion status retained for diagnostics.
+    pub const fn status(&self) -> PassiveScanSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    /// Bind the exact software-list removal proof before reading RX SRAM.
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<PassiveScanMemoryGraphRecyclePrepared, PassiveScanMemoryGraphRecycleFailure> {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(PassiveScanMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(PassiveScanMemoryGraphRecycleError::SchedulerItemMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(PassiveScanMemoryGraphRecycleFailure {
+                completed: self,
+                removal,
+                error,
+            });
+        }
+        Ok(PassiveScanMemoryGraphRecyclePrepared {
+            completed: self,
+            _removal: removal,
+        })
+    }
+}
+
+/// Why a completed scanner graph rejected CPU-recycle authorization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PassiveScanMemoryGraphRecycleError {
+    HardwareListMismatch,
+    SchedulerItemMismatch,
+}
+
+/// Lossless recycle rejection retaining both affine owners.
+#[must_use = "the completed scanner graph and removal proof remain owned"]
+pub struct PassiveScanMemoryGraphRecycleFailure {
+    completed: PassiveScanMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    error: PassiveScanMemoryGraphRecycleError,
+}
+
+impl PassiveScanMemoryGraphRecycleFailure {
+    pub const fn error(&self) -> PassiveScanMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        PassiveScanMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// Completed graph authorized for bounded RX extraction and reclamation.
+#[must_use = "the scanner graph must be extracted or retained unchanged"]
+pub struct PassiveScanMemoryGraphRecyclePrepared {
+    completed: PassiveScanMemoryGraphCompletionObserved,
+    _removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl PassiveScanMemoryGraphRecyclePrepared {
+    /// Recover both unchanged affine owners before extraction begins.
+    pub fn into_parts(
+        self,
+    ) -> (
+        PassiveScanMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self._removal)
+    }
+
+    /// Validate and copy every contiguous completed node without mutating SRAM.
+    pub fn extract_received(
+        self,
+    ) -> Result<PassiveScanMemoryGraphRxExtracted, PassiveScanMemoryGraphRxExtractionFailure> {
+        let batch = match self
+            .completed
+            .running
+            .storage
+            .as_ref()
+            .get_ref()
+            .extract_received_batch()
+        {
+            Ok(batch) => batch,
+            Err(error) => {
+                return Err(PassiveScanMemoryGraphRxExtractionFailure {
+                    prepared: self,
+                    error,
+                });
+            }
+        };
+        Ok(PassiveScanMemoryGraphRxExtracted {
+            prepared: self,
+            batch,
+        })
+    }
+}
+
+/// Malformed completed RX storage retaining the unchanged recycle owner.
+#[must_use = "the unchanged graph remains unavailable until fail-stop handling"]
+pub struct PassiveScanMemoryGraphRxExtractionFailure {
+    prepared: PassiveScanMemoryGraphRecyclePrepared,
+    error: LeRxError,
+}
+
+impl PassiveScanMemoryGraphRxExtractionFailure {
+    pub const fn error(&self) -> LeRxError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> PassiveScanMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+}
+
+/// Validated RX batch paired with the sole reclaimable scanner graph.
+#[must_use = "commit reclamation before reusing the scanner graph"]
+pub struct PassiveScanMemoryGraphRxExtracted {
+    prepared: PassiveScanMemoryGraphRecyclePrepared,
+    batch: LeReceivedBatch,
+}
+
+impl PassiveScanMemoryGraphRxExtracted {
+    /// Copy of every completed Link Layer PDU in receive-list order.
+    pub const fn batch(&self) -> LeReceivedBatch {
+        self.batch
+    }
+
+    /// Recover the unchanged recycle proof before reclamation is committed.
+    #[doc(hidden)]
+    pub fn into_prepared(self) -> PassiveScanMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+
+    /// Restore the private lists and return ordinary CPU ownership.
+    pub fn commit(self) -> PassiveScanMemoryGraphRecycled {
+        let PassiveScanMemoryGraphRecyclePrepared {
+            completed,
+            _removal: _,
+        } = self.prepared;
+        let PassiveScanMemoryGraphCompletionObserved { running, status } = completed;
+        let PassiveScanMemoryGraphRunning {
+            storage,
+            binding,
+            _rx_publication: _,
+            _command: _,
+            channel: _,
+            window: _,
+        } = running;
+        let mut owner = PassiveScanMemoryGraphCpuOwned { storage, binding };
+        owner.restore_after_event();
+        PassiveScanMemoryGraphRecycled {
+            owner,
+            batch: self.batch,
+            status,
+        }
+    }
+}
+
+/// Reusable CPU-owned scanner graph plus copied event results.
+#[must_use = "the graph and received batch must return to the scanner role owner"]
+pub struct PassiveScanMemoryGraphRecycled {
+    owner: PassiveScanMemoryGraphCpuOwned,
+    batch: LeReceivedBatch,
+    status: PassiveScanSchedulerItemCompletionStatus,
+}
+
+impl PassiveScanMemoryGraphRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        PassiveScanMemoryGraphCpuOwned,
+        LeReceivedBatch,
+        PassiveScanSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.batch, self.status)
+    }
+}
+
+impl PassiveScanMemoryGraphStorage {
+    /// Reserve a zero-based scanner memory graph.
+    pub const fn new() -> Self {
+        Self {
+            link_state: PassiveScanLinkStateStorage::new(),
+            scheduler_context: SchedulerContextStorage::new(),
+            scheduler_items: [const { PassiveScanSchedulerItemStorage::new() };
+                BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
+            nodes: [LeRxNodeStorage::new(), LeRxNodeStorage::new()],
+            _pin: PhantomPinned,
+        }
+    }
+
+    fn extract_received_batch(
+        &self,
+    ) -> Result<LeReceivedBatch<BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT>, LeRxError> {
+        extract_completed_rx_batch(&self.nodes)
+    }
+
+    /// Bind the real address of one unique static S31 allocation.
+    #[cfg(target_arch = "riscv32")]
+    pub fn pin_static(
+        storage: &'static mut Self,
+        config: PassiveScanResetConfig,
+        scheduler_allocation: PassiveScanSchedulerAllocationConfig,
+    ) -> Result<PassiveScanMemoryGraphCpuOwned, PassiveScanMemoryGraphBindFailure> {
+        let base = match u32::try_from(core::ptr::addr_of!(*storage).addr()) {
+            Ok(base) => base,
+            Err(_) => {
+                return Err(PassiveScanMemoryGraphBindFailure {
+                    storage,
+                    error: PassiveScanMemoryGraphBindError::AddressWidth,
+                });
+            }
+        };
+        Self::pin_static_inner(storage, base, config, scheduler_allocation)
+    }
+
+    /// Bind one deterministic physical-SRAM address to a native ownership
+    /// model without deriving an address from the host allocation.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn pin_static_model(
+        storage: &'static mut Self,
+        base: PassiveScanMemoryGraphModelAddress,
+        config: PassiveScanResetConfig,
+        scheduler_allocation: PassiveScanSchedulerAllocationConfig,
+    ) -> Result<PassiveScanMemoryGraphCpuOwned, PassiveScanMemoryGraphBindFailure> {
+        Self::pin_static_inner(storage, base.address(), config, scheduler_allocation)
+    }
+
+    fn pin_static_inner(
+        storage: &'static mut Self,
+        base: u32,
+        config: PassiveScanResetConfig,
+        scheduler_allocation: PassiveScanSchedulerAllocationConfig,
+    ) -> Result<PassiveScanMemoryGraphCpuOwned, PassiveScanMemoryGraphBindFailure> {
+        let binding = match PassiveScanMemoryGraphBinding::new(base) {
+            Ok(binding) => binding,
+            Err(error) => {
+                return Err(PassiveScanMemoryGraphBindFailure { storage, error });
+            }
+        };
+        let mut owner = PassiveScanMemoryGraphCpuOwned {
+            storage: Pin::static_mut(storage),
+            binding,
+        };
+        owner.initialize(config, scheduler_allocation);
+        Ok(owner)
+    }
+}
+
+impl PassiveScanMemoryGraphCpuOwned {
+    fn initialize(
+        &mut self,
+        config: PassiveScanResetConfig,
+        scheduler_allocation: PassiveScanSchedulerAllocationConfig,
+    ) {
+        let bindings = self.binding.nodes;
+        let scheduler_items = self.binding.scheduler_items;
+        let link_state = PassiveScanLinkStateImage::restricted_passive_le_1m(
+            PassiveScanRxHeadProjection::from_bound(bindings[0].header),
+            config,
+        );
+        let storage = self.storage.as_mut().project();
+        storage.link_state.install(link_state);
+        storage.scheduler_context.clear();
+        for (index, item) in storage.scheduler_items.iter().enumerate() {
+            let predecessor = index.checked_sub(1).map(|index| scheduler_items[index]);
+            item.initialize_graph(
+                index,
+                scheduler_allocation,
+                predecessor,
+                self.binding.scheduler_context,
+                self.binding.link_state,
+            );
+        }
+        storage.link_state.install_scheduler_head(
+            scheduler_items[BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1].controller_address(),
+        );
+        storage.link_state.install_receive_graph(
+            bindings[0].header.controller_address(),
+            bindings[1].header.controller_address(),
+        );
+        for (node, binding) in storage.nodes.iter().zip(bindings) {
+            node.packet.initialize();
+            node.header.install(binding.packet, None, None, false);
+        }
+        storage.nodes[0]
+            .header
+            .install(bindings[0].packet, Some(bindings[1].header), None, true);
+        storage.nodes[1].header.install(
+            bindings[1].packet,
+            None,
+            Some(bindings[0].header.controller_address()),
+            false,
+        );
+    }
+
+    fn restore_after_event(&mut self) {
+        let bindings = self.binding.nodes;
+        let scheduler_items = self.binding.scheduler_items;
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let storage = self.storage.as_mut().project();
+        storage.scheduler_items[selected_index]
+            .restore_hardware_predecessor(scheduler_items[selected_index - 1]);
+        storage.scheduler_items[selected_index].restore_cpu_owned_status();
+        storage
+            .link_state
+            .install_scheduler_head(scheduler_items[selected_index].controller_address());
+        storage.link_state.install_receive_graph(
+            bindings[0].header.controller_address(),
+            bindings[1].header.controller_address(),
+        );
+        for (node, binding) in storage.nodes.iter().zip(bindings) {
+            node.packet.initialize();
+            node.header.install(binding.packet, None, None, false);
+        }
+        storage.nodes[0]
+            .header
+            .install(bindings[0].packet, Some(bindings[1].header), None, true);
+        storage.nodes[1].header.install(
+            bindings[1].packet,
+            None,
+            Some(bindings[0].header.controller_address()),
+            false,
+        );
+    }
+}
+
+impl Default for PassiveScanMemoryGraphStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests;

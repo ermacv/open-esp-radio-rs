@@ -1,7 +1,7 @@
 # Radio protocol terminology
 
 This reference defines technical names and namespace conventions. The
-[driver architecture](../driver/README.md) defines concrete code owners.
+[driver architecture](../crates/README.md) defines concrete code owners.
 
 ## Protocol families
 
@@ -67,7 +67,7 @@ Chip AP profile selection is separate from portable advertisement encoding.
 
 Public exports may retain chip/protocol prefixes to distinguish backends.
 Reexports expose an API without creating another owner. Application code can
-use `use open_esp_radio as oer;` and context-specific local names such as
+use the public `oer` library and context-specific local names such as
 `RadioSystem` or `NetworkRunner`. Keep meaningful lifecycle names such as
 `Prepared`, `Running` and `Quarantined`, including precise failure owners.
 

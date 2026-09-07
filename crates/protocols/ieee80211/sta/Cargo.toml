@@ -1,0 +1,19 @@
+[package]
+name = "oer-wifi-sta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Executor- and chip-independent Wi-Fi station MLME and policy"
+
+[dependencies]
+oer-ieee80211 = { path = "../mac" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "protocol"
+platform = "portable"

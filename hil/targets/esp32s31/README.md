@@ -10,7 +10,7 @@ explains the crates, source policy, memory and UDP admission differences.
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in
-`driver/`.
+`crates/`.
 
 Standalone HT AP scenarios accept a runtime scheduling comparison:
 

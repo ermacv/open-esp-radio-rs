@@ -115,7 +115,7 @@ fn reviewed_source_accepts_repository_and_cargo_trimmed_identities() {
     let reviewed = ReviewedStackFrame {
         function_contains: "::supervisor::run".into(),
         source_ends_with: vec![
-            "driver/integration/esp32s31/embassy/ieee80211/src/supervisor.rs".into(),
+            "crates/composition/esp32s31/embassy/ieee80211/src/supervisor.rs".into(),
             "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor.rs".into(),
         ],
         max_bytes: 16 * 1024,
@@ -134,7 +134,7 @@ fn reviewed_source_accepts_repository_and_cargo_trimmed_identities() {
     };
 
     assert!(reviewed_frame_matches(
-        &frame("/checkout/driver/integration/esp32s31/embassy/ieee80211/src/supervisor.rs"),
+        &frame("/checkout/crates/composition/esp32s31/embassy/ieee80211/src/supervisor.rs"),
         &reviewed
     ));
     assert!(reviewed_frame_matches(

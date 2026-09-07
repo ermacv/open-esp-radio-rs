@@ -2,7 +2,7 @@
 
 //! Retained Bluetooth-only entry points for compiled production comparison.
 
-use open_esp_radio_esp32s31_bluetooth::validation::{
+use oer_esp32s31_bluetooth::validation::{
     BluetoothControllerSramAddress, BluetoothMemoryListPointerImage, BluetoothMemoryListSelector,
     BluetoothMemoryListSlot,
 };
@@ -21,7 +21,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da() {
-    open_esp_radio_esp32s31_bluetooth::validation::capture_and_acknowledge_interrupts();
+    oer_esp32s31_bluetooth::validation::capture_and_acknowledge_interrupts();
 }
 
 /// Production-path probe for the finite scheduler-table MMIO transaction.
@@ -30,7 +30,7 @@ pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da()
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr() {
-    open_esp_radio_esp32s31_bluetooth::validation::clear_scheduler_hardware_list_heads();
+    oer_esp32s31_bluetooth::validation::clear_scheduler_hardware_list_heads();
 }
 
 /// Compiled production entry for the complete 50-operation BTDM controller
@@ -42,7 +42,7 @@ pub extern "C" fn open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r() 
     // prerequisites, retains the inactive IRQ owner, and performs no later
     // radio operation.
     unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::initialize_controller_hal_reviewed_standalone();
+        oer_esp32s31_bluetooth::validation::initialize_controller_hal_reviewed_standalone();
     }
 }
 
@@ -53,7 +53,7 @@ pub extern "C" fn open_btdm_modem_lp_timer_register_prefix() {
     // SAFETY: this terminal comparison image models all earlier controller
     // software stages and never installs a CPU route or resumes radio work.
     unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::prepare_modem_lp_timer_registers();
+        oer_esp32s31_bluetooth::validation::prepare_modem_lp_timer_registers();
     }
 }
 
@@ -74,7 +74,7 @@ pub extern "C" fn open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1(
     // subsequent radio operation and terminates without reconstructing cold
     // ownership.
     unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::initialize_baseband_v2(gain_parameter as u8);
+        oer_esp32s31_bluetooth::validation::initialize_baseband_v2(gain_parameter as u8);
     }
 }
 
@@ -88,7 +88,7 @@ pub extern "C" fn open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1(
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_i2c_host_trace_phy_get_i2c_hostid_new(block: u32) -> u32 {
-    open_esp_radio_esp32s31_bluetooth::validation::configure_and_select_phy_i2c_host(block as u8)
+    oer_esp32s31_bluetooth::validation::configure_and_select_phy_i2c_host(block as u8)
 }
 
 #[inline(always)]
@@ -128,7 +128,7 @@ pub extern "C" fn open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_u
     // pointer encodings, performs no concurrent or subsequent radio work,
     // and terminates without reconstructing cold ownership.
     unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::program_memory_list_pointer(
+        oer_esp32s31_bluetooth::validation::program_memory_list_pointer(
             selector,
             BluetoothMemoryListSlot::CurrentRx,
             image,
@@ -150,7 +150,7 @@ pub extern "C" fn open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_pe
     };
     // SAFETY: same isolated-image conditions as the current-RX probe apply.
     unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::program_memory_list_pointer(
+        oer_esp32s31_bluetooth::validation::program_memory_list_pointer(
             selector,
             BluetoothMemoryListSlot::NextRx,
             image,
@@ -177,7 +177,7 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
     // no later radio operation, and terminates without reconstructing cold
     // ownership.
     unsafe {
-        let _accepted = open_esp_radio_esp32s31_bluetooth::validation::initialize_phy_registers(
+        let _accepted = oer_esp32s31_bluetooth::validation::initialize_phy_registers(
             private_timing_source_byte as u8,
             environment_address,
             resolving_list_address,

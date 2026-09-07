@@ -58,7 +58,7 @@ cargo xtask build firmware access-point --network owned-xarxa
 ```
 
 The first two choices use the original Embassy wrapper and the upstream driver contract.
-The [source selection](../../driver/network/dependencies/README.md)
+The [source selection](../../crates/network/dependencies/README.md)
 changes only the pinned Xarxa stack. The builder checks dependency pins, archives
 the effective locks and restores the tracked upstream catalog. Without
 `--network`, the example selects `upstream-xarxa`. Direct Cargo builds

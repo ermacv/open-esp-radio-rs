@@ -2,41 +2,41 @@ use crate::{Context, Result, process};
 
 use super::{TARGET, common::*};
 
-const GENERATED: &str = "open-esp-radio-esp32s31-pac-raw";
+const GENERATED: &str = "oer-esp32s31-pac-raw";
 const AUDITED_UNSAFE: &[&str] = &[
-    "open-esp-radio-dma",
-    "open-esp-radio-esp32s31-bluetooth",
-    "open-esp-radio-esp32s31-hal",
-    "open-esp-radio-esp32s31-pac",
-    "open-esp-radio-esp32s31-platform-pac",
-    "open-esp-radio-esp32s31-phy",
-    "open-esp-radio-esp32s31-ieee802154-dma",
-    "open-esp-radio-esp32s31-ieee802154-runtime",
-    "open-esp-radio-esp32s31-wifi-dma",
-    "open-esp-radio-esp32s31-radio-platform-esp-hal",
-    "open-esp-radio-esp32s31-embassy-runtime",
-    "open-esp-radio-esp32s31-bluetooth-integration",
-    "open-esp-radio-esp32s31-embassy-wifi",
+    "oer-memory",
+    "oer-esp32s31-bluetooth",
+    "oer-esp32s31-hal",
+    "oer-esp32s31-pac",
+    "oer-esp32s31-soc",
+    "oer-esp32s31-phy",
+    "oer-esp32s31-ieee802154-dma",
+    "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-wifi-dma",
+    "oer-esp32s31-radio-platform-esp-hal",
+    "oer-esp32s31-embassy-runtime",
+    "oer-esp32s31-bluetooth-integration",
+    "oer-esp32s31-embassy-wifi",
 ];
 const PAC_CONSUMERS: &[&str] = &[
-    "open-esp-radio-esp32s31-pac-raw",
-    "open-esp-radio-esp32s31-pac",
-    "open-esp-radio-esp32s31-platform-pac",
-    "open-esp-radio-esp32s31-hal",
-    "open-esp-radio-esp32s31-bluetooth",
-    "open-esp-radio-esp32s31-ieee802154-irq",
-    "open-esp-radio-esp32s31-ieee802154-runtime",
-    "open-esp-radio-esp32s31-ieee802154-esp-hal",
+    "oer-esp32s31-pac-raw",
+    "oer-esp32s31-pac",
+    "oer-esp32s31-soc",
+    "oer-esp32s31-hal",
+    "oer-esp32s31-bluetooth",
+    "oer-esp32s31-ieee802154-irq",
+    "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-ieee802154-esp-hal",
 ];
 const TEST_PACKAGES: &[&str] = &[
-    "open-esp-radio-dma",
-    "open-esp-radio-esp32s31-pac",
-    "open-esp-radio-esp32s31-hal",
-    "open-esp-radio-esp32s31-phy",
-    "open-esp-radio-esp32s31-bluetooth",
-    "open-esp-radio-esp32s31-ieee802154-dma",
-    "open-esp-radio-esp32s31-ieee802154-runtime",
-    "open-esp-radio-esp32s31-wifi-dma",
+    "oer-memory",
+    "oer-esp32s31-pac",
+    "oer-esp32s31-hal",
+    "oer-esp32s31-phy",
+    "oer-esp32s31-bluetooth",
+    "oer-esp32s31-ieee802154-dma",
+    "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-wifi-dma",
 ];
 
 #[derive(Clone, Copy)]
@@ -97,7 +97,7 @@ impl Policy {
 }
 
 pub fn run(ctx: &Context) -> Result<()> {
-    let packages = driver_packages(ctx)?;
+    let packages = production_packages(ctx)?;
     let mut groups: [Vec<String>; 3] = Default::default();
     for item in &packages {
         let name = item.package.name.as_str();
@@ -115,13 +115,13 @@ pub fn run(ctx: &Context) -> Result<()> {
             .package
             .dependencies
             .iter()
-            .any(|d| d.name == "open-esp-radio-esp32s31-pac")
+            .any(|d| d.name == "oer-esp32s31-pac")
             && !PAC_CONSUMERS.contains(&name)
         {
             return Err(format!("package crosses closed-PAC ownership boundary: {name}").into());
         }
         let policy = Policy::for_package(name);
-        if item.workspace_member {
+        if item.workspace_member && declared_profiles(&item.package)?.is_empty() {
             groups[match policy {
                 Policy::Generated => 0,
                 Policy::Audited => 1,

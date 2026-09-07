@@ -995,7 +995,7 @@ dependencies = [
  "esp-bootloader-esp-idf",
  "esp-hal",
  "oer-esp32s31-board",
- "open-esp-radio-esp32s31-platform-pac",
+ "oer-esp32s31-soc",
  "static_cell",
 ]
 
@@ -1008,7 +1008,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-platform-pac"
+name = "oer-esp32s31-soc"
 version = "0.1.0"
 dependencies = [
  "critical-section",

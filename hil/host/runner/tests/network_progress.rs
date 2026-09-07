@@ -5,7 +5,7 @@ use core::{
 };
 use embassy_net::driver::{Driver, PacketBuf};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
+use oer_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 
 #[path = "../../../targets/esp32s31/runtime/src/product_hil/network/progress.rs"]
 mod progress;

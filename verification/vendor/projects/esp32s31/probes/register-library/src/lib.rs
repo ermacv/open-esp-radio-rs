@@ -33,9 +33,9 @@ pub extern "C" fn open_wifi_sta_ap_trace_wifi_set_rx_policy(
     address_high: u32,
     mode: u32,
 ) -> u32 {
-    use open_esp_radio_esp32s31_hal::{
+    use oer_esp32s31_hal::{
+        ieee80211::mac::validation_configure_role_receive_policy,
         types::{MacRoleReceivePolicy, MacStaPolicyMode},
-        wifi_mac::validation_configure_role_receive_policy,
     };
 
     let address = mac_address_from_words(address_low, address_high);

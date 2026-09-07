@@ -31,8 +31,8 @@ fn upstream_requires_original_sources_and_one_selected_integration() {
 network = { package = "embassy-net", path = "../stack" }
 driver = { package = "xarxa-driver", path = "../helper" }
 xarxa = { path = "../xarxa" }
-endpoint = { package = "open-esp-radio-xarxa-upstream", path = "../endpoint" }
-bridge = { package = "open-esp-radio-esp32s31-wifi-xarxa-upstream", path = "../bridge" }
+endpoint = { package = "oer-xarxa-upstream", path = "../endpoint" }
+bridge = { package = "oer-esp32s31-wifi-xarxa-upstream", path = "../bridge" }
 [features]
 default = ["upstream-network"]
 upstream-network = []
@@ -44,8 +44,8 @@ compat-network = []
         ("stack", "embassy-net"),
         ("helper", "xarxa-driver"),
         ("xarxa", "xarxa"),
-        ("endpoint", "open-esp-radio-xarxa-upstream"),
-        ("bridge", "open-esp-radio-esp32s31-wifi-xarxa-upstream"),
+        ("endpoint", "oer-xarxa-upstream"),
+        ("bridge", "oer-esp32s31-wifi-xarxa-upstream"),
     ] {
         fixture.package(path, name, "");
     }

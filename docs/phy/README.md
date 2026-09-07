@@ -2,7 +2,7 @@
 
 PHY comparison uses authenticated vendor and Rust artifacts through
 [Blobray verification](../../tools/blobray/docs/verification.md). The
-[PHY feature inventory](../../driver/chips/esp32s31/phy/FEATURES.md) describes
+[PHY feature inventory](../../crates/hardware/esp32s31/phy/FEATURES.md) describes
 implemented primitives and protocol consumers; comparison reports describe
 evidence for exact declared boundaries, not general RF readiness.
 

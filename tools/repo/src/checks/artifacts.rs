@@ -192,9 +192,9 @@ fn check_symbols(symbols: &Symbols) -> Result<()> {
 
 fn source_namespace(symbol: &str) -> bool {
     [
-        "open_esp_radio_esp32s31_hal::",
-        "open_esp_radio_esp32s31_pac::",
-        "open_esp_radio_esp32s31_pac_raw::",
+        "oer_esp32s31_hal::",
+        "oer_esp32s31_pac::",
+        "oer_esp32s31_pac_raw::",
         "core::fmt::",
     ]
     .iter()

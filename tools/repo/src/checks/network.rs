@@ -4,12 +4,12 @@ use crate::{Context, Result, cargo, graph::Graph, process};
 use cargo_metadata::{DependencyKind, Package};
 use std::{collections::BTreeSet, path::Path};
 
-const NETWORK: &str = "open-esp-radio-network";
-const OWNED: &str = "open-esp-radio-embassy-net";
-const COMPAT: &str = "open-esp-radio-embassy-net-compat";
-const BRIDGE: &str = "open-esp-radio-esp32s31-wifi-embassy-compat";
-const UPSTREAM: &str = "open-esp-radio-xarxa-upstream";
-const UPSTREAM_BRIDGE: &str = "open-esp-radio-esp32s31-wifi-xarxa-upstream";
+const NETWORK: &str = "oer-network";
+const OWNED: &str = "oer-embassy-net";
+const COMPAT: &str = "oer-embassy-net-compat";
+const BRIDGE: &str = "oer-esp32s31-wifi-embassy-compat";
+const UPSTREAM: &str = "oer-xarxa-upstream";
+const UPSTREAM_BRIDGE: &str = "oer-esp32s31-wifi-xarxa-upstream";
 const XARXA_SOURCE: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
 const EMBASSY_SOURCE: &str = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
@@ -104,10 +104,10 @@ fn upstream_source(p: &Package) -> bool {
     }
 }
 fn physical(p: &Package, root: &Path) -> bool {
-    p.name.starts_with("open-esp-radio-esp32s31")
+    p.name.starts_with("oer-esp32s31")
         || p.manifest_path
             .as_std_path()
-            .starts_with(root.join("driver/chips"))
+            .starts_with(root.join("crates/hardware"))
 }
 fn optimized(p: &Package) -> bool {
     p.name == OWNED
@@ -115,7 +115,7 @@ fn optimized(p: &Package) -> bool {
         || (network_api(p.name.as_str()) && !official_registry(p))
 }
 fn stack(name: &str) -> bool {
-    name.starts_with("embassy-") || name.starts_with("open-esp-radio-embassy") || xarxa_api(name)
+    name.starts_with("embassy-") || name.starts_with("oer-embassy") || xarxa_api(name)
 }
 
 pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Path) -> Result<()> {
@@ -142,11 +142,11 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                             .is_some_and(|source| source.is_crates_io()))
             }
             Boundary::Owned => {
-                name.starts_with("open-esp-radio-esp32s31")
-                    || name == "open-esp-radio-dma"
+                name.starts_with("oer-esp32s31")
+                    || name == "oer-memory"
                     || (name == "embassy-net-driver" && released)
                     || dependency.path.as_ref().is_some_and(|path| {
-                        ["driver/chips", "driver/memory"]
+                        ["crates/hardware", "crates/memory"]
                             .iter()
                             .any(|owner| path.as_std_path().starts_with(repository.join(owner)))
                     })
@@ -285,10 +285,10 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             reject(
                 &|p| {
                     paths[&p.id].len() == 2
-                        && (p.name == "open-esp-radio-dma"
+                        && (p.name == "oer-memory"
                             || p.manifest_path
                                 .as_std_path()
-                                .starts_with(repository.join("driver/memory")))
+                                .starts_with(repository.join("crates/memory")))
                 },
                 "owned adapter acquired a direct physical-memory dependency",
             )?;
@@ -384,7 +384,7 @@ pub struct Profile {
 }
 pub fn profiles() -> [Profile; 22] {
     use Boundary::*;
-    let product = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
+    let product = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
     [
         Profile {
             boundary: CompatProduct,
@@ -416,12 +416,12 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: Upstream,
-            manifest: "driver/network/adapters/xarxa/upstream/Cargo.toml",
+            manifest: "crates/adapters/xarxa/upstream/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: UpstreamBridge,
-            manifest: "driver/adapters/embassy/esp32s31/ieee80211-upstream/Cargo.toml",
+            manifest: "crates/adapters/embassy/esp32s31/ieee80211-upstream/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -450,42 +450,42 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: Neutral,
-            manifest: "driver/network/interface/Cargo.toml",
+            manifest: "crates/network/interface/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: Compat,
-            manifest: "driver/network/adapters/embassy/compat/Cargo.toml",
+            manifest: "crates/adapters/embassy-net/compat/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: Owned,
-            manifest: "driver/network/adapters/embassy/owned/Cargo.toml",
+            manifest: "crates/adapters/embassy-net/owned/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: Research,
-            manifest: "driver/network/research/Cargo.toml",
+            manifest: "experiments/network-engine/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: Research,
-            manifest: "driver/network/research/Cargo.toml",
+            manifest: "experiments/network-engine/Cargo.toml",
             features: &["--all-features"],
         },
         Profile {
             boundary: Datapath,
-            manifest: "driver/ieee80211/datapath/Cargo.toml",
+            manifest: "crates/protocols/ieee80211/datapath/Cargo.toml",
             features: &[],
         },
         Profile {
             boundary: RadioCore,
-            manifest: "driver/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
+            manifest: "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
             features: &["--no-default-features"],
         },
         Profile {
             boundary: CompatBridge,
-            manifest: "driver/adapters/embassy/esp32s31/ieee80211-compat/Cargo.toml",
+            manifest: "crates/adapters/embassy/esp32s31/ieee80211-compat/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -548,7 +548,7 @@ pub fn run(context: &Context, dependencies_only: bool) -> Result<()> {
             .filter(|p| p.boundary != Boundary::Neutral)
             .chain([Profile {
                 boundary: Boundary::RadioCore,
-                manifest: "driver/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
+                manifest: "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
                 features: &[],
             }])
         {

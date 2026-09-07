@@ -3,6 +3,7 @@
 #![recursion_limit = "256"]
 
 use esp_backtrace as _;
+
 use esp_hal::{
     clock::CpuClock,
     efuse::{self, InterfaceMacAddress},
@@ -10,16 +11,19 @@ use esp_hal::{
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
+
 use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
-use open_esp_radio as oer;
-use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executor};
-use open_esp_radio_esp32s31_embassy_wifi::{
-    self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
-    Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
-    Esp32s31WifiParts as WifiParts,
+
+use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+
+use oer_esp32s31_embassy_wifi::{
+    self as integration, RadioConfig, RadioParts, RadioRunners, RadioSystem, WifiParts,
 };
-use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
-use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+
+use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+
+use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+
 use static_cell::StaticCell;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
@@ -86,10 +90,9 @@ async fn monitor_task(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let RadioSystem { radio, runners } = open_esp_radio_wifi_embassy::await_stack_boundary!(
-        integration::new(platform, trng, config)
-    )
-    .expect("radio initialization must succeed once");
+    let RadioSystem { radio, runners } =
+        oer_wifi_embassy::await_stack_boundary!(integration::new(platform, trng, config))
+            .expect("radio initialization must succeed once");
     let RadioRunners {
         hardware: radio_runner,
     } = runners;
@@ -140,6 +143,6 @@ async fn monitor_task(
     large_assignments,
     reason = "the sole radio runner enters its static task arena once; the final ELF frame audit bounds CPU stack use"
 )]
-async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::Esp32s31RadioRunner) {
+async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::SystemRunner) {
     runner.run(spawner).await;
 }

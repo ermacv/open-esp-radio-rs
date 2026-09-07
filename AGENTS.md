@@ -4,14 +4,20 @@
 
 This Rust 2024 workspace separates shipping code from evidence and tooling:
 
-- `driver/` contains production radio code. Cross-chip protocols live in
-  `driver/ieee80211/`; ESP32-S31 PAC, HAL, PHY, DMA, and MAC implementations live
-  under `driver/chips/esp32s31/`; executor and board bindings live in
-  `driver/adapters/` and `driver/integration/`. Stable-memory contracts live in
-  `driver/memory/`; network values, stack adapters and the experimental
-  research engine live under `driver/network/`. Concrete Wi-Fi and Bluetooth
-  radio execution lives in `driver/runtime/embassy/esp32s31/`; the Embassy
-  executor/time platform backend remains in `driver/adapters/`.
+- `crates/` contains production libraries and the thin `oer` facade. Portable
+  protocols live in `crates/protocols/`; ESP32-S31 PAC, HAL, PHY and radio
+  backends live under `crates/hardware/esp32s31/`. Executor and board bindings
+  live in `crates/adapters/` and `crates/composition/`. Stable-memory contracts
+  live in `crates/memory/`; network values live in `crates/network/interface/`
+  and stack adapters in `crates/adapters/{embassy-net,xarxa}/`.
+  `experiments/network-engine/` owns the experimental network engine and may
+  be used by production tests, never by production dependencies.
+  Concrete Wi-Fi and Bluetooth
+  radio execution lives in `crates/runtime/embassy/esp32s31/`; the Embassy
+  executor/time platform backend remains in `crates/adapters/`.
+  Every package declares `package.metadata.open-radio` scope, layer and
+  platform. Architecture checks enforce the dependency graph independently
+  of source location. Internal libraries never depend on the `oer` facade.
 - `platform/esp32s31/` owns shared board boot, staged runtime entry and linker
   placement for HIL and standalone examples. `tools/firmware/` owns host image
   packing and structural checks.

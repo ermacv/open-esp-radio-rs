@@ -1,0 +1,33 @@
+[package]
+name = "oer-esp32s31-bluetooth-integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Production ESP32-S31 Bluetooth controller composition"
+
+[dependencies]
+embassy-sync = "0.8.0"
+oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
+oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory" }
+static_cell = "2.1.1"
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+bt-hci = "=0.10.1"
+embassy-futures = "0.1.2"
+embassy-time = "0.5.1"
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"] }
+oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
+oer-bluetooth-ll = { path = "../../../../protocols/bluetooth/le/ll" }
+oer-esp32s31-bluetooth-embassy = { path = "../../../../runtime/embassy/esp32s31/bluetooth" }
+oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
+oer-esp32s31-radio-platform-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "composition"
+platform = "esp32s31"

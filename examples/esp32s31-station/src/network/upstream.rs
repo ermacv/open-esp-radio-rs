@@ -1,10 +1,12 @@
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiDevice;
+use oer_esp32s31_embassy_wifi::WifiDevice;
+
 use static_cell::StaticCell;
-pub async fn run(device: Esp32s31WifiDevice, seed: u64) -> ! {
+pub async fn run(device: WifiDevice, seed: u64) -> ! {
     use embassy_net_upstream::{Stack, StackStorage};
-    use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkDevice;
+
+    use oer_esp32s31_embassy_wifi::WifiNetworkDevice;
     static STORAGE: StaticCell<StackStorage<'static>> = StaticCell::new();
-    static DRIVER: StaticCell<Esp32s31WifiNetworkDevice> = StaticCell::new();
+    static DRIVER: StaticCell<WifiNetworkDevice> = StaticCell::new();
     let (stack, mut runner) = Stack::new(STORAGE.init(StackStorage::new()), seed);
     let iface = stack
         .add_iface(DRIVER.init(device.into_upstream()))

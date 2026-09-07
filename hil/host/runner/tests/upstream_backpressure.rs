@@ -12,7 +12,7 @@ use embassy_net::{
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 // Link the host time driver shared with the original Git Embassy package.
 use embassy_time as _;
-use open_esp_radio_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
+use oer_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 use std::{
     future::Future,
     pin::pin,

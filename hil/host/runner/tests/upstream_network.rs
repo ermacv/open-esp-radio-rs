@@ -2,11 +2,11 @@
 use embassy_net::{Stack, StackStorage, driver::Driver};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time as _;
+use oer_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 use open_esp_radio_hil_protocol::{
     NetworkIpv4Configuration as Config, WifiNetworkInterface as Role, WifiRxChecksumPolicy as Rx,
     WifiTxUdpChecksumPolicy as Tx,
 };
-use open_esp_radio_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 
 #[path = "../../../targets/esp32s31/runtime/src/product_hil/network/checksum.rs"]
 mod checksum;

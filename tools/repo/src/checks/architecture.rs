@@ -2,28 +2,17 @@ use crate::{Context, Result, cargo, process};
 
 use super::{TARGET, common::*};
 
-const INTEGRATION: &str = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
-const INTEGRATION_PACKAGE: &str = "open-esp-radio-esp32s31-embassy-wifi";
+const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
+const INTEGRATION_PACKAGE: &str = "oer-esp32s31-embassy-wifi";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 const COMMON_HIL: &str =
     "open-radio-hil,upstream-network,psram-task-stack,code-psram,profile-psram-data";
 
 pub fn run(ctx: &Context) -> Result<()> {
-    let packages = driver_packages(ctx)?;
-    let driver = ctx.root.join("driver").canonicalize()?;
+    let packages = production_packages(ctx)?;
+    validate_production_edges(&packages)?;
     let mut profile_count = 0;
     for item in &packages {
-        for dependency in production_dependencies(&item.package) {
-            if let Some(path) = &dependency.path
-                && !path.as_std_path().canonicalize()?.starts_with(&driver)
-            {
-                return Err(format!(
-                    "production package {} declares local dependency outside driver/: {path}",
-                    item.package.name
-                )
-                .into());
-            }
-        }
         let declared = declared_profiles(&item.package)?;
         let modes = if declared.is_empty() {
             vec![
@@ -63,19 +52,18 @@ pub fn run(ctx: &Context) -> Result<()> {
     eprintln!("driver architecture compilation: {profile_count} isolated feature profiles");
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(TARGET), true)?;
     for name in [
-        "open-esp-radio-wifi-ap",
-        "open-esp-radio-wifi-sta",
-        "open-esp-radio-wifi-softmac",
-        "open-esp-radio-esp32s31-wifi-ap",
-        "open-esp-radio-esp32s31-wifi-sta",
+        "oer-wifi-ap",
+        "oer-wifi-sta",
+        "oer-wifi-softmac",
+        "oer-esp32s31-wifi-ap",
+        "oer-esp32s31-wifi-sta",
     ] {
         for package in closure(&graph, &id_for_name(&graph, name)?)? {
             for path in [
-                "driver/adapters",
-                "driver/runtime",
-                "driver/network/adapters",
-                "driver/network/research",
-                "driver/integration",
+                "crates/adapters",
+                "crates/runtime",
+                "experiments/network-engine",
+                "crates/composition",
                 "hil",
             ] {
                 if package
@@ -99,17 +87,17 @@ pub fn run(ctx: &Context) -> Result<()> {
             }
         }
     }
-    let radio_manifest = ctx.root.join("driver/radio/Cargo.toml");
+    let radio_manifest = ctx.root.join("crates/radio/Cargo.toml");
     let radio = cargo::metadata(ctx, &radio_manifest, &[], Some(TARGET), true)?;
     let root = package_for_manifest(&radio.metadata, &radio_manifest)?
         .id
         .clone();
     for package in closure(&radio, &root)? {
         for path in [
-            "driver/chips/esp32s31",
-            "driver/adapters/esp-hal",
-            "driver/runtime/embassy/esp32s31",
-            "driver/integration/esp32s31",
+            "crates/hardware/esp32s31/driver",
+            "crates/adapters/esp-hal",
+            "crates/runtime/embassy/esp32s31",
+            "crates/composition/esp32s31",
         ] {
             if package
                 .manifest_path
@@ -131,7 +119,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         "--locked",
         "--offline",
         "--package",
-        "open-esp-radio-esp32s31-wifi-embassy",
+        "oer-esp32s31-wifi-embassy",
     ]))?;
     process::run(
         ctx.cargo()
@@ -157,12 +145,12 @@ fn check_composition(ctx: &Context) -> Result<()> {
     let direct = cargo::metadata_no_deps(ctx, &manifest)?;
     let package = package_for_manifest(&direct, &manifest)?;
     for required in [
-        "open-esp-radio-esp32s31-hal",
-        "open-esp-radio-esp32s31-phy",
-        "open-esp-radio-esp32s31-wifi",
-        "open-esp-radio-esp32s31-wifi-mac",
-        "open-esp-radio-esp32s31-wifi-ap",
-        "open-esp-radio-esp32s31-wifi-sta",
+        "oer-esp32s31-hal",
+        "oer-esp32s31-phy",
+        "oer-esp32s31-wifi",
+        "oer-esp32s31-wifi-mac",
+        "oer-esp32s31-wifi-ap",
+        "oer-esp32s31-wifi-sta",
     ] {
         if !package.dependencies.iter().any(|d| d.name == required) {
             return Err(format!("integration lacks required direct dependency {required}").into());
@@ -196,12 +184,7 @@ fn check_composition(ctx: &Context) -> Result<()> {
             )
             .into());
         }
-        if package_feature(
-            &graph,
-            "open-esp-radio-esp32s31-phy",
-            "registration-diagnostics",
-        )? != expected
-        {
+        if package_feature(&graph, "oer-esp32s31-phy", "registration-diagnostics")? != expected {
             return Err(format!(
                 "incorrect PHY registration diagnostics selection for HIL overlay {overlay:?}"
             )

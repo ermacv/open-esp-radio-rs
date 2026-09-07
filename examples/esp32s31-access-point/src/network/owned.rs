@@ -1,4 +1,5 @@
 use crate::embassy_net;
+
 pub use embassy_net::{
     Stack,
     tcp::{TcpListener, TcpSocket},
@@ -34,25 +35,23 @@ pub fn remote_endpoint(meta: embassy_net::udp::UdpMetadata) -> embassy_net::IpEn
 
 #[cfg(target_arch = "riscv32")]
 pub async fn run<F: core::future::Future>(
-    device: open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiDevice,
+    device: oer_esp32s31_embassy_wifi::WifiDevice,
     seed: u64,
     application: impl FnOnce(Stack<'static>) -> F,
 ) -> ! {
     use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StaticConfigV4};
-    use open_esp_radio_esp32s31_embassy_wifi::{
-        Esp32s31WifiNetworkRunner, Esp32s31WifiStackResources,
-    };
-    static STORAGE: static_cell::StaticCell<Esp32s31WifiStackResources> =
-        static_cell::StaticCell::new();
+
+    use oer_esp32s31_embassy_wifi::{WifiNetworkRunner, WifiStackResources};
+    static STORAGE: static_cell::StaticCell<WifiStackResources> = static_cell::StaticCell::new();
     let config = Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 4, 1), 24),
         gateway: None,
         dns_servers: Default::default(),
     });
-    let (stack, runner) = Esp32s31WifiNetworkRunner::new(
+    let (stack, runner) = WifiNetworkRunner::new(
         device,
         config,
-        STORAGE.init(Esp32s31WifiStackResources::new()),
+        STORAGE.init(WifiStackResources::new()),
         seed,
     );
     embassy_futures::join::join(application(stack), runner.run()).await;

@@ -1,6 +1,6 @@
 //! Exercise the released stack's opt-in echo responder through the real adapter.
 use embassy_net_compat::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
-use open_esp_radio_embassy_net_compat::{FrameStorage, LinkState, NoopRawMutex, Resources};
+use oer_embassy_net_compat::{FrameStorage, LinkState, NoopRawMutex, Resources};
 use std::{
     future::Future,
     task::{Context, Waker},

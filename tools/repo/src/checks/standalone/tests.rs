@@ -21,7 +21,7 @@ fn extraction_uses_source_inventory_and_includes_new_binary_targets() {
     write(&source.join("private-input"), "not source");
     write(&source.join("target/cached-output"), "not source");
     write(&source.join("_oracles/private-input"), "not source");
-    write(&repository.path().join("driver/source.rs"), "not Blobray");
+    write(&repository.path().join("crates/source.rs"), "not Blobray");
     let context = Context::new(repository.path()).unwrap();
     process::run(context.command("git").args(["init", "--quiet"])).unwrap();
     let files = paths::source_files(&context).unwrap();

@@ -62,7 +62,7 @@ enables for one second and finally disables. Run without a connecting peer:
 accepted connections exercise a separate, incomplete peripheral lifecycle.
 
 The current all-channel `ADV_IND` request does not fit the S31 backend's
-[single-channel connectable boundary](../../driver/chips/esp32s31/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
+[single-channel connectable boundary](../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
 The example retains `AdvChannelMap::ALL` for both cases, so the connectable case
 cannot complete the advertised success sequence through the current backend.
 Treat it as an unsupported configuration, not a passing connectable smoke

@@ -1,0 +1,34 @@
+[package]
+name = "oer-esp32s31-wifi-embassy-compat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Upstream-compatible Embassy network bridge for the ESP32-S31 Wi-Fi radio"
+
+[dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+oer-embassy-net-compat = { path = "../../../embassy-net/compat" }
+oer-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
+oer-network = { path = "../../../../network/interface" }
+oer-wifi-embassy = { path = "../../ieee80211" }
+
+[features]
+default = []
+diagnostics = ["oer-esp32s31-wifi-embassy/diagnostics"]
+tx-phase-telemetry = ["oer-esp32s31-wifi-embassy/tx-phase-telemetry"]
+
+[dev-dependencies]
+oer-esp32s31-wifi-sta = { path = "../../../../hardware/esp32s31/driver/ieee80211/sta" }
+oer-wifi-softmac = { path = "../../../../protocols/ieee80211/softmac" }
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "adapter"
+platform = "esp32s31"

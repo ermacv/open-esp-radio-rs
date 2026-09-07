@@ -1,15 +1,15 @@
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiDevice;
+use oer_esp32s31_embassy_wifi::WifiDevice;
+
 use static_cell::StaticCell;
-pub async fn run(device: Esp32s31WifiDevice, seed: u64) -> ! {
+pub async fn run(device: WifiDevice, seed: u64) -> ! {
     use crate::embassy_net;
-    use open_esp_radio_esp32s31_embassy_wifi::{
-        Esp32s31WifiNetworkRunner, Esp32s31WifiStackResources,
-    };
-    static STORAGE: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
-    let (stack, runner) = Esp32s31WifiNetworkRunner::new(
+
+    use oer_esp32s31_embassy_wifi::{WifiNetworkRunner, WifiStackResources};
+    static STORAGE: StaticCell<WifiStackResources> = StaticCell::new();
+    let (stack, runner) = WifiNetworkRunner::new(
         device,
         embassy_net::Config::dhcpv4(Default::default()),
-        STORAGE.init(Esp32s31WifiStackResources::new()),
+        STORAGE.init(WifiStackResources::new()),
         seed,
     );
     let application = async {

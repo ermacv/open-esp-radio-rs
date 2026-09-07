@@ -9,34 +9,46 @@ use bt_hci::{
     cmd::le::{LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr},
     param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration as HciDuration},
 };
+
 use bt_hci::{
     cmd::{SyncCmd, controller_baseband::Reset},
     controller::Controller,
 };
+
 use embassy_time::{Duration, Timer, with_timeout};
+
 use esp_backtrace as _;
+
 use esp_hal::{
     clock::CpuClock,
     interrupt::software::SoftwareInterrupt,
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig, BluetoothPassiveScanRuntimeConfig,
-    BluetoothRadioHardware,
+
+use oer_esp32s31_bluetooth::{
+    le::{
+        dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig},
+        scanning::PassiveScanRuntimeConfig,
+    },
+    resources::BluetoothRadioHardware,
 };
-use open_esp_radio_esp32s31_bluetooth_embassy::EmbassyBluetoothDtmRecheckPeriod;
-use open_esp_radio_esp32s31_bluetooth_integration::{
-    Esp32s31BluetoothColdStartConfig, Esp32s31BluetoothHostController, Esp32s31BluetoothSystem,
-    Esp32s31BluetoothSystemStorage, start_esp32s31_bluetooth,
+
+use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
+
+use oer_esp32s31_bluetooth_integration::{
+    BluetoothColdStartConfig, BluetoothHostController, BluetoothSystem, BluetoothSystemStorage,
+    start_esp32s31_bluetooth,
 };
-use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothDtmSchedulerAllocationConfig, BluetoothPassiveScanDefaultTxPowerDbm,
-    BluetoothPassiveScanSchedulerAllocationConfig,
+
+use oer_esp32s31_bluetooth_memory::{
+    DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
+    PassiveScanSchedulerAllocationConfig,
 };
-use open_esp_radio_esp32s31_embassy_runtime::Executor;
-use open_esp_radio_esp32s31_radio_platform_esp_hal::{
-    EspHalBluetoothPlatform, EspHalRadioPlatform,
-};
+
+use oer_esp32s31_embassy_runtime::Executor;
+
+use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+
 use static_cell::StaticCell;
 
 const MODEM_TIMER_CAPACITY: usize = 4;
@@ -47,7 +59,7 @@ const PACKET_CAPACITY: usize = 258;
 const LE_TEST_DWELL: Duration = Duration::from_secs(1);
 const HCI_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
-type BluetoothStorage = Esp32s31BluetoothSystemStorage<
+type BluetoothStorage = BluetoothSystemStorage<
     EspHalBluetoothPlatform<'static>,
     MODEM_TIMER_CAPACITY,
     SCHEDULER_CAPACITY,
@@ -55,11 +67,8 @@ type BluetoothStorage = Esp32s31BluetoothSystemStorage<
     CONTROLLER_TO_HOST_DEPTH,
     PACKET_CAPACITY,
 >;
-type BluetoothHost = Esp32s31BluetoothHostController<
-    HOST_TO_CONTROLLER_DEPTH,
-    CONTROLLER_TO_HOST_DEPTH,
-    PACKET_CAPACITY,
->;
+type BluetoothHost =
+    BluetoothHostController<HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static RADIO_PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
@@ -75,7 +84,7 @@ extern "C" fn runtime_main() -> ! {
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    oer_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
     let platform = RADIO_PLATFORM.init(EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,
@@ -107,19 +116,18 @@ async fn bluetooth_controller_task(
     platform: &'static EspHalRadioPlatform,
     hardware: BluetoothRadioHardware,
 ) {
-    let dtm = BluetoothDtmRuntimeConfig::new(
-        BluetoothDtmSchedulerAllocationConfig::new(0, 0, 0),
-        BluetoothDtmDefaultTxPowerDbm::new(0),
+    let dtm = DtmRuntimeConfig::new(
+        DtmSchedulerAllocationConfig::new(0, 0, 0),
+        DtmDefaultTxPowerDbm::new(0),
     );
-    let passive_scan = BluetoothPassiveScanRuntimeConfig::new(
-        BluetoothPassiveScanSchedulerAllocationConfig::new(0, 0)
+    let passive_scan = PassiveScanRuntimeConfig::new(
+        PassiveScanSchedulerAllocationConfig::new(0, 0)
             .expect("the standalone Controller limits fit the scanner graph"),
-        BluetoothPassiveScanDefaultTxPowerDbm::new(0),
+        PassiveScanDefaultTxPowerDbm::new(0),
     );
-    let recheck_period = EmbassyBluetoothDtmRecheckPeriod::from_duration(Duration::from_micros(50))
+    let recheck_period = DtmRecheckPeriod::from_duration(Duration::from_micros(50))
         .expect("the Controller-time recheck period must be nonzero");
-    let config =
-        Esp32s31BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
+    let config = BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
     esp_println::println!("open-radio: Bluetooth Controller cold start submitted");
     let mut startup = core::pin::pin!(start_esp32s31_bluetooth(
         platform,
@@ -131,7 +139,7 @@ async fn bluetooth_controller_task(
         Ok(output) => output,
         Err(_) => panic!("Bluetooth Controller cold start failed"),
     };
-    let Esp32s31BluetoothSystem { hci, runners } = output.system;
+    let BluetoothSystem { hci, runners } = output.system;
     let hardware_runner = runners.hardware;
     esp_println::println!("open-radio: Bluetooth Controller ready");
 

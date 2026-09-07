@@ -1,0 +1,757 @@
+//! Lossless ownership transitions for standalone Bluetooth hardware.
+
+#[cfg(any(target_arch = "riscv32", test))]
+use core::mem::ManuallyDrop;
+
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListsCleared;
+
+use oer_esp32s31_hal::bluetooth::ColdOwner as HalBluetoothColdOwner;
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use oer_esp32s31_hal::bluetooth::ControllerHalBorrow;
+#[cfg(test)]
+use oer_esp32s31_hal::bluetooth::TaskOwnerReuniteFailure;
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
+
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+use oer_esp32s31_hal::bluetooth::{
+    InterruptSetupOwner as HalBluetoothInterruptSetupOwner, TaskOwner as HalBluetoothTaskOwner,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use oer_esp32s31_hal::{
+    bluetooth::RxMemoryListPublished,
+    owner::{SharedPhyBorrow, SharedPhyHal},
+};
+#[cfg(target_arch = "riscv32")]
+use {
+    oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerOwnerError,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHead,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadPublished,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListIndex,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerRunEventPublished,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerRunInterruptsPrepared,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalIdle,
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalJoin,
+    oer_esp32s31_hal::bluetooth::ControllerPublicAddress,
+    oer_esp32s31_hal::bluetooth::ControllerRandomAddress,
+    oer_esp32s31_hal::bluetooth::DirectionFindingDisabledBaselineOwner,
+    oer_esp32s31_hal::bluetooth::InterruptOutputPreparedOwner,
+    oer_esp32s31_hal::bluetooth::ModemLpTimerLowPowerHardwareInitializedOwner,
+    oer_esp32s31_hal::types::BluetoothControllerSramAddress,
+    oer_esp32s31_hal::types::BluetoothPhyRegisterInitInputs,
+};
+
+use oer_esp32s31_pac::{RadioHardware, RadioPhyReleaseError};
+
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+use crate::controller::time::ControllerTimeWorker;
+#[cfg(test)]
+use crate::controller::time::ControllerTimeWorkerPhase;
+#[cfg(target_arch = "riscv32")]
+use crate::controller::time::{
+    ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequest,
+    ControllerTimeRequestError,
+};
+#[cfg(target_arch = "riscv32")]
+use oer_esp32s31_bluetooth_memory::{
+    LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
+    LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
+    LegacyConnectableAdvertisingMemoryGraphRxPublished, PassiveScanMemoryGraphCommandPublished,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use oer_esp32s31_bluetooth_memory::{
+    PassiveScanMemoryGraphPublicationMismatch, PassiveScanMemoryGraphPublicationPrepared,
+    PassiveScanMemoryGraphPublished, PeripheralConnectionMemoryGraphPublicationMismatch,
+    PeripheralConnectionMemoryGraphPublicationPrepared, PeripheralConnectionMemoryGraphRxPublished,
+};
+
+/// Opaque singleton root for one standalone Bluetooth lifecycle.
+///
+/// The protocol-neutral PAC owner is captured inside the chip crate. Product
+/// composition can acquire and move this affine value, but cannot reach PAC
+/// register partitions or depend on the PAC crate directly.
+#[must_use = "the Bluetooth radio root is the unique hardware owner"]
+pub struct BluetoothRadioHardware {
+    hardware: RadioHardware,
+}
+
+impl BluetoothRadioHardware {
+    /// Acquire the restricted radio singleton for standalone Bluetooth.
+    pub fn take() -> Option<Self> {
+        RadioHardware::take().map(|hardware| Self { hardware })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_validation() -> Self {
+        Self {
+            hardware: RadioHardware::for_validation(),
+        }
+    }
+
+    fn into_inner(self) -> RadioHardware {
+        self.hardware
+    }
+}
+
+/// Complete cold Bluetooth owner before any powered lifecycle transaction.
+///
+/// This is the only public entry to and exit from the standalone Bluetooth
+/// lifecycle. Keeping the platform lease and restricted radio root in one
+/// affine value prevents owners from unrelated epochs being paired during
+/// clock enable or rollback.
+#[must_use = "stopped Bluetooth retains the platform and radio owners"]
+pub struct BluetoothStopped<P> {
+    registers: HalBluetoothColdOwner,
+    platform: P,
+}
+
+/// Failed stopped-route transition retaining the complete Bluetooth owner.
+#[must_use = "failed Bluetooth route transition retains the platform and radio owners"]
+pub struct StoppedReleaseFailure<P> {
+    stopped: BluetoothStopped<P>,
+    error: RadioPhyReleaseError,
+}
+
+impl<P> StoppedReleaseFailure<P> {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (BluetoothStopped<P>, RadioPhyReleaseError) {
+        (self.stopped, self.error)
+    }
+}
+
+impl<P> core::fmt::Debug for StoppedReleaseFailure<P> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("StoppedReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<P> BluetoothStopped<P> {
+    /// Bind one platform lease to the exact restricted Bluetooth radio root.
+    ///
+    /// This transition performs no MMIO. Once constructed, the pair can only
+    /// move together through the typed Bluetooth lifecycle.
+    pub fn from_hardware(platform: P, hardware: BluetoothRadioHardware) -> Self {
+        Self {
+            registers: HalBluetoothColdOwner::from_radio_hardware(hardware.into_inner()),
+            platform,
+        }
+    }
+
+    /// Release an unpowered Bluetooth owner for caller-controlled rebinding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoppedReleaseFailure`] retaining the complete
+    /// stopped owner when TX-DC PWDET fields still await restoration.
+    pub fn release(self) -> Result<(P, BluetoothRadioHardware), StoppedReleaseFailure<P>> {
+        let Self {
+            registers,
+            platform,
+        } = self;
+        match registers.release() {
+            Ok(hardware) => Ok((platform, BluetoothRadioHardware { hardware })),
+            Err(failure) => {
+                let (registers, error) = failure.into_parts();
+                Err(StoppedReleaseFailure {
+                    stopped: Self {
+                        registers,
+                        platform,
+                    },
+                    error,
+                })
+            }
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (HalBluetoothColdOwner, P) {
+        (self.registers, self.platform)
+    }
+
+    pub(crate) const fn from_parts(registers: HalBluetoothColdOwner, platform: P) -> Self {
+        Self {
+            registers,
+            platform,
+        }
+    }
+}
+
+/// Platform owner retained after the first non-reversible powered mutation.
+///
+/// Once PHY or controller initialization has started, releasing the ordinary
+/// platform reservation would advertise a reusable Bluetooth lifecycle even
+/// though no verified hardware teardown occurred. This wrapper deliberately
+/// suppresses `P::drop`; a future verified teardown transaction must recover
+/// the platform owner and release the reservation.
+#[must_use = "the powered platform remains retained until verified PHY teardown"]
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct TeardownPendingPlatform<P> {
+    _platform: ManuallyDrop<P>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<P> TeardownPendingPlatform<P> {
+    pub(crate) const fn new(platform: P) -> Self {
+        Self {
+            _platform: ManuallyDrop::new(platform),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn platform_mut(&mut self) -> &mut P {
+        &mut self._platform
+    }
+}
+
+/// Separate the cold HAL owner into the controller lifecycle's task and IRQ
+/// owners without exposing either partition publicly.
+///
+/// This transition performs no MMIO. In particular it does not configure
+/// controller masks or a CPU interrupt route.
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub(crate) fn separate_interrupt_owner(
+    registers: HalBluetoothColdOwner,
+) -> (TaskResources, InterruptBankOwner) {
+    let (task, interrupts) = registers.separate_interrupt_owner();
+    (
+        TaskResources {
+            registers: task,
+            controller_time: ControllerTimeWorker::new_idle(),
+        },
+        InterruptBankOwner {
+            _registers: interrupts,
+        },
+    )
+}
+
+/// Ordinary task-side owner of the standalone Bluetooth controller region.
+///
+/// No MMIO operation is exposed until its finite lifecycle transaction has
+/// independent vendor evidence.
+#[must_use = "the Bluetooth task owner must be reunited before release"]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub(crate) struct TaskResources {
+    registers: HalBluetoothTaskOwner,
+    controller_time: ControllerTimeWorker,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn join_passive_scan_rx_publication(
+    prepared: PassiveScanMemoryGraphPublicationPrepared,
+    publication: RxMemoryListPublished,
+) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
+    prepared.into_published(publication)
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(
+    clippy::result_large_err,
+    reason = "the mismatch must return both affine publication owners without allocation"
+)]
+fn join_peripheral_connection_rx_publication(
+    prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
+    publication: RxMemoryListPublished,
+) -> Result<
+    PeripheralConnectionMemoryGraphRxPublished,
+    PeripheralConnectionMemoryGraphPublicationMismatch,
+> {
+    prepared.into_rx_published(publication)
+}
+
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+impl TaskResources {
+    /// Publish the selected random Controller identity while every radio role is idle.
+    ///
+    /// The HCI boundary owns validation and HCI byte order. The caller must
+    /// invoke this before transferring any advertising/scanning graph or
+    /// publishing scheduler `RUN`; the HAL fixes the destination address slot.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn program_random_device_address_while_idle(
+        &mut self,
+        address: ControllerRandomAddress,
+    ) {
+        self.registers
+            .borrow_bluetooth_controller()
+            .program_random_device_address(address);
+    }
+
+    /// Publish selector-two RX memory for one response-capable advertising graph.
+    ///
+    /// The memory owner fixes the positional selector and validated head. A
+    /// proof-join mismatch returns both affine owners inside the error; this
+    /// boundary never guesses, panics, or discards them.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned response-capable graph, its loaned
+    /// non-scanning RX pool, and the sole powered task epoch across this
+    /// transaction. No task or interrupt access to selector two may race it.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper connectable lifecycle retains graph, RX-pool and exclusive task MMIO ownership"
+    )]
+    pub(crate) unsafe fn publish_legacy_connectable_advertising_rx_memory(
+        &mut self,
+        prepared: LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
+    ) -> Result<
+        LegacyConnectableAdvertisingMemoryGraphRxPublished,
+        LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
+    > {
+        let selector = prepared.selector();
+        let head = prepared.receive_head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        prepared.into_rx_published(publication)
+    }
+
+    /// Publish selector-one RX memory for the exact prepared scanner graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned graph and the sole powered task
+    /// epoch, and must guarantee that scanner MMIO is not visible through an
+    /// interrupt owner during this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_rx_memory(
+        &mut self,
+        prepared: PassiveScanMemoryGraphPublicationPrepared,
+    ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
+        let selector = prepared.selector();
+        let head = prepared.head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        join_passive_scan_rx_publication(prepared, publication)
+    }
+
+    /// Publish selector-two RX memory for one exact connection graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned connection graph, its detached
+    /// scheduler item and the sole powered task epoch across this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        clippy::result_large_err,
+        reason = "the upper connection lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_peripheral_connection_rx_memory(
+        &mut self,
+        prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
+    ) -> Result<
+        PeripheralConnectionMemoryGraphRxPublished,
+        PeripheralConnectionMemoryGraphPublicationMismatch,
+    > {
+        let selector = prepared.selector();
+        let head = prepared.receive_head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        join_peripheral_connection_rx_publication(prepared, publication)
+    }
+
+    /// Publish the restricted standard-backoff scanner command after RX memory.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the exact RX-published graph and the sole
+    /// powered scanner epoch through the returned state.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains RX graph and powered command prerequisites"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_command(
+        &mut self,
+        published: PassiveScanMemoryGraphPublished,
+    ) -> PassiveScanMemoryGraphCommandPublished {
+        let command = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_scan_start()
+        };
+        published.into_scan_command_published(command)
+    }
+
+    /// Execute the source-127 register prefix and following complete low-power
+    /// hardware component while the upper lifecycle retains initialized
+    /// Controller software and an inactive route.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the matching powered scheduler/HCI epoch, must not
+    /// have installed source 127, and must retain the returned disjoint timer
+    /// owner until verified route teardown.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper lifecycle proves the powered software and inactive-route prerequisites"
+    )]
+    pub(crate) unsafe fn initialize_modem_lp_timer_hardware(
+        &mut self,
+    ) -> Result<ModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError> {
+        let prepared = unsafe { self.registers.prepare_modem_lp_timer_registers()? };
+        Ok(unsafe { prepared.initialize_low_power_hardware(&mut self.registers) })
+    }
+
+    /// Remove every scheduler hardware-list head through one finite HAL borrow.
+    #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+    pub(crate) fn clear_scheduler_hardware_list_heads(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareListsCleared {
+        self.registers
+            .borrow_bluetooth_controller()
+            .clear_scheduler_hardware_list_heads()
+    }
+
+    /// Publish one already initialized scheduler graph through the sole task
+    /// register owner retained by this powered epoch.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching exclusive scheduler-list epoch and
+    /// the complete pinned graph, must have finished every descriptor write,
+    /// and must prove that no interrupt-side scheduler access can race this
+    /// operation. The lower PAC orders descriptor visibility before MMIO.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the scheduler lifecycle discharges graph lifetime and inactive-route prerequisites"
+    )]
+    pub(crate) unsafe fn publish_scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    ) -> BluetoothSchedulerHardwareListHeadPublished {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        unsafe { controller.publish_scheduler_hardware_list_head(index, head) }
+    }
+
+    /// Publish the synchronous BTMAC scheduler event after the exact head and
+    /// interrupt preparation have completed.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_run_event(
+        &mut self,
+        head: BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> BluetoothSchedulerRunEventPublished {
+        self.registers
+            .borrow_bluetooth_controller()
+            .publish_scheduler_run_event(head, interrupts)
+    }
+
+    /// Consume the complete run-event proof into the final hardware RUN
+    /// publication.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_hardware_run_command(
+        &mut self,
+        event: BluetoothSchedulerRunEventPublished,
+    ) -> BluetoothSchedulerHardwareRunCommandPublished {
+        self.registers
+            .borrow_bluetooth_controller()
+            .publish_scheduler_hardware_run_command(event)
+    }
+
+    /// Durable logical phase paired with this unique task owner.
+    #[cfg(test)]
+    pub(crate) const fn controller_time_phase(&self) -> ControllerTimeWorkerPhase {
+        self.controller_time.phase()
+    }
+
+    /// Whether the runner must retain a durable recheck event or deadline.
+    #[cfg(test)]
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.controller_time.needs_recheck()
+    }
+
+    /// Publish one request while retaining worker and PAC ownership together.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn request_controller_time(
+        &mut self,
+    ) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.request(&mut controller)
+    }
+
+    /// Cancel only the matching logical request; a mismatch faults the worker.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn cancel_owned_controller_time(
+        &mut self,
+        request: ControllerTimeRequest,
+    ) -> Result<(), ControllerTimeEventError> {
+        self.controller_time.cancel_owned(request)
+    }
+
+    /// Recheck one exact request with a short HAL borrow.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_owned_controller_time(
+        &mut self,
+        request: ControllerTimeRequest,
+    ) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.recheck_owned(request, &mut controller)
+    }
+
+    /// Drain one abandoned request without creating a reusable sample.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn drain_orphan_controller_time(
+        &mut self,
+    ) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.drain_orphan(&mut controller)
+    }
+
+    /// Advance one scheduler lock/modify worker with this exact task-side HAL
+    /// owner and no exported register capability.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn step_scheduler_lock_modify(
+        &mut self,
+        worker: &mut crate::scheduler::SchedulerLockModifyWorker,
+        event: crate::scheduler::SchedulerLockModifyEvent,
+    ) -> crate::scheduler::SchedulerLockModifyWorkerStep {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        worker.step(event, &mut controller)
+    }
+
+    /// Capture one fenced finished-list transfer into the sole bounded worker.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn capture_scheduler_finished_lists(
+        &mut self,
+        worker: &mut crate::scheduler::SchedulerFinishedListWorker,
+        wake: crate::interrupt::SchedulerWakeBatch,
+    ) -> Result<(), crate::scheduler::SchedulerFinishedListCaptureError> {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        worker.capture(&mut controller, wake)
+    }
+
+    /// Perform one fresh fenced hardware-head retirement observation.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_scheduler_hardware_list_head_retirement(
+        &mut self,
+        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation {
+        self.registers
+            .borrow_bluetooth_controller()
+            .observe_scheduler_hardware_list_head_retirement(run)
+    }
+
+    /// Finish one post-idle software-list removal observation through the sole
+    /// task-side register owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn finish_scheduler_software_list_removal(
+        &mut self,
+        idle: BluetoothSchedulerSoftwareListRemovalIdle,
+        head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
+        self.registers
+            .borrow_bluetooth_controller()
+            .finish_scheduler_software_list_removal(idle, head)
+    }
+
+    /// Recheck the complete post-unlink predicate through the task and stable
+    /// interrupt register owners without exporting either owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_scheduler_software_list_removal(
+        &mut self,
+        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        storage.recheck_scheduler_software_list_removal(&mut controller, head)
+    }
+
+    /// Execute the complete reviewed controller HAL-init component.
+    ///
+    /// The owning lifecycle invokes this component after clocks and before
+    /// scheduler initialization. Later event/list, interrupt, PHY, BTBB and
+    /// BLE stages remain separate prerequisites for a running controller.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain every prerequisite documented by the PAC
+    /// transaction and must not infer controller or HCI readiness from return.
+    #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe bridge retains the controller HAL-init clock and IRQ prerequisites"
+    )]
+    #[allow(
+        dead_code,
+        reason = "only the target lifecycle and isolated validation probes invoke this component"
+    )]
+    pub(crate) unsafe fn initialize_controller_hal(
+        &mut self,
+        config: BluetoothControllerHalInitConfig,
+    ) {
+        unsafe {
+            self.registers.initialize_controller_hal_transaction(config);
+        }
+    }
+
+    /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.
+    ///
+    /// The returned HAL derives shared baseband state from the route PAC;
+    /// selecting the Bluetooth route alone is not treated as proof that the
+    /// shared settle condition is false.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
+        self.registers.borrow_shared_phy()
+    }
+
+    /// Execute the reviewed finite BT baseband-v2 initialization transaction.
+    ///
+    /// This crate-private bridge exists so only the lifecycle typestate can
+    /// reach the PAC transaction in an ordinary production build.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching target-registered common-PHY owner
+    /// with a settled Bluetooth client and completed initial tracking, derive
+    /// `gain_parameter` from that terminal state, and preserve every hardware
+    /// owner until verified last-owner teardown.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe signature retains the PAC common-PHY prerequisite across the crate boundary"
+    )]
+    pub(crate) unsafe fn initialize_baseband_v2(&mut self, gain_parameter: u8) {
+        unsafe {
+            self.registers
+                .initialize_baseband_v2_arg_one(gain_parameter);
+        }
+    }
+
+    /// Execute the complete BLE base-stack task-enable hardware transaction
+    /// for a lifecycle that retains both address-bound storage objects.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the exact completed common-PHY and BTBB owner,
+    /// the inactive interrupt bank, and the storage represented by `inputs`
+    /// until all controller consumers are stopped by a verified transition.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper typestate retains the complete PAC lifecycle and storage prerequisites"
+    )]
+    pub(crate) unsafe fn enable_ble_base_stack_hardware(
+        &mut self,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
+        unsafe {
+            self.registers.enable_ble_base_stack_hardware(inputs);
+        }
+    }
+
+    /// Publish this cold epoch's public Controller identity after BLE PHY init.
+    ///
+    /// The caller retains the sole powered task owner and invokes this before
+    /// controller IRQ output, runtime-timer start or any radio consumer becomes
+    /// reachable. The HAL fixes the public slot and owns Controller byte order.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn program_public_device_address(&mut self, address: ControllerPublicAddress) {
+        self.registers
+            .borrow_bluetooth_controller()
+            .program_public_device_address(address);
+    }
+
+    /// Publish the controller-global disabled-CTE descriptor baseline.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned workspace and this
+    /// powered Controller epoch until a future reviewed retirement transition.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper BLE-PHY lifecycle retains the workspace and powered task owner"
+    )]
+    pub(crate) unsafe fn prepare_direction_finding_disabled_baseline(
+        &mut self,
+        descriptor: BluetoothControllerSramAddress,
+    ) -> DirectionFindingDisabledBaselineOwner {
+        unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .prepare_direction_finding_disabled_baseline(descriptor)
+        }
+    }
+
+    /// Reunite a quiescent task owner with its inactive interrupt owner.
+    #[cfg(test)]
+    pub(crate) fn reunite(
+        self,
+        interrupts: InterruptBankOwner,
+    ) -> Result<HalBluetoothColdOwner, TaskOwnerReuniteFailure> {
+        assert!(
+            self.controller_time.is_reunitable(),
+            "controller-time fault or transaction prevents cold reunion"
+        );
+        self.registers.into_cold(interrupts._registers)
+    }
+}
+
+/// Inactive owner of the Bluetooth controller interrupt bank.
+#[must_use = "the interrupt owner must be installed or reunited"]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub(crate) struct InterruptBankOwner {
+    _registers: HalBluetoothInterruptSetupOwner,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl InterruptBankOwner {
+    /// Prepare the controller output while retaining the affine IRQ partition.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the matching completed Controller initialization
+    /// and prove that all three CPU routes remain inactive.
+    #[allow(
+        unsafe_code,
+        reason = "the upper Controller typestate discharges the HAL interrupt prerequisites"
+    )]
+    pub(crate) unsafe fn prepare_controller_output(self) -> InterruptOutputPreparedOwner {
+        // SAFETY: the caller retains the complete matching Controller epoch
+        // and the only route installers are still inaccessible.
+        unsafe { self._registers.prepare_controller_output() }
+    }
+}
+
+#[cfg(test)]
+mod tests;

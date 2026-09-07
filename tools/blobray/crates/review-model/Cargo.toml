@@ -18,3 +18,8 @@ thiserror = "=2.0.19"
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

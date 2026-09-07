@@ -1,0 +1,158 @@
+//! Exact reviewed scheduler-item images for one Direct Test Mode event.
+//!
+//! Current `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` and named same-chip
+//! `r_ble_lll_dtm_sched_event` produce the positional transforms below before
+//! entering the common scheduler. The model contains no list insertion,
+//! hardware publication, retry loop or completion claim.
+
+#![forbid(unsafe_code)]
+
+pub use oer_esp32s31_bluetooth_memory::DtmSchedulerItemReviewedWords;
+
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::ControllerSchedulerEpoch;
+#[cfg(any(target_arch = "riscv32", test))]
+use oer_esp32s31_bluetooth_memory::DtmLinkStateReviewedWords;
+
+use crate::{
+    DtmRxInitialEventWindow, DtmRxRecurringEventWindow, DtmTxEventWindow,
+    le::dtm::{DtmChannel, DtmPhy, DtmRole},
+};
+
+use oer_esp32s31_bluetooth_memory::{DtmReceiverEventPhase, DtmSchedulerItemEventType};
+
+/// Why one DTM scheduler-item event cannot be represented exactly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DtmSchedulerItemEventError {
+    /// HCI selector four is a transmitter-only DTM extension.
+    LeCodedS2RequiresTransmitter,
+}
+
+/// Validated dynamic inputs to one DTM scheduler item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DtmSchedulerItemEvent {
+    frequency: u8,
+    event_type: DtmSchedulerItemEventType,
+    start_micros: u32,
+    end_micros: u32,
+}
+
+impl DtmSchedulerItemEvent {
+    /// Bind a prepared transmitter window to the reviewed item transforms.
+    pub const fn new_transmitter(
+        channel: DtmChannel,
+        phy: DtmPhy,
+        window: DtmTxEventWindow,
+    ) -> Result<Self, DtmSchedulerItemEventError> {
+        Self::new(
+            channel,
+            DtmSchedulerItemEventType::Transmitter(phy.scheduler_transmitter_phy()),
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
+    /// Bind the first receiver window to the full initial item transform.
+    pub const fn new_initial_receiver(
+        channel: DtmChannel,
+        phy: DtmPhy,
+        window: DtmRxInitialEventWindow,
+    ) -> Result<Self, DtmSchedulerItemEventError> {
+        let phy = match phy.scheduler_receiver_phy() {
+            Ok(phy) => phy,
+            Err(_) => {
+                return Err(DtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
+            }
+        };
+        Self::new(
+            channel,
+            DtmSchedulerItemEventType::Receiver {
+                phase: DtmReceiverEventPhase::Initial,
+                phy,
+            },
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
+    /// Bind a recurring receiver window to the narrower reuse transform.
+    pub const fn new_recurring_receiver(
+        channel: DtmChannel,
+        phy: DtmPhy,
+        window: DtmRxRecurringEventWindow,
+    ) -> Result<Self, DtmSchedulerItemEventError> {
+        let phy = match phy.scheduler_receiver_phy() {
+            Ok(phy) => phy,
+            Err(_) => {
+                return Err(DtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
+            }
+        };
+        Self::new(
+            channel,
+            DtmSchedulerItemEventType::Receiver {
+                phase: DtmReceiverEventPhase::Recurring,
+                phy,
+            },
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
+    /// Convert typed internal inputs into the reviewed positional field images.
+    const fn new(
+        channel: DtmChannel,
+        event_type: DtmSchedulerItemEventType,
+        start_micros: u32,
+        end_micros: u32,
+    ) -> Result<Self, DtmSchedulerItemEventError> {
+        Ok(Self {
+            frequency: channel.scheduler_frequency_image(),
+            event_type,
+            start_micros,
+            end_micros,
+        })
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn apply_raw_window(
+        self,
+        current: DtmSchedulerItemReviewedWords,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> DtmSchedulerItemReviewedWords {
+        current.apply_event(self.frequency, self.event_type, raw_start, raw_end)
+    }
+
+    /// Return the DTM role encoded by this validated scheduler item event.
+    pub const fn role(self) -> DtmRole {
+        self.event_type.role()
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn raw_start(self, epoch: ControllerSchedulerEpoch) -> u32 {
+        epoch.raw_ticks_for_micros(self.start_micros)
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn raw_end(self, epoch: ControllerSchedulerEpoch) -> u32 {
+        epoch.raw_ticks_for_micros(self.end_micros)
+    }
+}
+
+/// Apply the common scheduler overlap-insertion power projection.
+///
+/// Complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
+/// `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power
+/// image into scheduler-item bits 24:20 and clear the adjacent bits 27:25.
+/// Both arguments remain CPU-owned controller-SRAM descriptor images; this
+/// transform performs no MMIO and grants no publication ownership.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) const fn apply_overlap_insertion_power(
+    scheduler_item: DtmSchedulerItemReviewedWords,
+    link_state: DtmLinkStateReviewedWords,
+) -> DtmSchedulerItemReviewedWords {
+    scheduler_item.apply_overlap_insertion_power(link_state)
+}
+
+#[cfg(test)]
+mod tests;

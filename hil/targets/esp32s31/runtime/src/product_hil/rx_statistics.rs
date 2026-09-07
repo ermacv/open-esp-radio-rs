@@ -101,12 +101,8 @@ impl ObservedRxStatistics {
 mod tests;
 
 #[cfg(feature = "driver-observation")]
-impl From<open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxStatistics>
-    for ObservedRxStatistics
-{
-    fn from(
-        statistics: open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxStatistics,
-    ) -> Self {
+impl From<oer_esp32s31_embassy_wifi::DiagnosticRxStatistics> for ObservedRxStatistics {
+    fn from(statistics: oer_esp32s31_embassy_wifi::DiagnosticRxStatistics) -> Self {
         Self {
             mpdu_count: statistics.mpdu_count,
             data_success: statistics.data_success,

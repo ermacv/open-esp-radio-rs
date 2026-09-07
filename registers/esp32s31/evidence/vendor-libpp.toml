@@ -83,7 +83,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK"
-description = "_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into PROMOTED_TX_AMPDU and moved to driver/chips/esp32s31/wifi/mac/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet."
+description = "_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into PROMOTED_TX_AMPDU and moved to crates/hardware/esp32s31/driver/wifi/mac/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet."
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW"
@@ -91,7 +91,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_CRYPTO"
-description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in driver/chips/esp32s31/wifi/mac/src/crypto.rs."
+description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_crypto.o hal_crypto_clr_key_entry, hal_crypto_set_key_entry, hal_crypto_is_key_valid, hal_crypto_enable and hal_crypto_disable bodies. The active open STA pairwise/group images were first preserved in migration/esp32s31-hybrid-runtime/src/wpa2_s31.rs and now live in crates/hardware/esp32s31/driver/wifi/mac/src/crypto.rs."
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_CRYPTO_INIT"

@@ -1,19 +1,23 @@
 //! Original Xarxa stack composition, also used with the minimal source patch.
+
 use super::checksum;
 #[cfg(feature = "task-poll-telemetry")]
 use super::{observation, progress};
+
 pub(crate) use embassy_net::{Runner, iface::Iface};
+
 use embassy_net::{Stack, StackStorage};
-use open_esp_radio_esp32s31_embassy_wifi::{Esp32s31WifiDevice, Esp32s31WifiNetworkDevice};
+
+use oer_esp32s31_embassy_wifi::{WifiDevice, WifiNetworkDevice};
 pub(crate) struct Resources {
     stack: StackStorage<'static>,
     driver: Option<NetworkDevice>,
 }
 
 #[cfg(not(feature = "task-poll-telemetry"))]
-type NetworkDevice = checksum::Device<Esp32s31WifiNetworkDevice>;
+type NetworkDevice = checksum::Device<WifiNetworkDevice>;
 #[cfg(feature = "task-poll-telemetry")]
-type NetworkDevice = progress::Device<checksum::Device<Esp32s31WifiNetworkDevice>>;
+type NetworkDevice = progress::Device<checksum::Device<WifiNetworkDevice>>;
 
 impl Resources {
     pub const fn new() -> Self {
@@ -25,7 +29,7 @@ impl Resources {
 }
 
 pub(crate) fn new(
-    device: Esp32s31WifiDevice,
+    device: WifiDevice,
     resources: &'static mut Resources,
     settings: super::Settings,
     _role: open_esp_radio_hil_protocol::WifiNetworkInterface,

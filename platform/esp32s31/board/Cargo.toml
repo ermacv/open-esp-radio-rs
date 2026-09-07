@@ -11,3 +11,8 @@ esp-hal = { workspace = true, features = ["esp32s31", "unstable"] }
 
 [lints.rust]
 unexpected_cfgs = "allow"
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "platform"
+platform = "esp32s31"

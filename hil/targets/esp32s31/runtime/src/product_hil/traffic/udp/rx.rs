@@ -12,13 +12,13 @@ use embassy_time::Duration;
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+use oer_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
+use oer_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
+use oer_esp32s31_soc::L1CachePerformanceCounters;
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
     rx_pipeline::RxPipelineCounters,

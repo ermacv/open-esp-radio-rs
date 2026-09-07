@@ -111,10 +111,10 @@ fn defined_archive_members_resolve_internal_undefined_references() {
 #[test]
 fn source_only_symbol_policy_preserves_qualified_trait_and_core_boundaries() {
     for allowed in [
-        "open_esp_radio_esp32s31_hal::radio::start",
-        "open_esp_radio_esp32s31_pac::Wlan::read",
-        "open_esp_radio_esp32s31_pac_raw::Register::read",
-        "<open_esp_radio_esp32s31_hal::Radio as external::Trait>::start",
+        "oer_esp32s31_hal::radio::start",
+        "oer_esp32s31_pac::Wlan::read",
+        "oer_esp32s31_pac_raw::Register::read",
+        "<oer_esp32s31_hal::owner::Radio as external::Trait>::start",
         "<other::Type as core::fmt::Debug>::fmt",
         "core::fmt::write",
         "core::panicking::panic_fmt",
@@ -129,8 +129,8 @@ fn source_only_symbol_policy_preserves_qualified_trait_and_core_boundaries() {
         assert!(allowed_external(allowed), "{allowed}");
     }
     for rejected in [
-        "open_esp_radio_esp32s31_hal_fake::start",
-        "external::open_esp_radio_esp32s31_hal::start",
+        "oer_esp32s31_hal_fake::start",
+        "external::oer_esp32s31_hal::start",
         "<external::Type as external::Trait>::fmt",
         "core::slice::unexpected",
         "vendor::panic_fmt",

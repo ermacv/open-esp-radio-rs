@@ -14,3 +14,8 @@ open-radio-vendor-backend-riscv = { path = "../../crates/backend-riscv" }
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

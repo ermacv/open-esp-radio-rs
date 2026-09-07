@@ -9,7 +9,7 @@ use std::{
     str::FromStr,
 };
 
-const CONFIG: &str = "driver/network/dependencies/xarxa-patched.toml";
+const CONFIG: &str = "crates/network/dependencies/xarxa-patched.toml";
 const UPSTREAM: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

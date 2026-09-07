@@ -17,3 +17,8 @@ zeroize = { version = "1.8.1", default-features = false }
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "hil"
+platform = "host"

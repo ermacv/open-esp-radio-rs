@@ -349,7 +349,7 @@ fn incomplete_scheduler_trace_cannot_become_a_timing_sample() {
 }
 #[test]
 fn ap_retention_losses_survive_traffic_windows_and_reset_only_with_the_ap_epoch() {
-    use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::NetworkTxRetentionDropReason;
+    use oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::NetworkTxRetentionDropReason;
     let counters = AggregateTxCounters::new();
     counters
         .observe_access_point_retention_drop(NetworkTxRetentionDropReason::UnicastPowerSaveFull);
@@ -370,8 +370,7 @@ fn ap_retention_losses_survive_traffic_windows_and_reset_only_with_the_ap_epoch(
 fn submitted_work_is_separate_from_delivery_and_exchange_time() {
     let counters = AggregateTxCounters::new();
     let before = counters.snapshot();
-    let mut work =
-        open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::default();
+    let mut work = oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::default();
     work.record(3_000, 3, core::num::NonZeroU32::new(150_000));
     work.record(1_000, 1, None);
     counters.observe(AggregateTxObservation::WorkCompleted { work });
@@ -396,14 +395,13 @@ fn submitted_work_is_separate_from_delivery_and_exchange_time() {
 fn ordinary_receipts_do_not_recharge_aggregate_work() {
     let counters = AggregateTxCounters::new();
     let before = counters.snapshot();
-    let mut work =
-        open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::new();
+    let mut work = oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork::new();
     work.record_publication(
         1000,
         1,
         core::num::NonZeroU32::new(54000),
         None,
-        Some(open_esp_radio_esp32s31_wifi_mac::tx::TxContention {
+        Some(oer_esp32s31_wifi_mac::tx::TxContention {
             aifsn: 3,
             backoff_slots: 7,
         }),

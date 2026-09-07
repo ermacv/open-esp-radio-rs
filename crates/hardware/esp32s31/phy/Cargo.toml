@@ -1,0 +1,28 @@
+[package]
+name = "oer-esp32s31-phy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free Rust ESP32-S31 PHY state machines"
+
+[features]
+default = []
+validation-probes = []
+# Retain value-only RF measurements in registration and role start reports.
+registration-diagnostics = []
+
+[dependencies]
+oer-esp32s31-hal = { path = "../hal" }
+
+[dev-dependencies]
+oer-esp32s31-hal = { path = "../hal", features = ["validation-probes"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "hardware"
+platform = "esp32s31"

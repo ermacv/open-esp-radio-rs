@@ -672,21 +672,20 @@ mod binding_tests {
     fn production_binding_requires_an_executed_component_frame() {
         let frames = [artifact::ArtifactDebugFrame {
             address: 0x1000,
-            demangled_name:
-                "open_esp_radio_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate"
-                    .to_owned(),
+            demangled_name: "oer_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate"
+                .to_owned(),
         }];
 
         assert!(frames_reach_component(
-            "open_esp_radio_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate",
+            "oer_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate",
             &frames,
         ));
         assert!(!frames_reach_component(
-            "open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion::disposition",
+            "oer_esp32s31_wifi_mac::tx::TxCompletion::disposition",
             &frames,
         ));
         assert!(!frames_reach_component(
-            "open_esp_radio_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate",
+            "oer_esp32s31_wifi_mac::tx::runtime::select_ordinary_retry_rate",
             &[],
         ));
     }

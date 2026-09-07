@@ -13,7 +13,7 @@ publish = false
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false }
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false }
 static_cell = "2.1.1"
-open-esp-radio-esp32s31-platform-pac = { path = "../../driver/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
+oer-esp32s31-soc = { path = "../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 
 [profile.release]
 codegen-units = 1

@@ -21,12 +21,12 @@ embassy-futures = "0.1.2"
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-open-esp-radio-esp32s31-bluetooth = { path = "../../driver/chips/esp32s31/bluetooth" }
-open-esp-radio-esp32s31-bluetooth-embassy = { path = "../../driver/runtime/embassy/esp32s31/bluetooth" }
-open-esp-radio-esp32s31-bluetooth-integration = { path = "../../driver/integration/esp32s31/embassy/bluetooth" }
-open-esp-radio-esp32s31-bluetooth-memory = { path = "../../driver/chips/esp32s31/bluetooth/memory" }
-open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
-open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../driver/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+oer-esp32s31-bluetooth = { path = "../../crates/hardware/esp32s31/driver/bluetooth" }
+oer-esp32s31-bluetooth-embassy = { path = "../../crates/runtime/embassy/esp32s31/bluetooth" }
+oer-esp32s31-bluetooth-integration = { path = "../../crates/composition/esp32s31/embassy/bluetooth" }
+oer-esp32s31-bluetooth-memory = { path = "../../crates/hardware/esp32s31/driver/bluetooth/memory" }
+oer-esp32s31-embassy-runtime = { path = "../../crates/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
+oer-esp32s31-radio-platform-esp-hal = { path = "../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 
 [profile.release]
 codegen-units = 1
@@ -49,3 +49,8 @@ resolver = "3"
 
 [build-dependencies]
 oer-firmware = { path = "../../tools/firmware", default-features = false }
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "application"
+platform = "esp32s31"

@@ -2352,6 +2352,415 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-hci"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "trouble-host",
+]
+
+[[package]]
+name = "oer-bluetooth-ll"
+version = "0.1.0"
+
+[[package]]
+name = "oer-embassy-net"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-network",
+ "oer-wifi-datapath",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+]
+
+[[package]]
+name = "oer-embassy-net-compat"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-network",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-pac",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-embassy"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-integration"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-embassy",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-radio-platform-esp-hal",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-memory"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "pin-project",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-coex"
+version = "0.1.0"
+
+[[package]]
+name = "oer-esp32s31-coex-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-coex",
+]
+
+[[package]]
+name = "oer-esp32s31-embassy-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-time-driver",
+ "embassy-time-queue-utils",
+ "esp-hal",
+ "esp-sync",
+ "portable-atomic",
+ "riscv",
+]
+
+[[package]]
+name = "oer-esp32s31-embassy-wifi"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-hal",
+ "oer-embassy-net",
+ "oer-embassy-net-compat",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-embassy-compat",
+ "oer-esp32s31-wifi-esp-hal",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-esp32s31-wifi-xarxa-upstream",
+ "oer-ieee80211",
+ "oer-network",
+ "oer-radio",
+ "oer-wifi-ap",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+ "oer-xarxa-upstream",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "oer-esp32s31-coex",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-pac",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-dma"
+version = "0.1.0"
+
+[[package]]
+name = "oer-esp32s31-ieee802154-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-ieee802154-dma",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-ieee802154-mac",
+ "oer-esp32s31-ieee802154-runtime",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-ieee802154-runtime",
+ "oer-esp32s31-pac",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-irq"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-pac",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-mac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-ieee802154-dma",
+ "oer-esp32s31-ieee802154-irq",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-runtime"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-ieee802154-dma",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-ieee802154-mac",
+ "oer-esp32s31-pac",
+]
+
+[[package]]
+name = "oer-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-pac-raw",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-phy"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-radio-platform-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-soc"
+version = "0.1.0"
+dependencies = [
+ "atomic-waker",
+ "critical-section",
+ "esp-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-wifi-softmac",
+ "riscv",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-wifi-ap",
+ "oer-wifi-softmac",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-dma"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-memory",
+ "pin-project",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-embassy"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "oer-embassy-net",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-network",
+ "oer-network-engine",
+ "oer-wifi-datapath",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+ "riscv",
+ "static_cell",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-embassy-compat"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-embassy-net-compat",
+ "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-sta",
+ "oer-network",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-esp32s31-coex",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-mac",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-mac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-wifi-dma",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-wifi-softmac",
+ "pin-project",
+ "riscv",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+ "riscv",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-wifi-embassy",
+ "oer-network",
+ "oer-wifi-embassy",
+ "oer-xarxa-upstream",
+]
+
+[[package]]
 name = "oer-firmware"
 version = "0.1.0"
 dependencies = [
@@ -2365,12 +2774,120 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-ieee80211"
+version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154"
+version = "0.1.0"
+
+[[package]]
+name = "oer-memory"
+version = "0.1.0"
+
+[[package]]
+name = "oer-network"
+version = "0.1.0"
+
+[[package]]
+name = "oer-network-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-memory",
+ "oer-network",
+ "oer-wifi-datapath",
+]
+
+[[package]]
 name = "oer-process"
 version = "0.1.0"
 dependencies = [
  "libc",
  "signal-hook",
  "tempfile",
+]
+
+[[package]]
+name = "oer-radio"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-ieee80211",
+ "oer-wifi-ap",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-wifi-datapath"
+version = "0.1.0"
+dependencies = [
+ "oer-memory",
+ "oer-network",
+ "oer-wifi-softmac",
+]
+
+[[package]]
+name = "oer-wifi-embassy"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-memory",
+ "oer-wifi-softmac",
+]
+
+[[package]]
+name = "oer-wifi-softmac"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+]
+
+[[package]]
+name = "oer-wpa2"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hmac",
+ "pbkdf2",
+ "sha1",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-xarxa-upstream"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-network",
+ "oer-wifi-datapath",
+ "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]
@@ -2408,391 +2925,24 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-bluetooth-hci"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embedded-io 0.7.1",
- "embedded-io-async 0.7.0",
- "trouble-host",
-]
-
-[[package]]
-name = "open-esp-radio-bluetooth-ll"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-dma"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-embassy-net"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-network",
- "open-esp-radio-wifi-datapath",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
-]
-
-[[package]]
-name = "open-esp-radio-embassy-net-compat"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-network",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth-memory",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
- "open-esp-radio-esp32s31-phy",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-embassy"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-phy",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-integration"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "esp-hal",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-bluetooth-ll",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-bluetooth-embassy",
- "open-esp-radio-esp32s31-bluetooth-memory",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-radio-platform-esp-hal",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-bluetooth-memory"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-coex"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-esp32s31-coex-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-esp32s31-coex",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-embassy-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-executor",
- "embassy-time-driver",
- "embassy-time-queue-utils",
- "esp-hal",
- "esp-sync",
- "portable-atomic",
- "riscv",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-coex",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-dma"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-esp32s31-ieee802154-dma",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-ieee802154-mac",
- "open-esp-radio-esp32s31-ieee802154-runtime",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-ieee802154-runtime",
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-mac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-ieee802154-dma",
- "open-esp-radio-esp32s31-ieee802154-irq",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-ieee802154-runtime"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-ieee802154-dma",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-ieee802154-mac",
- "open-esp-radio-esp32s31-pac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac-raw",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac-raw"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-phy"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-platform-pac"
-version = "0.1.0"
-dependencies = [
- "atomic-waker",
- "critical-section",
- "esp-hal",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-radio-platform-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "open-esp-radio-bluetooth-hci",
- "open-esp-radio-esp32s31-bluetooth",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "riscv",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-dma"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log",
- "open-esp-radio-dma",
- "open-esp-radio-embassy-net",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-ap",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
- "open-esp-radio-ieee80211",
- "open-esp-radio-network",
- "open-esp-radio-research-datapath",
- "open-esp-radio-wifi-datapath",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
- "riscv",
- "static_cell",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-embassy-compat"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-embassy-net-compat",
- "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-esp32s31-wifi-sta",
- "open-esp-radio-network",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "open-esp-radio-esp32s31-coex",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-mac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-mac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "pin-project",
- "riscv",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
- "riscv",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-xarxa-upstream"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-network",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-xarxa-upstream",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-embassy-wifi",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-ieee802154",
+ "oer-memory",
+ "oer-network",
+ "oer-radio",
+ "oer-wifi-ap",
+ "oer-wifi-datapath",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
 ]
 
 [[package]]
@@ -2822,13 +2972,13 @@ dependencies = [
  "libc",
  "mio",
  "object 0.39.1",
+ "oer-embassy-net-compat",
  "oer-firmware",
+ "oer-ieee80211",
  "oer-process",
- "open-esp-radio-embassy-net-compat",
+ "oer-xarxa-upstream",
  "open-esp-radio-hil-protocol",
- "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",
- "open-esp-radio-xarxa-upstream",
  "roxmltree",
  "serde",
  "serde_json",
@@ -2843,14 +2993,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-ieee80211"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-ieee802154"
-version = "0.1.0"
-
-[[package]]
 name = "open-esp-radio-memory-report"
 version = "0.1.0"
 dependencies = [
@@ -2863,10 +3005,6 @@ dependencies = [
  "thiserror 2.0.19",
  "toml_edit",
 ]
-
-[[package]]
-name = "open-esp-radio-network"
-version = "0.1.0"
 
 [[package]]
 name = "open-esp-radio-qualification-check"
@@ -2890,84 +3028,6 @@ dependencies = [
  "svd-rs",
  "thiserror 2.0.19",
  "toml_edit",
-]
-
-[[package]]
-name = "open-esp-radio-research-datapath"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-network",
- "open-esp-radio-wifi-datapath",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-datapath"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-network",
- "open-esp-radio-wifi-softmac",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-dma",
- "open-esp-radio-wifi-softmac",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-softmac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "zeroize",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
-]
-
-[[package]]
-name = "open-esp-radio-wpa2"
-version = "0.1.0"
-dependencies = [
- "aes",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "hmac",
- "pbkdf2",
- "sha1",
- "zeroize",
-]
-
-[[package]]
-name = "open-esp-radio-xarxa-upstream"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "open-esp-radio-network",
- "open-esp-radio-wifi-datapath",
- "xarxa-driver 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
 
 [[package]]

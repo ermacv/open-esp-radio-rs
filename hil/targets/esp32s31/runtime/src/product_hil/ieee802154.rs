@@ -4,23 +4,10 @@
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
-#[cfg(feature = "ieee802154-ed-event-probe")]
-use open_esp_radio_esp32s31_hal::{
-    Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154EdEventProbeConfig,
-    Ieee802154EdEventProbeEvidence as HalIeee802154EdEventProbeEvidence,
-    Ieee802154EdEventProbeIsolation, Ieee802154EdEventProbeStop as HalIeee802154EdEventProbeStop,
-    Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154OperationEventMaskState,
-    Ieee802154OperationPollBudget, Ieee802154OperationRxAbortEnableObservation,
-    Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage, Ieee802154PanIdentity,
-    Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
-    Ieee802154PolledOperationResult, Ieee802154RxAbortReason as HalIeee802154RxAbortReason,
-    Ieee802154RxAbortReasonObservation as HalIeee802154RxAbortReasonObservation,
-    Ieee802154ValidationEdDurationState as HalIeee802154ValidationEdDurationState,
-};
 #[cfg(feature = "ieee802154-event-status-probe")]
-use open_esp_radio_esp32s31_hal::{
+use oer_esp32s31_hal::ieee802154::{
     Ieee802154EventStatusProbeConfig,
     Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation,
@@ -30,9 +17,31 @@ use open_esp_radio_esp32s31_hal::{
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use open_esp_radio_esp32s31_hal::{
-    Ieee802154ObservedEventState as HalIeee802154ObservedEventState, Ieee802154Owned,
-    Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
+use oer_esp32s31_hal::{
+    ieee802154::Ieee802154Owned,
+    types::{
+        Ieee802154ObservedEventState as HalIeee802154ObservedEventState,
+        Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
+    },
+};
+#[cfg(feature = "ieee802154-ed-event-probe")]
+use oer_esp32s31_hal::{
+    ieee802154::{
+        Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154EdEventProbeConfig,
+        Ieee802154EdEventProbeEvidence as HalIeee802154EdEventProbeEvidence,
+        Ieee802154EdEventProbeIsolation,
+        Ieee802154EdEventProbeStop as HalIeee802154EdEventProbeStop, Ieee802154MacControl,
+        Ieee802154MacPolicy, Ieee802154OperationEventMaskState, Ieee802154OperationPollBudget,
+        Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage, Ieee802154PanIdentity,
+        Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
+        Ieee802154PolledOperationResult,
+    },
+    types::{
+        Ieee802154OperationRxAbortEnableObservation,
+        Ieee802154RxAbortReason as HalIeee802154RxAbortReason,
+        Ieee802154RxAbortReasonObservation as HalIeee802154RxAbortReasonObservation,
+        Ieee802154ValidationEdDurationState as HalIeee802154ValidationEdDurationState,
+    },
 };
 
 #[cfg(feature = "ieee802154-ed-event-probe")]

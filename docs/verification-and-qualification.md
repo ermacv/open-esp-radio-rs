@@ -117,7 +117,7 @@ a new hardware run; no hand-edited `qualified` field exists.
 
 ## Normal workflow
 
-1. Implement behavior and named host contracts in `driver/`.
+1. Implement behavior and named host contracts in `crates/`.
 2. Run workspace tests.
 3. Produce complete Blobray verification evidence for declared vendor roots.
 4. Run the exact HIL scenarios declared by the target qualification manifest

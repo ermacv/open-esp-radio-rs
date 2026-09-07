@@ -11,15 +11,15 @@ description = "Git parent of migration-promotion commit f233006, migration/esp32
 
 [[sources]]
 id = "PROMOTED_RX_AMPDU"
-description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs blob 293a864aae77f5768054b3a0a8e7b5dbe78404e5; recovered RX BlockAck transaction later promoted to driver/chips/esp32s31/wifi/mac/src/rx_ampdu_hw.rs."
+description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/rx_ampdu_hw.rs blob 293a864aae77f5768054b3a0a8e7b5dbe78404e5; recovered RX BlockAck transaction later promoted to crates/hardware/esp32s31/driver/wifi/mac/src/rx_ampdu_hw.rs."
 
 [[sources]]
 id = "PROMOTED_TX_AMPDU"
-description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs blob 14b76600977613fa878d0e9838fabc4b63606bbd; recovered TX BlockAck transaction later promoted to driver/chips/esp32s31/wifi/mac/src/tx_ampdu.rs."
+description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/tx_ampdu.rs blob 14b76600977613fa878d0e9838fabc4b63606bbd; recovered TX BlockAck transaction later promoted to crates/hardware/esp32s31/driver/wifi/mac/src/tx_ampdu.rs."
 
 [[sources]]
 id = "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"
-description = "open-esp-radio-rs commit 6a2b358b6dc3458d2f49d80ff14d20aa3d6fabab, driver/chips/esp32s31/wifi/mac/src/init.rs, first source-owned open promiscuous RX frontier; subsequently qualified by the connected ESP32-S31 rev0 scan/STA run recorded as HIL_OPEN_RX_LIVE_APPEND_2026_07_27. It publishes zero at 0x20104cac, executes complete BLOB_LIBPP_HAL_SNIFFER_ENABLE, sets bits 15:8 at 0x201040f4 through one fresh-read RMW, then issues a device fence."
+description = "open-esp-radio-rs commit 6a2b358b6dc3458d2f49d80ff14d20aa3d6fabab, crates/hardware/esp32s31/driver/wifi/mac/src/init.rs, first source-owned open promiscuous RX frontier; subsequently qualified by the connected ESP32-S31 rev0 scan/STA run recorded as HIL_OPEN_RX_LIVE_APPEND_2026_07_27. It publishes zero at 0x20104cac, executes complete BLOB_LIBPP_HAL_SNIFFER_ENABLE, sets bits 15:8 at 0x201040f4 through one fresh-read RMW, then issues a device fence."
 
 [[sources]]
 id = "PROMOTED_CHANNEL_SWITCH"
@@ -27,4 +27,4 @@ description = "Git parent of migration-promotion commit f233006, migration/esp32
 
 [[sources]]
 id = "PROMOTED_LMAC_TX"
-description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/lmac.rs; exact ESP32-S31 queue-bank address/stride transcription and async timeout/completion path later promoted into driver/chips/esp32s31/wifi/mac/src/tx.rs. Existing open authentication and connected-network HIL qualify the ordinary queue-zero path."
+description = "Git parent of migration-promotion commit f233006, migration/esp32s31-hybrid-runtime/src/lmac.rs; exact ESP32-S31 queue-bank address/stride transcription and async timeout/completion path later promoted into crates/hardware/esp32s31/driver/wifi/mac/src/tx.rs. Existing open authentication and connected-network HIL qualify the ordinary queue-zero path."

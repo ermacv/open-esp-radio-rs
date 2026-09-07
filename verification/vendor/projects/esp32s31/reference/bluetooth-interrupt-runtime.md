@@ -67,7 +67,7 @@ projects the acknowledged status into one semantic
 images. `BluetoothPrimaryFaultSources` also marks any pending status outside
 the reviewed dynamic and fault source groups as unclassified. The Bluetooth
 classifier gives known fault lanes and unclassified status precedence over
-simultaneous dynamic bits and returns `BluetoothPrimaryControllerFault`; the
+simultaneous dynamic bits and returns `PrimaryControllerFault`; the
 live owner must retain it, skip ordinary LL work and enter
 fail-stop/quiesce. Rust does not reproduce the vendor assert routine in
 hard-interrupt context.
@@ -133,7 +133,7 @@ or generation exhaustion rejects before unlink. Every public primary service the
 serializes capture/acknowledgement, both ordinary durable cell publications and
 the mailbox transition under that same boundary. An idle mailbox returns the
 event to the general route; an armed mailbox stores exactly its first later
-`BluetoothPrimaryPublishedInterruptStep`; and a full mailbox returns, but does
+`PrimaryPublishedInterruptStep`; and a full mailbox returns, but does
 not overwrite with, the newer event. Ordinary scheduler and lock/modify wake
 dispositions are returned immediately even when the affine event payload is
 stored for DTM. Those ISR notification dispositions are not repeated by the
@@ -174,7 +174,7 @@ runs. Consequently the required deferred contract is:
 4. dequeue atomically consumes pending plus marker;
 5. a racing publication after dequeue opens a new epoch and emits a new wake.
 
-`BluetoothSchedulerWakeCell` implements this contract with one `AtomicU8`.
+`SchedulerWakeCell` implements this contract with one `AtomicU8`.
 It is not an async primitive by itself: the platform must still install a
 lost-wake-safe waker registration and the Controller worker must drain the
 real scheduler list before considering the epoch complete.

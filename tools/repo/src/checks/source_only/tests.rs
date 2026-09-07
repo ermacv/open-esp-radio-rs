@@ -5,7 +5,7 @@ fn artifact(path: &str, test: bool) -> serde_json::Value {
     json!({
         "reason": "compiler-artifact", "package_id": "path+file:///phy#0.1.0",
         "manifest_path": "/phy/Cargo.toml",
-        "target": {"kind": ["lib"], "crate_types": ["lib"], "name": "open_esp_radio_esp32s31_phy",
+        "target": {"kind": ["lib"], "crate_types": ["lib"], "name": "oer_esp32s31_phy",
             "src_path": "/phy/src/lib.rs", "edition": "2024", "doc": true, "doctest": true, "test": true},
         "profile": {"opt_level": "3", "debuginfo": 0, "debug_assertions": false, "overflow_checks": false, "test": test},
         "features": [], "filenames": [path], "executable": null, "fresh": true

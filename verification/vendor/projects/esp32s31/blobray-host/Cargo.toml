@@ -26,3 +26,8 @@ toml_edit = "=0.25.13"
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "esp32s31"

@@ -3,7 +3,7 @@ extern crate embassy_net_compat as embassy_net;
 use embassy_net::driver::{Driver, RxToken, TxToken};
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{Stack, udp::UdpSocket};
-use open_esp_radio_embassy_net_compat::{FrameStorage, LinkState, NoopRawMutex, Resources};
+use oer_embassy_net_compat::{FrameStorage, LinkState, NoopRawMutex, Resources};
 use std::{
     future::Future,
     task::{Context, Waker},
@@ -18,8 +18,8 @@ mod progress_adapter;
 #[path = "../../../targets/esp32s31/runtime/src/product_hil/network/sockets/smoltcp.rs"]
 mod sockets;
 
-type Device = open_esp_radio_embassy_net_compat::Device<'static, NoopRawMutex, 1536, 2>;
-type Radio = open_esp_radio_embassy_net_compat::RadioRunner<'static, NoopRawMutex, 1536, 2>;
+type Device = oer_embassy_net_compat::Device<'static, NoopRawMutex, 1536, 2>;
+type Radio = oer_embassy_net_compat::RadioRunner<'static, NoopRawMutex, 1536, 2>;
 fn pair() -> (Device, Radio) {
     Box::leak(Box::new(Resources::new())).split(
         [2, 0, 0, 0, 0, 1],

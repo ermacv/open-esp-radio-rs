@@ -19,7 +19,7 @@ use counters::{Counters, memory_fence};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, with_timeout};
 use esp_hal::peripherals::DMA_AXI_CH0;
-use open_esp_radio_esp32s31_platform_pac::{
+use oer_esp32s31_soc::{
     AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, AxiGdmaMem2MemTransferError,
     BurstSize,
 };

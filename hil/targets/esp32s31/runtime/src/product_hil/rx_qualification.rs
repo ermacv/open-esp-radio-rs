@@ -8,6 +8,7 @@
 
 #[cfg(feature = "rx-delivery-telemetry")]
 use core::cell::RefCell;
+
 use core::sync::atomic::AtomicU32;
 #[cfg(feature = "driver-observation")]
 use core::sync::atomic::Ordering;
@@ -15,21 +16,21 @@ use core::sync::atomic::Ordering;
 #[cfg(feature = "rx-delivery-telemetry")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "driver-observation")]
-use open_esp_radio_esp32s31_embassy_wifi::{
-    Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver, Esp32s31RxEvidence,
-    RxObservedEthernetFrame,
+use oer_esp32s31_embassy_wifi::{
+    ConnectedRxObservation, ConnectedRxObserver, ReceiveEvidence, RxObservedEthernetFrame,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
+use oer_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
+
+#[cfg(feature = "rx-delivery-telemetry")]
+use oer_network::{FrameLengthError, RxEnqueueError};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
     RxAmpduCounters, RxPhyCounters, RxSmpduCounters,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
-#[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_network::{FrameLengthError, RxEnqueueError};
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
 pub(crate) static RX_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();
@@ -86,7 +87,7 @@ impl HilConnectedRxObserver {
 }
 
 #[cfg(feature = "driver-observation")]
-impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
+impl ConnectedRxObserver for HilConnectedRxObserver {
     fn requests_phy(&self, frame: RxObservedEthernetFrame<'_>) -> bool {
         // A strict interval vector gate cannot be based on one out of every
         // 64 packets: a fallback vector could otherwise remain invisible.
@@ -95,12 +96,12 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
         ipv4_udp_destination_port(frame) == Some(self.udp_port)
     }
 
-    fn observe(&self, event: Esp32s31ConnectedRxObservation<'_>) {
+    fn observe(&self, event: ConnectedRxObservation<'_>) {
         match event {
-            Esp32s31ConnectedRxObservation::Beacon { s_mpdu } => {
+            ConnectedRxObservation::Beacon { s_mpdu } => {
                 observe_s_mpdu(&BEACON_S_MPDU, s_mpdu);
             }
-            Esp32s31ConnectedRxObservation::Ethernet {
+            ConnectedRxObservation::Ethernet {
                 frame,
                 s_mpdu,
                 ampdu,
@@ -221,28 +222,28 @@ fn ipv4_udp_sequence(frame: RxObservedEthernetFrame<'_>, destination_port: u16) 
 }
 
 #[cfg(feature = "driver-observation")]
-fn observe_s_mpdu(counter: &RxSmpduCounters, evidence: Esp32s31RxEvidence<bool>) {
+fn observe_s_mpdu(counter: &RxSmpduCounters, evidence: ReceiveEvidence<bool>) {
     match evidence {
-        Esp32s31RxEvidence::Hardware(value) => counter.observe_hardware(value),
-        Esp32s31RxEvidence::Protocol(_) | Esp32s31RxEvidence::Unavailable => {
+        ReceiveEvidence::Hardware(value) => counter.observe_hardware(value),
+        ReceiveEvidence::Protocol(_) | ReceiveEvidence::Unavailable => {
             counter.observe_unavailable();
         }
     }
 }
 
 #[cfg(feature = "driver-observation")]
-fn observe_ampdu(counter: &RxAmpduCounters, evidence: Esp32s31RxEvidence<bool>) {
+fn observe_ampdu(counter: &RxAmpduCounters, evidence: ReceiveEvidence<bool>) {
     match evidence {
-        Esp32s31RxEvidence::Hardware(value) => counter.observe_hardware(value),
-        Esp32s31RxEvidence::Protocol(value) => counter.observe_protocol(value),
-        Esp32s31RxEvidence::Unavailable => counter.observe_unavailable(),
+        ReceiveEvidence::Hardware(value) => counter.observe_hardware(value),
+        ReceiveEvidence::Protocol(value) => counter.observe_protocol(value),
+        ReceiveEvidence::Unavailable => counter.observe_unavailable(),
     }
 }
 
 #[cfg(feature = "driver-observation")]
-fn available<T>(evidence: Esp32s31RxEvidence<T>) -> Option<T> {
+fn available<T>(evidence: ReceiveEvidence<T>) -> Option<T> {
     match evidence {
-        Esp32s31RxEvidence::Hardware(value) | Esp32s31RxEvidence::Protocol(value) => Some(value),
-        Esp32s31RxEvidence::Unavailable => None,
+        ReceiveEvidence::Hardware(value) | ReceiveEvidence::Protocol(value) => Some(value),
+        ReceiveEvidence::Unavailable => None,
     }
 }

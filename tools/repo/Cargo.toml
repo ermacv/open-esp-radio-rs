@@ -26,3 +26,8 @@ libc = "=0.2.189"
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

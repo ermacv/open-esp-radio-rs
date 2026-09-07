@@ -1,0 +1,27 @@
+[package]
+name = "oer-esp32s31-wifi-dma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Audited ESP32-S31 Wi-Fi MAC DMA ownership and descriptor ring"
+
+[features]
+default = []
+validation-raw-dma = []
+tx-psram-dma-probe = ["oer-memory/tx-psram-dma-probe"]
+
+[dependencies]
+oer-memory = { path = "../../../../../memory" }
+oer-esp32s31-hal = { path = "../../../hal" }
+pin-project = "1.1.13"
+vcell = "0.1.3"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "hardware"
+platform = "esp32s31"

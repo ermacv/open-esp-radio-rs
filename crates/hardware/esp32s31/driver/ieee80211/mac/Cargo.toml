@@ -1,0 +1,37 @@
+[package]
+name = "oer-esp32s31-wifi-mac"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free source-owned ESP32-S31 Wi-Fi MAC primitives"
+
+[features]
+default = []
+large-rx-pool-48 = []
+rx-ba-window-8 = []
+task-poll-telemetry = ["dep:riscv"]
+validation-raw-dma = ["oer-esp32s31-wifi-dma/validation-raw-dma"]
+validation-probes = ["oer-esp32s31-hal/validation-probes"]
+
+[dependencies]
+oer-memory = { path = "../../../../../memory" }
+oer-esp32s31-hal = { path = "../../../hal" }
+oer-esp32s31-wifi-dma = { path = "../dma" }
+oer-ieee80211 = { path = "../../../../../protocols/ieee80211/mac" }
+oer-wifi-softmac = { path = "../../../../../protocols/ieee80211/softmac" }
+pin-project = "1.1.13"
+subtle = { version = "2.6.1", default-features = false }
+zeroize = { version = "1.9.0", default-features = false }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.15", optional = true }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "hardware"
+platform = "esp32s31"

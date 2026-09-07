@@ -1,8 +1,6 @@
 // Emit only after the complete calibration has released its hardware controls.
 pub(super) async fn log(
-    diagnostics: Option<
-        open_esp_radio_esp32s31_phy::calibration::registration::RfCalibrationDiagnostics,
-    >,
+    diagnostics: Option<oer_esp32s31_phy::calibration::registration::RfCalibrationDiagnostics>,
 ) {
     let Some(diagnostics) = diagnostics else {
         crate::console::runtime_log_reliably(format_args!(

@@ -1,0 +1,37 @@
+[package]
+name = "oer-esp32s31-wifi-esp-hal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP-HAL whole-radio singleton and platform adapter for ESP32-S31"
+
+[features]
+default = []
+esp32s31 = [
+    "dep:esp-hal",
+    "dep:oer-esp32s31-coex",
+    "dep:oer-esp32s31-hal",
+    "dep:oer-esp32s31-phy",
+    "dep:oer-esp32s31-wifi",
+    "dep:oer-esp32s31-wifi-mac",
+    "dep:critical-section",
+]
+
+[dependencies]
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex", optional = true }
+oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal", optional = true }
+oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy", optional = true }
+oer-esp32s31-wifi = { path = "../../../../hardware/esp32s31/driver/ieee80211", optional = true }
+oer-esp32s31-wifi-mac = { path = "../../../../hardware/esp32s31/driver/ieee80211/mac", optional = true }
+critical-section = { version = "1.2.0", optional = true }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "adapter"
+platform = "esp32s31"

@@ -4,7 +4,7 @@ This reference describes the authenticated DTM descriptor, scheduler, timing
 and ownership contracts. DTM is a Lower Link Layer role; its implementation
 does not require the vendor allocator, callback registry or RTOS. Artifact
 facts remain bounded to the pinned inputs. Runtime composition and supported
-HCI commands belong to the [chip driver](../../../../../driver/chips/esp32s31/bluetooth/README.md).
+HCI commands belong to the [chip driver](../../../../../crates/hardware/esp32s31/driver/bluetooth/README.md).
 
 ## Pinned public inputs
 
@@ -414,7 +414,7 @@ only the result word at `+0x0c`: low 24 bits form a fail-closed condition and
 the byte at `+0x0f` is the only value copied into DTM state. Current public
 `esp_ble_get_dtm_rx_rssi` tail-calls a complete target that returns that same
 state byte with a signed load. This closes the high-byte role as DTM RSSI and is
-published above the PAC boundary as `BluetoothDtmRxResultProjection`; no
+published above the PAC boundary as `DtmRxResultProjection`; no
 physical unit or calibration is claimed. The complete recycle body proves
 the next layer: an accepted word updates that byte and increments the DTM
 environment's 16-bit counter with wrapping arithmetic, while a rejected word
@@ -688,7 +688,7 @@ affine `awaiting publication` and `in flight` phases. Raw PAC/HAL publication
 is unsafe because a syntactically valid controller-SRAM address does not prove
 descriptor initialization or lifetime. The free Bluetooth-level phase
 constructors are private; the task runtime can admit only a
-consumed `BluetoothDtmSchedulerBookkeepingPrepared`; its pending state retains
+consumed `DtmSchedulerBookkeepingPrepared`; its pending state retains
 the pinned graph while the sole worker owns the matching request.
 Each `observe` call evaluates exactly one fresh event and returns `Waiting` to
 the executor when the conjunction remains active; it contains no polling loop,

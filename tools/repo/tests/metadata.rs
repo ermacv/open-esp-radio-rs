@@ -7,14 +7,14 @@ fn fixture() -> Fixture {
     let f = Fixture::new();
     f.write("Cargo.toml","[package]\nname = \"root-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n");
     f.write("src/lib.rs", "");
-    for path in ["adapter", "helper", "driver"] {
+    for path in ["adapter", "helper", "crates"] {
         fs::remove_dir_all(f.root().join(path)).unwrap();
     }
-    f.package("driver/old", "independent-fixture", "[workspace]\n");
+    f.package("crates/old", "independent-fixture", "[workspace]\n");
     f.write(".gitignore", "/_oracles/\n**/target/\n");
     f.git(&["init", "--quiet"]);
     f.git(&["add", "."]);
-    for manifest in ["Cargo.toml", "driver/old/Cargo.toml"] {
+    for manifest in ["Cargo.toml", "crates/old/Cargo.toml"] {
         oer_xtask::process::capture(f.context.cargo().args([
             "generate-lockfile",
             "--offline",
@@ -23,7 +23,7 @@ fn fixture() -> Fixture {
         ]))
         .unwrap();
     }
-    fs::rename(f.root().join("driver/old"), f.root().join("driver/moved")).unwrap();
+    fs::rename(f.root().join("crates/old"), f.root().join("crates/moved")).unwrap();
     f
 }
 #[test]
@@ -32,7 +32,7 @@ fn unstaged_move_is_checked_without_private_or_build_inputs() {
     f.write("_oracles/private/Cargo.toml", "invalid private manifest");
     f.git(&["add", "--force", "_oracles/private/Cargo.toml"]);
     f.write(
-        "driver/moved/target/local/Cargo.toml",
+        "crates/moved/target/local/Cargo.toml",
         "invalid build manifest",
     );
     let manifests = paths::source_manifests(&f.context).unwrap();
@@ -42,7 +42,7 @@ fn unstaged_move_is_checked_without_private_or_build_inputs() {
 #[test]
 fn invalid_unstaged_workspace_fails_the_audit() {
     let f = fixture();
-    f.write("driver/moved/Cargo.toml", "invalid new manifest");
+    f.write("crates/moved/Cargo.toml", "invalid new manifest");
     assert!(checks::metadata(&f.context).is_err());
 }
 #[test]

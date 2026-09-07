@@ -24,10 +24,10 @@ analysis read this model; neither owns a second copy.
 The generic generator is
 [`tools/blobray/crates/register-model`](../../tools/blobray/crates/register-model/README.md).
 Its other two checked outputs are
-[`pac/raw/src/lib.rs`](../../driver/chips/esp32s31/pac/raw/src/lib.rs) and
-[`pac/src/generated.rs`](../../driver/chips/esp32s31/pac/src/generated.rs).
+[`pac/raw/src/lib.rs`](../../crates/hardware/esp32s31/pac/raw/src/lib.rs) and
+[`pac/src/generated.rs`](../../crates/hardware/esp32s31/pac/src/generated.rs).
 Handwritten runtime ownership and safe hardware access remain in the
-[closed PAC](../../driver/chips/esp32s31/pac/README.md), not in publication tooling.
+[closed PAC](../../crates/hardware/esp32s31/pac/README.md), not in publication tooling.
 
 ## Publication and investigation are separate compositions
 
@@ -69,7 +69,7 @@ vendor radio code. It is pinned to the workspace's `esp-pacs` revision and is
 not an input to the radio PAC generator. It creates no runtime peripheral owner.
 The reviewed common-PHY `TICK_CONF` carveout is in the radio model; adjacent
 platform-owned `MODEM_LPCON` registers remain in the upstream analysis catalog.
-See the [PAC provenance map](../../driver/chips/esp32s31/pac/README.md).
+See the [PAC provenance map](../../crates/hardware/esp32s31/pac/README.md).
 
 Source provenance catalogs retain their exact source IDs, revisions and hashes.
 Unknown and reserved fields remain absent or explicitly opaque; neighboring-chip

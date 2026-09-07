@@ -4,7 +4,7 @@ This reference separates silicon lifecycle requirements from the vendor
 Controller software architecture. Pinned public glue describes clock, reset,
 PHY, interrupt and platform ordering; it does not make FreeRTOS queues,
 allocators or callback registries hardware requirements. Production ownership
-is described by the [chip driver](../../../../../driver/chips/esp32s31/bluetooth/README.md).
+is described by the [chip driver](../../../../../crates/hardware/esp32s31/driver/bluetooth/README.md).
 
 ## Pinned public inputs
 
@@ -155,7 +155,7 @@ and which apparent Rust integrations still terminate in closed firmware.
 | Host | L2CAP, ATT/GATT, GAP/SMP and application policy above HCI |
 | Qualification | Independent protocol, RF, concurrency and teardown evidence requirements |
 
-The [chip driver](../../../../../driver/chips/esp32s31/bluetooth/README.md)
+The [chip driver](../../../../../crates/hardware/esp32s31/driver/bluetooth/README.md)
 describes production composition. The source tables below classify the vendor
 lifecycle; they do not claim that a feature is operational.
 

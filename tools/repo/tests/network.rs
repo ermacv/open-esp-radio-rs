@@ -40,7 +40,7 @@ fn renamed_transitive_build_dependency_cannot_hide_chip_ownership() {
         "network-adapter-fixture",
         "[dependencies]\nqueue = { package = \"packet-helper\", path = \"../helper\" }\n",
     );
-    f.package("helper","packet-helper","[build-dependencies]\ngenerator = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n");
+    f.package("helper","packet-helper","[build-dependencies]\ngenerator = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
     assert!(
         audit(&f, f.metadata(), Boundary::Owned)
             .unwrap_err()
@@ -51,7 +51,7 @@ fn renamed_transitive_build_dependency_cannot_hide_chip_ownership() {
 #[test]
 fn dev_only_dependency_does_not_confer_production_ownership() {
     let f = Fixture::new();
-    f.package("adapter","network-adapter-fixture","[dev-dependencies]\nfixture = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n");
+    f.package("adapter","network-adapter-fixture","[dev-dependencies]\nfixture = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
     let data = f.metadata();
     assert!(
         data["packages"]
@@ -66,7 +66,7 @@ fn dev_only_dependency_does_not_confer_production_ownership() {
 fn normal_edge_stays_forbidden_when_also_dev() {
     let f = Fixture::new();
     let dep =
-        "fixture = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n";
+        "fixture = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n";
     f.package(
         "adapter",
         "network-adapter-fixture",
@@ -122,7 +122,7 @@ fn malformed_resolve_fails_closed() {
 #[test]
 fn missing_edge_metadata_cannot_erase_forbidden_dependency() {
     let f = Fixture::new();
-    f.package("adapter","network-adapter-fixture","[build-dependencies]\nfixture = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n");
+    f.package("adapter","network-adapter-fixture","[build-dependencies]\nfixture = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
     let valid = f.metadata();
     let id = root_id(&f, &valid);
     for case in 0..4 {
@@ -147,7 +147,7 @@ fn cyclic_graph_terminates_and_rejects_reachable_chip() {
         "network-adapter-fixture",
         "[dependencies]\nhelper = { package = \"packet-helper\", path = \"../helper\" }\n",
     );
-    f.package("helper","packet-helper","[build-dependencies]\nfixture = { package = \"device-registers\", path = \"../driver/chips/test-radio\" }\n");
+    f.package("helper","packet-helper","[build-dependencies]\nfixture = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
     let mut data = f.metadata();
     let root = root_id(&f, &data);
     let chip = data["packages"]
@@ -177,7 +177,7 @@ fn cyclic_graph_terminates_and_rejects_reachable_chip() {
 #[test]
 fn disabled_optional_declaration_still_violates_leaf_boundary() {
     let f = Fixture::new();
-    f.package("adapter","network-adapter-fixture","[dependencies]\nfixture = { package = \"device-registers\", path = \"../driver/chips/test-radio\", optional = true }\n");
+    f.package("adapter","network-adapter-fixture","[dependencies]\nfixture = { package = \"device-registers\", path = \"../crates/hardware/test-radio\", optional = true }\n");
     let data = f.metadata();
     let graph = Graph::from_value(data.clone()).unwrap();
     assert_eq!(graph.reachable(&graph.root(&f.manifest).unwrap()).len(), 1);
@@ -193,9 +193,9 @@ fn disabled_optional_declaration_still_violates_leaf_boundary() {
 #[test]
 fn isolated_consumer_does_not_unify_unrelated_member_features() {
     let f = Fixture::new();
-    f.write("Cargo.toml","[workspace]\nmembers = [\"adapter\",\"helper\",\"consumer\",\"driver/chips/test-radio\"]\nresolver = \"3\"\n");
+    f.write("Cargo.toml","[workspace]\nmembers = [\"adapter\",\"helper\",\"consumer\",\"crates/hardware/test-radio\"]\nresolver = \"3\"\n");
     f.package("adapter","network-adapter-fixture","[dependencies]\nhelper = { package = \"packet-helper\", path = \"../helper\", default-features = false }\n[features]\ndefault = [\"plain\"]\nplain = []\n");
-    f.package("helper","packet-helper","[dependencies]\nchip = { package = \"device-registers\", path = \"../driver/chips/test-radio\", optional = true }\n[features]\nhardware = [\"dep:chip\"]\n");
+    f.package("helper","packet-helper","[dependencies]\nchip = { package = \"device-registers\", path = \"../crates/hardware/test-radio\", optional = true }\n[features]\nhardware = [\"dep:chip\"]\n");
     f.package("consumer","unrelated-consumer","[dependencies]\nhelper = { package = \"packet-helper\", path = \"../helper\", features = [\"hardware\"] }\n");
     f.metadata();
     let before = fs::read(f.root().join("Cargo.lock")).unwrap();
@@ -222,7 +222,9 @@ fn relative_patch_preserves_chip_identity() {
         "[dependencies]\napi = { package = \"device-registers\", version = \"0.1\" }\n",
     );
     let mut text = fs::read_to_string(f.root().join("Cargo.toml")).unwrap();
-    text.push_str("[patch.crates-io]\ndevice-registers = { path = \"driver/chips/test-radio\" }\n");
+    text.push_str(
+        "[patch.crates-io]\ndevice-registers = { path = \"crates/hardware/test-radio\" }\n",
+    );
     f.write("Cargo.toml", &text);
     f.metadata();
     let graph = cargo::isolated_graph(&f.context, &f.manifest, &[], None).unwrap();

@@ -29,7 +29,9 @@ use embassy_net_compat as embassy_net;
 use embassy_net_owned as embassy_net;
 #[cfg(feature = "upstream-network")]
 use embassy_net_upstream as embassy_net;
+
 use esp_backtrace as _;
+
 use esp_hal::{
     clock::CpuClock,
     efuse::{self, InterfaceMacAddress},
@@ -37,21 +39,23 @@ use esp_hal::{
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executor};
-use open_esp_radio_esp32s31_embassy_wifi::{
-    self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
-    Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
-    Esp32s31WifiParts as WifiParts,
-};
-use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
-use static_cell::StaticCell;
 
 use oer::wifi::{
-    Pmk, StaAssociationPreference, StaReconnectPolicy, StationRequest, StationScanChannels,
-    StationScanPolicy, StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
+    Pmk, Preference, StaReconnectPolicy, StationRequest, StationScanChannels, StationScanPolicy,
+    StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
 };
-use open_esp_radio as oer;
-use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+
+use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+
+use oer_esp32s31_embassy_wifi::{
+    self as integration, RadioConfig, RadioParts, RadioRunners, RadioSystem, WifiParts,
+};
+
+use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+
+use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+
+use static_cell::StaticCell;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The entropy source owns RNG hardware for the entire process. It must not be
@@ -132,7 +136,7 @@ async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng
         StationScanPolicy::new(
             StationScanChannels::CHANNELS_1_TO_13,
             NonZeroU16::new(200).expect("scan dwell is nonzero"),
-            StaAssociationPreference::PreferHe20,
+            Preference::PreferHe20,
         ),
     );
     let config = RadioConfig::new(
@@ -146,7 +150,7 @@ async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
     let RadioSystem { radio, runners } =
-        open_esp_radio_wifi_embassy::await_stack_boundary!(integration::new(radio, trng, config))
+        oer_wifi_embassy::await_stack_boundary!(integration::new(radio, trng, config))
             .expect("radio initialization must succeed once");
     let RadioRunners {
         hardware: radio_runner,
@@ -211,6 +215,6 @@ async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng
     large_assignments,
     reason = "the sole radio runner enters its static task arena once; the final ELF frame audit bounds CPU stack use"
 )]
-async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::Esp32s31RadioRunner) {
+async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::SystemRunner) {
     runner.run(spawner).await;
 }

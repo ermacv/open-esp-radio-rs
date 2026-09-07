@@ -11,20 +11,25 @@ description = "Retained ESP32-S31 Rust entry points for compiled vendor verifica
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"] }
-open-esp-radio-esp32s31-coex.workspace = true
-open-esp-radio-dma.workspace = true
-open-esp-radio-esp32s31-hal.workspace = true
-open-esp-radio-esp32s31-pac.workspace = true
-open-esp-radio-esp32s31-phy.workspace = true
-open-esp-radio-esp32s31-wifi-mac.workspace = true
-open-esp-radio-esp32s31-wifi.workspace = true
-open-esp-radio-esp32s31-wifi-dma.workspace = true
-open-esp-radio-esp32s31-wifi-embassy.workspace = true
-open-esp-radio-wifi-softmac.workspace = true
-open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../../../../driver/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
+oer-esp32s31-coex.workspace = true
+oer-memory.workspace = true
+oer-esp32s31-hal.workspace = true
+oer-esp32s31-pac.workspace = true
+oer-esp32s31-phy.workspace = true
+oer-esp32s31-wifi-mac.workspace = true
+oer-esp32s31-wifi.workspace = true
+oer-esp32s31-wifi-dma.workspace = true
+oer-esp32s31-wifi-embassy.workspace = true
+oer-wifi-softmac.workspace = true
+oer-esp32s31-wifi-esp-hal = { path = "../../../../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 
 [lib]
 crate-type = ["rlib", "staticlib"]
 
 [lints.rust]
 unexpected_cfgs = "allow"
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "esp32s31"

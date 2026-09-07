@@ -1,0 +1,30 @@
+[package]
+name = "oer-esp32s31-bluetooth-embassy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Durable Embassy wake adapter for ESP32-S31 Bluetooth controller work"
+
+[dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+embassy-time = "0.5.1"
+oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
+oer-bluetooth-ll = { path = "../../../../protocols/bluetooth/le/ll" }
+oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
+
+[dev-dependencies]
+bt-hci = "=0.10.1"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "runtime"
+platform = "esp32s31"

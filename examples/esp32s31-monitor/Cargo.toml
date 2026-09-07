@@ -7,18 +7,18 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-open-esp-radio-wifi-embassy = { path = "../../driver/adapters/embassy/ieee80211" }
+oer-wifi-embassy = { path = "../../crates/adapters/embassy/ieee80211" }
 oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-open-esp-radio = { path = "../../driver/radio", default-features = false, features = ["wifi"] }
-open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
-open-esp-radio-esp32s31-phy = { path = "../../driver/chips/esp32s31/phy" }
-open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../driver/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
-open-esp-radio-esp32s31-embassy-wifi = { path = "../../driver/integration/esp32s31/embassy/ieee80211" }
+oer = { package = "open-esp-radio", path = "../../crates/oer", default-features = false, features = ["wifi"] }
+oer-esp32s31-embassy-runtime = { path = "../../crates/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
+oer-esp32s31-phy = { path = "../../crates/hardware/esp32s31/phy" }
+oer-esp32s31-wifi-esp-hal = { path = "../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
+oer-esp32s31-embassy-wifi = { path = "../../crates/composition/esp32s31/embassy/ieee80211" }
 static_cell = "2.1.1"
 
 [profile.release]
@@ -42,3 +42,8 @@ resolver = "3"
 
 [build-dependencies]
 oer-firmware = { path = "../../tools/firmware", default-features = false }
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "application"
+platform = "esp32s31"

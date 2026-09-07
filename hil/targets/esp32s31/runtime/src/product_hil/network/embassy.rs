@@ -1,15 +1,18 @@
 //! Released smoltcp and maintained owned-packet Embassy composition.
 #[cfg(feature = "task-poll-telemetry")]
 use super::{observation, progress};
+
 use embassy_net::Config;
-use open_esp_radio_esp32s31_embassy_wifi::{Esp32s31WifiDevice, Esp32s31WifiNetworkDevice};
+
+use oer_esp32s31_embassy_wifi::{WifiDevice, WifiNetworkDevice};
+
 use open_esp_radio_hil_protocol::{
     WifiNetworkInterface, WifiRxChecksumPolicy, WifiTxUdpChecksumPolicy,
 };
 #[cfg(feature = "task-poll-telemetry")]
-type Device = progress::Device<Esp32s31WifiNetworkDevice>;
+type Device = progress::Device<WifiNetworkDevice>;
 #[cfg(not(feature = "task-poll-telemetry"))]
-type Device = Esp32s31WifiNetworkDevice;
+type Device = WifiNetworkDevice;
 #[cfg(feature = "owned-network")]
 pub(crate) type Runner<'a> = embassy_net::Runner<'a>;
 #[cfg(feature = "compat-network")]
@@ -20,9 +23,10 @@ pub(crate) type Resources = embassy_net::StackResources<16>;
 pub(crate) type Resources = embassy_net::StackResources<Device>;
 
 mod ipv4;
+
 pub(crate) use ipv4::{Iface, configure, info};
 pub(crate) fn new(
-    device: Esp32s31WifiDevice,
+    device: WifiDevice,
     resources: &'static mut Resources,
     settings: super::Settings,
     _role: WifiNetworkInterface,

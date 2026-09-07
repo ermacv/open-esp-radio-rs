@@ -2,14 +2,14 @@
 use core::cell::RefCell;
 use core::num::NonZeroU32;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use open_esp_radio_esp32s31_wifi_embassy::roles::access_point::network_tx::{
+use oer_esp32s31_wifi_embassy::roles::access_point::network_tx::{
     AccessPointAirtimeConfiguration, AccessPointAirtimePeer, AccessPointAirtimeSelection,
     AirtimeObservation,
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
+use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
+use oer_wifi_softmac::{MacTxWork, tx_cost::PpduTiming};
 use open_esp_radio_hil_esp32s31_telemetry::airtime::AirtimeHistory;
 use open_esp_radio_hil_protocol::WifiApScheduler;
-use open_esp_radio_wifi_softmac::{MacTxWork, tx_cost::PpduTiming};
 
 static HISTORY: Mutex<CriticalSectionRawMutex, RefCell<Option<AirtimeHistory>>> =
     Mutex::new(RefCell::new(None));

@@ -81,7 +81,7 @@ fn command_applies_no_patch_to_the_control() {
         command.get_args().collect::<Vec<_>>(),
         [
             "--config",
-            "/repo/driver/network/dependencies/xarxa-patched.toml"
+            "/repo/crates/network/dependencies/xarxa-patched.toml"
         ]
     );
 }
@@ -95,7 +95,7 @@ fn failed_build_restores_catalog_and_releases_workspace_ownership() {
     fs::create_dir_all(root.join(CONFIG).parent().unwrap()).unwrap();
     fs::write(
         root.join(CONFIG),
-        include_str!("../../../../driver/network/dependencies/xarxa-patched.toml"),
+        include_str!("../../../../crates/network/dependencies/xarxa-patched.toml"),
     )
     .unwrap();
     let lock = workspace.join("Cargo.lock");

@@ -53,7 +53,7 @@ use esp_hal::{
     interrupt::software::SoftwareInterrupt,
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio_esp32s31_embassy_runtime::Executor;
+use oer_esp32s31_embassy_runtime::Executor;
 use static_cell::StaticCell;
 
 #[cfg(feature = "boot-smoke")]
@@ -144,9 +144,8 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-static L1_CACHE_PERFORMANCE: StaticCell<
-    open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
-> = StaticCell::new();
+static L1_CACHE_PERFORMANCE: StaticCell<oer_esp32s31_soc::L1CachePerformanceCounters> =
+    StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
@@ -269,12 +268,12 @@ extern "C" fn runtime_main() -> ! {
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    let l1_cache = L1_CACHE_PERFORMANCE.init(
-        open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
-    );
+    let l1_cache = L1_CACHE_PERFORMANCE.init(oer_esp32s31_soc::L1CachePerformanceCounters::new(
+        peripherals.CACHE,
+    ));
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    oer_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
 
     #[cfg(feature = "open-radio-hil")]
     let _app_spawner = {
@@ -344,7 +343,7 @@ extern "C" fn runtime_main() -> ! {
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
-        let radio = open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
+        let radio = oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
             peripherals.WIFI,
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
@@ -446,9 +445,9 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,
     protocol_spawner: SendSpawner,
-    radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
+    radio: oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
-    l1_cache: &'static open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
+    l1_cache: &'static oer_esp32s31_soc::L1CachePerformanceCounters,
     #[cfg(feature = "gdma-mem2mem-probe")] gdma_channel: esp_hal::peripherals::DMA_AXI_CH0<'static>,
 ) {
     #[cfg(feature = "gdma-mem2mem-probe")]

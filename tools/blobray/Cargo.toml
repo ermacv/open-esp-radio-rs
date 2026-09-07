@@ -58,3 +58,8 @@ nix = { version = "=0.26.4", default-features = false, features = ["fs", "inotif
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

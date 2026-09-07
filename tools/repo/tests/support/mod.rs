@@ -17,7 +17,7 @@ impl Fixture {
             .prefix("oer Rust граница ")
             .tempdir()
             .unwrap();
-        fs::write(temporary.path().join("Cargo.toml"),"[workspace]\nmembers = [\"adapter\", \"helper\", \"driver/chips/test-radio\"]\nresolver = \"3\"\n").unwrap();
+        fs::write(temporary.path().join("Cargo.toml"),"[workspace]\nmembers = [\"adapter\", \"helper\", \"crates/hardware/test-radio\"]\nresolver = \"3\"\n").unwrap();
         let context = Context::new(temporary.path()).unwrap();
         let manifest = context.root.join("adapter/Cargo.toml");
         let fixture = Self {
@@ -27,7 +27,7 @@ impl Fixture {
         };
         fixture.package("adapter", "network-adapter-fixture", "");
         fixture.package("helper", "packet-helper", "");
-        fixture.package("driver/chips/test-radio", "device-registers", "");
+        fixture.package("crates/hardware/test-radio", "device-registers", "");
         fixture
     }
     pub fn root(&self) -> &Path {

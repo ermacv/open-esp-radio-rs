@@ -23,17 +23,17 @@ facts = "generated/findings/mmio.json"
 output = "../published/radio.svd"
 
 [registers.pac-raw]
-output = "../../../driver/chips/esp32s31/pac/raw/src/lib.rs"
+output = "../../../crates/hardware/esp32s31/pac/raw/src/lib.rs"
 target = "none"
 edition = "2024"
 
 [registers.bindings]
 output = "../published/radio.bindings.toml"
-crate-name = "open_esp_radio_esp32s31_pac_raw"
+crate-name = "oer_esp32s31_pac_raw"
 
 [registers.api]
 pack = "../policy/api.toml"
-output = "../../../driver/chips/esp32s31/pac/src/generated.rs"
+output = "../../../crates/hardware/esp32s31/pac/src/generated.rs"
 
 # Explicit shared source policy; these catalogs record reviewed provenance,
 # without selecting or authenticating investigation binary inputs.

@@ -1,0 +1,102 @@
+//! Reviewed Direct Test Mode transmitter packet and header images.
+//!
+//! Current `r_sym_ble_4FZFpypyQDtGoyqc084f` and named same-chip
+//! `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr` construct the complete 24-byte
+//! allocation-time header now owned by the controller-memory layer. The DTM
+//! allocator always requests the full eight-bit payload capacity. Current and
+//! named `dtm_tx_create_ctx` bodies then write the standard no-CTE PDU header,
+//! payload length, two positional allocator bytes and bounded payload modeled
+//! by this LLL extension. Both layers remain CPU-only and expose no hardware
+//! publication token.
+
+#![forbid(unsafe_code)]
+
+pub use oer_esp32s31_bluetooth_memory::{
+    BLUETOOTH_DTM_MAX_PACKET_CAPACITY as BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES,
+    BLUETOOTH_DTM_TX_PACKET_BYTES as BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
+};
+
+use crate::le::dtm::{DtmPayloadLength, DtmPayloadPattern};
+
+use oer_esp32s31_bluetooth_memory::{DtmMemoryGraphCpuOwned, DtmMemoryGraphTxPacketPrepared};
+
+/// LLL extension that consumes a bound graph into a standard DTM TX packet.
+pub trait DtmTxGraphPrepare {
+    /// Fill every declared payload byte and retain its semantic pattern proof.
+    fn prepare_dtm_tx_packet(
+        self,
+        pattern: DtmPayloadPattern,
+        length: DtmPayloadLength,
+    ) -> DtmPreparedTxGraph;
+}
+
+impl DtmTxGraphPrepare for DtmMemoryGraphCpuOwned {
+    fn prepare_dtm_tx_packet(
+        self,
+        pattern: DtmPayloadPattern,
+        length: DtmPayloadLength,
+    ) -> DtmPreparedTxGraph {
+        let mut payload = [0; BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES];
+        pattern.fill_reviewed(&mut payload[..usize::from(length.hci_image())]);
+        let memory =
+            match self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload) {
+                Ok(memory) => memory,
+                Err(_) => {
+                    unreachable!("a typed DTM payload pattern always has a standard PDU Type")
+                }
+            };
+        DtmPreparedTxGraph {
+            memory,
+            pattern,
+            length,
+        }
+    }
+}
+
+/// Bound CPU-owned graph carrying one complete standard DTM TX packet.
+///
+/// This state proves only packet construction. The graph remains unreachable
+/// by hardware and has no scheduler, fence or publication authority.
+#[must_use = "the prepared TX graph must be composed or explicitly discarded"]
+pub struct DtmPreparedTxGraph {
+    memory: DtmMemoryGraphTxPacketPrepared,
+    pattern: DtmPayloadPattern,
+    length: DtmPayloadLength,
+}
+
+impl DtmPreparedTxGraph {
+    /// Return the validated HCI test pattern represented by the packet.
+    pub const fn pattern(&self) -> DtmPayloadPattern {
+        self.pattern
+    }
+
+    /// Return the validated HCI payload length represented by the packet.
+    pub const fn length(&self) -> DtmPayloadLength {
+        self.length
+    }
+
+    /// Borrow the complete reviewed prefix and declared payload.
+    pub fn prepared_bytes(&self) -> &[u8] {
+        self.memory.prepared_packet_bytes()
+    }
+
+    /// Discard packet readiness and recover the ordinary CPU-owned graph.
+    pub fn discard(self) -> DtmMemoryGraphCpuOwned {
+        self.memory.discard_packet_readiness()
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        DtmMemoryGraphTxPacketPrepared,
+        DtmPayloadPattern,
+        DtmPayloadLength,
+    ) {
+        (self.memory, self.pattern, self.length)
+    }
+}
+
+#[cfg(test)]
+mod tests;

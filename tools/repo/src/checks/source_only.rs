@@ -16,24 +16,32 @@ use crate::{
     process::{self, owned},
 };
 
-const PHY: &str = "driver/chips/esp32s31/phy/Cargo.toml";
+const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
 const INVESTIGATION: &str = "verification/vendor/projects/esp32s31/vendor-project.toml";
 const PUBLICATION: &str = "registers/esp32s31/publication/vendor-project.toml";
 const PHY_PACKAGES: &[&str] = &[
     "critical-section",
-    "open-esp-radio-dma",
-    "open-esp-radio-esp32s31-coex",
-    "open-esp-radio-esp32s31-hal",
-    "open-esp-radio-esp32s31-ieee802154-irq",
-    "open-esp-radio-esp32s31-pac",
-    "open-esp-radio-esp32s31-pac-raw",
-    "open-esp-radio-esp32s31-phy",
+    "oer-memory",
+    "oer-esp32s31-coex",
+    "oer-esp32s31-hal",
+    "oer-esp32s31-ieee802154-irq",
+    "oer-esp32s31-pac",
+    "oer-esp32s31-pac-raw",
+    "oer-esp32s31-phy",
     "vcell",
 ];
 
 fn production_lints(ctx: &Context) -> Result<()> {
-    let packages = common::driver_packages(ctx)?;
-    let members: Vec<_> = packages.iter().filter(|p| p.workspace_member).collect();
+    let packages = common::production_packages(ctx)?;
+    let mut members = Vec::new();
+    let mut isolated = Vec::new();
+    for package in &packages {
+        if package.workspace_member && common::declared_profiles(&package.package)?.is_empty() {
+            members.push(package);
+        } else {
+            isolated.push(package);
+        }
+    }
     if !members.is_empty() {
         let mut command = ctx.cargo();
         command.args(["clippy", "--quiet", "--locked", "--offline"]);
@@ -52,7 +60,7 @@ fn production_lints(ctx: &Context) -> Result<()> {
         ]);
         process::run(&mut command)?;
     }
-    for package in packages.iter().filter(|p| !p.workspace_member) {
+    for package in isolated {
         for profile in common::maximal_profiles(&package.package)? {
             process::run(
                 ctx.cargo()
@@ -132,7 +140,7 @@ fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
     let mut artifacts = BTreeSet::new();
     for message in Message::parse_stream(Cursor::new(messages)) {
         if let Message::CompilerArtifact(artifact) = message?
-            && artifact.target.name == "open_esp_radio_esp32s31_phy"
+            && artifact.target.name == "oer_esp32s31_phy"
             && !artifact.profile.test
             && artifact
                 .target
@@ -163,7 +171,7 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
         "--locked",
         "--offline",
         "-p",
-        "open-esp-radio-esp32s31-phy",
+        "oer-esp32s31-phy",
         "--lib",
         "--release",
         "--target",

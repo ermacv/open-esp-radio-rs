@@ -64,7 +64,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "driver/adapters/esp-hal/esp32s31/radio/README.md",
+  "crates/adapters/esp-hal/esp32s31/radio/README.md",
 ]
 async-not-applicable = "no-asynchronous-runtime-boundary"
 gaps = [
@@ -132,8 +132,8 @@ composition = "production"
 scope = "Borrowed common-PHY registration followed by Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband initialization"
 limits = "This is the bounded initial handoff documented as IMPLEMENTED in the PHY consumer matrix; the parent capability also requires periodic maintenance and final release"
 source-paths = [
-  "driver/chips/esp32s31/bluetooth/src/phy.rs",
-  "driver/chips/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
+  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
 ]
 
 [[capabilities.source-contracts]]
@@ -142,8 +142,8 @@ composition = "unimplemented"
 scope = "Compose periodic Bluetooth PHY tracking cancellation wake and last-client physical release into the Controller lifetime"
 limits = "Initial tracking and shared parameter/calibration algorithms exist; missing lifetime composition must not be described as absence of those primitives"
 source-paths = [
-  "driver/chips/esp32s31/bluetooth/src/phy.rs",
-  "driver/chips/esp32s31/phy/src/state/client.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
+  "crates/hardware/esp32s31/phy/src/state/client.rs",
 ]
 
 [[capabilities]]
@@ -406,9 +406,9 @@ composition = "production"
 scope = "Bounded Receiver and Transmitter Test sessions own first and recurring event publication RX accounting recycle and Test End through the Embassy DTM session"
 limits = "Matches the bounded DTM feature scope; general unrelated-list dispatch and the full Controller lifetime remain unimplemented outside this subset. RF qualification is a separate evidence requirement"
 source-paths = [
-  "driver/chips/esp32s31/bluetooth/src/le/dtm.rs",
-  "driver/runtime/embassy/esp32s31/bluetooth/src/session/dtm/task.rs",
-  "driver/runtime/embassy/esp32s31/bluetooth/src/session/dtm/active.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/dtm.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/dtm/task.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/dtm/active.rs",
 ]
 
 [[capabilities]]
@@ -559,9 +559,9 @@ composition = "diagnostic"
 scope = "Execute the recovered coexistence core timer operations through the validation-probes HAL bridge"
 limits = "Core tables clock conversion and an Embassy mailbox exist; production Wi-Fi and Bluetooth runtimes do not compose this concrete timer owner"
 source-paths = [
-  "driver/chips/esp32s31/hal/src/coex.rs",
-  "driver/chips/esp32s31/coex/src/lib.rs",
-  "driver/adapters/embassy/esp32s31/coex/src/lib.rs",
+  "crates/hardware/esp32s31/hal/src/coex.rs",
+  "crates/hardware/esp32s31/driver/coex/src/lib.rs",
+  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
 ]
 
 [[capabilities.source-contracts]]
@@ -570,8 +570,8 @@ composition = "unimplemented"
 scope = "Compose joint Wi-Fi and Bluetooth ownership with live RF request grant and release arbitration"
 limits = "The recovered core and mailbox do not supply safe concurrent platform ownership or a production policy scheduler"
 source-paths = [
-  "driver/adapters/embassy/esp32s31/coex/src/lib.rs",
-  "driver/chips/esp32s31/coex/src/core.rs",
+  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
+  "crates/hardware/esp32s31/driver/coex/src/core.rs",
 ]
 
 [[capabilities]]

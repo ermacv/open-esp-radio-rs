@@ -13,3 +13,8 @@ open-esp-radio-verification-esp32s31-probes = { path = "../library" }
 
 [lints.rust]
 unexpected_cfgs = "allow"
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "esp32s31"

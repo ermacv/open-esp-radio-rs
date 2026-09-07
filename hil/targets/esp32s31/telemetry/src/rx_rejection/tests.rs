@@ -1,5 +1,5 @@
 use super::*;
-use open_esp_radio_ieee80211::ccmp::CcmpPacketNumber;
+use oer_ieee80211::ccmp::CcmpPacketNumber;
 
 #[test]
 fn replay_evidence_keeps_both_observed_and_highest_packet_numbers() {

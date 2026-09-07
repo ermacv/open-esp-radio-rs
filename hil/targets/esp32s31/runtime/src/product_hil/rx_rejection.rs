@@ -4,7 +4,7 @@ use core::cell::Cell;
 #[cfg(feature = "driver-observation")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "driver-observation")]
-use open_esp_radio_esp32s31_embassy_wifi::AccessPointRxRejection;
+use oer_esp32s31_embassy_wifi::AccessPointRxRejection;
 
 #[cfg(feature = "driver-observation")]
 static FIRST: Mutex<CriticalSectionRawMutex, Cell<Option<AccessPointRxRejection>>> =

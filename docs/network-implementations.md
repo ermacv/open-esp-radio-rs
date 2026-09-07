@@ -37,10 +37,10 @@ radio-facing adapters and the underlying IEEE 802.11 driver.
 
 | Composition | External network crates and source | Repository adapter |
 | --- | --- | --- |
-| Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `open-esp-radio-xarxa-upstream` |
-| Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [UDP wait patch](https://github.com/ermacv/xarxa/tree/d1919959c7821cf2ba17c79da932e1ac6edc2e66) | Same `open-esp-radio-xarxa-upstream` |
-| Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `open-esp-radio-embassy-net-compat` |
-| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `open-esp-radio-embassy-net` |
+| Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `oer-xarxa-upstream` |
+| Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [UDP wait patch](https://github.com/ermacv/xarxa/tree/d1919959c7821cf2ba17c79da932e1ac6edc2e66) | Same `oer-xarxa-upstream` |
+| Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-compat` |
+| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net` |
 
 The original and owned Git revisions are reviewed pins, not tracking branches
 or a promise of compatibility with every later upstream revision. Dependency
@@ -51,12 +51,12 @@ published crate. Optional inactive forks can remain in `Cargo.lock`. The
 selected normal/build dependency graph determines what a firmware uses.
 
 The product crate
-[`open-esp-radio-esp32s31-embassy-wifi`](../driver/integration/esp32s31/embassy/ieee80211/README.md)
+[`oer-esp32s31-embassy-wifi`](../crates/composition/esp32s31/embassy/ieee80211/README.md)
 selects adapters and static resources. Its chip-specific bridges are
-`open-esp-radio-esp32s31-wifi-xarxa-upstream` and
-`open-esp-radio-esp32s31-wifi-embassy-compat`; the shared radio runner is
-`open-esp-radio-esp32s31-wifi-embassy`. The [network source map](../driver/network/README.md)
-and [driver map](../driver/README.md) locate these packages. Applications own
+`oer-esp32s31-wifi-xarxa-upstream` and
+`oer-esp32s31-wifi-embassy-compat`; the shared radio runner is
+`oer-esp32s31-wifi-embassy`. The [network source map](../crates/network/README.md)
+and [driver map](../crates/README.md) locate these packages. Applications own
 sockets and IP policy; adapter crates do not acquire independent PHY/DMA owners.
 
 ## Why the repository contains patches
@@ -75,9 +75,9 @@ defines workspace-root overrides and their transitive application.
 | `esp-pacs` fork (`esp32s31` package) | Publish missing Wi-Fi, Bluetooth and IEEE 802.15.4 interrupt sources through the generated platform PAC |
 
 Hardware pins and their exact responsibilities are owned by the
-[esp-hal dependency boundary](../driver/adapters/esp-hal/esp32s31/README.md#dependency-boundary)
+[esp-hal dependency boundary](../crates/adapters/esp-hal/esp32s31/README.md#dependency-boundary)
 and [platform manifest](../platform/esp32s31/Cargo.toml). This platform PAC is
-separate from this repository's [radio PAC](../driver/chips/esp32s31/pac/README.md).
+separate from this repository's [radio PAC](../crates/hardware/esp32s31/pac/README.md).
 An upstream network selection therefore means unmodified **network** sources,
 not that the complete firmware contains no forks.
 
@@ -98,12 +98,12 @@ unrelated ready interface does not release the wait. Binding, closing or
 starting another send clears it; the existing driver capacity notification
 schedules the stack when TX space returns.
 
-The [patch composition](../driver/network/dependencies/README.md)
+The [patch composition](../crates/network/dependencies/README.md)
 retains the exact original `xarxa-driver`, packet pool and Embassy wrapper.
 Its published source revision is selected by
-[xarxa-patched.toml](../driver/network/dependencies/xarxa-patched.toml).
+[xarxa-patched.toml](../crates/network/dependencies/xarxa-patched.toml).
 The builder rejects unexpected changes to the other dependency pins. The
-patch is compatible with the original driver/socket APIs; it is not the
+patch is compatible with the original crates/socket APIs; it is not the
 broader `owned-network` fork and does not establish that all resource waits
 are efficient. Pool exhaustion and raw sockets retain upstream retry behavior.
 The original pool has no public release event, including for buffers dropped
@@ -224,7 +224,7 @@ so it can then reject the reply with `PoolExhausted`. The stack cannot resolve
 the peer from a reply it never receives. The minimal wakeup patch retains this
 resource dependency. Applications must account for neighbor-resolution and RX
 headroom together; changing retry wakeups alone does not reserve RX memory.
-The adapter's [resource contract](../driver/network/adapters/xarxa/upstream/README.md)
+The adapter's [resource contract](../crates/adapters/xarxa/upstream/README.md)
 describes allocation failures and ownership.
 
 The Embassy/smoltcp `receive()` contract requires a free TX slot to return

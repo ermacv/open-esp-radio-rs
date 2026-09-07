@@ -1,0 +1,21 @@
+[package]
+name = "oer-network-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Hardware-first synchronous network datapath for radio research"
+
+[dependencies]
+oer-memory = { path = "../../crates/memory" }
+oer-network = { path = "../../crates/network/interface" }
+oer-wifi-datapath = { path = "../../crates/protocols/ieee80211/datapath" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "experimental"
+layer = "experiment"
+platform = "portable"

@@ -1,0 +1,1353 @@
+//! Linear pure actor and non-executable transaction intents.
+
+use core::fmt;
+
+use oer_esp32s31_ieee802154_dma::{
+    DmaTerminalEvidence, RxArm, RxCompletion, RxCompletionKind, RxDmaAddress, RxFrameError,
+    RxFrameView, RxLifecycleFailure, RxPoolError, TxAckNotRequested, TxAckRequested, TxArmed,
+    TxCompleted, TxDmaAddress,
+};
+use oer_esp32s31_ieee802154_irq::{
+    Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason, Ieee802154TxAbortReason,
+};
+
+use crate::batch::{MacCcaSample, MacEnergySample, MacEventBatch, MacMeasurementSample};
+
+/// How a transmit intent reaches the channel.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacTransmitAccess {
+    /// Request `TX_START` without a preceding hardware CCA.
+    Direct,
+    /// Request the combined CCA-then-transmit path.
+    ClearChannelAssessment,
+}
+
+/// Whether a transmit intent continues into the reviewed `RX_ACK` phase.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacTransmitAcknowledgement {
+    /// `TX_DONE` is terminal for this logical request.
+    None,
+    /// `TX_DONE` advances to an acknowledgement receive phase.
+    Expected,
+}
+
+/// Bounded hardware subset of the public energy-detection duration input.
+///
+/// The public API accepts `uint32_t`, then its LL boundary narrows to
+/// `uint16_t`. This type rejects values that would truncate instead of
+/// reproducing that implicit conversion. Units and on-air accuracy remain
+/// outside this pure planner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacEnergyDetectionDuration(u16);
+
+impl MacEnergyDetectionDuration {
+    /// Preserve one already bounded hardware-field value.
+    pub const fn from_hardware_units(units: u16) -> Self {
+        Self(units)
+    }
+
+    /// Fail closed when the public input would narrow at the LL boundary.
+    pub const fn try_from_public_units(
+        units: u32,
+    ) -> Result<Self, MacEnergyDetectionDurationError> {
+        if units <= u16::MAX as u32 {
+            Ok(Self(units as u16))
+        } else {
+            Err(MacEnergyDetectionDurationError::OutOfHardwareSubset { units })
+        }
+    }
+
+    /// Return the unqualified bounded hardware value.
+    pub const fn hardware_units(self) -> u16 {
+        self.0
+    }
+}
+
+/// Public ED duration cannot be represented without LL truncation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacEnergyDetectionDurationError {
+    /// The `uint32_t` public input exceeds the open driver's bounded subset.
+    OutOfHardwareSubset {
+        /// Complete rejected public input.
+        units: u32,
+    },
+}
+
+/// Observable phase of one pure actor chain.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacActivePhase {
+    /// One armed RX buffer is retained for a receive intent.
+    Receive,
+    /// One armed TX buffer is retained before `TX_DONE`.
+    Transmit {
+        /// Direct or CCA-gated transmit selection.
+        access: MacTransmitAccess,
+        /// Whether this request will continue to `RX_ACK`.
+        acknowledgement: MacTransmitAcknowledgement,
+    },
+    /// `TX_DONE` was processed and the paired RX buffer remains retained.
+    AwaitingAcknowledgement {
+        /// Access selection used for the preceding transmit phase.
+        access: MacTransmitAccess,
+    },
+    /// A standalone clear-channel assessment is pending.
+    ClearChannelAssessment,
+    /// A standalone energy-detection request is pending.
+    EnergyDetection {
+        /// Exact public duration input carried by the intent.
+        duration: MacEnergyDetectionDuration,
+    },
+}
+
+/// One command name carried by a non-executable start plan.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacCommandIntent {
+    /// Receive-start intent.
+    Receive,
+    /// Direct transmit-start intent.
+    Transmit,
+    /// CCA-gated transmit-start intent.
+    TransmitWithClearChannelAssessment,
+    /// Standalone clear-channel-assessment intent.
+    ClearChannelAssessment,
+    /// Standalone energy-detection intent.
+    EnergyDetection,
+}
+
+/// DMA address publication retained by one active plan.
+///
+/// Address tokens borrow the corresponding armed resources. They cannot
+/// outlive the active actor from which the plan was obtained.
+#[derive(Clone, Copy)]
+pub enum MacDmaPublication<'active> {
+    /// No frame address belongs to this request.
+    None,
+    /// One receive address belongs to this request.
+    Receive(RxDmaAddress<'active>),
+    /// One transmit address belongs to this request.
+    Transmit(TxDmaAddress<'active>),
+    /// A transmit plus ACK-receive pair belongs to this request.
+    TransmitWithAcknowledgement {
+        /// Address of the hardware-owned TX image.
+        transmit: TxDmaAddress<'active>,
+        /// Address of the hardware-owned ACK receive image.
+        acknowledgement_receive: RxDmaAddress<'active>,
+    },
+}
+
+/// One ordered step in a non-executable transaction intent.
+///
+/// No variant performs the named action. The sealed PAC-backed runtime
+/// executor interprets each step after acquiring its hardware owner.
+#[derive(Clone, Copy)]
+pub enum MacIntentStep<'active> {
+    /// Require state-specific quiescence and event reconciliation externally.
+    RequireStateSpecificQuiescence,
+    /// Require the already reviewed static-policy refresh externally.
+    RefreshStaticPolicy,
+    /// Publish one typed TX address through the sealed runtime executor.
+    PublishTransmitAddress(TxDmaAddress<'active>),
+    /// Publish one typed RX address through the sealed runtime executor.
+    PublishReceiveAddress(RxDmaAddress<'active>),
+    /// Configure the public ED-duration input through the sealed runtime executor.
+    ConfigureEnergyDetectionDuration(u16),
+    /// Request one command through the sealed runtime executor.
+    RequestCommand(MacCommandIntent),
+}
+
+/// Borrowed deterministic, deliberately partial intent for one operation.
+///
+/// The first step is a requirement, not a claim that `STOP` is synchronous or
+/// sufficient. RF/PHY acquisition, event-path readiness, PTI/coexistence, and
+/// command execution are external prerequisites deliberately absent here. The
+/// plan has no execute method and no PAC/MMIO capability.
+#[derive(Clone, Copy)]
+pub struct MacStartPlan<'active> {
+    publication: MacDmaPublication<'active>,
+    measurement_duration: Option<u16>,
+    command: MacCommandIntent,
+}
+
+impl<'active> MacStartPlan<'active> {
+    /// Return the exact number of ordered intent steps.
+    pub const fn step_count(self) -> usize {
+        2 + publication_step_count(self.publication)
+            + if self.measurement_duration.is_some() {
+                1
+            } else {
+                0
+            }
+            + 1
+    }
+
+    /// Return one ordered intent step, or `None` beyond the plan.
+    pub const fn step(self, index: usize) -> Option<MacIntentStep<'active>> {
+        if index == 0 {
+            return Some(MacIntentStep::RequireStateSpecificQuiescence);
+        }
+        if index == 1 {
+            return Some(MacIntentStep::RefreshStaticPolicy);
+        }
+
+        let publication_index = index - 2;
+        if let Some(step) = publication_step(self.publication, publication_index) {
+            return Some(step);
+        }
+
+        let after_publication = 2 + publication_step_count(self.publication);
+        if let Some(duration) = self.measurement_duration {
+            if index == after_publication {
+                return Some(MacIntentStep::ConfigureEnergyDetectionDuration(duration));
+            }
+            if index == after_publication + 1 {
+                return Some(MacIntentStep::RequestCommand(self.command));
+            }
+        } else if index == after_publication {
+            return Some(MacIntentStep::RequestCommand(self.command));
+        }
+        None
+    }
+
+    /// Return the borrowed DMA publication set.
+    pub const fn dma_publication(self) -> MacDmaPublication<'active> {
+        self.publication
+    }
+
+    /// Return the final command intent.
+    pub const fn command(self) -> MacCommandIntent {
+        self.command
+    }
+}
+
+const fn publication_step_count(publication: MacDmaPublication<'_>) -> usize {
+    match publication {
+        MacDmaPublication::None => 0,
+        MacDmaPublication::Receive(_) | MacDmaPublication::Transmit(_) => 1,
+        MacDmaPublication::TransmitWithAcknowledgement { .. } => 2,
+    }
+}
+
+const fn publication_step(
+    publication: MacDmaPublication<'_>,
+    index: usize,
+) -> Option<MacIntentStep<'_>> {
+    match (publication, index) {
+        (MacDmaPublication::Receive(address), 0) => {
+            Some(MacIntentStep::PublishReceiveAddress(address))
+        }
+        (MacDmaPublication::Transmit(address), 0) => {
+            Some(MacIntentStep::PublishTransmitAddress(address))
+        }
+        (MacDmaPublication::TransmitWithAcknowledgement { transmit, .. }, 0) => {
+            Some(MacIntentStep::PublishTransmitAddress(transmit))
+        }
+        (
+            MacDmaPublication::TransmitWithAcknowledgement {
+                acknowledgement_receive,
+                ..
+            },
+            1,
+        ) => Some(MacIntentStep::PublishReceiveAddress(
+            acknowledgement_receive,
+        )),
+        _ => None,
+    }
+}
+
+/// Explicit no-DMA resource retained by CCA and ED requests.
+///
+/// The constructor is private; callers receive this value only after resolving
+/// a terminal request.
+#[derive(Debug, Eq, PartialEq)]
+pub struct MacNoDmaResources {
+    _private: (),
+}
+
+/// Paired DMA ownership for a transmit request that expects an ACK.
+pub struct MacTxWithAckResources<'tx, 'rx, const COUNT: usize> {
+    transmit: TxArmed<'tx, TxAckRequested>,
+    acknowledgement_receive: RxArm<'rx, COUNT>,
+}
+
+/// Meaning of one reclaimed standalone receive buffer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacResolvedRxOutcome {
+    /// `RX_DONE` completed one ordinary or stub DMA destination.
+    Received,
+    /// A reviewed terminal abort stopped hardware access without delivering a
+    /// frame.
+    Aborted(Ieee802154RxAbortReason),
+}
+
+/// CPU-owned RX resource reclaimed from one accepted terminal batch.
+///
+/// The underlying completion remains private so an abort cannot be
+/// accidentally interpreted as a frame. For `Received`, [`Self::frame`]
+/// parses the proven PHR byte at DMA offset zero and validates its complete
+/// `3..=127` physical-length domain before exposing MAC bytes.
+pub struct MacResolvedRx<'pool, const COUNT: usize> {
+    completion: RxCompletion<'pool, COUNT>,
+    outcome: MacResolvedRxOutcome,
+}
+
+impl<'pool, const COUNT: usize> MacResolvedRx<'pool, COUNT> {
+    /// Return whether this terminal resource carries a received frame or an
+    /// abort-only reclaim.
+    pub const fn outcome(&self) -> MacResolvedRxOutcome {
+        self.outcome
+    }
+
+    /// Identify the ordinary delivery slot or separate drop stub.
+    pub const fn kind(&self) -> RxCompletionKind {
+        self.completion.kind()
+    }
+
+    /// Borrow the validated received frame.
+    ///
+    /// `None` means either the terminal was an abort or the DMA destination was
+    /// the intentional drop stub. An invalid PHR length fails closed as
+    /// [`RxFrameError`] and does not release the buffer.
+    pub fn frame(&self) -> Option<Result<RxFrameView<'_>, RxFrameError>> {
+        match self.outcome {
+            MacResolvedRxOutcome::Received => self.completion.frame(),
+            MacResolvedRxOutcome::Aborted(_) => None,
+        }
+    }
+
+    /// Return this terminal resource to its pool for a later re-arm.
+    pub fn recycle(self) -> Result<(), RxLifecycleFailure<RxCompletion<'pool, COUNT>>> {
+        self.completion.recycle()
+    }
+}
+
+/// Whether the paired RX destination contains a received acknowledgement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacResolvedAcknowledgementOutcome {
+    /// `ACK_RX_DONE` completed the paired receive destination.
+    Received,
+    /// A timeout or reviewed abort ended the operation without an ACK frame.
+    NotReceived,
+}
+
+/// CPU-owned ACK receive resource reclaimed with a terminal transmit.
+pub struct MacResolvedAcknowledgement<'pool, const COUNT: usize> {
+    completion: RxCompletion<'pool, COUNT>,
+    outcome: MacResolvedAcknowledgementOutcome,
+}
+
+impl<'pool, const COUNT: usize> MacResolvedAcknowledgement<'pool, COUNT> {
+    /// Return whether the terminal batch delivered an ACK frame.
+    pub const fn outcome(&self) -> MacResolvedAcknowledgementOutcome {
+        self.outcome
+    }
+
+    /// Identify the ordinary delivery slot or separate drop stub.
+    pub const fn kind(&self) -> RxCompletionKind {
+        self.completion.kind()
+    }
+
+    /// Borrow the validated ACK frame only after `ACK_RX_DONE`.
+    pub fn frame(&self) -> Option<Result<RxFrameView<'_>, RxFrameError>> {
+        match self.outcome {
+            MacResolvedAcknowledgementOutcome::Received => self.completion.frame(),
+            MacResolvedAcknowledgementOutcome::NotReceived => None,
+        }
+    }
+
+    /// Return the ACK receive resource to its pool for a later re-arm.
+    pub fn recycle(self) -> Result<(), RxLifecycleFailure<RxCompletion<'pool, COUNT>>> {
+        self.completion.recycle()
+    }
+}
+
+/// TX and paired ACK-RX resources reclaimed from one accepted terminal batch.
+pub struct MacResolvedTxWithAck<'tx, 'rx, const COUNT: usize> {
+    transmit: TxCompleted<'tx>,
+    acknowledgement: MacResolvedAcknowledgement<'rx, COUNT>,
+}
+
+impl<'tx, 'rx, const COUNT: usize> MacResolvedTxWithAck<'tx, 'rx, COUNT> {
+    /// Split the CPU-owned transmit image from the typed ACK receive result.
+    pub fn into_parts(self) -> (TxCompleted<'tx>, MacResolvedAcknowledgement<'rx, COUNT>) {
+        (self.transmit, self.acknowledgement)
+    }
+}
+
+/// Unique ready state for one pure actor chain.
+///
+/// This is a pure logical state and grants no MMIO authority. Hardware access
+/// remains gated by the sealed runtime command and interrupt capabilities, so
+/// the same constructor is valid in host models and on the target.
+pub struct MacReady {
+    _private: (),
+}
+
+impl MacReady {
+    /// Construct one pure logical MAC chain.
+    pub const fn new() -> Self {
+        Self { _private: () }
+    }
+
+    /// Retain one RX DMA token in a receive request with automatic ACK
+    /// explicitly disabled by the external static-policy owner.
+    ///
+    /// Automatic and enhanced ACK receive paths are intentionally absent:
+    /// their `RX_DONE` is not terminal until later ACK processing, so treating
+    /// them as this bounded request would permit premature DMA reclamation.
+    ///
+    /// ```compile_fail
+    /// use oer_esp32s31_ieee802154_dma::{
+    ///     DMA_LOW, DmaFrameAddress, RxArm, RxPoolStorage,
+    /// };
+    /// use oer_esp32s31_ieee802154_mac::MacReady;
+    ///
+    /// let storage = Box::leak(Box::new(RxPoolStorage::<1>::new()));
+    /// let pool = RxPoolStorage::pin_static_model(
+    ///     storage,
+    ///     DmaFrameAddress::try_new(DMA_LOW).unwrap(),
+    /// ).unwrap();
+    /// let armed = pool.arm_next().unwrap();
+    /// let ready = MacReady::new();
+    /// let _receive = ready.request_receive_without_auto_ack(armed);
+    /// let _second = ready.request_clear_channel_assessment();
+    /// ```
+    pub fn request_receive_without_auto_ack<const COUNT: usize>(
+        self,
+        armed: RxArm<'_, COUNT>,
+    ) -> MacActive<RxArm<'_, COUNT>> {
+        MacActive {
+            ready: self,
+            resources: armed,
+            phase: MacActivePhase::Receive,
+        }
+    }
+
+    /// Retain one TX DMA token in a no-ACK transmit request.
+    ///
+    /// The caller chooses only the logical access path. The DMA token already
+    /// proves that the immutable copied FCF does not request an ACK.
+    ///
+    /// ```compile_fail
+    /// use oer_esp32s31_ieee802154_dma::{TxAckRequested, TxArmed};
+    /// use oer_esp32s31_ieee802154_mac::{MacReady, MacTransmitAccess};
+    ///
+    /// fn wrong<'tx>(armed: TxArmed<'tx, TxAckRequested>) {
+    ///     let _ = MacReady::new()
+    ///         .request_transmit_without_ack(armed, MacTransmitAccess::Direct);
+    /// }
+    /// ```
+    pub fn request_transmit_without_ack(
+        self,
+        armed: TxArmed<'_, TxAckNotRequested>,
+        access: MacTransmitAccess,
+    ) -> MacActive<TxArmed<'_, TxAckNotRequested>> {
+        MacActive {
+            ready: self,
+            resources: armed,
+            phase: MacActivePhase::Transmit {
+                access,
+                acknowledgement: MacTransmitAcknowledgement::None,
+            },
+        }
+    }
+
+    /// Retain one ACK-requesting TX and one ACK-RX token.
+    ///
+    /// ```compile_fail
+    /// use oer_esp32s31_ieee802154_dma::{
+    ///     RxArm, TxAckNotRequested, TxArmed,
+    /// };
+    /// use oer_esp32s31_ieee802154_mac::{MacReady, MacTransmitAccess};
+    ///
+    /// fn wrong<'tx, 'rx>(
+    ///     transmit: TxArmed<'tx, TxAckNotRequested>,
+    ///     acknowledgement_receive: RxArm<'rx, 1>,
+    /// ) {
+    ///     let _ = MacReady::new().request_transmit_with_ack(
+    ///         transmit,
+    ///         acknowledgement_receive,
+    ///         MacTransmitAccess::Direct,
+    ///     );
+    /// }
+    /// ```
+    pub fn request_transmit_with_ack<'tx, 'rx, const COUNT: usize>(
+        self,
+        transmit: TxArmed<'tx, TxAckRequested>,
+        acknowledgement_receive: RxArm<'rx, COUNT>,
+        access: MacTransmitAccess,
+    ) -> MacActive<MacTxWithAckResources<'tx, 'rx, COUNT>> {
+        MacActive {
+            ready: self,
+            resources: MacTxWithAckResources {
+                transmit,
+                acknowledgement_receive,
+            },
+            phase: MacActivePhase::Transmit {
+                access,
+                acknowledgement: MacTransmitAcknowledgement::Expected,
+            },
+        }
+    }
+
+    /// Create a standalone clear-channel-assessment request.
+    pub fn request_clear_channel_assessment(self) -> MacActive<MacNoDmaResources> {
+        MacActive {
+            ready: self,
+            resources: MacNoDmaResources { _private: () },
+            phase: MacActivePhase::ClearChannelAssessment,
+        }
+    }
+
+    /// Create a standalone energy-detection request.
+    pub fn request_energy_detection(
+        self,
+        duration: MacEnergyDetectionDuration,
+    ) -> MacActive<MacNoDmaResources> {
+        MacActive {
+            ready: self,
+            resources: MacNoDmaResources { _private: () },
+            phase: MacActivePhase::EnergyDetection { duration },
+        }
+    }
+}
+
+impl Default for MacReady {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Exactly one active logical operation plus its retained resources.
+///
+/// This type is neither `Clone` nor `Copy`. Processing consumes it, and a
+/// rejected batch returns the exact value unchanged.
+pub struct MacActive<R> {
+    ready: MacReady,
+    resources: R,
+    phase: MacActivePhase,
+}
+
+impl<R> MacActive<R> {
+    /// Return the current logical phase.
+    pub const fn phase(&self) -> MacActivePhase {
+        self.phase
+    }
+
+    /// Process one complete sampled batch transactionally.
+    ///
+    /// Impossible event/reason combinations return the exact active actor.
+    /// A terminal callback creates a deferred state only after the whole batch
+    /// has been validated, matching the reviewed ISR's single end-of-batch
+    /// `next_operation` decision.
+    pub fn process_batch(
+        self,
+        batch: MacEventBatch,
+    ) -> Result<MacBatchOutcome<R>, MacBatchRejected<R>> {
+        match evaluate_batch(self.phase, batch) {
+            Ok(Evaluation::Pending(next_phase)) => Ok(MacBatchOutcome::Pending(Self {
+                ready: self.ready,
+                resources: self.resources,
+                phase: next_phase,
+            })),
+            Ok(Evaluation::Terminal(completion)) => Ok(MacBatchOutcome::Deferred(MacDeferred {
+                ready: self.ready,
+                resources: self.resources,
+                completion,
+            })),
+            Err(reason) => Err(MacBatchRejected {
+                active: self,
+                batch,
+                reason,
+            }),
+        }
+    }
+
+    fn plan<'active>(
+        &self,
+        publication: MacDmaPublication<'active>,
+    ) -> Option<MacStartPlan<'active>> {
+        let (measurement_duration, command) = match self.phase {
+            MacActivePhase::Receive => (None, MacCommandIntent::Receive),
+            MacActivePhase::Transmit { access, .. } => match access {
+                MacTransmitAccess::Direct => (None, MacCommandIntent::Transmit),
+                MacTransmitAccess::ClearChannelAssessment => (
+                    Some(8),
+                    MacCommandIntent::TransmitWithClearChannelAssessment,
+                ),
+            },
+            MacActivePhase::AwaitingAcknowledgement { .. } => return None,
+            MacActivePhase::ClearChannelAssessment => {
+                (Some(8), MacCommandIntent::ClearChannelAssessment)
+            }
+            MacActivePhase::EnergyDetection { duration } => (
+                Some(duration.hardware_units()),
+                MacCommandIntent::EnergyDetection,
+            ),
+        };
+        Some(MacStartPlan {
+            publication,
+            measurement_duration,
+            command,
+        })
+    }
+}
+
+impl<'pool, const COUNT: usize> MacActive<RxArm<'pool, COUNT>> {
+    /// Borrow the receive start intent and its lifetime-bound address token.
+    pub fn start_plan(&self) -> Option<MacStartPlan<'_>> {
+        let address = match &self.resources {
+            RxArm::Buffer(armed) => armed.dma_address(),
+            RxArm::Stub(armed) => armed.dma_address(),
+        };
+        self.plan(MacDmaPublication::Receive(address))
+    }
+}
+
+impl MacActive<TxArmed<'_, TxAckNotRequested>> {
+    /// Borrow the transmit start intent and its lifetime-bound address token.
+    pub fn start_plan(&self) -> Option<MacStartPlan<'_>> {
+        self.plan(MacDmaPublication::Transmit(self.resources.dma_address()))
+    }
+}
+
+impl<'tx, 'rx, const COUNT: usize> MacActive<MacTxWithAckResources<'tx, 'rx, COUNT>> {
+    /// Borrow the TX-plus-ACK-RX intent and both lifetime-bound addresses.
+    pub fn start_plan(&self) -> Option<MacStartPlan<'_>> {
+        let acknowledgement_receive = match &self.resources.acknowledgement_receive {
+            RxArm::Buffer(armed) => armed.dma_address(),
+            RxArm::Stub(armed) => armed.dma_address(),
+        };
+        self.plan(MacDmaPublication::TransmitWithAcknowledgement {
+            transmit: self.resources.transmit.dma_address(),
+            acknowledgement_receive,
+        })
+    }
+}
+
+impl MacActive<MacNoDmaResources> {
+    /// Borrow the CCA or ED intent, which contains no DMA publication.
+    pub fn start_plan(&self) -> Option<MacStartPlan<'_>> {
+        self.plan(MacDmaPublication::None)
+    }
+}
+
+/// Successful completion of one supported logical request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacCompletion {
+    /// A receive DMA operation reached `RX_DONE`.
+    ReceiveFrame,
+    /// A receive DMA operation reached a supported terminal abort.
+    ReceiveAborted(Ieee802154RxAbortReason),
+    /// A no-ACK transmit reached `TX_DONE`.
+    TransmitComplete,
+    /// A transmit-with-ACK reached `ACK_RX_DONE`.
+    TransmitAcknowledged,
+    /// A transmit reached a supported terminal abort.
+    TransmitAborted(Ieee802154TxAbortReason),
+    /// ACK receive terminated through one public-LL ACK failure reason.
+    ///
+    /// The paired RX destination contains no frame for every reason in this
+    /// variant, including CRC/filter failures and the hardware ACK timeout.
+    AcknowledgementFailed(Ieee802154TxAbortReason),
+    /// ACK receive terminated through timer-zero overflow.
+    AcknowledgementTimedOutByTimer,
+    /// Standalone CCA reached `ED_DONE` with its sampled status.
+    ClearChannelAssessment(MacCcaSample),
+    /// Standalone CCA reached a supported ED-path abort.
+    ClearChannelAssessmentAborted(Ieee802154RxAbortReason),
+    /// Standalone ED reached `ED_DONE` with its uncalibrated sample.
+    EnergyDetection(MacEnergySample),
+    /// Standalone ED reached a supported ED-path abort.
+    EnergyDetectionAborted(Ieee802154RxAbortReason),
+}
+
+/// Result of one accepted non-empty batch.
+pub enum MacBatchOutcome<R> {
+    /// No terminal callback ran; the exact operation remains active.
+    Pending(MacActive<R>),
+    /// A terminal callback ran; one deferred-next decision is now required.
+    Deferred(MacDeferred<R>),
+}
+
+impl<R> fmt::Debug for MacBatchOutcome<R> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pending(active) => formatter
+                .debug_tuple("Pending")
+                .field(&active.phase)
+                .finish(),
+            Self::Deferred(deferred) => formatter
+                .debug_tuple("Deferred")
+                .field(&deferred.completion)
+                .finish(),
+        }
+    }
+}
+
+/// Why one internally consistent batch is impossible or unsupported in the
+/// current logical phase.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacBatchRejectReason {
+    /// An empty batch cannot advance an active operation.
+    Empty,
+    /// At least one reviewed event is not allowed in the current phase.
+    UnexpectedEvents(Ieee802154EventMask),
+    /// More than one mutually exclusive terminal edge was sampled.
+    ConflictingTerminalEvents(Ieee802154EventMask),
+    /// The receive-abort reason has no supported transition in this phase.
+    UnexpectedRxAbortReason(Ieee802154RxAbortReason),
+    /// The transmit-abort reason has no supported transition in this phase.
+    UnexpectedTxAbortReason(Ieee802154TxAbortReason),
+    /// `ED_DONE` carried the other operation's measurement kind.
+    UnexpectedMeasurement(MacMeasurementSample),
+}
+
+/// Transactional rejection retaining the exact active actor and input batch.
+pub struct MacBatchRejected<R> {
+    active: MacActive<R>,
+    batch: MacEventBatch,
+    reason: MacBatchRejectReason,
+}
+
+impl<R> fmt::Debug for MacBatchRejected<R> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MacBatchRejected")
+            .field("phase", &self.active.phase)
+            .field("batch", &self.batch)
+            .field("reason", &self.reason)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<R> MacBatchRejected<R> {
+    /// Return the deterministic rejection reason.
+    pub const fn reason(&self) -> MacBatchRejectReason {
+        self.reason
+    }
+
+    /// Return the rejected immutable batch.
+    pub const fn batch(&self) -> MacEventBatch {
+        self.batch
+    }
+
+    /// Recover the exact active actor for inspection or retry.
+    pub fn into_active(self) -> MacActive<R> {
+        self.active
+    }
+}
+
+/// The single next-operation choice made after an entire terminal batch.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacDeferredNext {
+    /// Yield to the runtime owner's idle/sleep policy.
+    IdlePolicy,
+    /// Request a new receive transaction after resources are reclaimed.
+    ReceiveWhenIdle,
+}
+
+/// Terminal actor that withholds the ready state until one deferred decision
+/// and a type-specific resource transition have both completed.
+///
+/// ```compile_fail
+/// use oer_esp32s31_ieee802154_irq::Ieee802154Event;
+/// use oer_esp32s31_ieee802154_mac::{MacBatchOutcome, MacEventBatch, MacReady};
+///
+/// let active = MacReady::new().request_clear_channel_assessment();
+/// let batch = MacEventBatch::new(
+///     Ieee802154Event::RxAbort.mask(),
+///     Some(oer_esp32s31_ieee802154_irq::Ieee802154RxAbortReason::EdAbort),
+///     None,
+///     None,
+/// ).unwrap();
+/// let MacBatchOutcome::Deferred(deferred) = active.process_batch(batch).unwrap() else {
+///     panic!();
+/// };
+/// let _second = deferred.request_clear_channel_assessment();
+/// ```
+///
+/// A generic identity-closure escape is deliberately absent:
+///
+/// ```compile_fail
+/// use oer_esp32s31_ieee802154_irq::Ieee802154Event;
+/// use oer_esp32s31_ieee802154_mac::{
+///     MacBatchOutcome, MacDeferredNext, MacEventBatch, MacReady,
+/// };
+///
+/// let active = MacReady::new().request_clear_channel_assessment();
+/// let batch = MacEventBatch::new(
+///     Ieee802154Event::RxAbort.mask(),
+///     Some(oer_esp32s31_ieee802154_irq::Ieee802154RxAbortReason::EdAbort),
+///     None,
+///     None,
+/// ).unwrap();
+/// let MacBatchOutcome::Deferred(deferred) = active.process_batch(batch).unwrap() else {
+///     panic!();
+/// };
+/// let _ = deferred.resolve_with(MacDeferredNext::IdlePolicy, |armed| armed);
+/// ```
+pub struct MacDeferred<R> {
+    ready: MacReady,
+    resources: R,
+    completion: MacCompletion,
+}
+
+impl<R> MacDeferred<R> {
+    /// Return the terminal logical completion without exposing resources.
+    pub const fn completion(&self) -> MacCompletion {
+        self.completion
+    }
+}
+
+impl MacDeferred<MacNoDmaResources> {
+    /// Resolve a terminal CCA/ED request, which has no DMA ownership to prove.
+    pub fn resolve(self, next: MacDeferredNext) -> MacResolved<MacNoDmaResources> {
+        MacResolved {
+            ready: self.ready,
+            reclaimed: self.resources,
+            completion: self.completion,
+            next,
+        }
+    }
+}
+
+/// Fail-closed RX reclaim after terminal evidence was consumed.
+///
+/// The logical ready state and exact failed DMA owner remain quarantined and
+/// cannot be extracted for retry.
+#[must_use = "a failed terminal RX transition quarantines the MAC and DMA owners"]
+pub struct MacRxResolutionFailure<'pool, const COUNT: usize> {
+    _ready: MacReady,
+    _failure: RxLifecycleFailure<RxArm<'pool, COUNT>>,
+    error: RxPoolError,
+    completion: MacCompletion,
+    next: MacDeferredNext,
+}
+
+impl<const COUNT: usize> MacRxResolutionFailure<'_, COUNT> {
+    /// Return the lifecycle failure without releasing either owner.
+    pub const fn error(&self) -> RxPoolError {
+        self.error
+    }
+
+    /// Return the accepted terminal MAC result.
+    pub const fn completion(&self) -> MacCompletion {
+        self.completion
+    }
+
+    /// Return the deferred choice retained by the quarantined owner.
+    pub const fn next(&self) -> MacDeferredNext {
+        self.next
+    }
+}
+
+impl<const COUNT: usize> fmt::Debug for MacRxResolutionFailure<'_, COUNT> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MacRxResolutionFailure")
+            .field("error", &self.error)
+            .field("completion", &self.completion)
+            .field("next", &self.next)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Fail-closed paired TX/ACK-RX reclaim after terminal evidence was consumed.
+///
+/// The still-affine TX image, logical ready state, and failed RX owner remain
+/// quarantined together.
+#[must_use = "a failed terminal ACK transition quarantines every paired owner"]
+pub struct MacTxWithAckResolutionFailure<'tx, 'rx, const COUNT: usize> {
+    _ready: MacReady,
+    _transmit: TxArmed<'tx, TxAckRequested>,
+    _failure: RxLifecycleFailure<RxArm<'rx, COUNT>>,
+    error: RxPoolError,
+    completion: MacCompletion,
+    next: MacDeferredNext,
+}
+
+impl<const COUNT: usize> MacTxWithAckResolutionFailure<'_, '_, COUNT> {
+    /// Return the lifecycle failure without releasing any retained owner.
+    pub const fn error(&self) -> RxPoolError {
+        self.error
+    }
+
+    /// Return the accepted terminal MAC result.
+    pub const fn completion(&self) -> MacCompletion {
+        self.completion
+    }
+
+    /// Return the deferred choice retained by the quarantined owner.
+    pub const fn next(&self) -> MacDeferredNext {
+        self.next
+    }
+}
+
+impl<const COUNT: usize> fmt::Debug for MacTxWithAckResolutionFailure<'_, '_, COUNT> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MacTxWithAckResolutionFailure")
+            .field("error", &self.error)
+            .field("completion", &self.completion)
+            .field("next", &self.next)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'pool, const COUNT: usize> MacDeferred<RxArm<'pool, COUNT>> {
+    /// Reclaim the exact RX resource retained by one accepted terminal batch.
+    ///
+    /// This hidden cross-crate method cannot be called by safe code without
+    /// affine terminal evidence minted by the sealed hardware runtime.
+    #[doc(hidden)]
+    pub fn resolve_with_terminal_evidence(
+        self,
+        next: MacDeferredNext,
+        terminal: &DmaTerminalEvidence,
+    ) -> Result<MacResolved<MacResolvedRx<'pool, COUNT>>, MacRxResolutionFailure<'pool, COUNT>>
+    {
+        let Self {
+            ready,
+            resources,
+            completion,
+        } = self;
+        let reclaimed = match resources.complete(terminal) {
+            Ok(completion) => completion,
+            Err(failure) => {
+                let error = failure.error();
+                return Err(MacRxResolutionFailure {
+                    _ready: ready,
+                    _failure: failure,
+                    error,
+                    completion,
+                    next,
+                });
+            }
+        };
+        let outcome = match completion {
+            MacCompletion::ReceiveFrame => MacResolvedRxOutcome::Received,
+            MacCompletion::ReceiveAborted(reason) => MacResolvedRxOutcome::Aborted(reason),
+            _ => unreachable!("an RX resource is retained only by the receive actor phase"),
+        };
+        Ok(MacResolved {
+            ready,
+            reclaimed: MacResolvedRx {
+                completion: reclaimed,
+                outcome,
+            },
+            completion,
+            next,
+        })
+    }
+}
+
+impl<'owner> MacDeferred<TxArmed<'owner, TxAckNotRequested>> {
+    /// Reclaim the exact TX resource retained by one accepted terminal batch.
+    #[doc(hidden)]
+    pub fn resolve_with_terminal_evidence(
+        self,
+        next: MacDeferredNext,
+        terminal: &DmaTerminalEvidence,
+    ) -> MacResolved<TxCompleted<'owner>> {
+        MacResolved {
+            ready: self.ready,
+            reclaimed: self.resources.complete(terminal),
+            completion: self.completion,
+            next,
+        }
+    }
+}
+
+impl<'tx, 'rx, const COUNT: usize> MacDeferred<MacTxWithAckResources<'tx, 'rx, COUNT>> {
+    /// Reclaim the paired TX and ACK-RX resources retained by one accepted
+    /// terminal batch.
+    ///
+    /// An RX state mismatch quarantines the complete actor chain: no ready
+    /// state or still-armed token is returned from the error path.
+    #[doc(hidden)]
+    pub fn resolve_with_terminal_evidence(
+        self,
+        next: MacDeferredNext,
+        terminal: &DmaTerminalEvidence,
+    ) -> Result<
+        MacResolved<MacResolvedTxWithAck<'tx, 'rx, COUNT>>,
+        MacTxWithAckResolutionFailure<'tx, 'rx, COUNT>,
+    > {
+        let Self {
+            ready,
+            resources:
+                MacTxWithAckResources {
+                    transmit,
+                    acknowledgement_receive,
+                },
+            completion,
+        } = self;
+        let acknowledgement_receive = match acknowledgement_receive.complete(terminal) {
+            Ok(completion) => completion,
+            Err(failure) => {
+                let error = failure.error();
+                return Err(MacTxWithAckResolutionFailure {
+                    _ready: ready,
+                    _transmit: transmit,
+                    _failure: failure,
+                    error,
+                    completion,
+                    next,
+                });
+            }
+        };
+        let acknowledgement_outcome = match completion {
+            MacCompletion::TransmitAcknowledged => MacResolvedAcknowledgementOutcome::Received,
+            MacCompletion::AcknowledgementFailed(_)
+            | MacCompletion::AcknowledgementTimedOutByTimer
+            | MacCompletion::TransmitAborted(_) => MacResolvedAcknowledgementOutcome::NotReceived,
+            _ => unreachable!("paired DMA resources are retained only by transmit-with-ACK"),
+        };
+        let reclaimed = MacResolvedTxWithAck {
+            transmit: transmit.complete(terminal),
+            acknowledgement: MacResolvedAcknowledgement {
+                completion: acknowledgement_receive,
+                outcome: acknowledgement_outcome,
+            },
+        };
+        Ok(MacResolved {
+            ready,
+            reclaimed,
+            completion,
+            next,
+        })
+    }
+}
+
+/// Resolved terminal batch with the unique ready state and reclaimed value.
+pub struct MacResolved<C> {
+    ready: MacReady,
+    reclaimed: C,
+    completion: MacCompletion,
+    next: MacDeferredNext,
+}
+
+impl<C> MacResolved<C> {
+    /// Split the resolved transaction into its unique ready state, reclaimed
+    /// value, completion, and deferred-next choice.
+    pub fn into_parts(self) -> (MacReady, C, MacCompletion, MacDeferredNext) {
+        (self.ready, self.reclaimed, self.completion, self.next)
+    }
+}
+
+enum Evaluation {
+    Pending(MacActivePhase),
+    Terminal(MacCompletion),
+}
+
+fn evaluate_batch(
+    phase: MacActivePhase,
+    batch: MacEventBatch,
+) -> Result<Evaluation, MacBatchRejectReason> {
+    if batch.events().is_empty() {
+        return Err(MacBatchRejectReason::Empty);
+    }
+    match phase {
+        MacActivePhase::Receive => evaluate_receive(batch),
+        MacActivePhase::Transmit {
+            access,
+            acknowledgement,
+        } => evaluate_transmit(batch, access, acknowledgement),
+        MacActivePhase::AwaitingAcknowledgement { access } => {
+            evaluate_acknowledgement(batch, access)
+        }
+        MacActivePhase::ClearChannelAssessment => evaluate_cca(batch),
+        MacActivePhase::EnergyDetection { .. } => evaluate_energy_detection(batch),
+    }
+}
+
+fn evaluate_receive(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::RxDone.mask())
+        .union(Ieee802154Event::RxAbort.mask());
+    reject_unexpected_events(batch, ALLOWED)?;
+    reject_conflicting(
+        batch,
+        Ieee802154Event::RxDone
+            .mask()
+            .union(Ieee802154Event::RxAbort.mask()),
+    )?;
+
+    if let Some(reason) = batch.rx_abort_reason() {
+        if !is_terminal_receive_abort(reason) {
+            return Err(MacBatchRejectReason::UnexpectedRxAbortReason(reason));
+        }
+        return Ok(Evaluation::Terminal(MacCompletion::ReceiveAborted(reason)));
+    }
+    if batch.events().contains(Ieee802154Event::RxDone) {
+        return Ok(Evaluation::Terminal(MacCompletion::ReceiveFrame));
+    }
+    Ok(Evaluation::Pending(MacActivePhase::Receive))
+}
+
+fn evaluate_transmit(
+    batch: MacEventBatch,
+    access: MacTransmitAccess,
+    acknowledgement: MacTransmitAcknowledgement,
+) -> Result<Evaluation, MacBatchRejectReason> {
+    let mut allowed = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::TxSfdDone.mask())
+        .union(Ieee802154Event::TxDone.mask())
+        .union(Ieee802154Event::TxAbort.mask());
+    if acknowledgement == MacTransmitAcknowledgement::Expected {
+        allowed = allowed
+            .union(Ieee802154Event::AckRxDone.mask())
+            .union(Ieee802154Event::Timer0Overflow.mask());
+    }
+    reject_unexpected_events(batch, allowed)?;
+
+    let tx_done = batch.events().contains(Ieee802154Event::TxDone);
+    let ack_done = batch.events().contains(Ieee802154Event::AckRxDone);
+    let timer_done = batch.events().contains(Ieee802154Event::Timer0Overflow);
+    let mut completion = None;
+    let mut phase = MacActivePhase::Transmit {
+        access,
+        acknowledgement,
+    };
+
+    // Reviewed order is TX_DONE, ACK_RX_DONE, TX_ABORT, TIMER0. The vendor
+    // deferred flag uses assignment rather than OR.
+    if tx_done {
+        match acknowledgement {
+            MacTransmitAcknowledgement::None => {
+                completion = Some(MacCompletion::TransmitComplete);
+            }
+            MacTransmitAcknowledgement::Expected => {
+                phase = MacActivePhase::AwaitingAcknowledgement { access };
+            }
+        }
+    }
+
+    if ack_done {
+        if completion.is_some() {
+            return Err(conflicting_terminal_batch(batch));
+        }
+        completion = Some(MacCompletion::TransmitAcknowledged);
+    }
+
+    if let Some(reason) = batch.tx_abort_reason() {
+        match phase {
+            MacActivePhase::Transmit { .. } => {
+                if !is_terminal_transmit_abort(reason, access) {
+                    return Err(MacBatchRejectReason::UnexpectedTxAbortReason(reason));
+                }
+                if completion.is_some() {
+                    return Err(conflicting_terminal_batch(batch));
+                }
+                completion = Some(MacCompletion::TransmitAborted(reason));
+            }
+            MacActivePhase::AwaitingAcknowledgement { .. } => {
+                if is_terminal_acknowledgement_abort(reason) {
+                    if completion.is_some() {
+                        return Err(conflicting_terminal_batch(batch));
+                    }
+                    completion = Some(MacCompletion::AcknowledgementFailed(reason));
+                } else {
+                    return Err(MacBatchRejectReason::UnexpectedTxAbortReason(reason));
+                }
+            }
+            _ => unreachable!("transmit evaluation has only TX and RX_ACK phases"),
+        }
+    }
+
+    if timer_done {
+        if !matches!(phase, MacActivePhase::AwaitingAcknowledgement { .. }) {
+            return Err(MacBatchRejectReason::UnexpectedEvents(
+                Ieee802154Event::Timer0Overflow.mask(),
+            ));
+        }
+        if completion.is_some() {
+            return Err(conflicting_terminal_batch(batch));
+        }
+        completion = Some(MacCompletion::AcknowledgementTimedOutByTimer);
+    }
+
+    match completion {
+        Some(completion) => Ok(Evaluation::Terminal(completion)),
+        None => Ok(Evaluation::Pending(phase)),
+    }
+}
+
+fn evaluate_acknowledgement(
+    batch: MacEventBatch,
+    access: MacTransmitAccess,
+) -> Result<Evaluation, MacBatchRejectReason> {
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::AckRxDone.mask())
+        .union(Ieee802154Event::TxAbort.mask())
+        .union(Ieee802154Event::Timer0Overflow.mask());
+    reject_unexpected_events(batch, ALLOWED)?;
+    reject_conflicting(
+        batch,
+        Ieee802154Event::AckRxDone
+            .mask()
+            .union(Ieee802154Event::TxAbort.mask())
+            .union(Ieee802154Event::Timer0Overflow.mask()),
+    )?;
+
+    if let Some(reason) = batch.tx_abort_reason() {
+        if is_terminal_acknowledgement_abort(reason) {
+            return Ok(Evaluation::Terminal(MacCompletion::AcknowledgementFailed(
+                reason,
+            )));
+        }
+        return Err(MacBatchRejectReason::UnexpectedTxAbortReason(reason));
+    }
+    if batch.events().contains(Ieee802154Event::AckRxDone) {
+        return Ok(Evaluation::Terminal(MacCompletion::TransmitAcknowledged));
+    }
+    if batch.events().contains(Ieee802154Event::Timer0Overflow) {
+        return Ok(Evaluation::Terminal(
+            MacCompletion::AcknowledgementTimedOutByTimer,
+        ));
+    }
+    Ok(Evaluation::Pending(
+        MacActivePhase::AwaitingAcknowledgement { access },
+    ))
+}
+
+fn evaluate_cca(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::EdDone
+        .mask()
+        .union(Ieee802154Event::RxAbort.mask());
+    reject_unexpected_events(batch, ALLOWED)?;
+    reject_conflicting(batch, ALLOWED)?;
+
+    if let Some(reason) = batch.rx_abort_reason() {
+        if !is_terminal_measurement_abort(reason) {
+            return Err(MacBatchRejectReason::UnexpectedRxAbortReason(reason));
+        }
+        return Ok(Evaluation::Terminal(
+            MacCompletion::ClearChannelAssessmentAborted(reason),
+        ));
+    }
+    match batch.measurement() {
+        Some(MacMeasurementSample::ClearChannel(sample)) => Ok(Evaluation::Terminal(
+            MacCompletion::ClearChannelAssessment(sample),
+        )),
+        Some(measurement) => Err(MacBatchRejectReason::UnexpectedMeasurement(measurement)),
+        None => unreachable!("a validated ED_DONE batch always contains a measurement"),
+    }
+}
+
+fn evaluate_energy_detection(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::EdDone
+        .mask()
+        .union(Ieee802154Event::RxAbort.mask());
+    reject_unexpected_events(batch, ALLOWED)?;
+    reject_conflicting(batch, ALLOWED)?;
+
+    if let Some(reason) = batch.rx_abort_reason() {
+        if !is_terminal_measurement_abort(reason) {
+            return Err(MacBatchRejectReason::UnexpectedRxAbortReason(reason));
+        }
+        return Ok(Evaluation::Terminal(MacCompletion::EnergyDetectionAborted(
+            reason,
+        )));
+    }
+    match batch.measurement() {
+        Some(MacMeasurementSample::Energy(sample)) => {
+            Ok(Evaluation::Terminal(MacCompletion::EnergyDetection(sample)))
+        }
+        Some(measurement) => Err(MacBatchRejectReason::UnexpectedMeasurement(measurement)),
+        None => unreachable!("a validated ED_DONE batch always contains a measurement"),
+    }
+}
+
+fn reject_unexpected_events(
+    batch: MacEventBatch,
+    allowed: Ieee802154EventMask,
+) -> Result<(), MacBatchRejectReason> {
+    let unexpected = batch.events().difference(allowed);
+    if unexpected.is_empty() {
+        Ok(())
+    } else {
+        Err(MacBatchRejectReason::UnexpectedEvents(unexpected))
+    }
+}
+
+fn reject_conflicting(
+    batch: MacEventBatch,
+    terminal: Ieee802154EventMask,
+) -> Result<(), MacBatchRejectReason> {
+    let conflicting = batch.events().intersection(terminal);
+    if !conflicting.has_multiple() {
+        Ok(())
+    } else {
+        Err(MacBatchRejectReason::ConflictingTerminalEvents(conflicting))
+    }
+}
+
+fn conflicting_terminal_batch(batch: MacEventBatch) -> MacBatchRejectReason {
+    MacBatchRejectReason::ConflictingTerminalEvents(
+        batch.events().intersection(
+            Ieee802154Event::TxDone
+                .mask()
+                .union(Ieee802154Event::AckRxDone.mask())
+                .union(Ieee802154Event::TxAbort.mask())
+                .union(Ieee802154Event::Timer0Overflow.mask()),
+        ),
+    )
+}
+
+const fn is_terminal_receive_abort(reason: Ieee802154RxAbortReason) -> bool {
+    matches!(
+        reason,
+        Ieee802154RxAbortReason::SfdTimeout
+            | Ieee802154RxAbortReason::CrcError
+            | Ieee802154RxAbortReason::InvalidLength
+            | Ieee802154RxAbortReason::FilterFail
+            | Ieee802154RxAbortReason::NoRss
+            | Ieee802154RxAbortReason::CoexistenceBreak
+            | Ieee802154RxAbortReason::UnexpectedAck
+            | Ieee802154RxAbortReason::RxRestart
+    )
+}
+
+const fn is_terminal_transmit_abort(
+    reason: Ieee802154TxAbortReason,
+    access: MacTransmitAccess,
+) -> bool {
+    match reason {
+        Ieee802154TxAbortReason::TxCoexistenceBreak | Ieee802154TxAbortReason::TxSecurityError => {
+            true
+        }
+        Ieee802154TxAbortReason::CcaFailed | Ieee802154TxAbortReason::CcaBusy => {
+            matches!(access, MacTransmitAccess::ClearChannelAssessment)
+        }
+        _ => false,
+    }
+}
+
+const fn is_terminal_acknowledgement_abort(reason: Ieee802154TxAbortReason) -> bool {
+    matches!(
+        reason,
+        Ieee802154TxAbortReason::RxAckSfdTimeout
+            | Ieee802154TxAbortReason::RxAckCrcError
+            | Ieee802154TxAbortReason::RxAckInvalidLength
+            | Ieee802154TxAbortReason::RxAckFilterFail
+            | Ieee802154TxAbortReason::RxAckNoRss
+            | Ieee802154TxAbortReason::RxAckCoexistenceBreak
+            | Ieee802154TxAbortReason::RxAckTypeNotAck
+            | Ieee802154TxAbortReason::RxAckRestart
+            | Ieee802154TxAbortReason::RxAckTimeout
+    )
+}
+
+const fn is_terminal_measurement_abort(reason: Ieee802154RxAbortReason) -> bool {
+    matches!(
+        reason,
+        Ieee802154RxAbortReason::EdAbort | Ieee802154RxAbortReason::EdCoexistenceReject
+    )
+}
+
+#[cfg(test)]
+mod tests;

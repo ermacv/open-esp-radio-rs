@@ -65,7 +65,7 @@ until a reviewed architectural FP environment and exception model exist.
 Unsupported FP operations remain ordinary decode blockers.
 
 The Blobray no longer generates a production-driver candidate. Driver code
-is written and reviewed in `driver/`.
+is written and reviewed in `crates/`.
 
 ## Executable reference from the same IR
 

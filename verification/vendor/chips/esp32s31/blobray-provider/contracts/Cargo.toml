@@ -13,3 +13,8 @@ open-radio-vendor-contracts = { path = "../../../../../../tools/blobray/crates/c
 
 [lints]
 workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "esp32s31"

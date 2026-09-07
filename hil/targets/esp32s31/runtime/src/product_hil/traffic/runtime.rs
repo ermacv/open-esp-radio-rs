@@ -4,7 +4,7 @@ use crate::product_hil::network::sockets::{Stack, UDP_RX_QUEUE_DEPTH, UdpRxStora
 use embassy_executor::Spawner;
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
-use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
+use oer_esp32s31_soc::L1CachePerformanceCounters;
 use static_cell::ConstStaticCell;
 
 use super::{

@@ -1165,6 +1165,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-embassy-net"
+version = "0.1.0"
+dependencies = [
+ "embassy-net-driver",
+ "embassy-sync 0.8.0",
+ "oer-network",
+ "oer-wifi-datapath",
+ "xarxa-driver",
+]
+
+[[package]]
 name = "oer-esp32s31-board"
 version = "0.1.0"
 dependencies = [
@@ -1172,58 +1183,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-runtime"
-version = "0.1.0"
-dependencies = [
- "esp-hal",
- "oer-esp32s31-board",
-]
-
-[[package]]
-name = "oer-firmware"
+name = "oer-esp32s31-coex"
 version = "0.1.0"
 
 [[package]]
-name = "once_cell"
-version = "1.21.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "open-esp-radio"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-dma"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-embassy-net"
-version = "0.1.0"
-dependencies = [
- "embassy-net-driver",
- "embassy-sync 0.8.0",
- "open-esp-radio-network",
- "open-esp-radio-wifi-datapath",
- "xarxa-driver",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-coex"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-esp32s31-embassy-runtime"
+name = "oer-esp32s31-embassy-runtime"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
@@ -1236,7 +1200,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-embassy-wifi"
+name = "oer-esp32s31-embassy-wifi"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
@@ -1245,42 +1209,283 @@ dependencies = [
  "embassy-sync 0.8.0",
  "embassy-time",
  "esp-hal",
- "open-esp-radio",
- "open-esp-radio-embassy-net",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-ap",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-esp32s31-wifi-esp-hal",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
- "open-esp-radio-ieee80211",
- "open-esp-radio-network",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
+ "oer-embassy-net",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-esp-hal",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-network",
+ "oer-radio",
+ "oer-wifi-ap",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
  "static_cell",
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-hal"
+name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-coex",
- "open-esp-radio-esp32s31-ieee802154-irq",
- "open-esp-radio-esp32s31-pac",
+ "oer-esp32s31-coex",
+ "oer-esp32s31-ieee802154-irq",
+ "oer-esp32s31-pac",
+ "oer-memory",
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-ieee802154-irq"
+name = "oer-esp32s31-ieee802154-irq"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-pac",
+ "oer-esp32s31-pac",
+]
+
+[[package]]
+name = "oer-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-pac-raw",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-phy"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-runtime"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+ "oer-esp32s31-board",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-wifi-softmac",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-wifi-ap",
+ "oer-wifi-softmac",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-dma"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-memory",
+ "pin-project",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-embassy-net",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-network",
+ "oer-wifi-datapath",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-esp32s31-coex",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-mac",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-mac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-wifi-dma",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-wifi-softmac",
+ "pin-project",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-esp32s31-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-ieee80211",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-firmware"
+version = "0.1.0"
+
+[[package]]
+name = "oer-ieee80211"
+version = "0.1.0"
+
+[[package]]
+name = "oer-memory"
+version = "0.1.0"
+
+[[package]]
+name = "oer-network"
+version = "0.1.0"
+
+[[package]]
+name = "oer-radio"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "oer-ieee80211",
+ "oer-wifi-ap",
+ "oer-wifi-embassy",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-wifi-datapath"
+version = "0.1.0"
+dependencies = [
+ "oer-memory",
+ "oer-network",
+]
+
+[[package]]
+name = "oer-wifi-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-memory",
+ "oer-wifi-softmac",
+]
+
+[[package]]
+name = "oer-wifi-softmac"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+]
+
+[[package]]
+name = "oer-wpa2"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "hmac",
+ "pbkdf2",
+ "sha1",
+ "zeroize",
+]
+
+[[package]]
+name = "once_cell"
+version = "1.21.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "open-esp-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-network",
+ "oer-radio",
+ "oer-wifi-ap",
+ "oer-wifi-datapath",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
 ]
 
 [[package]]
@@ -1292,205 +1497,15 @@ dependencies = [
  "esp-backtrace",
  "esp-hal",
  "esp-println",
+ "oer-esp32s31-embassy-runtime",
+ "oer-esp32s31-embassy-wifi",
+ "oer-esp32s31-phy",
  "oer-esp32s31-runtime",
+ "oer-esp32s31-wifi-esp-hal",
  "oer-firmware",
+ "oer-wifi-embassy",
  "open-esp-radio",
- "open-esp-radio-esp32s31-embassy-runtime",
- "open-esp-radio-esp32s31-embassy-wifi",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-esp-hal",
- "open-esp-radio-wifi-embassy",
  "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac-raw",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-pac-raw"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-phy"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-dma"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "open-esp-radio-dma",
- "open-esp-radio-embassy-net",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-ap",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
- "open-esp-radio-ieee80211",
- "open-esp-radio-network",
- "open-esp-radio-wifi-datapath",
- "open-esp-radio-wifi-embassy",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "open-esp-radio-esp32s31-coex",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-mac",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-mac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "pin-project",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-ieee80211"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-network"
-version = "0.1.0"
-
-[[package]]
-name = "open-esp-radio-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-datapath"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-network",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "embassy-time",
- "open-esp-radio-dma",
- "open-esp-radio-wifi-softmac",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-softmac"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
- "zeroize",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
-]
-
-[[package]]
-name = "open-esp-radio-wpa2"
-version = "0.1.0"
-dependencies = [
- "aes",
- "hmac",
- "pbkdf2",
- "sha1",
- "zeroize",
 ]
 
 [[package]]

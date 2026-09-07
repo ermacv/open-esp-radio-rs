@@ -5,7 +5,7 @@ use core::future::Future;
 use embassy_futures::yield_now;
 use embassy_time::Instant;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
+use oer_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
     Core0ApRxCycleSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
     Core0RxServiceHistogramSnapshot,
@@ -14,11 +14,11 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use open_esp_radio_esp32s31_embassy_wifi::{
+use oer_esp32s31_embassy_wifi::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
+use oer_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
     mac_irq::MacIrqClassificationSnapshot,

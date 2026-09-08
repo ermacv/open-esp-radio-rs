@@ -182,10 +182,11 @@ plan applies this cross-object transform to the same bound CPU-owned graph.
 The timebase model retains both exact wrapping conversion directions; the
 inverse truncates discarded scheduler bits toward its anchor, as the complete
 helper does. Every completed later scheduler-current observation preserves its
-forward scheduler image while moving the raw anchor to that exact sample. This
-reanchor is necessary because positive shifting scales have wrapping aliases:
-the first and latest epochs can agree in scheduler space while only the latest
-raw anchor maps a later scheduler deadline back to the correct raw wrap.
+forward scheduler image while moving the raw anchor to the sample minus its
+unconsumed raw-tick remainder. With two standalone ticks per microsecond this
+retains an odd half-microsecond across updates instead of accumulating drift.
+Earlier fractional samples round down; the inverse continues to map whole
+microseconds through the same aligned raw anchor.
 
 The event's channel and PHY inputs are typed semantic values. The
 current `r_sym_ble_fQsMV3sWyYa3SB0n61bb` and initial
@@ -393,8 +394,16 @@ The initial TX window and both RX phases compose directly into the reviewed
 DTM scheduler-item transform. Initial RX shares the `440 + 500 + margin`
 anchor lead and uses the body's literal 1000-tick end. In the receiver branch
 of complete recurring helper `r_sym_ble_huwoa5WRTRrAierQfN3B.part.1`, a fresh
-current sample, the scheduler configuration's `+0x2a` guard value, the retained
-margin and literal 15 form the nominal anchor; fresh RF-ready wins under the
+current sample, the private configuration's `+0x2a` DTM setup lead, the retained
+margin and literal 15 form the nominal anchor. Complete current archive
+`55.o:r_sym_ble_7F349oHpjOqsP8rHzlIj` writes halfword 85 to that private
+configuration at `+0x2a` on its successful allocation path (`+0x1b6/+0x1ba`).
+The same-chip named `r_ble_lll_dtm_alloc_memory` corroborates that writer.
+Current recurring RX reads this same halfword at `+0x10a` before adding the
+margin and 15. This role-specific 85-microsecond setup lead is separate from
+the common scheduler's 40-microsecond admission guard: recurring RX starts
+100 microseconds after the current sample, leaving 60 microseconds before
+that guard expires. Fresh RF-ready wins under the
 same signed wrapping comparison, and the end again adds literal 1000. The
 window privately retains `Initial` or `Recurring`, and the
 memory codec selects the corresponding full-initial or reuse configuration.
@@ -405,6 +414,16 @@ initial current then post-enable timing, recurring RX post-enable timing then
 current and recurring TX current only before the matching reservation/sequence
 edge. The recurrence core consumes the opaque result and cannot accept a
 detached caller instant.
+
+The production Rust receiver adds an explicit 500-microsecond preparation
+reserve to the nominal recurring anchor before comparing it with RF-ready.
+This is an open runtime policy for preparation/publication with PSRAM code
+and data, not vendor-equivalent timing or a recovered private option. The
+receive window remains 1000 microseconds. Completed time phases return a
+`Continue` transition for one immediate observation of the next request;
+only an observed busy request needs a timer recheck. A cooperative yield
+occurs between events before acquiring new timing, allowing HCI and the
+executor to progress without consuming the next event's deadline budget.
 
 The RX callback signature and result projection are also narrower than the
 vendor memory manager. Complete S31 allocation and RX bodies, plus the named
@@ -769,14 +788,29 @@ shutdown and waits for `SCHEDULER_STATE.BUSY` to clear, but that predicate alone
 does not prove an empty software completed queue, absence of an already-entered
 callback or return of the sole item token.
 
-The open async design deliberately does not reproduce that global scheduler
-teardown. Its stopping runner first closes recurrence. A pre-HEAD event is
-cancelled and recycled; a post-HEAD event is driven through RUN, finished-list
-capture, empty-head retirement, unlink and recycle exactly once. Only the
-returned affine graph may enter `TestEnded`, and response publication retains
-that graph across HCI backpressure before restoring `Idle`. This is a stronger
-local ownership join than vendor `BUSY=0`, while unrelated-list dispatch and a
-powered all-role shutdown remain separate outer-runtime contracts.
+The open stopping runner first closes recurrence. A pre-HEAD event is
+cancelled; a post-HEAD event reaches RUN before cancellation. A parked running
+item enters the common scheduler lifecycle sequence from current member 19.o:
+initial BUSY gate, dynamic IRQ masking, synchronous run-source disable,
+B8f command preamble, lifecycle request, and final BUSY-clear observation.
+Finite timed rechecks replace the vendor polling loops; cancellation, stop,
+head retirement and unlink retain one absolute 100-ms platform deadline.
+Expiry quarantines every retained owner.
+
+The source scheduler checks exclusive list-zero ownership and an empty retained
+finished-list drain before stopping. After stop, one fenced transfer consumes
+its own finished-list report; a foreign list is retained as an invariant fault.
+Only the exact stopped RUN head may be cleared. A fresh empty-head observation
+binds an affine stopped-item token to the graph. The memory owner then samples
+status: a retained sentinel becomes the software-only `Aborted` outcome, while
+a real completion racing stop retains its status and role-specific accounting.
+No aborted status is written to hardware. Software unlink, the post-unlink
+command predicate and memory/timeline release remain mandatory before returning
+the graph or publishing HCI completion. The production ISR publishes typed
+observations, not graph callbacks; serialization excludes an entered ISR from
+the stop/capture/head-retirement transaction. This implements the reviewed stop
+ordering with source-owned containers; it is not a whole-function vendor MATCH
+or hardware qualification.
 
 There is one intentional HCI difference. The current vendor callback increments
 its shared count for a successful TX event and Test End serializes that value.
@@ -883,14 +917,17 @@ ABI claim. Complete
 `r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-tick
 anchor into the BLE scheduler's microsecond epoch, handling either side of the
 anchor and rounding the negative side by one when a discarded remainder is
-nonzero. For the reviewed standalone HAL profile, the signed scale image is
-three: the complete `r_btdm_hal_util_ticks_to_us` body shifts a positive raw
-tick delta left by two and the inverse helper shifts a microsecond delta right
-by two. The unit is closed by the direct DTM composition: the converted value
-is combined with independently established 500/1000-microsecond literals,
-preparation time and packet airtime, then both descriptor boundaries pass
-through named `r_sched_timer_convertTimeToTicks`. One standalone raw tick is
-therefore four microseconds. Effective counter width remains unproven. The
+nonzero. The complete config setter
+`r_sym_bt_BOhffsuJp3HZRA44ZYRn` maps period images `500/1000/2000` to software
+selectors `2/1/0`. This selector is the byte read by
+`r_btdm_hal_util_ticks_to_us`; it is distinct from the hardware sleep-timer
+divider image `3`. Standalone period `2000` therefore takes the helper's
+right-shift-by-one branch and retains the low raw tick as remainder. Its
+inverse doubles microseconds. The unit is closed by the direct DTM
+composition: the converted value is combined with the established
+500/1000-microsecond literals, preparation time and packet airtime, then both
+descriptor boundaries pass through `r_sched_timer_convertTimeToTicks`.
+One standalone raw tick is half a microsecond. Effective counter width remains unproven. The
 restricted PAC exposes only fresh-read OR publication,
 pending-bit observation and the complete latched word. The Bluetooth layer
 owns affine `publication -> in flight -> read ready -> sample` phases and a
@@ -906,15 +943,14 @@ zeroes both raw and scheduler reference images, and its task-enable leaf is a
 no-op. The first task-run tail-calls the reference update, which samples raw
 time, converts the wrapping delta from the prior raw reference, stores sampled
 raw time minus the conversion remainder and advances the scheduler reference
-by the converted quotient. Every accepted ESP32-S31 scale image is positive,
-so this first update has zero remainder. It therefore establishes a raw-tick
-anchor equal to the sample and a microsecond anchor equal to
-`sample << (shift_image - 1)` with 32-bit wrapping; the standalone shift image
-three produces `micros_anchor = sample << 2`.
+by the converted quotient. For standalone selector zero, the first update establishes
+`raw_anchor = sample - (sample % 2)` and `micros_anchor = sample / 2`. The two
+anchors denote the same whole microsecond; an odd sample retains one raw tick
+for the next update.
 Every later completed Rust scheduler-current observation applies the same
 reference-update geometry to the retained epoch: it projects the fresh raw
 sample through the prior epoch, stores that projected scheduler image beside
-the fresh raw anchor and binds the same non-copyable sample to one DTM
+the remainder-aligned raw anchor and binds the same non-copyable sample to one DTM
 preparation. Cancellation, Drop and orphan drain do not update the epoch. This
 models the arithmetic of the vendor task-run reference update; without a live
 vendor task callback it does not claim that the observation occurred at an

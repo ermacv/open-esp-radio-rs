@@ -31,3 +31,26 @@ pub(crate) const fn bluetooth_dtm_quiescence_retry_action(
 
 #[cfg(test)]
 mod tests;
+
+/// One absolute budget shared by cancellation, stop, head retirement and unlink.
+/// Copying the value preserves the original deadline across owned transitions.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DtmQuiescenceDeadline {
+    started: u64,
+    expires: Option<u64>,
+}
+
+impl DtmQuiescenceDeadline {
+    pub(crate) const fn new(now_micros: u64) -> Self {
+        Self {
+            started: now_micros,
+            expires: now_micros.checked_add(100_000),
+        }
+    }
+    pub(crate) const fn expired(self, now_micros: u64) -> bool {
+        match self.expires {
+            Some(deadline) => now_micros < self.started || now_micros >= deadline,
+            None => true,
+        }
+    }
+}

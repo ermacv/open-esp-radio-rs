@@ -914,3 +914,25 @@ fn host_offer_gate_requires_a_measured_ap_rx_source_and_valid_percentage() {
         }
     }
 }
+
+#[test]
+fn bluetooth_dtm_is_bounded_and_requires_its_own_image() {
+    let mut scenario: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-dtm-bidirectional.toml"
+    ))
+    .unwrap();
+    scenario.validate().unwrap();
+    scenario.image = ImageClass::Performance;
+    assert!(scenario.validate().is_err());
+    scenario.image = ImageClass::BluetoothDtm;
+    scenario.workload = Workload::BluetoothDtm {
+        boots: 0,
+        minimum_packets: 10,
+    };
+    assert!(scenario.validate().is_err());
+    scenario.workload = Workload::BluetoothDtm {
+        boots: 1,
+        minimum_packets: 0,
+    };
+    assert!(scenario.validate().is_err());
+}

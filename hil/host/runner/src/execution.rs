@@ -65,6 +65,10 @@ fn execute_workload_inner(
     use std::time::Duration;
 
     match &selected.workload {
+        Workload::BluetoothDtm {
+            boots,
+            minimum_packets,
+        } => crate::workload::bluetooth::run(*boots, *minimum_packets, output, context),
         Workload::BootSmoke => boot_smoke(output, context),
         Workload::MemoryBenchmark {
             boots,

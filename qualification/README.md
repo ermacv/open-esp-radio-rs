@@ -6,7 +6,18 @@ evidence and known blockers. The evaluator lives in `evaluator/`. Programs
 explicitly declare implementation, host and async states; vendor and HIL
 states are derived from independent evidence.
 
-The ESP32-S31 Wi-Fi, Bluetooth LE and IEEE 802.15.4 programs are independent:
+The ESP32-S31 Wi-Fi, Bluetooth LE and IEEE 802.15.4 programs are independent.
+
+The Bluetooth LE program includes legacy and extended roles, connected PHY and
+control procedures, security/privacy, periodic advertising and PAwR, Direction
+Finding, ISO in both connected and broadcast roles, LE Audio and the named LE
+Host integrations. It also requires capacity admission, power lifecycle and
+coexistence. Each new scope retains explicit incomplete axes until its own
+production composition and evidence exist. The chip's
+[feature inventory](../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#qualification-scope-mapping)
+maps these requirements to current source boundaries.
+
+Validate each program from the repository root:
 
 ```console
 cargo qualification validate \

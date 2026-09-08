@@ -3,10 +3,9 @@
 //! Test End is latched only after the start response entered HCI. Before a
 //! scheduler head is visible, the runner cancels recurrence and drains any
 //! abandoned Controller-time request. Once a head is visible, rollback is no
-//! longer claimed: exactly that event reaches `RUN`, completes the ordinary
-//! head-retirement/unlink/recycle chain and then returns the graph to a
-//! response-retained stopping owner. No transition stops the common scheduler
-//! or copies vendor queue teardown.
+//! longer claimed: exactly that event reaches `RUN`, enters common scheduler
+//! stop if still running, and completes exact head retirement/unlink/recycle.
+//! The returned graph remains owned across HCI response backpressure.
 
 #![forbid(unsafe_code)]
 
@@ -339,6 +338,8 @@ where
 /// Read-only fail-stop classification for Test End quiescence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DtmStoppingFaultCause {
+    /// The retained common quiescence budget elapsed; no owner was released.
+    DeadlineExpired,
     /// The ordinary active-event completion chain failed closed.
     Completion(DtmActiveCompletionFaultCause),
     /// Recurring cancellation, preparation or start failed closed.
@@ -385,9 +386,6 @@ where
     /// Borrow the exact current wait source without moving the affine runner.
     pub fn wait(&self) -> Option<BluetoothDtmStoppingWait<'_>> {
         match self.quiescence.wait() {
-            Some(DtmQuiescenceWait::Scheduler(wake)) => {
-                Some(BluetoothDtmStoppingWait::Scheduler(wake))
-            }
             Some(DtmQuiescenceWait::PostUnlink(wake)) => {
                 Some(BluetoothDtmStoppingWait::PostUnlink(wake))
             }
@@ -452,6 +450,7 @@ where
 
 const fn stopping_fault_cause(cause: DtmQuiescenceFaultCause) -> DtmStoppingFaultCause {
     match cause {
+        DtmQuiescenceFaultCause::DeadlineExpired => DtmStoppingFaultCause::DeadlineExpired,
         DtmQuiescenceFaultCause::Completion(cause) => DtmStoppingFaultCause::Completion(cause),
         DtmQuiescenceFaultCause::Recurring(cause) => DtmStoppingFaultCause::Recurring(cause),
         DtmQuiescenceFaultCause::UnexpectedPublishedHeadTransition => {

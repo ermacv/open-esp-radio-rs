@@ -50,7 +50,9 @@ pub use oer_esp32s31_pac::{
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunEventPublished,
     BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
     BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
-    BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
+    BluetoothSchedulerStopped, BluetoothSchedulerStoppedHeadRetirement,
+    BluetoothSchedulerStoppedItem, BluetoothSchedulerWorkObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -228,6 +230,17 @@ pub struct TaskOwner {
 }
 
 impl TaskOwner {
+    /// Establish the shared modem/PHY power, reset and calibration clocks.
+    ///
+    /// Call once before common PHY registration on the exclusive cold route.
+    /// The inactive Wi-Fi partition remains retained; no Wi-Fi MAC clock or
+    /// protocol role is started. Success and failure both retain the PHY I2C
+    /// lease and revoke cold reunion until physical teardown is implemented.
+    #[doc(hidden)]
+    pub fn prepare_common_phy_power(&mut self) -> Result<(), crate::power::PowerError> {
+        crate::power::execute_bluetooth_owned(&mut self.reunitable, &mut self.registers)
+    }
+
     /// Reunite a quiescent task with the exact inactive interrupt partition.
     pub fn into_cold(
         self,
@@ -1184,6 +1197,26 @@ impl ControllerHal<'_> {
     ) -> BluetoothSchedulerSoftwareListRemovalJoin {
         self.registers
             .finish_scheduler_software_list_removal(idle, head)
+    }
+
+    /// Advance the common stop preamble/request/idle sequence under interrupt
+    /// serialization. Pending retains the request; the caller owns its deadline.
+    pub fn step_scheduler_stop(
+        &mut self,
+        interrupts: &mut InterruptRegistersOwner,
+        stop: BluetoothSchedulerStop,
+    ) -> BluetoothSchedulerStopStep {
+        self.registers
+            .step_scheduler_stop(&mut interrupts.registers, stop)
+    }
+
+    /// Retire the exact stopped RUN head without clearing a foreign item.
+    pub fn retire_stopped_scheduler_head(
+        &mut self,
+        stopped: BluetoothSchedulerStopped,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothSchedulerStoppedHeadRetirement {
+        self.registers.retire_stopped_scheduler_head(stopped, run)
     }
 
     /// Perform one finite direct recheck of the complete post-unlink return

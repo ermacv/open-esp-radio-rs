@@ -39,7 +39,7 @@ completion is not an observation of RF quality or even proof of PLL lock.
 | RFPLL frequency programming / initialization | IMPLEMENTED | [RFPLL](src/analog/rfpll.rs) owns frequency/SDM programming, calibration wait and capacitor search. Missed lock is outcome data and failed search has a typed failure; success of the outer call alone is not a lock claim. |
 | Frequency-table synthesis/publication | IMPLEMENTED | [Frequency initialization](src/analog/frequency.rs) generates and publishes retained records incrementally. It does not keep a vendor-owned runtime table. |
 | Wi-Fi channel retune | IMPLEMENTED | [Channel transition](src/channel.rs) and target HAL entry points own the supported Wi-Fi channel domain, temperature-dependent work and bounded frequency-ready observations; MAC restart has a composed variant. This is not a generic BT/IEEE channel API. |
-| Crystal-duty calibration | IMPLEMENTED | [Crystal search](src/analog/crystal_duty.rs) composes RFPLL, RX-DC and signal-power operations for the retained cold profile. |
+| Crystal-duty calibration | IMPLEMENTED | [Crystal search](src/analog/crystal_duty.rs) composes RFPLL, RX-DC and signal-power operations for the retained cold profile. Preparation, search and restoration failures terminate either frequency pass and propagate through the RF parent into registration cleanup. |
 | D-code calibration | IMPLEMENTED | [D-code transition](src/analog/dcode.rs) owns the retained frequency visits, CKGEN updates and calibration results. |
 | Temperature read/conversion | IMPLEMENTED | [Temperature transition](src/analog/temperature.rs) owns sampling and conditional range changes. Invalid codes fail closed; the cold reset-code case is handled explicitly. |
 
@@ -88,7 +88,7 @@ selected, every channel is usable or all radio clients can run concurrently.
 
 | PHY operation | Wi-Fi | Bluetooth | IEEE 802.15.4 |
 | --- | --- | --- | --- |
-| Cold registration/calibration entry | IMPLEMENTED: production cold start invokes the target runner | IMPLEMENTED: Controller PHY setup invokes the borrowed target runner | PARTIAL: typed target registration route exists; whole-radio service is incomplete |
+| Cold registration/calibration entry | IMPLEMENTED: production cold start invokes the target runner | IMPLEMENTED: common-PHY power/calibration-clock readback precedes the borrowed target runner, retaining the I2C clock lease in the task owner | PARTIAL: typed target registration route exists; whole-radio service is incomplete |
 | Protocol-client ownership | PARTIAL: coupled wrappers exist, but ordinary Wi-Fi cold start retains `PhyState` via a controlled downgrade | IMPLEMENTED: acquisition and initial tracking settle before BTBB entry | PARTIAL: registered client/foundation/timing wrappers exist without complete operational ownership |
 | Initial tracking before client handoff | PARTIAL: shared owner/target machinery exists; ordinary cold start is not the coupled client path | IMPLEMENTED: PHY setup drives the initial request to a terminal result | PARTIAL: target runner and pending/settled states exist without a complete public service |
 | Protocol channel switching | IMPLEMENTED: channel HAL and MAC-restart entry points are composed | PARTIAL: DTM/event-specific frequency inputs exist, not a general shared retune lifetime | PARTIAL: MAC channel policy and BTBB timing exist; RF retune readiness remains incomplete |

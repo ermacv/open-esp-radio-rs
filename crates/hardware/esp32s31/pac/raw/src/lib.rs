@@ -60477,6 +60477,21 @@ pub mod fixed_register_image {
                 .write_with_zero(|writer| writer.bits(0x40200000));
         }
     }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LIFECYCLE_REQUEST`.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_lifecycle_request(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .scheduler_lifecycle_request()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
 }
 
 /// Safe, SVD-declared ordered transactions of fixed complete-register images.
@@ -70706,6 +70721,49 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.cbw_low_unknown().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields `[SOURCE_21, SOURCES_27_28]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn mask_bluetooth_scheduler_run_interrupts_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        registers.irq_enable_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .source_21()
+                    .bit(((input >> 21) & 0x00000001) != 0)
+                    .sources_27_28()
+                    .bits(((input >> 27) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields `[SOURCE_3]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn mask_bluetooth_scheduler_run_interrupts_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        registers.irq_enable_1().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.source_3().bit(((input >> 3) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields `[SCHEDULER_RUN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_ble_scheduler_run_event_source(registers: &crate::BtmacBlePhyInit) {
+        registers.interrupt_enable().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.scheduler_run().bit((input & 0x00000001) != 0)
         });
     }
 }

@@ -886,6 +886,14 @@ pub struct XtalDutyPassOutcome {
     pub best_filtered_power: i64,
 }
 
+/// Terminal child failure, retaining the calibration phase that owns it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XtalDutyFailure {
+    Prepare(XtalDutyHardwareFailure),
+    Search(PhySignalPowerFailure),
+    Restore(XtalDutyHardwareFailure),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XtalDutyPassAction {
     WriteMasked {
@@ -900,6 +908,7 @@ pub enum XtalDutyPassAction {
     Search(XtalDutySearchAction),
     Restore(XtalDutyRestoreAction),
     Complete(XtalDutyPassOutcome),
+    Failed(XtalDutyFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -933,6 +942,7 @@ enum XtalDutyPassStep {
         search: XtalDutySearchOutcome,
     },
     Complete(XtalDutyPassOutcome),
+    Failed(XtalDutyFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -981,6 +991,7 @@ impl XtalDutyPassTransition {
                 XtalDutyPassAction::Restore(transition.action())
             }
             XtalDutyPassStep::Complete(outcome) => XtalDutyPassAction::Complete(outcome),
+            XtalDutyPassStep::Failed(failure) => XtalDutyPassAction::Failed(failure),
         }
     }
 
@@ -1014,6 +1025,9 @@ impl XtalDutyPassTransition {
                     XtalDutyPrepareAction::Complete(_) => {
                         XtalDutyPassStep::Search(XtalDutySearchTransition::new())
                     }
+                    XtalDutyPrepareAction::Failed(failure) => {
+                        XtalDutyPassStep::Failed(XtalDutyFailure::Prepare(failure))
+                    }
                     _ => XtalDutyPassStep::Prepare(transition),
                 }
             }
@@ -1027,6 +1041,9 @@ impl XtalDutyPassTransition {
                 match transition.action() {
                     XtalDutySearchAction::Complete(outcome) => {
                         XtalDutyPassStep::RestoreInitialDuty(outcome)
+                    }
+                    XtalDutySearchAction::Failed(failure) => {
+                        XtalDutyPassStep::Failed(XtalDutyFailure::Search(failure))
                     }
                     _ => XtalDutyPassStep::Search(transition),
                 }
@@ -1056,10 +1073,13 @@ impl XtalDutyPassTransition {
                             best_filtered_power: search.best_filtered_power,
                         })
                     }
+                    XtalDutyRestoreAction::Failed(failure) => {
+                        XtalDutyPassStep::Failed(XtalDutyFailure::Restore(failure))
+                    }
                     _ => XtalDutyPassStep::Restore { transition, search },
                 }
             }
-            (XtalDutyPassStep::Complete(_), _) => {
+            (XtalDutyPassStep::Complete(_) | XtalDutyPassStep::Failed(_), _) => {
                 return Err(XtalDutyPassTransitionError::AlreadyComplete);
             }
             _ => return Err(XtalDutyPassTransitionError::WrongCompletion),
@@ -1086,6 +1106,7 @@ pub enum XtalDutyCalibrationAction {
     },
     Pass(XtalDutyPassAction),
     Complete(XtalDutyCalibrationOutcome),
+    Failed(XtalDutyFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1119,6 +1140,7 @@ enum XtalDutyCalibrationStep {
         initial_duty: u8,
     },
     Complete(XtalDutyCalibrationOutcome),
+    Failed(XtalDutyFailure),
 }
 
 /// Complete wrapper order for pinned `phy_xtal_duty_cal_init(0)`.
@@ -1156,6 +1178,7 @@ impl XtalDutyCalibrationTransition {
             XtalDutyCalibrationStep::Complete(outcome) => {
                 XtalDutyCalibrationAction::Complete(outcome)
             }
+            XtalDutyCalibrationStep::Failed(failure) => XtalDutyCalibrationAction::Failed(failure),
         }
     }
 
@@ -1202,6 +1225,7 @@ impl XtalDutyCalibrationTransition {
                             initial_duty: transition.initial_duty,
                         }
                     }
+                    XtalDutyPassAction::Failed(failure) => XtalDutyCalibrationStep::Failed(failure),
                     _ => XtalDutyCalibrationStep::LowFrequencyPass(transition),
                 }
             }
@@ -1224,6 +1248,7 @@ impl XtalDutyCalibrationTransition {
                             high_frequency,
                         })
                     }
+                    XtalDutyPassAction::Failed(failure) => XtalDutyCalibrationStep::Failed(failure),
                     _ => XtalDutyCalibrationStep::HighFrequencyPass {
                         transition,
                         low_frequency,
@@ -1231,7 +1256,7 @@ impl XtalDutyCalibrationTransition {
                     },
                 }
             }
-            (XtalDutyCalibrationStep::Complete(_), _) => {
+            (XtalDutyCalibrationStep::Complete(_) | XtalDutyCalibrationStep::Failed(_), _) => {
                 return Err(XtalDutyCalibrationTransitionError::AlreadyComplete);
             }
             _ => return Err(XtalDutyCalibrationTransitionError::WrongCompletion),

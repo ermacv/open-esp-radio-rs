@@ -144,6 +144,10 @@ impl PhyExpectation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Workload {
+    BluetoothDtm {
+        boots: u8,
+        minimum_packets: u16,
+    },
     BootSmoke,
     MemoryBenchmark {
         boots: u8,

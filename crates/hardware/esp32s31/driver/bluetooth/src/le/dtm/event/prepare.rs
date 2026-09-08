@@ -1168,6 +1168,48 @@ pub(crate) struct DtmRunningEvent<Role> {
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl<Role> DtmRunningEvent<Role> {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_stopped(
+        self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+    ) -> Result<
+        (
+            DtmCompletionObservedEvent<Role>,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+        ),
+        (
+            Self,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+        ),
+    > {
+        let Self {
+            memory,
+            context,
+            _reservation,
+            _role,
+        } = self;
+        match memory.observe_stopped(stopped) {
+            Ok((memory, head)) => Ok((
+                DtmCompletionObservedEvent {
+                    memory,
+                    context,
+                    _reservation,
+                    _role,
+                },
+                head,
+            )),
+            Err((memory, stopped)) => Err((
+                Self {
+                    memory,
+                    context,
+                    _reservation,
+                    _role,
+                },
+                stopped,
+            )),
+        }
+    }
+
     pub(crate) const fn role(&self) -> DtmRole {
         match &self.context {
             DtmEventContext::Transmitter(_) => DtmRole::Transmitter,

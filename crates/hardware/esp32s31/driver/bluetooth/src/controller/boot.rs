@@ -181,10 +181,24 @@ pub trait SharedInterruptDispatchStorage {
 ///
 /// This is deliberately separate from hard-handler dispatch. Implementations
 /// must execute the finite dynamic interrupt preparation synchronously while
-/// retaining the owner in the same stable slot. The Controller state that
-/// calls it guarantees that CPU routes are still inactive.
+/// retaining the owner in the same stable slot. Task-side stop and removal
+/// rechecks serialize with live interrupt service without moving that owner.
 #[cfg(target_arch = "riscv32")]
 pub trait SchedulerRunInterruptStorage {
+    /// Monotonic platform time used by the retained quiescence deadline.
+    fn monotonic_micros() -> u64;
+
+    /// Serialize one finite common-stop step with the stable ISR register owner.
+    /// Storage rejection must return the unchanged sequence.
+    fn step_scheduler_stop(
+        &self,
+        controller: &mut ControllerHal<'_>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    >;
+
     /// Exact reason the stable owner could not prepare scheduler interrupts.
     type Error;
 
@@ -2340,6 +2354,9 @@ pub enum DtmControllerInitialPreparationFailure<'runtime, S, const SCHEDULER_CAP
     reason = "no-alloc affine variants retain the complete in-flight or terminal DTM transaction"
 )]
 pub enum DtmControllerPreparationStep<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    /// The preceding phase completed and published a fresh request. Observe it
+    /// once immediately; only an observed busy request requires a delayed recheck.
+    Continue(DtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>),
     /// Hardware still owns the exact phase request.
     Pending(DtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>),
     /// Preparation completed or failed with every affine owner returned.
@@ -2900,8 +2917,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Perform one bounded observation of the current DTM time request.
     ///
     /// Completing an initial admission reserves the resolved window and only
-    /// then publishes the sequence request. Consequently one call may advance
-    /// into another `Pending` state without yet producing a terminal result.
+    /// then publishes the sequence request. Completing a phase returns
+    /// `Continue` so its fresh request receives one immediate observation.
+    /// Only a request observed busy returns `Pending` for a delayed recheck.
     pub fn recheck(self) -> DtmControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(ControllerTimePendingCoreStep::Waiting(core)) => {
@@ -2957,7 +2975,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 match controller.begin_dtm_preparation_time(
                     DtmControllerPreparationPhase::TransmitterFirstAdmission(staged),
                 ) {
-                    Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                    Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                     Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                 }
             }
@@ -2990,7 +3008,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 match controller.begin_dtm_preparation_time(
                     DtmControllerPreparationPhase::ReceiverFirstAdmission(staged),
                 ) {
-                    Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                    Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                     Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                 }
             }
@@ -3005,7 +3023,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         timing_ready,
                     },
                 ) {
-                    Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                    Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                     Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                 }
             }
@@ -3047,7 +3065,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 match controller.begin_dtm_preparation_time(
                     DtmControllerPreparationPhase::ReceiverRecurringSequence(pre_sequence),
                 ) {
-                    Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                    Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                     Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                 }
             }
@@ -3059,7 +3077,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(pre_sequence) => match controller.begin_dtm_preparation_time(
                         DtmControllerPreparationPhase::TransmitterFirstSequence(pre_sequence),
                     ) {
-                        Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                        Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                         Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                     },
                     Err(failure) => Self::terminal(
@@ -3076,7 +3094,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(pre_sequence) => match controller.begin_dtm_preparation_time(
                         DtmControllerPreparationPhase::ReceiverFirstSequence(pre_sequence),
                     ) {
-                        Ok(pending) => DtmControllerPreparationStep::Pending(pending),
+                        Ok(pending) => DtmControllerPreparationStep::Continue(pending),
                         Err(terminal) => DtmControllerPreparationStep::Terminal(terminal),
                     },
                     Err(failure) => Self::terminal(

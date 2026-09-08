@@ -1212,6 +1212,9 @@ where
                 Self::begin_preparation(command, current)
             }
             DtmFirstRunnerPhase::Preparation { command, pending } => match pending.recheck() {
+                DtmControllerPreparationStep::Continue(pending) => DtmFirstRunnerStep::Continue(
+                    Self::from_phase(DtmFirstRunnerPhase::Preparation { command, pending }),
+                ),
                 DtmControllerPreparationStep::Pending(pending) => {
                     DtmFirstRunnerStep::WaitControllerTime(Self::from_phase(
                         DtmFirstRunnerPhase::Preparation { command, pending },

@@ -5,6 +5,10 @@
 //! Wi-Fi MAC clocks are intentionally excluded: they belong to the later MAC
 //! start transition.
 
+use oer_esp32s31_pac::{
+    ModemSysconPowerObservation, PlatformClockPowerObservation, SharedModemClockObservation,
+};
+
 pub(crate) trait PowerSequenceBackend {
     fn select_hp_active_modem_icg(&mut self);
     fn apply_modem_icg_selection(&mut self);
@@ -121,6 +125,79 @@ impl PowerSequenceBackend for oer_esp32s31_pac::Ieee802154TaskRegisters {
     fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation {
         self.shared_modem_clock_observation()
     }
+}
+
+impl PowerSequenceBackend for oer_esp32s31_pac::BluetoothTaskRegisters {
+    fn select_hp_active_modem_icg(&mut self) {
+        self.select_hp_active_modem_icg();
+    }
+
+    fn apply_modem_icg_selection(&mut self) {
+        self.apply_modem_icg_selection();
+    }
+
+    fn apply_sleep_icg_selection(&mut self) {
+        self.apply_sleep_icg_selection();
+    }
+
+    fn enable_modem_register_bus_clock(&mut self) {
+        self.enable_modem_register_bus_clock();
+    }
+
+    fn configure_modem_source_clocks(&mut self) {
+        self.configure_modem_source_clocks();
+    }
+
+    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
+        self.set_wifi_baseband_and_mac_reset(asserted);
+    }
+
+    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
+        self.set_wifi_baseband_reset(asserted);
+    }
+
+    fn configure_wifi_power_clock_map(&mut self) {
+        self.configure_wifi_power_clock_map();
+    }
+
+    fn enable_phy_calibration_clocks(&mut self) {
+        self.enable_phy_calibration_clocks();
+    }
+
+    fn select_phy_i2c_160mhz_source(&mut self) {
+        self.select_phy_i2c_160mhz_source();
+    }
+
+    fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.platform_clock_power_observation()
+    }
+
+    fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
+        self.modem_syscon_power_observation()
+    }
+
+    fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.shared_modem_clock_observation()
+    }
+
+    fn prepare_shared_modem_clock_map(&mut self) {
+        self.prepare_shared_modem_clock_map();
+    }
+
+    fn retain_phy_i2c_master_clock(&mut self) {
+        self.retain_phy_i2c_master_clock();
+    }
+}
+
+/// Starting common PHY preparation ends the reversible Controller-clock epoch.
+/// The caller retains the task owner, including the I2C clock lease, on every
+/// readback failure. Full physical shutdown is required before cold reunion.
+pub(crate) fn execute_bluetooth_owned(
+    reunitable: &mut bool,
+    registers: &mut impl PowerSequenceBackend,
+) -> Result<(), PowerError> {
+    *reunitable = false;
+    execute_owned(registers)
 }
 
 /// Semantic read-back state captured after the cold clock/reset sequence.

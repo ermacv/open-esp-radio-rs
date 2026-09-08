@@ -543,7 +543,8 @@ impl DtmMemoryGraphHeadPublished {
 /// Pinned DTM graph admitted through the complete scheduler RUN transaction.
 ///
 /// This is the first memory state that may consume a fenced finished-list
-/// observation. It still exposes no CPU mutation or cancellation path.
+/// observation or an exact stopped-item proof. Neither path exposes CPU
+/// mutation before software unlink and recycle.
 #[must_use = "the running graph must advance through proven completion"]
 pub struct DtmMemoryGraphRunning {
     storage: Pin<&'static mut DtmMemoryGraphStorage>,
@@ -554,6 +555,44 @@ impl DtmMemoryGraphRunning {
     /// Return the exact scheduler-item identity retained during execution.
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.binding.scheduler_item_address().controller_address()
+    }
+
+    /// Sample status only after a completed common-stop transaction and fence.
+    /// A stopped sentinel is an explicit abort, never a successful RX event.
+    /// The proof retains the exact retired head. A foreign identity returns
+    /// both owners unchanged; software unlink and recycle remain required.
+    #[doc(hidden)]
+    pub fn observe_stopped(
+        self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+    ) -> Result<
+        (
+            DtmMemoryGraphCompletionObserved,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+        ),
+        (
+            Self,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+        ),
+    > {
+        if stopped.head().index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || stopped.head().completed_head().address() != Some(self.scheduler_item_address())
+        {
+            return Err((self, stopped));
+        }
+        let status = self
+            .storage
+            .as_ref()
+            .get_ref()
+            .observe_completion_status()
+            .unwrap_or(DtmSchedulerItemCompletionStatus::Aborted);
+        Ok((
+            DtmMemoryGraphCompletionObserved {
+                owner: self,
+                status,
+            },
+            stopped.into_head(),
+        ))
     }
 
     /// Observe the sole DTM item's status after one affine finished-list event.
@@ -588,20 +627,22 @@ impl DtmMemoryGraphRunning {
     }
 }
 
-/// Reviewed DTM interpretation of one non-sentinel scheduler-item status.
+/// DTM terminal observation: hardware completion or a proven stopped sentinel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DtmSchedulerItemCompletionStatus {
+    /// Common stop completed while hardware retained the in-flight sentinel.
+    Aborted,
     /// The role-specific accounting path accepts positional status zero.
     Zero,
     /// Hardware reported a positional nonzero status.
     NonZero(NonZeroU32),
 }
 
-/// Hardware-owned graph after a non-sentinel status was observed.
+/// Graph retained after hardware completion or exact stopped-head retirement.
 ///
-/// The descriptor has not yet been unlinked from the hardware list or removed
-/// from the software completion queue. This state therefore exposes status and
-/// identity only and cannot reclaim, mutate or republish the graph.
+/// Software unlink and reclamation remain outstanding. Natural completion
+/// additionally requires hardware-head retirement. This state exposes status
+/// and identity only and cannot reclaim, mutate or republish the graph.
 #[must_use = "completion observation must advance through unlink and recycle ownership"]
 pub struct DtmMemoryGraphCompletionObserved {
     owner: DtmMemoryGraphRunning,
@@ -614,7 +655,7 @@ impl DtmMemoryGraphCompletionObserved {
         self.owner.scheduler_item_address()
     }
 
-    /// Semantic non-sentinel status retained by this completion observation.
+    /// Hardware completion or software abort retained by this observation.
     pub const fn status(&self) -> DtmSchedulerItemCompletionStatus {
         self.status
     }

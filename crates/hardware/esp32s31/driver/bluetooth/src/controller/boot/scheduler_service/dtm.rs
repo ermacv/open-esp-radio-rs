@@ -35,6 +35,17 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         Ok(crate::scheduler::DtmSchedulerRunning::new(item, run))
     }
 
+    pub(crate) fn step_dtm_stop<Role>(
+        &mut self,
+        running: crate::scheduler::DtmSchedulerRunning<Role>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> crate::scheduler::core::DtmSchedulerStopStep<Role>
+    where
+        S: SchedulerRunInterruptStorage,
+    {
+        critical_section::with(|_| self.runtime.step_dtm_stop(self.storage, running, stop))
+    }
+
     /// Perform one fresh fenced completion-list transfer and immediately join
     /// its affine result to this exact running DTM graph.
     ///

@@ -8,6 +8,7 @@ repository.workspace = true
 description = "ESP32-S31 Bluetooth controller hardware boundary"
 
 [features]
+dtm-diagnostics = []
 validation-probes = [
     "oer-esp32s31-pac/validation-probes",
     "oer-esp32s31-phy/validation-probes",

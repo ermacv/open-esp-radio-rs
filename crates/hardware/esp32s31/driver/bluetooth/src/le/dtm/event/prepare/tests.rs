@@ -100,7 +100,7 @@ fn timing_policy() -> SchedulerTimingPolicy {
 }
 
 fn admission_sample() -> ControllerTimeSample {
-    ControllerTimeSample::for_validation(92)
+    ControllerTimeSample::for_validation(epoch().raw_ticks_for_micros(960))
 }
 
 fn reservation<const CAPACITY: usize>(

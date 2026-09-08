@@ -7613,6 +7613,28 @@ pub(crate) fn configure_phy_channel_cbw_control_1_low(
     );
 }
 
+/// Typed bridge for the reviewed `mask_bluetooth_scheduler_run_interrupts_bank_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn mask_bluetooth_scheduler_run_interrupts_bank_0(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_replace_modify::mask_bluetooth_scheduler_run_interrupts_bank_0(registers);
+}
+
+/// Typed bridge for the reviewed `mask_bluetooth_scheduler_run_interrupts_bank_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn mask_bluetooth_scheduler_run_interrupts_bank_1(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_replace_modify::mask_bluetooth_scheduler_run_interrupts_bank_1(registers);
+}
+
+/// Typed bridge for the reviewed `disable_ble_scheduler_run_event_source` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_ble_scheduler_run_event_source(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::disable_ble_scheduler_run_event_source(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

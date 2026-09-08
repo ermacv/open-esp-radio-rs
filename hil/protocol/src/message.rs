@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 87;
+pub const PROTOCOL_VERSION: u16 = 90;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -305,8 +305,9 @@ pub struct SessionReady {
     pub tx_block_ack_tid: Option<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FeatureCapabilities {
+    pub bluetooth_dtm: bool,
     pub udp: bool,
     pub tcp: bool,
     pub rx: bool,
@@ -1050,6 +1051,7 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
+    BluetoothDtm(crate::BluetoothDtmOperation),
     GetCapabilities,
     /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
     /// query is valid only outside an active traffic session.
@@ -2184,6 +2186,7 @@ pub struct Finished {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
+    BluetoothDtm(crate::BluetoothDtmEvidence),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.
     WifiAirtimePeer(crate::WifiAirtimePeerEvidence),
     /// Completeness of the preceding bounded peer records for this AP epoch.

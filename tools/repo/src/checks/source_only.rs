@@ -10,7 +10,9 @@ use std::{
 
 use cargo_metadata::Message;
 
-use super::{TARGET, architecture, artifacts, common, examples, metadata, network, safety};
+use super::{
+    TARGET, architecture, artifacts, bluetooth, common, examples, metadata, network, safety,
+};
 use crate::{
     Context, Result, cargo,
     process::{self, owned},
@@ -311,6 +313,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     production_lints(ctx)?;
     safety::run(ctx)?;
     architecture::run(ctx)?;
+    bluetooth::run(ctx)?;
     publication(ctx)?;
     let artifact = phy(ctx)?;
 

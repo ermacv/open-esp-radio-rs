@@ -10103,3 +10103,40 @@ fields = [{ field = "CBW_LOW_UNKNOWN", source-bit-offset = 0 }]
 domain = "PhyChannelCbwTwoBitImage"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_scheduler_lifecycle_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_LIFECYCLE_REQUEST"
+value = 1
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+
+[[field-replace-modifies]]
+name = "mask_bluetooth_scheduler_run_interrupts_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_0"
+fields = [
+    { field = "SOURCE_21", source-bit-offset = 21 },
+    { field = "SOURCES_27_28", source-bit-offset = 27 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+
+[[field-replace-modifies]]
+name = "mask_bluetooth_scheduler_run_interrupts_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_1"
+fields = [{ field = "SOURCE_3", source-bit-offset = 3 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+
+[[field-replace-modifies]]
+name = "disable_ble_scheduler_run_event_source"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INTERRUPT_ENABLE"
+fields = [{ field = "SCHEDULER_RUN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]

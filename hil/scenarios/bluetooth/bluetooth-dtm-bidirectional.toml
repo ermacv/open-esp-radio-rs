@@ -1,0 +1,11 @@
+schema = 4
+id = "bluetooth-dtm-bidirectional"
+description = "LE 1M DTM delivery from ESP to Linux adapter and back, with independent receiver counts, silence controls and quiet Test End/Reset restart checks"
+image = "bluetooth-dtm"
+isolation = "reset"
+tags = ["bluetooth", "dtm", "diagnostic"]
+
+[workload]
+kind = "bluetooth-dtm"
+boots = 2
+minimum_packets = 10

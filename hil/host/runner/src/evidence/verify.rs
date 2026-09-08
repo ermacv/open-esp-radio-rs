@@ -172,11 +172,9 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
         if plan.run_id != manifest.run_id
             || plan.schema != RUN_SCHEMA
             || selected.is_empty()
-            || selected.iter().any(|entry| {
-                entry.requirements.is_none_or(|required| {
-                    required != crate::lab::requirements::Requirements::default()
-                })
-            })
+            || selected
+                .iter()
+                .any(|entry| entry.requirements.is_none_or(|required| required.network()))
         {
             return Err(
                 "system-only lab provenance requires an explicit plan with no network dependencies"

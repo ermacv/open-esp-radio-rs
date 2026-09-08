@@ -268,7 +268,8 @@ fn complete_xtal_restore(action: XtalDutyRestoreAction) -> XtalDutyRestoreComple
 fn drive_rf_init_xtal_duty(
     transition: &mut PhyRfInitPrefixTransition,
     initial_duty: u8,
-) -> XtalDutyCalibrationOutcome {
+    mut inject: impl FnMut(PhyRfInitPrefixAction) -> Option<PhyRfInitPrefixCompletion>,
+) -> Result<XtalDutyCalibrationOutcome, crate::analog::crystal_duty::XtalDutyFailure> {
     let mut current_candidate = None;
     let mut rfpll_cap_status_reads = 0;
     loop {
@@ -278,6 +279,10 @@ fn drive_rf_init_xtal_duty(
                 PhyColdExternalBinding::lower(outer_action).is_ok(),
                 "reachable crystal-duty action has no external lowering: {outer_action:?}"
             );
+        }
+        if let Some(completion) = inject(outer_action) {
+            transition.advance(completion).unwrap();
+            continue;
         }
         match outer_action {
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::ReadInitialDuty {
@@ -395,13 +400,16 @@ fn drive_rf_init_xtal_duty(
                 if let PhyRfInitPrefixStep::FrontEndRegisterUpdate { xtal_duty, .. } =
                     transition.step
                 {
-                    return xtal_duty;
+                    return Ok(xtal_duty);
                 }
                 panic!("front-end update action without its owned step");
             }
             PhyRfInitPrefixAction::Complete(
                 PhyRfInitPrefixOutcome::ChannelFrequencyInitialized { xtal_duty, .. },
-            ) => return xtal_duty,
+            ) => return Ok(xtal_duty),
+            PhyRfInitPrefixAction::Complete(PhyRfInitPrefixOutcome::XtalDutyCalibrationFailed(
+                failure,
+            )) => return Err(failure),
             action => panic!("unexpected RF-init crystal-duty action: {action:?}"),
         }
     }
@@ -455,6 +463,127 @@ fn drive_warm_channel_frequency(transition: &mut PhyRfInitPrefixTransition) {
         transition
             .advance(PhyRfInitPrefixCompletion::ChannelFrequency(completion))
             .unwrap();
+    }
+}
+
+#[test]
+fn xtal_child_timeouts_reach_the_rf_parent_in_both_frequency_passes() {
+    use crate::analog::crystal_duty::{XtalDutyFailure, XtalDutyHardwareFailure};
+    use crate::calibration::estimator::PhyDcIqFailure;
+    use crate::rx::{dc_offset::PhyRxDcoFailure, signal_power::PhySignalPowerFailure};
+
+    for failing_pass in [1, 2] {
+        for failing_phase in ["prepare", "search", "restore"] {
+            let mut transition = PhyRfInitPrefixTransition::new();
+            transition.step = PhyRfInitPrefixStep::XtalDutyParameters {
+                parameter: PhyRfInitParameterSnapshot::new(
+                    FilterDcapParameters::new(0x12, 0x34, 0x3a, 0x56, 0x87),
+                    0xaa,
+                ),
+                rfpll_lock_observed: true,
+                sar2_reinitialized: true,
+            };
+            transition
+                .advance(PhyRfInitPrefixCompletion::XtalDutyParametersCaptured(
+                    XtalDutyCalibrationParameters {
+                        rf_frequency_offset_base: 0x31,
+                        pbus_rx_path_value: 0x42,
+                    },
+                ))
+                .unwrap();
+
+            let mut pass = 0;
+            let mut expected = None;
+            let mut dco_restored_after_timeout = false;
+            let result = drive_rf_init_xtal_duty(&mut transition, 0x2a, |action| {
+                let PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(action)) =
+                    action
+                else {
+                    return None;
+                };
+                if matches!(action, XtalDutyPassAction::WriteMasked { .. }) {
+                    pass += 1;
+                }
+                if expected.is_some() {
+                    if matches!(
+                        action,
+                        XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl)
+                    ) {
+                        dco_restored_after_timeout = true;
+                    }
+                    return None;
+                }
+                if pass != failing_pass {
+                    return None;
+                }
+                let completion = match (failing_phase, action) {
+                    (
+                        "prepare",
+                        XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
+                            PhyRxDcoAction::DcIq(PhyDcIqAction::AwaitReadinessEdge {
+                                request, ..
+                            }),
+                        )),
+                    ) => {
+                        expected = Some(XtalDutyFailure::Prepare(XtalDutyHardwareFailure::RxDco(
+                            PhyRxDcoFailure::DcIq(PhyDcIqFailure::ReadinessTimedOut {
+                                request,
+                                readiness_activity_edges: 0,
+                            }),
+                        )));
+                        XtalDutyPassCompletion::Prepare(XtalDutyPrepareCompletion::RxDco(
+                            PhyRxDcoCompletion::DcIq(PhyDcIqCompletion::ReadinessTimedOut(request)),
+                        ))
+                    }
+                    (
+                        "search",
+                        XtalDutyPassAction::Search(XtalDutySearchAction::SignalPower(
+                            PhySignalPowerAction::AwaitReadinessEdge { request, .. },
+                        )),
+                    ) => {
+                        expected = Some(XtalDutyFailure::Search(
+                            PhySignalPowerFailure::ReadinessTimedOut {
+                                request,
+                                readiness_activity_edges: 0,
+                            },
+                        ));
+                        XtalDutyPassCompletion::Search(XtalDutySearchCompletion::SignalPower(
+                            PhySignalPowerCompletion::ReadinessTimedOut(request),
+                        ))
+                    }
+                    (
+                        "restore",
+                        XtalDutyPassAction::Restore(XtalDutyRestoreAction::ForcePbus(transaction)),
+                    ) => {
+                        expected = Some(XtalDutyFailure::Restore(
+                            XtalDutyHardwareFailure::PbusForceTestTimedOut(transaction),
+                        ));
+                        XtalDutyPassCompletion::Restore(
+                            XtalDutyRestoreCompletion::PbusForceTimedOut(transaction),
+                        )
+                    }
+                    _ => return None,
+                };
+                Some(PhyRfInitPrefixCompletion::XtalDuty(
+                    XtalDutyCalibrationCompletion::Pass(completion),
+                ))
+            });
+            let failure = expected.expect("the selected child must reach its deadline boundary");
+            assert_eq!(result, Err(failure), "{failing_phase}, pass {failing_pass}");
+            assert_eq!(pass, failing_pass, "failure must not start the next pass");
+            if failing_phase == "prepare" {
+                assert!(dco_restored_after_timeout);
+            }
+            let terminal = PhyRfInitPrefixAction::Complete(
+                PhyRfInitPrefixOutcome::XtalDutyCalibrationFailed(failure),
+            );
+            assert_eq!(transition.action(), terminal);
+            assert_eq!(
+                transition.advance(PhyRfInitPrefixCompletion::FrontEndRegisterUpdateConfigured),
+                Err(PhyRfInitPrefixTransitionError::AlreadyComplete),
+            );
+            assert_eq!(transition.action(), terminal);
+        }
     }
 }
 
@@ -1107,7 +1236,7 @@ fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
             },
         ))
         .unwrap();
-    let xtal_duty = drive_rf_init_xtal_duty(&mut transition, 0x2a);
+    let xtal_duty = drive_rf_init_xtal_duty(&mut transition, 0x2a, |_| None).unwrap();
     assert_eq!(
         xtal_duty,
         XtalDutyCalibrationOutcome {

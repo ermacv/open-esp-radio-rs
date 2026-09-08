@@ -262,8 +262,8 @@ fn first_event_uses_signed_wrapping_order_and_live_epoch_projection() {
     let (raw, item_duration) = window
         .project_raw(epoch, 3)
         .expect("bounded three-channel event window");
-    assert_eq!(item_duration, 58);
-    assert_eq!(raw.duration(), 174);
+    assert_eq!(item_duration, 470);
+    assert_eq!(raw.duration(), 1_410);
 }
 
 #[test]
@@ -291,4 +291,34 @@ fn recurring_event_advances_nominal_phase_and_reserves_the_complete_chain() {
         .project_raw(epoch, 3)
         .expect("the recurring chain fits one raw epoch");
     assert_eq!(raw.duration(), item_duration * 3);
+}
+
+#[test]
+fn first_advertising_deadline_keeps_two_milliseconds_at_standalone_tick_rate() {
+    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let first = ControllerTimeSample::for_validation(6_243);
+    let epoch = ControllerSchedulerEpoch::from_first_live_update(&first, scale);
+    let current = instant(epoch.project_without_reanchor(&first));
+    let observation = LegacyAdvertisingTimingObservation {
+        current,
+        radio_ready: instant(current.image() + 75),
+        epoch,
+    };
+    let (_, raw, _) = observation.first_le_1m_window(config, 9, 3).unwrap();
+    // The fractional first sample leaves the window on a whole-microsecond anchor.
+    assert_eq!(raw.start(), 10_242);
+    let mut timeline = crate::scheduler::timeline::SchedulerTimeline::<1>::new();
+    let reservation = timeline
+        .reserve_initial_window(
+            raw.start(),
+            raw.end(),
+            crate::scheduler::SchedulerTimingPolicy::from_scheduler_config(config, scale),
+            ControllerTimeSample::for_validation(6_744),
+        )
+        .expect("250 microseconds of preparation leaves the 2 ms deadline open");
+    let ready = reservation
+        .authorize_sequence(ControllerTimeSample::for_validation(6_944))
+        .expect("350 microseconds of preparation still leaves time to publish RUN");
+    assert!(timeline.release(ready).is_ok());
 }

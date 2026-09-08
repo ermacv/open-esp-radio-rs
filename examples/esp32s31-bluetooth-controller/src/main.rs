@@ -8,9 +8,11 @@ mod startup;
 use bt_hci::cmd::le::{LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2};
 #[cfg(feature = "advertising-smoke")]
 use bt_hci::{
-    cmd::le::{LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr},
-    param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration as HciDuration},
+    cmd::le::{LeSetAdvData, LeSetAdvEnable, LeSetRandomAddr},
+    param::BdAddr,
 };
+#[cfg(feature = "advertising-smoke")]
+use open_esp_radio_esp32s31_bluetooth_controller_example::AdvertisingSmokeCase;
 
 use bt_hci::{
     cmd::{SyncCmd, controller_baseband::Reset},
@@ -241,28 +243,14 @@ async fn advertising_command<E: core::fmt::Debug>(
 }
 
 #[cfg(feature = "advertising-smoke")]
-async fn configure_advertising(hci: &BluetoothHost, kind: AdvKind) {
+async fn configure_advertising(hci: &BluetoothHost, case: AdvertisingSmokeCase) {
     // HCI address bytes are least-significant first; C2 makes this static random.
     advertising_command(
         "Set Random Address",
         LeSetRandomAddr::new(BdAddr::new([0x31, 0x53, 0x50, 0x45, 0x52, 0xc2])).exec(hci),
     )
     .await;
-    advertising_command(
-        "Set Parameters",
-        LeSetAdvParams::new(
-            HciDuration::from_millis(100),
-            HciDuration::from_millis(100),
-            kind,
-            AddrKind::RANDOM,
-            AddrKind::PUBLIC,
-            BdAddr::default(),
-            AdvChannelMap::ALL,
-            AdvFilterPolicy::Unfiltered,
-        )
-        .exec(hci),
-    )
-    .await;
+    advertising_command("Set Parameters", case.parameters().exec(hci)).await;
     // Complete local name, suitable for either advertising kind.
     let name = b"open-radio";
     let mut data = [0; 31];
@@ -286,19 +274,17 @@ async fn advertising_dwell() {
 #[cfg(feature = "advertising-smoke")]
 async fn advertising_smoke(hci: &BluetoothHost) {
     advertising_command("initial Reset", Reset::new().exec(hci)).await;
-    for (label, kind) in [
-        ("nonconnectable", AdvKind::AdvNonconnInd),
-        ("connectable", AdvKind::AdvInd),
-    ] {
+    for case in AdvertisingSmokeCase::ALL {
+        let label = case.label();
         esp_println::println!("open-radio: advertising {} smoke started", label);
-        configure_advertising(hci, kind).await;
+        configure_advertising(hci, case).await;
         advertising_command("Enable", LeSetAdvEnable::new(true).exec(hci)).await;
         advertising_dwell().await;
         advertising_command("Disable", LeSetAdvEnable::new(false).exec(hci)).await;
         advertising_command("re-enable", LeSetAdvEnable::new(true).exec(hci)).await;
         advertising_dwell().await;
         advertising_command("active Reset", Reset::new().exec(hci)).await;
-        configure_advertising(hci, kind).await;
+        configure_advertising(hci, case).await;
         advertising_command("Enable after Reset", LeSetAdvEnable::new(true).exec(hci)).await;
         advertising_dwell().await;
         advertising_command("final Disable", LeSetAdvEnable::new(false).exec(hci)).await;

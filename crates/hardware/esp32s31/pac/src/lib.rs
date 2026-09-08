@@ -50,7 +50,8 @@ pub use bluetooth::{
     controller::{
         init::{
             BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
-            BluetoothHalInitScale, BluetoothRawTickDeltaProjection,
+            BluetoothHalInitScale, BluetoothMicrosecondDeltaProjection,
+            BluetoothRawTickDeltaProjection,
         },
         time::{
             BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
@@ -109,6 +110,10 @@ pub use bluetooth::{
             BluetoothSchedulerSoftwareListRemovalInterruptStep,
             BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
             BluetoothSchedulerWorkObservation,
+        },
+        stop::{
+            BluetoothSchedulerStop, BluetoothSchedulerStopStep, BluetoothSchedulerStopped,
+            BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
         },
     },
 };

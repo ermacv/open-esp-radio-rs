@@ -32,25 +32,31 @@ pub fn run(ctx: &Context) -> Result<()> {
         .lines()
         .find_map(|line| line.strip_prefix("host: "))
         .ok_or("rustc did not report its host target")?;
-    process::run(
-        ctx.cargo()
-            .args([
-                "test",
-                "--locked",
-                "--offline",
-                "--lib",
-                "--target",
-                host,
-                "--manifest-path",
-            ])
-            .arg(ctx.root.join("examples/esp32s31-access-point/Cargo.toml")),
-    )?;
+    for example in ["access-point", "bluetooth-controller"] {
+        process::run(
+            ctx.cargo()
+                .args([
+                    "test",
+                    "--locked",
+                    "--offline",
+                    "--lib",
+                    "--target",
+                    host,
+                    "--manifest-path",
+                ])
+                .arg(
+                    ctx.root
+                        .join(format!("examples/esp32s31-{example}/Cargo.toml")),
+                ),
+        )?;
+    }
     dma::check(ctx)?;
     for (example, feature) in [
         ("station", "compat-network"),
         ("station", "owned-network"),
         ("access-point", "owned-network"),
         ("access-point", "compat-network"),
+        ("bluetooth-controller", "advertising-smoke"),
     ] {
         process::run(
             ctx.cargo()

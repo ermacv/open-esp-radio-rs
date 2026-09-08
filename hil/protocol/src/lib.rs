@@ -5,7 +5,11 @@
 //! vendor ABI versions, or target-specific register layouts. Those belong to
 //! the firmware adapter and the qualification manifest that selects it.
 
+mod bluetooth;
 mod framing;
+pub use bluetooth::{
+    BluetoothDtmEvidence, BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
+};
 mod memory_benchmark;
 mod message;
 mod wifi_airtime;

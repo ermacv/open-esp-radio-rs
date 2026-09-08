@@ -1,3 +1,4 @@
+pub(crate) mod bluetooth;
 pub(crate) mod cleanup;
 pub(crate) mod controlled_ap;
 pub(crate) mod controlled_client;

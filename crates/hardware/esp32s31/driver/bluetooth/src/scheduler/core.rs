@@ -14,6 +14,8 @@ pub(crate) use connectable_advertising::{
 };
 mod dtm;
 #[cfg(target_arch = "riscv32")]
+pub(crate) use dtm::DtmSchedulerStopStep;
+#[cfg(target_arch = "riscv32")]
 mod single_item;
 
 pub use dtm::{

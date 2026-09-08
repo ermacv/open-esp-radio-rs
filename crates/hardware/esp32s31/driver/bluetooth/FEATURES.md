@@ -21,6 +21,13 @@ HCI command, scheduler `RUN`, SRAM graph, PAC accessor, parser or isolated state
 machine does not establish an end-to-end Controller capability. In particular,
 DTM PHY coverage does not establish connected PHY support.
 
+Standalone cold start prepares common PHY power, resets and calibration clocks
+with semantic readback before invoking borrowed registration. The task retains
+the PHY I2C clock lease throughout the powered epoch. Power-readback and
+calibration failures retain fail-stop ownership; cold reunion requires physical
+teardown, which remains incomplete. See the
+[PHY consumer boundary](../../phy/FEATURES.md#protocol-consumer-composition).
+
 ## Capability sources and scope
 
 | Source | Inventory scope |
@@ -45,16 +52,32 @@ an implemented source operation incomplete.
 
 | Feature scope | Qualification capability / source contract | Boundary |
 | --- | --- | --- |
-| Initial PHY registration, acquisition and tracking | `common-phy-baseband` / `bluetooth-initial-phy-handoff` | Initial handoff is implemented; the parent also requires periodic tracking and physical release. |
+| Initial PHY registration, acquisition and tracking | `common-phy-baseband` / `bluetooth-initial-phy-handoff` | Common-PHY power/clock prerequisites and borrowed handoff are implemented; periodic tracking and physical release remain incomplete. |
 | Bounded DTM sessions | `packet-dataplane` / `bounded-dtm-session`; `dtm-*` roots | DTM source composition exists; the broad dataplane still lacks unrelated-list dispatch and the full Controller lifetime. |
 | HCI bootstrap and command/event handoff | `hci-bootstrap`, `hci-handoff-storage`, `hci-controller-endpoints` | Complete bounded interfaces do not establish `typed-hci-controller`, which also requires LL and ACL routing. |
 | Portable advertising / peripheral admission | `portable-legacy-advertising`, `portable-connectable-advertising`, `portable-peripheral-connection` | Portable readiness has no RF/HIL obligation and does not qualify a hardware advertising or ACL role. |
 | Passive scanning / complete Link Layer | `legacy-passive-scanning`, `le-link-layer` | Partial hardware roles remain incomplete at the broader runtime/reliable-link scope. |
 | Coexistence | `coexistence` / `coex-timer-validation-bridge`, `wifi-bluetooth-coex-runtime` | Diagnostic timer access exists; production joint-radio arbitration is unimplemented. |
 | Powered shutdown | `powered-teardown` | Selected cleanup paths do not close the complete last-owner lifetime. |
+| Resource limits | `controller-capacity-limits` | Storage geometry does not establish supported concurrent connections, sets, syncs or streams. |
+| Complete legacy roles | `legacy-advertising-roles`, `active-scanning`, `central-initiator`, `concurrent-le-roles` | Bounded advertising and passive scanning do not close Central or simultaneous roles. |
+| Connected PHY and control | `connected-phy-and-data-length`, `ll-control-procedures`, `channel-assessment` | DTM PHY selectors and initial channel maps do not establish negotiated PHY, DLE, LLCP or live assessment. |
+| Encryption, privacy and pairing | `link-layer-encryption`, `privacy-and-filtering`, `secure-connections-host` | Hardware encryption and resolving-list storage do not establish operational keys, addresses or pairing. |
+| Extended advertising, scanning and initiating | `extended-advertising`, `extended-scanning-initiating` | AUX chains, multiple sets, secondary PHY and coding selection have no production role. |
+| Periodic advertising and synchronization | `periodic-advertising`, `periodic-synchronization`, `periodic-sync-transfer` | Includes ADI, periodic enhancements and PAST; reserved storage is not a sync lifecycle. |
+| PAwR | `pawr-advertiser`, `pawr-responder` | Advertiser response reception and synchronized response transmission require distinct owners. |
+| Encrypted Advertising Data | `encrypted-advertising-data` | Host data authentication and key distribution are separate from LL encryption. |
+| Direction Finding and CTE tests | `connected-direction-finding`, `connectionless-direction-finding` | The current CTE publication remains disabled. |
+| RF power, LBT and connected power policy | `rf-power-and-lbt`, `le-power-control`, `connection-subrating` | Default power encoding does not supply live RF policy or connected procedures. |
+| Sleep and external/multi-radio coexistence | `modem-sleep-wake`, `external-coexistence`, `multi-radio-coordination` | Always-awake operation and shared primitives do not establish retained wake or concurrent ownership. |
+| ISO adaptation and connected streams | `iso-dataplane`, `cis-central`, `cis-peripheral` | ISO framing alone does not route SDUs or establish CIS in either role. |
+| Broadcast isochronous streams | `bis-broadcaster`, `bis-synchronizer` | BIG/BIS publication and synchronization require periodic advertising and the ISO dataplane. |
+| LE Audio | `le-audio-unicast`, `le-audio-broadcast`, `le-audio-profiles` | Host codec/profile composition depends on operational CIS/BIS transport. |
+| Other LE Host features | `host-eatt-and-gatt`, `mesh-host`, `blufi-host` | EATT, GATT caching/security levels, Mesh 1.1 and BluFi require their own production Host integrations. |
 
-The LE program does not qualify Classic, ISO or every silicon feature in this
-inventory. Absence of a dedicated qualification root is not evidence of support.
+The LE program includes the full LE inventory and its named Host integrations.
+Its acceptance requirements do not promote source capability status. Classic
+remains outside the LE program.
 
 ## LE PHY, RF and Direct Test Mode
 
@@ -66,7 +89,7 @@ inventory. Absence of a dedicated qualification root is not evidence of support.
 | LE Coded S=2 / 500 kbit/s | PARTIAL | DTM has a distinct S=2 TX identity. RX uses the generic Coded selector; S=2 is not a separate accepted RX selector. No connected Coded path exists. |
 | Hardware Listen Before Talk (LBT) | ABSENT | No Bluetooth LBT policy/activation owner is composed. |
 | Static/default TX power selection | PARTIAL | DTM, advertising, scanning and peripheral graph preparation carry default power requests through the recovered [power encoding](memory/src/le_tx_power.rs). No general live power-selection API or radiated-power qualification is implied. |
-| LE Receiver Test / Transmitter Test | IMPLEMENTED | Bounded [DTM](src/le/dtm.rs) command preparation, static SRAM graphs, recurring scheduler events, RX accounting, completion/recycle and Test End are composed with Embassy. |
+| LE Receiver Test / Transmitter Test | PARTIAL | [DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending. |
 | Enhanced DTM PHY selection | IMPLEMENTED | HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions. |
 | DTM test patterns | IMPLEMENTED | [TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants. |
 | Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist. Periodic tracking, timer-expiration handling and final PHY release remain incomplete. RF/HIL readiness belongs to qualification. |
@@ -177,7 +200,7 @@ inventory. Absence of a dedicated qualification root is not evidence of support.
 
 | Feature | Status | Current production boundary |
 | --- | --- | --- |
-| Controller scheduler timebase | PARTIAL | Always-awake event-driven time ownership exists. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete. |
+| Controller scheduler timebase | PARTIAL | Always-awake event-driven time ownership uses two raw ticks per microsecond and retains fractional ticks across epoch updates. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete. |
 | Controller interrupt epoch | PARTIAL | IRQ routing, bounded hard-handler classification and task wake exist; unrelated finished-list and complete role dispatch remain incomplete. |
 | Controller SRAM ownership | PARTIAL | Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts. Missing role graphs and packet-engine contracts are not implied. |
 | Always-awake Controller | PARTIAL | Production selects standalone always-awake operation; incomplete role and maintenance lifetimes still apply. |

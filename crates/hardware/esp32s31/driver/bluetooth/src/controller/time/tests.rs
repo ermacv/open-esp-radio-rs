@@ -544,22 +544,22 @@ fn scheduler_epoch_matches_forward_backward_and_wrapping_branches() {
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
     let epoch = ControllerSchedulerEpoch::new(sample(100), 1_000, scale);
 
-    assert_eq!(epoch.project(sample(103)), 1_012);
-    assert_eq!(epoch.project(sample(97)), 988);
+    assert_eq!(epoch.project(sample(103)), 1_001);
+    assert_eq!(epoch.project(sample(97)), 998);
 
     let wrapping_epoch = ControllerSchedulerEpoch::new(sample(0xffff_fffe), 1_000, scale);
-    assert_eq!(wrapping_epoch.project(sample(1)), 1_012);
+    assert_eq!(wrapping_epoch.project(sample(1)), 1_001);
 
     let reverse_wrapping_epoch = ControllerSchedulerEpoch::new(sample(1), 1_000, scale);
-    assert_eq!(reverse_wrapping_epoch.project(sample(0xffff_fffe)), 988);
+    assert_eq!(reverse_wrapping_epoch.project(sample(0xffff_fffe)), 998);
 
-    assert_eq!(epoch.raw_ticks_for_micros(1_012), 103);
-    assert_eq!(epoch.raw_ticks_for_micros(1_015), 103);
-    assert_eq!(epoch.raw_ticks_for_micros(988), 97);
-    assert_eq!(epoch.raw_ticks_for_micros(985), 97);
+    assert_eq!(epoch.raw_ticks_for_micros(1_001), 102);
+    assert_eq!(epoch.raw_ticks_for_micros(1_015), 130);
+    assert_eq!(epoch.raw_ticks_for_micros(998), 96);
+    assert_eq!(epoch.raw_ticks_for_micros(985), 70);
 
     let scheduler_wrapping_epoch = ControllerSchedulerEpoch::new(sample(100), 0xffff_fffe, scale);
-    assert_eq!(scheduler_wrapping_epoch.raw_ticks_for_micros(10), 103);
+    assert_eq!(scheduler_wrapping_epoch.raw_ticks_for_micros(10), 124);
 }
 
 #[test]
@@ -608,7 +608,7 @@ fn first_live_epoch_uses_each_reviewed_forward_scale() {
 }
 
 #[test]
-fn first_live_epoch_and_affine_now_retain_wrapping_projection() {
+fn first_live_epoch_and_affine_now_retain_projected_sample() {
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
     let first_sample = sample(0x4000_0000);
     let epoch = ControllerSchedulerEpoch::from_first_live_update(&first_sample, scale);
@@ -616,24 +616,54 @@ fn first_live_epoch_and_affine_now_retain_wrapping_projection() {
 
     assert_eq!(now.epoch(), epoch);
     assert_eq!(now.sample().raw_ticks(), 0x4000_0000);
-    assert_eq!(now.micros(), 0);
+    assert_eq!(now.micros(), 0x2000_0000);
 }
 
 #[test]
-fn live_reanchor_preserves_forward_time_and_updates_inverse_wrap_alias() {
+fn successive_half_microsecond_updates_preserve_time_across_raw_wrap() {
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
-    let first_sample = sample(0);
-    let first_epoch = ControllerSchedulerEpoch::from_first_live_update(&first_sample, scale);
-    let later_sample = sample(0x4000_0000);
-    let later_scheduler_image = first_epoch.project_raw_ticks(later_sample.raw_ticks());
-    let reanchored = first_epoch.reanchor(&later_sample);
+    for initial_raw in [101_u32, 0xffff_fffd] {
+        let mut epoch =
+            ControllerSchedulerEpoch::from_first_live_update(&sample(initial_raw), scale);
+        let initial_micros = initial_raw / 2;
+        assert_eq!(epoch.raw_ticks_for_micros(initial_micros), initial_raw - 1);
+        for elapsed_ticks in 0..16_u32 {
+            let raw = initial_raw.wrapping_add(elapsed_ticks);
+            let expected = initial_micros.wrapping_add(elapsed_ticks.div_ceil(2));
+            epoch = epoch.reanchor(&sample(raw));
+            assert_eq!(epoch.project(sample(raw)), expected);
+            // A fractional sample keeps the inverse anchored at a whole microsecond.
+            assert_eq!(epoch.raw_ticks_for_micros(expected), raw - raw % 2);
+            assert_eq!(
+                epoch.project(sample(raw.wrapping_sub(1))),
+                initial_micros.wrapping_add(elapsed_ticks / 2)
+            );
+        }
+    }
+}
 
-    assert_eq!(
-        reanchored.project_raw_ticks(later_sample.raw_ticks()),
-        later_scheduler_image
-    );
-    assert_eq!(first_epoch.raw_ticks_for_micros(4), 1);
-    assert_eq!(reanchored.raw_ticks_for_micros(4), 0x4000_0001);
+#[test]
+fn earlier_fractional_microseconds_round_down_without_reanchor_drift() {
+    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let epoch = ControllerSchedulerEpoch::new(sample(100), 1_000, scale);
+    let earlier = epoch.reanchor(&sample(97));
+    assert_eq!(earlier.project(sample(97)), 998);
+    assert_eq!(earlier.raw_ticks_for_micros(998), 96);
+    assert_eq!(earlier.project(sample(100)), 1_000);
+}
+
+#[test]
+fn slow_tick_inverse_truncates_on_both_sides_of_epoch() {
+    let scale = BluetoothControllerHalInitConfig::new(
+        BluetoothHalInitScale::Sixteen,
+        11,
+        33,
+        BluetoothHalInitPeriod::Image500,
+    )
+    .controller_time_scale();
+    let epoch = ControllerSchedulerEpoch::new(sample(100), 1_000, scale);
+    assert_eq!(epoch.raw_ticks_for_micros(1_003), 101);
+    assert_eq!(epoch.raw_ticks_for_micros(997), 99);
 }
 
 #[test]
@@ -642,6 +672,6 @@ fn post_enable_projection_retains_the_existing_scheduler_epoch() {
     let epoch = ControllerSchedulerEpoch::new(sample(100), 1_000, scale);
     let post_enable_sample = sample(103);
 
-    assert_eq!(epoch.project_without_reanchor(&post_enable_sample), 1_012);
-    assert_eq!(epoch.raw_ticks_for_micros(1_012), 103);
+    assert_eq!(epoch.project_without_reanchor(&post_enable_sample), 1_001);
+    assert_eq!(epoch.raw_ticks_for_micros(1_001), 102);
 }

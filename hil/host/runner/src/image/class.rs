@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
+    BluetoothDtm,
     BootSmoke,
     Performance,
     Correctness,
@@ -22,7 +23,8 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
+        Self::BluetoothDtm,
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -41,6 +43,7 @@ impl ImageClass {
 
     pub const fn id(self) -> &'static str {
         match self {
+            Self::BluetoothDtm => "bluetooth-dtm",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
@@ -60,6 +63,7 @@ impl ImageClass {
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
+            Self::BluetoothDtm => "bluetooth-hil,psram-task-stack,code-psram,profile-psram-data",
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
             Self::Correctness => {
@@ -103,7 +107,8 @@ impl ImageClass {
 
     pub const fn runtime_profile(self) -> &'static str {
         match self {
-            Self::BootSmoke
+            Self::BluetoothDtm
+            | Self::BootSmoke
             | Self::Performance
             | Self::Correctness
             | Self::DiagnosticMacIrq
@@ -132,7 +137,8 @@ impl ImageClass {
     pub const fn requires_driver_observation(self) -> bool {
         !matches!(
             self,
-            Self::BootSmoke
+            Self::BluetoothDtm
+                | Self::BootSmoke
                 | Self::Performance
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture

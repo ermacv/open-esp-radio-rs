@@ -89,3 +89,21 @@ fn suite_requirements_include_every_selected_owner() {
     assert!(union.station_network && union.station_control && union.laptop_client);
     assert_eq!(union, Requirements::union(&[&pair, &system, &pair]));
 }
+
+#[test]
+fn bluetooth_requires_its_adapter_without_a_network() {
+    let required = Requirements::for_scenario(&scenario(Workload::BluetoothDtm {
+        boots: 2,
+        minimum_packets: 10,
+    }));
+    assert!(required.bluetooth_adapter);
+    assert!(!required.network());
+    assert!(!required.local_radio());
+    assert!(
+        Requirements {
+            laptop_air_monitor: true,
+            ..required
+        }
+        .network()
+    );
+}

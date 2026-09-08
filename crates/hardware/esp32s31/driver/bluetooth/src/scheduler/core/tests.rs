@@ -689,7 +689,7 @@ fn rejected_initial_sequence_gate_releases_the_controller_owned_reservation() {
         .admit_initial_dtm_event(event, &now, ControllerTimeSample::for_validation(92))
         .expect("the fresh admission sample keeps the initial deadline open");
     let result = task.finish_dtm_sequence_authorization(
-        reservation.authorize_sequence(ControllerTimeSample::for_validation(1_000)),
+        reservation.authorize_sequence(ControllerTimeSample::for_validation(2_000)),
     );
 
     assert_eq!(
@@ -757,7 +757,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
         .admit_legacy_advertising_first_event(
             candidate,
             super::LegacyAdvertisingAdmissionObservation {
-                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(100)),
+                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(200)),
             },
         )
         .expect("the first guarded deadline remains open");
@@ -798,7 +798,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
         .admit_legacy_advertising_first_event(
             candidate,
             super::LegacyAdvertisingAdmissionObservation {
-                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(100)),
+                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(200)),
             },
         )
         .expect("cancellation released the first guarded reservation");
@@ -806,7 +806,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
         .prepare_legacy_advertising_first_event(
             admitted,
             super::LegacyAdvertisingSequenceObservation {
-                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(50)),
+                sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(100)),
             },
         )
         .expect("the second guarded deadline remains open");
@@ -867,7 +867,7 @@ fn rejected_recurring_sequence_gate_releases_the_controller_owned_reservation() 
         .reserve_recurring_dtm_event(event, &now)
         .expect("the exact recurring window is initially free");
     let result = task.finish_dtm_sequence_authorization(
-        reservation.authorize_sequence(ControllerTimeSample::for_validation(1_000)),
+        reservation.authorize_sequence(ControllerTimeSample::for_validation(2_000)),
     );
 
     assert_eq!(

@@ -44,9 +44,9 @@ fn reserve_recurring_raw<const CAPACITY: usize>(
 fn insertion_policy_uses_one_initialized_scheduler_epoch_scale() {
     let policy = timing_policy();
 
-    assert_eq!(policy.sequence_lead_raw_delta(), 11);
-    assert!(policy.initial_deadline_is_open(sample(92), 103));
-    assert!(!policy.initial_deadline_is_open(sample(93), 103));
+    assert_eq!(policy.sequence_lead_raw_delta(), 92);
+    assert!(policy.initial_deadline_is_open(sample(22), 103));
+    assert!(!policy.initial_deadline_is_open(sample(23), 103));
 }
 
 #[test]

@@ -16,6 +16,10 @@ use crate::SchedulerInstant;
 
 #[cfg(any(target_arch = "riscv32", test))]
 const INITIAL_ANCHOR_BASE_LEAD_MICROS: u32 = 440 + 500;
+// The DTM allocator writes 85 to private options +0x2a before scheduling.
+// The recurring RX body reads that halfword, not the common scheduler guard.
+#[cfg(any(target_arch = "riscv32", test))]
+const RX_RECURRING_SETUP_LEAD_MICROS: u32 = 85;
 #[cfg(any(target_arch = "riscv32", test))]
 const RX_RECURRING_ANCHOR_EXTRA_LEAD_MICROS: u32 = 15;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -146,9 +150,26 @@ impl DtmRxInitialEventWindow {
 pub struct DtmRxRecurringEventWindow(DtmRxEventWindowData);
 
 impl DtmRxRecurringEventWindow {
+    /// Allow the open controller's preparation/publication work to finish
+    /// before the RX start. The vendor's synchronous setup budget alone does
+    /// not cover the affine Rust runtime executing with code/data in PSRAM.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn for_runtime(
+        config: crate::scheduler::SchedulerSoftwareConfig,
+        current: SchedulerInstant,
+        timing_ready: SchedulerInstant,
+    ) -> Self {
+        const PREPARATION_RESERVE_MICROS: u32 = 500;
+        Self::new(
+            config,
+            SchedulerInstant::from_image(current.image().wrapping_add(PREPARATION_RESERVE_MICROS)),
+            timing_ready,
+        )
+    }
+
     /// Form one recurring RX window from ordered current-time and post-enable images.
     ///
-    /// The nominal anchor adds the common late-start guard, scheduler margin
+    /// The nominal anchor adds the DTM setup lead, scheduler margin
     /// and the reviewed RX recurrence lead to a fresh current-time sample. A
     /// later fresh post-enable timing image wins under the complete signed wrapping
     /// comparison. This pure transform does not establish sample freshness.
@@ -161,7 +182,7 @@ impl DtmRxRecurringEventWindow {
         let margin = config.preparation_lead_micros();
         let nominal_anchor = current
             .image()
-            .wrapping_add(config.late_start_guard_micros())
+            .wrapping_add(RX_RECURRING_SETUP_LEAD_MICROS)
             .wrapping_add(margin)
             .wrapping_add(RX_RECURRING_ANCHOR_EXTRA_LEAD_MICROS);
         let anchor = SchedulerInstant::from_image(nominal_anchor)

@@ -905,6 +905,14 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
+                    Command::BluetoothDtm(_) => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::InvalidState),
+                        )
+                        .await;
+                    }
                     Command::GetCapabilities => {
                         publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
                             .await;

@@ -142,6 +142,11 @@ impl Scenario {
             )
             .into());
         }
+        if (self.image == ImageClass::BluetoothDtm)
+            != matches!(self.workload, Workload::BluetoothDtm { .. })
+        {
+            return self.criteria_error("Bluetooth DTM requires its exclusive firmware image");
+        }
         let boot_smoke_image = self.image == ImageClass::BootSmoke;
         if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
@@ -399,6 +404,21 @@ impl Scenario {
             }
         }
         match &self.workload {
+            Workload::BluetoothDtm {
+                boots,
+                minimum_packets,
+            } => {
+                bounded(*boots, 1, 10, self, "boots")?;
+                bounded(*minimum_packets, 1, 160, self, "minimum_packets")?;
+                if self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "Bluetooth DTM does not accept Wi-Fi criteria or fixture evidence",
+                    );
+                }
+            }
             Workload::BootSmoke => {}
             Workload::MemoryBenchmark {
                 boots,

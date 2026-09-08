@@ -202,3 +202,37 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
         .is_err()
     );
 }
+
+#[test]
+fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
+    let cli = Cli::try_parse_from([
+        "cargo-hil",
+        "fixture",
+        "bluetooth-check",
+        "--adapter",
+        "hci2",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        CliCommand::Fixture {
+            command: FixtureCommand::BluetoothCheck {
+                adapter: crate::fixture::bluetooth::model::Adapter(2)
+            }
+        }
+    ));
+    let cli = Cli::try_parse_from(["cargo-hil", "fixture", "install-host"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        CliCommand::Fixture {
+            command: FixtureCommand::InstallHost
+        }
+    ));
+    let cli =
+        Cli::try_parse_from(["cargo-hil", "fixture", "check", "station-udp-tx-he20"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        CliCommand::Fixture { command: FixtureCommand::Check { scenario } }
+            if scenario == "station-udp-tx-he20"
+    ));
+}

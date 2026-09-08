@@ -647,3 +647,66 @@ fn unsupported_le_test_pdu_type_returns_the_unchanged_owner() {
     assert_eq!(error, DtmTxPacketPrepareError::UnsupportedPayloadType);
     assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
 }
+
+fn stopped_item_for(
+    address: BluetoothControllerSramAddress,
+) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem {
+    let head = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+        BluetoothSchedulerHardwareListIndex::ZERO,
+        BluetoothSchedulerHardwareListHead::from_address(address).unwrap(),
+    );
+    oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem::from_head_for_validation(head)
+}
+
+#[test]
+fn stopped_silent_receiver_reclaims_and_can_run_again_without_a_packet() {
+    let mut cpu = model_owner(0x2f00_6500);
+    for _ in 0..3 {
+        let running = running_owner_from_cpu(cpu, u32::MAX);
+        let address = running.scheduler_item_address();
+        let before = snapshot(running.storage.as_ref().get_ref());
+        let (completed, head) = match running.observe_stopped(stopped_item_for(address)) {
+            Ok(value) => value,
+            Err(_) => panic!("matching stopped item must bind"),
+        };
+        assert_eq!(
+            completed.status(),
+            DtmSchedulerItemCompletionStatus::Aborted
+        );
+        assert_eq!(snapshot(completed.owner.storage.as_ref().get_ref()), before);
+        let removal = BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(head);
+        let prepared = match completed.prepare_recycle_after_software_list_removal(removal) {
+            Ok(value) => value,
+            Err(_) => panic!("exact removal must permit recycle"),
+        };
+        let (owner, status) = prepared.commit().into_cpu_owned().into_parts();
+        assert_eq!(status, DtmSchedulerItemCompletionStatus::Aborted);
+        cpu = owner;
+    }
+}
+
+#[test]
+fn stop_preserves_completion_racing_the_request_and_rejects_foreign_identity() {
+    for (raw, expected) in [
+        (0, DtmSchedulerItemCompletionStatus::Zero),
+        (
+            7,
+            DtmSchedulerItemCompletionStatus::NonZero(core::num::NonZeroU32::new(7).unwrap()),
+        ),
+    ] {
+        let running = running_owner_with_status(0x2f00_6900, raw);
+        let address = running.scheduler_item_address();
+        let before = snapshot(running.storage.as_ref().get_ref());
+        let foreign = BluetoothControllerSramAddress::new(address.address() + 4).unwrap();
+        let (running, _) = match running.observe_stopped(stopped_item_for(foreign)) {
+            Err(owners) => owners,
+            Ok(_) => panic!("a different stopped item cannot authorize this graph"),
+        };
+        assert_eq!(snapshot(running.storage.as_ref().get_ref()), before);
+        let (completed, _) = match running.observe_stopped(stopped_item_for(address)) {
+            Ok(value) => value,
+            Err(_) => panic!("the matching identity must bind"),
+        };
+        assert_eq!(completed.status(), expected);
+    }
+}

@@ -19,60 +19,44 @@ impl HalInitTransaction for Recorder {
 }
 
 #[test]
-fn standalone_time_scale_matches_complete_shift_helpers() {
+fn standalone_time_scale_uses_two_ticks_per_microsecond() {
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
 
-    assert_eq!(scale.shift_image(), 3);
-    assert_eq!(scale.micros_from_raw_ticks(0), 0);
-    assert_eq!(scale.micros_from_raw_ticks(625), 2_500);
-    assert_eq!(scale.micros_from_raw_ticks(0x4000_0000), 0);
+    assert_eq!(scale.micros_from_raw_ticks(5_000), 2_500);
+    assert_eq!(
+        scale.project_raw_ticks(5_001),
+        super::BluetoothMicrosecondDeltaProjection {
+            whole_micros: 2_500,
+            remainder_ticks: 1,
+        }
+    );
     assert_eq!(
         scale.raw_ticks_from_micros(2_503),
         super::BluetoothRawTickDeltaProjection {
-            whole_ticks: 625,
-            remainder_micros: 3,
+            whole_ticks: 5_006,
+            remainder_micros: 0,
         }
     );
+    assert_eq!(scale.raw_ticks_from_micros(0x8000_0001).whole_ticks, 2);
 }
 
 #[test]
-fn every_accepted_time_scale_retains_inverse_remainder() {
-    let cases = [
-        (
-            BluetoothHalInitScale::Eight,
-            BluetoothHalInitPeriod::Image2000,
-            2,
-        ),
-        (
-            BluetoothHalInitScale::Eight,
-            BluetoothHalInitPeriod::Image1000,
-            3,
-        ),
-        (
-            BluetoothHalInitScale::Eight,
-            BluetoothHalInitPeriod::Image500,
-            4,
-        ),
-        (
-            BluetoothHalInitScale::Sixteen,
-            BluetoothHalInitPeriod::Image500,
-            5,
-        ),
-    ];
-
-    for (scale, period, shift_image) in cases {
-        let time_scale =
-            BluetoothControllerHalInitConfig::new(scale, 11, 33, period).controller_time_scale();
-        let micros = 0x1234_567b;
-        let projection = time_scale.raw_ticks_from_micros(micros);
-        let shift = u32::from(shift_image - 1);
-
-        assert_eq!(time_scale.shift_image(), shift_image);
-        assert_eq!(projection.whole_ticks, micros >> shift);
-        assert_eq!(
-            u32::from(projection.remainder_micros),
-            micros & ((1_u32 << shift) - 1)
-        );
+fn time_conversion_depends_on_period_and_retains_both_remainders() {
+    for hal_scale in [BluetoothHalInitScale::Eight, BluetoothHalInitScale::Sixteen] {
+        for (period, raw_ticks, micros, remainder_ticks, remainder_micros) in [
+            (BluetoothHalInitPeriod::Image500, 501, 1_003, 0, 1),
+            (BluetoothHalInitPeriod::Image1000, 1_003, 1_003, 0, 0),
+            (BluetoothHalInitPeriod::Image2000, 2_007, 1_003, 1, 0),
+        ] {
+            let scale = BluetoothControllerHalInitConfig::new(hal_scale, 11, 33, period)
+                .controller_time_scale();
+            let forward = scale.project_raw_ticks(raw_ticks);
+            let inverse = scale.raw_ticks_from_micros(micros);
+            assert_eq!(forward.whole_micros, micros - u32::from(remainder_micros));
+            assert_eq!(forward.remainder_ticks, remainder_ticks);
+            assert_eq!(inverse.whole_ticks, raw_ticks - u32::from(remainder_ticks));
+            assert_eq!(inverse.remainder_micros, remainder_micros);
+        }
     }
 }
 

@@ -19,6 +19,7 @@ pub(crate) struct LabConfig {
     path: PathBuf,
     cell_id: String,
     pub(crate) device: DeviceConfig,
+    pub(crate) bluetooth_adapter: Option<crate::fixture::bluetooth::model::Adapter>,
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,
@@ -29,9 +30,16 @@ pub(crate) struct LabConfig {
 struct RawLabConfig {
     lab: RawLabIdentity,
     device: RawDeviceConfig,
+    bluetooth: Option<RawBluetoothConfig>,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBluetoothConfig {
+    adapter: String,
 }
 
 #[derive(Deserialize)]
@@ -349,6 +357,10 @@ impl LabConfig {
         Ok(Self {
             path: path.to_owned(),
             cell_id: raw.lab.id,
+            bluetooth_adapter: raw
+                .bluetooth
+                .map(|config| config.adapter.parse())
+                .transpose()?,
             device: DeviceConfig {
                 id: raw.device.id,
                 serial: raw.device.serial,
@@ -461,6 +473,7 @@ impl LabConfig {
         Self {
             path: PathBuf::from("hil/local.toml"),
             cell_id: String::from("test-cell"),
+            bluetooth_adapter: None,
             device: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),

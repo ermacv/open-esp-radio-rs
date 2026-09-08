@@ -100,6 +100,9 @@ fn run() -> Result<()> {
         .unwrap_or(crate::lab::config::LabConfig::default_path()?);
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
+        CliCommand::Fixture {
+            command: cli::FixtureCommand::BluetoothCheck { adapter },
+        } => fixture::bluetooth::check(&root, adapter),
         CliCommand::Archive { command } => archive::run(&root, command),
         CliCommand::Fixture {
             command: cli::FixtureCommand::InstallHost,
@@ -528,6 +531,21 @@ fn scenario_precondition(
     lab: &crate::lab::config::LabConfig,
     selected: &crate::scenario::Scenario,
 ) -> Option<crate::evidence::run::Failure> {
+    if matches!(
+        selected.workload,
+        crate::scenario::Workload::BluetoothDtm { .. }
+    ) {
+        let result = lab
+            .bluetooth_adapter
+            .ok_or_else(|| "missing [bluetooth] adapter in lab config".into())
+            .and_then(fixture::bluetooth::preflight);
+        if let Err(error) = result {
+            return Some(crate::evidence::run::Failure::new(
+                crate::evidence::run::FailureKind::Precondition,
+                error.to_string(),
+            ));
+        }
+    }
     if !crate::lab::requirements::Requirements::for_scenario(selected).station_network {
         return None;
     }

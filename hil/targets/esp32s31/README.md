@@ -1,5 +1,11 @@
 # ESP32-S31 HIL target
 
+The separate `bluetooth-dtm` image selects `bluetooth-hil`, the production
+Bluetooth composition and the framed HIL control protocol without a Wi-Fi
+network feature. Its USB owner translates bounded DTM requests into typed HCI
+commands; radio execution remains in production crates. See the
+[Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
+
 This workspace selects the shared board boot and memory profile and owns Embassy
 executors, network stacks, UART transport and HIL workloads. `cargo hil image
 build/flash`, `run` and `run-all` accept `--network upstream-xarxa` (default),

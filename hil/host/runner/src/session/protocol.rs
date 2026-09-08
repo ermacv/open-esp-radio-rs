@@ -723,6 +723,19 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn bluetooth_dtm(
+        &self,
+        operation: open_esp_radio_hil_protocol::BluetoothDtmOperation,
+    ) -> Result<open_esp_radio_hil_protocol::BluetoothDtmEvidence> {
+        match self
+            .send_command(0, Command::BluetoothDtm(operation), Duration::from_secs(5))?
+            .body
+        {
+            Event::BluetoothDtm(evidence) if evidence.completed(operation) => Ok(evidence),
+            response => Err(format!("Bluetooth {operation:?} failed: {response:?}").into()),
+        }
+    }
+
     pub(crate) fn probe_timebase(
         &self,
         request: TimebaseProbeRequest,

@@ -41,6 +41,8 @@ pub(crate) enum ObservationScope {
 pub(crate) struct LabDefinition {
     pub(crate) cell_id: String,
     pub(crate) device_id: String,
+    #[serde(default)]
+    pub(crate) bluetooth_adapter: Option<String>,
     pub(crate) station_ipv4: StationIpv4Definition,
     pub(crate) access_point: AccessPointDefinition,
     pub(crate) station_fixture: StationFixtureDefinition,
@@ -185,7 +187,7 @@ impl LabProvenance {
         required: super::requirements::Requirements,
     ) -> Result<Self> {
         let definition = LabDefinition::from_config(lab);
-        let scope = if required.station_network {
+        let scope = if required.network() {
             ObservationScope::Network
         } else {
             ObservationScope::System
@@ -323,6 +325,7 @@ impl LabDefinition {
         Self {
             cell_id: lab.cell_id().to_owned(),
             device_id: lab.device.id.clone(),
+            bluetooth_adapter: lab.bluetooth_adapter.map(|adapter| adapter.to_string()),
             station_ipv4,
             access_point: AccessPointDefinition {
                 channel: lab.access_point.channel(),

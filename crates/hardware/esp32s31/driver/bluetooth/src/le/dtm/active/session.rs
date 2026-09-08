@@ -185,6 +185,8 @@ where
 /// the executor supplies a cooperative deadline or yield before rechecking.
 #[derive(Clone, Copy)]
 pub enum DtmActiveRadioWait<'session> {
+    /// Yield between events before sampling the next event's deadline.
+    Cooperative,
     Scheduler(&'session SchedulerWakeCell),
     PostUnlink(&'session DtmPostUnlinkWakeCell),
     ControllerTime,
@@ -532,6 +534,9 @@ where
     /// Borrow the exact current radio wait without moving either affine axis.
     pub fn radio_wait(&self) -> Option<DtmActiveRadioWait<'_>> {
         match &self.radio {
+            DtmActiveRadio::Recurring(runner) if runner.is_event_boundary() => {
+                Some(DtmActiveRadioWait::Cooperative)
+            }
             DtmActiveRadio::SchedulerWait(wait) => Some(DtmActiveRadioWait::Scheduler(wait.wake())),
             DtmActiveRadio::PostUnlinkWait(wait) => {
                 Some(DtmActiveRadioWait::PostUnlink(wait.wake()))

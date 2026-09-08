@@ -19,7 +19,6 @@ pub(crate) struct ControllerTimeSample {
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl ControllerTimeSample {
-    #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
     const fn from_live_latch(latched_time: BluetoothControllerLatchedTime) -> Self {
         Self { latched_time }
     }
@@ -45,7 +44,7 @@ impl ControllerTimeSample {
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(target_arch = "riscv32", test))]
 mod worker {
 
     use oer_esp32s31_hal::bluetooth::{
@@ -370,7 +369,7 @@ pub(crate) use worker::ControllerTimeHardware;
 pub(crate) use worker::ControllerTimeRequest;
 #[cfg(test)]
 pub(crate) use worker::ControllerTimeWorkerPhase;
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use worker::{
     ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequestError,
     ControllerTimeWorker,
@@ -551,8 +550,8 @@ pub(crate) fn drain_controller_time_orphan(
 /// Raw-tick anchor paired with the BLE scheduler's microsecond epoch.
 ///
 /// The projection exactly retains the current `r_sched_timer_convertTimeToUs`
-/// branch geometry. Every reviewed S31 HAL configuration has a positive scale
-/// image, so the helper's optional negative-side remainder is always zero.
+/// branch geometry, including rounding earlier fractional microseconds down.
+/// Re-anchoring retains raw ticks not consumed by the microsecond projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct ControllerSchedulerEpoch {
@@ -565,21 +564,21 @@ pub(crate) struct ControllerSchedulerEpoch {
 impl ControllerSchedulerEpoch {
     /// Establish the source-owned epoch from its first live raw-tick update.
     ///
-    /// Scheduler initialization starts both reference images at zero. Every
-    /// reviewed ESP32-S31 time scale is positive, so the forward conversion's
-    /// optional remainder is zero: the raw anchor is the exact sample and the
-    /// scheduler anchor is its wrapping scale projection. The constructor only
-    /// borrows the sample so the caller can then consume that same affine value
-    /// into [`ControllerSchedulerNow`].
+    /// Scheduler initialization starts both reference images at zero. The raw
+    /// anchor excludes the conversion remainder so both anchors denote the same
+    /// whole microsecond. The constructor only borrows the sample so the caller
+    /// can consume that same affine value into [`ControllerSchedulerNow`].
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn from_first_live_update(
         sample: &ControllerTimeSample,
         scale: BluetoothControllerTimeScale,
     ) -> Self {
-        let raw_tick_anchor = sample.raw_ticks();
+        let projection = scale.project_raw_ticks(sample.raw_ticks());
         Self {
-            raw_tick_anchor,
-            micros_anchor: scale.micros_from_raw_ticks(raw_tick_anchor),
+            raw_tick_anchor: sample
+                .raw_ticks()
+                .wrapping_sub(projection.remainder_ticks as u32),
+            micros_anchor: projection.whole_micros,
             scale,
         }
     }
@@ -642,14 +641,17 @@ impl ControllerSchedulerEpoch {
     /// Advance the raw anchor while preserving this sample's scheduler image.
     ///
     /// The Controller does this after every live task-run reference update.
-    /// Re-anchoring is required even when the forward image is unchanged:
-    /// shifting scales have wrapping aliases that the inverse projection can
-    /// distinguish only through the latest raw anchor.
+    /// The raw anchor excludes any unconsumed fractional microsecond. Updating
+    /// on successive odd raw samples must not discard half a microsecond on
+    /// each call. The aligned anchor also preserves inverse wrap selection.
     pub(crate) const fn reanchor(self, sample: &ControllerTimeSample) -> Self {
-        let raw_tick_anchor = sample.raw_ticks();
+        let raw_ticks = sample.raw_ticks();
+        let projection = self
+            .scale
+            .project_raw_ticks(raw_ticks.wrapping_sub(self.raw_tick_anchor));
         Self {
-            raw_tick_anchor,
-            micros_anchor: self.project_raw_ticks(raw_tick_anchor),
+            raw_tick_anchor: raw_ticks.wrapping_sub(projection.remainder_ticks as u32),
+            micros_anchor: self.project_raw_ticks(raw_ticks),
             scale: self.scale,
         }
     }
@@ -660,8 +662,10 @@ impl ControllerSchedulerEpoch {
             self.micros_anchor
                 .wrapping_add(self.scale.micros_from_raw_ticks(delta))
         } else {
+            let projection = self.scale.project_raw_ticks(delta.wrapping_neg());
             self.micros_anchor
-                .wrapping_sub(self.scale.micros_from_raw_ticks(delta.wrapping_neg()))
+                .wrapping_sub(projection.whole_micros)
+                .wrapping_sub((projection.remainder_ticks != 0) as u32)
         }
     }
 

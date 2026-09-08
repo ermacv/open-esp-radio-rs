@@ -15,6 +15,7 @@ profile-psram-data = []
 profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-runtime/psram-task-stack"]
 boot-smoke = []
+bluetooth-hil = ["oer-esp32s31-bluetooth/dtm-diagnostics", "dep:bt-hci", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol"]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network"]
 compat-network = ["dep:embassy-net-compat", "oer-esp32s31-embassy-wifi/compat-network"]
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embassy-wifi/owned-network"]
@@ -117,6 +118,12 @@ ieee802154-ed-event-probe = [
 ]
 
 [dependencies]
+bt-hci = { version = "=0.10.1", optional = true }
+oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }
+oer-esp32s31-bluetooth-embassy = { path = "../../../../crates/runtime/embassy/esp32s31/bluetooth", optional = true }
+oer-esp32s31-bluetooth-integration = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
+oer-esp32s31-bluetooth-memory = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth/memory", optional = true }
+oer-esp32s31-radio-platform-esp-hal = { path = "../../../../crates/adapters/esp-hal/esp32s31/radio", optional = true, features = ["esp32s31"] }
 oer-wifi-softmac = { workspace = true, optional = true }
 oer-esp32s31-wifi-mac = { workspace = true, optional = true }
 oer-esp32s31-wifi-embassy = { workspace = true, optional = true }

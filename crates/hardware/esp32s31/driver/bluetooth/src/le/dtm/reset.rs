@@ -62,6 +62,8 @@ pub enum DtmResetStoppingRetryCause<'cause, E> {
 /// Read-only fail-stop classification for Reset quiescence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DtmResetStoppingFaultCause {
+    /// The retained common quiescence budget elapsed; no owner was released.
+    DeadlineExpired,
     Completion(DtmActiveCompletionFaultCause),
     Recurring(DtmRecurringFaultCause),
     UnexpectedPublishedHeadTransition,
@@ -205,7 +207,6 @@ where
 
     pub fn wait(&self) -> Option<DtmResetStoppingWait<'_>> {
         match self.quiescence.wait() {
-            Some(DtmQuiescenceWait::Scheduler(wake)) => Some(DtmResetStoppingWait::Scheduler(wake)),
             Some(DtmQuiescenceWait::PostUnlink(wake)) => {
                 Some(DtmResetStoppingWait::PostUnlink(wake))
             }
@@ -443,6 +444,7 @@ where
 
 const fn reset_fault_cause(cause: DtmQuiescenceFaultCause) -> DtmResetStoppingFaultCause {
     match cause {
+        DtmQuiescenceFaultCause::DeadlineExpired => DtmResetStoppingFaultCause::DeadlineExpired,
         DtmQuiescenceFaultCause::Completion(cause) => DtmResetStoppingFaultCause::Completion(cause),
         DtmQuiescenceFaultCause::Recurring(cause) => DtmResetStoppingFaultCause::Recurring(cause),
         DtmQuiescenceFaultCause::UnexpectedPublishedHeadTransition => {

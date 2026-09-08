@@ -199,7 +199,7 @@ fn sealed_live_timing_forms_a_cancellable_first_event_candidate() {
     };
 
     assert_eq!(candidate.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
-    assert_eq!(candidate.projected_window_duration(), 192);
+    assert_eq!(candidate.projected_window_duration(), 1_554);
     let (enabled, _) = candidate.cancel().into_parts();
     assert_eq!(
         enabled.prepare_event().channels(),

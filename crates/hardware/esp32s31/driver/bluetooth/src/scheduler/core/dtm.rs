@@ -559,6 +559,35 @@ impl<Role> DtmSchedulerRunning<Role> {
     }
 }
 
+/// Owned results of common stop for the exclusive DTM list.
+#[cfg(target_arch = "riscv32")]
+#[must_use]
+pub(crate) enum DtmSchedulerStopStep<Role> {
+    Pending {
+        running: DtmSchedulerRunning<Role>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    },
+    IdentityMismatch {
+        _running: DtmSchedulerRunning<Role>,
+        _stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    },
+    UnexpectedFinishedList {
+        _running: DtmSchedulerRunning<Role>,
+        _stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
+        _observed: oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListPop,
+    },
+    HeadRejected {
+        _item: DtmRunningEvent<Role>,
+        _observed:
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation,
+    },
+    MemoryRejected {
+        _item: DtmRunningEvent<Role>,
+        _stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+    },
+    Retired(DtmSchedulerHardwareHeadRetirementStep<Role>),
+}
+
 /// DTM graph with a non-sentinel status observed after a fresh fenced transfer.
 ///
 /// The source-owned scheduler epoch remains occupied and the graph remains
@@ -1529,7 +1558,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         timing_ready: crate::AlwaysAwakeTimingReady,
     ) -> Result<DtmReceiverRecurringStaged, DtmControllerRxRecurringPreparationFailure> {
         let current = dtm_scheduler_current(&now);
-        let next_window = DtmRxRecurringEventWindow::new(
+        let next_window = DtmRxRecurringEventWindow::for_runtime(
             self.config,
             current,
             timing_ready.into_scheduler_instant(),
@@ -1612,9 +1641,22 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             staged,
             reservation,
         } = pre_sequence;
-        let reservation = match self
-            .finish_dtm_sequence_authorization(reservation.authorize_sequence(sequence_sample))
-        {
+        #[cfg(feature = "dtm-diagnostics")]
+        let lead_ticks = reservation
+            .window()
+            .start()
+            .wrapping_sub(sequence_sample.raw_ticks()) as i32;
+        let authorized =
+            self.finish_dtm_sequence_authorization(reservation.authorize_sequence(sequence_sample));
+        #[cfg(feature = "dtm-diagnostics")]
+        crate::le::dtm::diagnostics::record_sequence(
+            lead_ticks,
+            matches!(
+                &authorized,
+                Err(DtmControllerEventPreparationError::SequenceAuthorization(_))
+            ),
+        );
+        let reservation = match authorized {
             Ok(reservation) => reservation,
             Err(error) => {
                 return Err(DtmControllerRxRecurringPreparationFailure {
@@ -1835,6 +1877,85 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             };
         let item = merged.item.into_head_published(&publication);
         Ok(DtmSchedulerHeadPublished { item, publication })
+    }
+
+    /// Stop only the source-owned sole DTM item. No finished-list transfer is
+    /// performed until the common stop has completed; it is captured once.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn step_dtm_stop<Role>(
+        &mut self,
+        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        running: DtmSchedulerRunning<Role>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> DtmSchedulerStopStep<Role> {
+        use oer_esp32s31_hal::bluetooth::{
+            BluetoothSchedulerFinishedListPop, BluetoothSchedulerStopStep,
+        };
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+        {
+            return DtmSchedulerStopStep::IdentityMismatch {
+                _running: running,
+                _stop: stop,
+            };
+        }
+        let stopped = match self.task.step_scheduler_stop(storage, stop) {
+            Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => stopped,
+            Ok(BluetoothSchedulerStopStep::Pending(stop)) | Err(stop) => {
+                return DtmSchedulerStopStep::Pending { running, stop };
+            }
+        };
+        let captured = self
+            .task
+            .transfer_stopped_scheduler_finished_lists(&stopped);
+        let rest = match captured.pop_lowest() {
+            BluetoothSchedulerFinishedListPop::List {
+                observed,
+                remaining,
+            } if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO => {
+                remaining.pop_lowest()
+            }
+            other => other,
+        };
+        if !matches!(rest, BluetoothSchedulerFinishedListPop::Complete) {
+            return DtmSchedulerStopStep::UnexpectedFinishedList {
+                _running: running,
+                _stopped: stopped,
+                _observed: rest,
+            };
+        }
+        let DtmSchedulerRunning { item, run } = running;
+        let stopped = match self.task.retire_stopped_scheduler_head(stopped, run) {
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Retired(
+                stopped,
+            ) => stopped,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Rejected(
+                observed,
+            ) => {
+                return DtmSchedulerStopStep::HeadRejected {
+                    _item: item,
+                    _observed: observed,
+                };
+            }
+        };
+        let (item, head) = match item.observe_stopped(stopped) {
+            Ok(completed) => completed,
+            Err((item, stopped)) => {
+                return DtmSchedulerStopStep::MemoryRejected {
+                    _item: item,
+                    _stopped: stopped,
+                };
+            }
+        };
+        self._scheduler_list
+            .retain_completion_observed_first_item(address);
+        self._scheduler_list
+            .retain_hardware_head_empty_first_item(address);
+        DtmSchedulerStopStep::Retired(DtmSchedulerHardwareHeadRetirementStep::EmptyObserved(
+            DtmSchedulerHardwareHeadEmptyObserved { item, head },
+        ))
     }
 
     /// Perform one fresh, bounded DTM completion observation.

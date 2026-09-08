@@ -262,6 +262,7 @@ impl RadioHardware {
                 low_power_timer_clock: None,
                 platform_pll_source: None,
                 modem_syscon_clocks: BluetoothModemSysconClockState::new(),
+                phy_i2c_clock: None,
                 modem_syscon_controller_clocks_retained: false,
                 modem_syscon_apb_clocks_retained: false,
                 controller_time_latch:
@@ -1542,6 +1543,7 @@ pub struct BluetoothTaskRegisters {
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
     pub(crate) retained_wifi: RetainedWifiPeripheralOwners,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
+    pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
     pub(crate) low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
     pub(crate) platform_pll_source: Option<crate::modem::platform::PlatformPllSourceLease>,
     pub(crate) modem_syscon_clocks: BluetoothModemSysconClockState,
@@ -1596,6 +1598,82 @@ impl core::fmt::Debug for BluetoothTaskReuniteFailure {
 }
 
 impl BluetoothTaskRegisters {
+    /// Retain the common PHY I2C source for the complete powered epoch.
+    #[doc(hidden)]
+    pub fn retain_phy_i2c_master_clock(&mut self) {
+        if self.phy_i2c_clock.is_none() {
+            self.phy_i2c_clock = Some(
+                self.radio_phy
+                    .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster),
+            );
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn select_hp_active_modem_icg(&mut self) {
+        self.radio_phy.select_hp_active_modem_icg();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_modem_icg_selection(&mut self) {
+        self.radio_phy.apply_modem_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_sleep_icg_selection(&mut self) {
+        self.radio_phy.apply_sleep_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn enable_modem_register_bus_clock(&mut self) {
+        self.radio_phy.enable_modem_register_bus_clock();
+    }
+
+    #[doc(hidden)]
+    pub fn configure_modem_source_clocks(&mut self) {
+        self.radio_phy.configure_modem_source_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
+        self.radio_phy.set_wifi_baseband_and_mac_reset(asserted);
+    }
+
+    #[doc(hidden)]
+    pub fn set_wifi_baseband_reset(&mut self, asserted: bool) {
+        self.radio_phy.set_wifi_baseband_reset(asserted);
+    }
+
+    #[doc(hidden)]
+    pub fn configure_wifi_power_clock_map(&mut self) {
+        self.radio_phy.configure_wifi_power_clock_map();
+    }
+
+    #[doc(hidden)]
+    pub fn enable_phy_calibration_clocks(&mut self) {
+        self.radio_phy.enable_phy_calibration_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn select_phy_i2c_160mhz_source(&mut self) {
+        self.radio_phy.select_phy_i2c_160mhz_source();
+    }
+
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.radio_phy.platform_clock_power_observation()
+    }
+
+    #[doc(hidden)]
+    pub fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
+        self.radio_phy.modem_syscon_power_observation()
+    }
+
+    #[doc(hidden)]
+    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.radio_phy.shared_modem_clock_observation()
+    }
+
     pub(crate) fn retain_platform_pll_source(&mut self) {
         if self.platform_pll_source.is_none() {
             self.platform_pll_source = Some(self.radio_phy.retain_platform_pll_source());
@@ -1640,7 +1718,8 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn prepare_shared_modem_clock_map(&mut self) {
+    #[doc(hidden)]
+    pub fn prepare_shared_modem_clock_map(&mut self) {
         self.radio_phy.prepare_shared_modem_clock_map();
     }
 
@@ -1687,6 +1766,9 @@ impl BluetoothTaskRegisters {
     }
 
     pub(crate) fn into_hardware(mut self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+        if let Some(lease) = self.phy_i2c_clock.take() {
+            self.radio_phy.release_shared_modem_clock(lease);
+        }
         self.release_bluetooth_low_power_timer();
         self.release_coexistence_clock();
         self.release_modem_syscon_bluetooth_apb_clocks();
@@ -1713,6 +1795,7 @@ impl BluetoothTaskRegisters {
             low_power_timer_clock: _,
             platform_pll_source: _,
             modem_syscon_clocks: _,
+            phy_i2c_clock: _,
             modem_syscon_controller_clocks_retained: _,
             modem_syscon_apb_clocks_retained: _,
             controller_time_latch: _,

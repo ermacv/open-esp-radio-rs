@@ -68,7 +68,7 @@ impl FixtureLock {
     }
 }
 
-struct ResourceLease {
+pub(crate) struct ResourceLease {
     file: File,
 }
 
@@ -126,6 +126,12 @@ fn resource_keys(
 ) -> Result<Vec<String>> {
     use super::config::StationFixtureConfig;
     let mut keys = Vec::new();
+    if required.bluetooth_adapter {
+        keys.push(bluetooth_key(
+            lab.bluetooth_adapter
+                .ok_or("missing Bluetooth fixture adapter")?,
+        )?);
+    }
     if required.local_radio() {
         keys.push(local_radio_key(Path::new("/sys/class/net/wlan0"))?);
     }
@@ -214,3 +220,23 @@ fn command_line() -> String {
 
 #[cfg(test)]
 mod tests;
+
+fn bluetooth_key(adapter: crate::fixture::bluetooth::model::Adapter) -> Result<String> {
+    Ok(format!(
+        "bluetooth:{}",
+        Path::new("/sys/class/bluetooth")
+            .join(adapter.to_string())
+            .canonicalize()?
+            .display()
+    ))
+}
+
+pub(crate) fn acquire_bluetooth(
+    adapter: crate::fixture::bluetooth::model::Adapter,
+) -> Result<ResourceLease> {
+    use sha2::{Digest, Sha256};
+    ResourceLease::acquire_directory(&oer_firmware::device::lease_directory()?.join(format!(
+        "resource-{:x}",
+        Sha256::digest(bluetooth_key(adapter)?.as_bytes())
+    )))
+}

@@ -30,6 +30,8 @@ enum Task {
 enum Check {
     Metadata,
     Architecture,
+    /// Compile isolated Bluetooth profiles and reject Wi-Fi dependency leakage.
+    Bluetooth,
     Safety,
     Network {
         #[arg(long)]
@@ -94,6 +96,7 @@ fn run() -> Result<()> {
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
+            Check::Bluetooth => checks::bluetooth::run(&ctx),
             Check::Safety => checks::safety::run(&ctx),
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),

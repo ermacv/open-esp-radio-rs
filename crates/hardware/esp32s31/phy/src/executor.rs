@@ -8,8 +8,9 @@
 use core::future::Future;
 
 use crate::calibration::registration::{
-    PhyRegisterBindingError, PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterFailure,
-    PhyRegisterLocalStep, PhyRegisterOutcome, PhyRegisterTransition, PhyRegisterTransitionError,
+    PhyRegisterAction, PhyRegisterBindingError, PhyRegisterCompletion, PhyRegisterExternalBinding,
+    PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome, PhyRegisterTransition,
+    PhyRegisterTransitionError,
 };
 
 const CALIBRATION_TRACKING_PARENT_EDGE_LIMIT: u8 = 32;
@@ -83,7 +84,12 @@ pub trait PhyParamTrackingPort {
 /// target-attempt runner can yield [`crate::RegisteredPhyState`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRegisterRunError<E> {
-    Lowering(PhyRegisterBindingError),
+    /// The pending action is retained so a target failure identifies the
+    /// missing hardware binding without requiring an instrumented build.
+    Lowering {
+        action: PhyRegisterAction,
+        error: PhyRegisterBindingError,
+    },
     Port(E),
     Transition(PhyRegisterTransitionError),
     Radio(PhyRegisterFailure),
@@ -126,7 +132,7 @@ pub async fn run_phy_register<P: PhyRegisterPort>(
             PhyRegisterLocalStep::StateAdvanced => {}
             PhyRegisterLocalStep::External(action) => {
                 let binding = PhyRegisterExternalBinding::lower(action)
-                    .map_err(PhyRegisterRunError::Lowering)?;
+                    .map_err(|error| PhyRegisterRunError::Lowering { action, error })?;
                 let completion = port
                     .complete(binding)
                     .await

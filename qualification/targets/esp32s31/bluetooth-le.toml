@@ -32,6 +32,44 @@ required-capabilities = [
   "trouble-host-integration",
   "coexistence",
   "powered-teardown",
+  "controller-capacity-limits",
+  "legacy-advertising-roles",
+  "active-scanning",
+  "central-initiator",
+  "concurrent-le-roles",
+  "connected-phy-and-data-length",
+  "ll-control-procedures",
+  "link-layer-encryption",
+  "privacy-and-filtering",
+  "secure-connections-host",
+  "extended-advertising",
+  "extended-scanning-initiating",
+  "periodic-advertising",
+  "periodic-synchronization",
+  "periodic-sync-transfer",
+  "pawr-advertiser",
+  "pawr-responder",
+  "encrypted-advertising-data",
+  "connected-direction-finding",
+  "connectionless-direction-finding",
+  "rf-power-and-lbt",
+  "channel-assessment",
+  "le-power-control",
+  "connection-subrating",
+  "modem-sleep-wake",
+  "external-coexistence",
+  "multi-radio-coordination",
+  "iso-dataplane",
+  "cis-central",
+  "cis-peripheral",
+  "bis-broadcaster",
+  "bis-synchronizer",
+  "le-audio-unicast",
+  "le-audio-broadcast",
+  "le-audio-profiles",
+  "host-eatt-and-gatt",
+  "mesh-host",
+  "blufi-host",
 ]
 
 [verification]
@@ -129,10 +167,11 @@ gaps = [
 [[capabilities.source-contracts]]
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
-scope = "Borrowed common-PHY registration followed by Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband initialization"
-limits = "This is the bounded initial handoff documented as IMPLEMENTED in the PHY consumer matrix; the parent capability also requires periodic maintenance and final release"
+scope = "Common-PHY power reset and calibration-clock preparation with semantic readback and retained I2C clock lease followed by borrowed registration Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband initialization"
+limits = "This bounded handoff retains fail-stop ownership on power or calibration failure; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
+  "crates/hardware/esp32s31/hal/src/power.rs",
   "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
 ]
 
@@ -594,4 +633,642 @@ gaps = [
   { axis = "hil", id = "scheduler-disable-command-and-busy-observation-cell-missing" },
   { axis = "async", id = "quiescence-deadline-and-terminal-disposition-missing" },
   { axis = "async", id = "scheduler-disable-recheck-wake-and-bottom-half-contract-missing" },
+]
+
+[[capabilities]]
+id = "controller-capacity-limits"
+title = "Controller capacity and admission limits"
+scope = "Bounded supported connections advertising sets periodic syncs PAwR responses and ISO streams with checked controller-SRAM and queue budgets and lossless rejection before resource exhaustion"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["async-controller-runtime"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "controller-capacity-limits-production-composition-missing" },
+  { axis = "host", id = "controller-capacity-limits-behavioral-regressions-missing" },
+  { axis = "vendor", id = "controller-capacity-limits-production-contract-evidence-missing" },
+  { axis = "hil", id = "controller-capacity-limits-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "controller-capacity-limits-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "legacy-advertising-roles"
+title = "Complete legacy advertising roles"
+scope = "Production nonconnectable scannable connectable and low-duty or high-duty directed advertising with scan responses all selected primary channels public or static random addresses and the high-duty-cycle nonconnectable policy"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["le-link-layer", "typed-hci-controller"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "legacy-advertising-roles-production-composition-missing" },
+  { axis = "host", id = "legacy-advertising-roles-behavioral-regressions-missing" },
+  { axis = "vendor", id = "legacy-advertising-roles-production-contract-evidence-missing" },
+  { axis = "hil", id = "legacy-advertising-roles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "legacy-advertising-roles-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "active-scanning"
+title = "Legacy active scanning"
+scope = "SCAN_REQ transmission SCAN_RSP matching duplicate filtering scan-window recurrence and bounded cancellation through standard HCI scan commands"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["legacy-passive-scanning", "typed-hci-controller"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "active-scanning-production-composition-missing" },
+  { axis = "host", id = "active-scanning-behavioral-regressions-missing" },
+  { axis = "vendor", id = "active-scanning-production-contract-evidence-missing" },
+  { axis = "hil", id = "active-scanning-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "active-scanning-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "central-initiator"
+title = "LE Central and Initiator"
+scope = "Legacy initiating Create Connection cancellation connection establishment and reliable Central ACL events with supervision and Host-visible disconnect"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["active-scanning", "le-link-layer", "typed-hci-controller"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "central-initiator-production-composition-missing" },
+  { axis = "host", id = "central-initiator-behavioral-regressions-missing" },
+  { axis = "vendor", id = "central-initiator-production-contract-evidence-missing" },
+  { axis = "hil", id = "central-initiator-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "central-initiator-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "concurrent-le-roles"
+title = "Multiple connections and simultaneous LE roles"
+scope = "Bounded multi-handle scheduling and packet ownership for simultaneous Broadcaster Observer Central and Peripheral operation with collision admission fairness cancellation and multi-connection optimization"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["central-initiator", "legacy-advertising-roles", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "concurrent-le-roles-production-composition-missing" },
+  { axis = "host", id = "concurrent-le-roles-behavioral-regressions-missing" },
+  { axis = "vendor", id = "concurrent-le-roles-production-contract-evidence-missing" },
+  { axis = "hil", id = "concurrent-le-roles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "concurrent-le-roles-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "connected-phy-and-data-length"
+title = "Connected PHY selection and Data Length Extension"
+scope = "Negotiated LE 1M 2M and Coded S2 or S8 operation PHY Update Data Length Update and bounded packet geometry in both connection roles independent of DTM selectors"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["central-initiator", "le-link-layer"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "connected-phy-and-data-length-production-composition-missing" },
+  { axis = "host", id = "connected-phy-and-data-length-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connected-phy-and-data-length-production-contract-evidence-missing" },
+  { axis = "hil", id = "connected-phy-and-data-length-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connected-phy-and-data-length-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "ll-control-procedures"
+title = "Connected Link Layer control procedures"
+scope = "Procedure serialization collision handling response timeouts and instant application for connection parameter and channel-map updates feature and version exchange LE Ping and termination"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["le-link-layer", "typed-hci-controller"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "ll-control-procedures-production-composition-missing" },
+  { axis = "host", id = "ll-control-procedures-behavioral-regressions-missing" },
+  { axis = "vendor", id = "ll-control-procedures-production-contract-evidence-missing" },
+  { axis = "hil", id = "ll-control-procedures-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "ll-control-procedures-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "link-layer-encryption"
+title = "LE Link Layer encryption"
+scope = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["ll-control-procedures", "connected-phy-and-data-length"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "link-layer-encryption-production-composition-missing" },
+  { axis = "host", id = "link-layer-encryption-behavioral-regressions-missing" },
+  { axis = "vendor", id = "link-layer-encryption-production-contract-evidence-missing" },
+  { axis = "hil", id = "link-layer-encryption-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "link-layer-encryption-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "privacy-and-filtering"
+title = "LE Privacy 1.2 and address filtering"
+scope = "Operational Filter Accept List and Resolving List HCI commands IRK installation RPA generation rotation and resolution device or network privacy policies and extended scanner filters across advertising scanning and initiating"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["central-initiator", "legacy-advertising-roles"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "privacy-and-filtering-production-composition-missing" },
+  { axis = "host", id = "privacy-and-filtering-behavioral-regressions-missing" },
+  { axis = "vendor", id = "privacy-and-filtering-production-contract-evidence-missing" },
+  { axis = "hil", id = "privacy-and-filtering-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "privacy-and-filtering-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "secure-connections-host"
+title = "Secure Connections and bonding integration"
+scope = "Production SMP Host composition for authenticated and unauthenticated LE Secure Connections legacy pairing bonding persistent key restoration encrypted reconnect and security failure handling"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["trouble-host-integration", "link-layer-encryption", "privacy-and-filtering"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "secure-connections-host-production-composition-missing" },
+  { axis = "host", id = "secure-connections-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "secure-connections-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "secure-connections-host-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "extended-advertising"
+title = "Advertising Extensions and multiple sets"
+scope = "ADV_EXT_IND AUX_ADV_IND AUX_CHAIN_IND AUX_SCAN_RSP and AUX_CONNECT_RSP scheduling multiple advertising-set lifecycle data fragmentation secondary 1M 2M or Coded PHY Advertising Coding Selection and Advertising Channel Index"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["legacy-advertising-roles", "controller-capacity-limits", "connected-phy-and-data-length"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "extended-advertising-production-composition-missing" },
+  { axis = "host", id = "extended-advertising-behavioral-regressions-missing" },
+  { axis = "vendor", id = "extended-advertising-production-contract-evidence-missing" },
+  { axis = "hil", id = "extended-advertising-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "extended-advertising-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "extended-scanning-initiating"
+title = "Extended scanning and initiating"
+scope = "Primary-to-AUX reception chaining extended reports response matching and extended initiating on supported PHYs with privacy filtering report backpressure and cancellation"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["extended-advertising", "active-scanning", "central-initiator", "privacy-and-filtering"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "extended-scanning-initiating-production-composition-missing" },
+  { axis = "host", id = "extended-scanning-initiating-behavioral-regressions-missing" },
+  { axis = "vendor", id = "extended-scanning-initiating-production-contract-evidence-missing" },
+  { axis = "hil", id = "extended-scanning-initiating-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "extended-scanning-initiating-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "periodic-advertising"
+title = "Periodic advertiser"
+scope = "Periodic advertising-set lifecycle SyncInfo publication AUX_SYNC_IND and chain scheduling AdvDataInfo and periodic advertising enhancements with bounded data updates"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["extended-advertising"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "periodic-advertising-production-composition-missing" },
+  { axis = "host", id = "periodic-advertising-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-advertising-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-advertising-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-advertising-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "periodic-synchronization"
+title = "Periodic advertising synchronization"
+scope = "Create Sync cancellation multiple sync owners receive scheduling clock uncertainty duplicate handling sync loss and reacquisition through HCI"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["extended-scanning-initiating", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "periodic-synchronization-production-composition-missing" },
+  { axis = "host", id = "periodic-synchronization-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-synchronization-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-synchronization-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-synchronization-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "periodic-sync-transfer"
+title = "Periodic Advertising Sync Transfer"
+scope = "PAST sender and recipient ACL procedures synchronization transfer application and transfer errors across independently owned connection and periodic sync lifetimes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["periodic-advertising", "periodic-synchronization", "ll-control-procedures"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "periodic-sync-transfer-production-composition-missing" },
+  { axis = "host", id = "periodic-sync-transfer-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-sync-transfer-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-sync-transfer-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-sync-transfer-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "pawr-advertiser"
+title = "PAwR advertiser"
+scope = "Periodic Advertising with Responses subevent data publication response-slot receive scheduling response reports and bounded subevent or response buffer ownership"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["periodic-advertising", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "pawr-advertiser-production-composition-missing" },
+  { axis = "host", id = "pawr-advertiser-behavioral-regressions-missing" },
+  { axis = "vendor", id = "pawr-advertiser-production-contract-evidence-missing" },
+  { axis = "hil", id = "pawr-advertiser-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "pawr-advertiser-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "pawr-responder"
+title = "PAwR synchronized responder"
+scope = "Synchronized PAwR subevent selection response data admission precisely scheduled response transmission and loss or cancellation handling"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["periodic-synchronization", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "pawr-responder-production-composition-missing" },
+  { axis = "host", id = "pawr-responder-behavioral-regressions-missing" },
+  { axis = "vendor", id = "pawr-responder-production-contract-evidence-missing" },
+  { axis = "hil", id = "pawr-responder-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "pawr-responder-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "encrypted-advertising-data"
+title = "Encrypted Advertising Data integration"
+scope = "Production Host advertiser and observer encryption and authentication of advertising data with key material and randomizer lifetime including key distribution and malformed or unauthenticated data rejection"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["extended-advertising", "extended-scanning-initiating", "secure-connections-host"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "encrypted-advertising-data-production-composition-missing" },
+  { axis = "host", id = "encrypted-advertising-data-behavioral-regressions-missing" },
+  { axis = "hil", id = "encrypted-advertising-data-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "encrypted-advertising-data-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "connected-direction-finding"
+title = "Connected Direction Finding"
+scope = "Connected CTE request and response procedures antenna switching AoA or AoD TX and RX IQ storage and HCI reports with supported sampling intervals and bounded buffer reuse"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["ll-control-procedures", "ble-phy-engine"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "connected-direction-finding-production-composition-missing" },
+  { axis = "host", id = "connected-direction-finding-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connected-direction-finding-production-contract-evidence-missing" },
+  { axis = "hil", id = "connected-direction-finding-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connected-direction-finding-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "connectionless-direction-finding"
+title = "Connectionless Direction Finding"
+scope = "Periodic advertising CTE TX and synchronized CTE RX antenna patterns IQ sampling HCI delivery and later-version CTE Direct Test Mode commands"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["periodic-advertising", "periodic-synchronization", "ble-phy-engine"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "connectionless-direction-finding-production-composition-missing" },
+  { axis = "host", id = "connectionless-direction-finding-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connectionless-direction-finding-production-contract-evidence-missing" },
+  { axis = "hil", id = "connectionless-direction-finding-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connectionless-direction-finding-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "rf-power-and-lbt"
+title = "LE RF power selection and Listen Before Talk"
+scope = "Live static transmit-power selection calibrated TX and RX for every LE PHY and test pattern and hardware Listen Before Talk policy with measured on-air behavior"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["common-phy-baseband", "packet-dataplane"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "rf-power-and-lbt-production-composition-missing" },
+  { axis = "host", id = "rf-power-and-lbt-behavioral-regressions-missing" },
+  { axis = "vendor", id = "rf-power-and-lbt-production-contract-evidence-missing" },
+  { axis = "hil", id = "rf-power-and-lbt-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "rf-power-and-lbt-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "channel-assessment"
+title = "Adaptive frequency hopping and channel classification"
+scope = "Live channel assessment classification reporting Host channel-map policy and negotiated channel-map application while preserving reliable connection event sequencing"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["ll-control-procedures", "central-initiator"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "channel-assessment-production-composition-missing" },
+  { axis = "host", id = "channel-assessment-behavioral-regressions-missing" },
+  { axis = "vendor", id = "channel-assessment-production-contract-evidence-missing" },
+  { axis = "hil", id = "channel-assessment-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "channel-assessment-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "le-power-control"
+title = "LE Power Control and Path Loss Monitoring"
+scope = "Connected power-change procedures path-loss measurement thresholds hysteresis reports and HCI events across PHY changes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["ll-control-procedures", "rf-power-and-lbt", "connected-phy-and-data-length"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "le-power-control-production-composition-missing" },
+  { axis = "host", id = "le-power-control-behavioral-regressions-missing" },
+  { axis = "vendor", id = "le-power-control-production-contract-evidence-missing" },
+  { axis = "hil", id = "le-power-control-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-power-control-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "connection-subrating"
+title = "LE Connection Subrating"
+scope = "Subrate negotiation anchor selection continuation events peripheral latency and recovery under parameter updates and supervision constraints"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["ll-control-procedures", "central-initiator"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "connection-subrating-production-composition-missing" },
+  { axis = "host", id = "connection-subrating-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connection-subrating-production-contract-evidence-missing" },
+  { axis = "hil", id = "connection-subrating-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connection-subrating-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "modem-sleep-wake"
+title = "Bluetooth modem sleep and wake"
+scope = "RF PHY baseband and clock retention stop and wake using supported low-frequency clocks with local accuracy bounds deadline compensation periodic maintenance and cancellation-safe return to active operation"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["controller-timebase", "common-phy-baseband", "powered-teardown"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "modem-sleep-wake-production-composition-missing" },
+  { axis = "host", id = "modem-sleep-wake-behavioral-regressions-missing" },
+  { axis = "vendor", id = "modem-sleep-wake-production-contract-evidence-missing" },
+  { axis = "hil", id = "modem-sleep-wake-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "modem-sleep-wake-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "external-coexistence"
+title = "External Bluetooth coexistence"
+scope = "Board-owned external request grant priority and status pins with PTI policy deadline-bound RF admission cancellation and return of shared platform resources"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["coexistence"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "external-coexistence-production-composition-missing" },
+  { axis = "host", id = "external-coexistence-behavioral-regressions-missing" },
+  { axis = "vendor", id = "external-coexistence-production-contract-evidence-missing" },
+  { axis = "hil", id = "external-coexistence-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "external-coexistence-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "multi-radio-coordination"
+title = "Bluetooth Wi-Fi and IEEE 802.15.4 coordination"
+scope = "Shared platform ownership and request grant release arbitration for Bluetooth alongside Wi-Fi and IEEE 802.15.4 without overlapping independent singleton claims"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["coexistence", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "multi-radio-coordination-production-composition-missing" },
+  { axis = "host", id = "multi-radio-coordination-behavioral-regressions-missing" },
+  { axis = "vendor", id = "multi-radio-coordination-production-contract-evidence-missing" },
+  { axis = "hil", id = "multi-radio-coordination-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "multi-radio-coordination-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "iso-dataplane"
+title = "ISOAL and HCI ISO dataplane"
+scope = "Framed and unframed ISOAL SDU segmentation and reassembly ISO packet routing timestamp and sequence handling packet status loss and flush accounting bounded stream credits and cancellation-safe buffers"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["typed-hci-controller", "controller-capacity-limits"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "iso-dataplane-production-composition-missing" },
+  { axis = "host", id = "iso-dataplane-behavioral-regressions-missing" },
+  { axis = "vendor", id = "iso-dataplane-production-contract-evidence-missing" },
+  { axis = "hil", id = "iso-dataplane-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "iso-dataplane-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "cis-central"
+title = "CIG and CIS Central"
+scope = "Connected Isochronous Group and Stream creation negotiation event and subevent scheduling retransmission and flush encrypted and unencrypted bidirectional operation and stream teardown as Central"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["iso-dataplane", "central-initiator", "ll-control-procedures", "link-layer-encryption"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "cis-central-production-composition-missing" },
+  { axis = "host", id = "cis-central-behavioral-regressions-missing" },
+  { axis = "vendor", id = "cis-central-production-contract-evidence-missing" },
+  { axis = "hil", id = "cis-central-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "cis-central-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "cis-peripheral"
+title = "CIS Peripheral"
+scope = "CIS request acceptance rejection stream establishment synchronized event scheduling bidirectional ISO data encryption and stream teardown as Peripheral"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["iso-dataplane", "le-link-layer", "ll-control-procedures", "link-layer-encryption"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "cis-peripheral-production-composition-missing" },
+  { axis = "host", id = "cis-peripheral-behavioral-regressions-missing" },
+  { axis = "vendor", id = "cis-peripheral-production-contract-evidence-missing" },
+  { axis = "hil", id = "cis-peripheral-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "cis-peripheral-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "bis-broadcaster"
+title = "BIG and BIS broadcaster"
+scope = "Broadcast Isochronous Group creation BIGInfo periodic publication BIS event scheduling retransmission encrypted or unencrypted stream data and group termination"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["iso-dataplane", "periodic-advertising"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "bis-broadcaster-production-composition-missing" },
+  { axis = "host", id = "bis-broadcaster-behavioral-regressions-missing" },
+  { axis = "vendor", id = "bis-broadcaster-production-contract-evidence-missing" },
+  { axis = "hil", id = "bis-broadcaster-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "bis-broadcaster-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "bis-synchronizer"
+title = "BIG and BIS synchronized receiver"
+scope = "BIG synchronization BIS selection reception clock recovery encrypted stream admission loss reporting and group or stream teardown"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["iso-dataplane", "periodic-synchronization"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+gaps = [
+  { axis = "implementation", id = "bis-synchronizer-production-composition-missing" },
+  { axis = "host", id = "bis-synchronizer-behavioral-regressions-missing" },
+  { axis = "vendor", id = "bis-synchronizer-production-contract-evidence-missing" },
+  { axis = "hil", id = "bis-synchronizer-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "bis-synchronizer-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "le-audio-unicast"
+title = "LE Audio unicast integration"
+scope = "Production LC3 audio source and sink with bounded codec and PCM buffers clock drift control presentation timing BAP PACS ASCS and CAP client or server orchestration over CIS"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["cis-central", "cis-peripheral", "secure-connections-host", "trouble-host-integration"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "le-audio-unicast-production-composition-missing" },
+  { axis = "host", id = "le-audio-unicast-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-unicast-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-unicast-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "le-audio-broadcast"
+title = "LE Audio broadcast integration"
+scope = "Production LC3 broadcast source and sink discovery synchronization presentation timing broadcast-code lifecycle BAP and BASS assistant or scan-delegator integration over BIS"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["bis-broadcaster", "bis-synchronizer", "trouble-host-integration"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "le-audio-broadcast-production-composition-missing" },
+  { axis = "host", id = "le-audio-broadcast-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-broadcast-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-broadcast-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "le-audio-profiles"
+title = "LE Audio profiles and services"
+scope = "Production Generic Audio Framework profiles and services including CAP CAS VCP MICP CSIP MCP and CCP and HAP GMAP TMAP and PBP application roles with interoperable control and audio lifetimes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["le-audio-unicast", "le-audio-broadcast"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "le-audio-profiles-production-composition-missing" },
+  { axis = "host", id = "le-audio-profiles-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-profiles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-profiles-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "host-eatt-and-gatt"
+title = "EATT and GATT feature integration"
+scope = "Production Enhanced Attribute Protocol GATT client and server caching invalidation and LE GATT Security Levels Characteristic integrated with the open Controller"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["trouble-host-integration", "secure-connections-host"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "host-eatt-and-gatt-production-composition-missing" },
+  { axis = "host", id = "host-eatt-and-gatt-behavioral-regressions-missing" },
+  { axis = "hil", id = "host-eatt-and-gatt-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "host-eatt-and-gatt-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "mesh-host"
+title = "Bluetooth Mesh 1.1 integration"
+scope = "Production open Mesh 1.1 Host composition including provisioning persistent network state security advertising and GATT bearers with explicit role and resource limits"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["legacy-advertising-roles", "active-scanning", "host-eatt-and-gatt"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "mesh-host-production-composition-missing" },
+  { axis = "host", id = "mesh-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "mesh-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "mesh-host-runtime-lifetime-missing" },
+]
+
+[[capabilities]]
+id = "blufi-host"
+title = "BluFi integration"
+scope = "Production BluFi Host profile for secure provisioning configuration exchange Wi-Fi status and reconnect over an open BLE and Wi-Fi composition"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["secure-connections-host", "coexistence", "trouble-host-integration"]
+vendor-not-applicable = "open-host-profile-integration"
+gaps = [
+  { axis = "implementation", id = "blufi-host-production-composition-missing" },
+  { axis = "host", id = "blufi-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "blufi-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "blufi-host-runtime-lifetime-missing" },
 ]

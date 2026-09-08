@@ -44,8 +44,8 @@ fn dtm_envelope_retains_the_event_and_epoch_outside_the_common_timeline() {
         .expect("the projected event passes its initial deadline");
     let reservation = DtmSchedulerReservation::new(window, event, epoch);
 
-    assert_eq!(reservation.window().start(), 310);
-    assert_eq!(reservation.window().end(), 586);
+    assert_eq!(reservation.window().start(), 1_780);
+    assert_eq!(reservation.window().end(), 3_994);
     assert_eq!(reservation.event().role(), DtmRole::Receiver);
     assert_eq!(reservation.epoch(), epoch);
     assert!(timeline.release(reservation.into_window()).is_ok());

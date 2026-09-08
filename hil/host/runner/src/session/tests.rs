@@ -32,6 +32,7 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
         0,
         Event::Hello(Capabilities {
             features: FeatureCapabilities {
+                bluetooth_dtm: false,
                 udp: true,
                 tcp: true,
                 rx: true,

@@ -225,6 +225,27 @@ max_bytes = 9216
 reason = "shutdown future retains the unique interrupt, connected runner and task-group owners until all three cross the stopped boundary"
 
 [[reviewed_frames]]
+function_contains = "::controller::owner::ControllerCommandTask<"
+source_ends_with = ["crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs"]
+max_bytes = 43008
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "Bluetooth command dispatch retains typed mutually exclusive controller transitions on CPU0; the fixed 192-KiB application stack also accommodates its caller and interrupt handling uses SRAM"
+
+[[reviewed_frames]]
+function_contains = "::cold_start::start_esp32s31_bluetooth"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/cold_start.rs"]
+max_bytes = 33792
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "one-time Bluetooth cold start transfers the configured controller ownership graph to its statically stored application future on CPU0"
+
+[[reviewed_frames]]
+function_contains = "::bluetooth::__task_task"
+source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
+max_bytes = 12288
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the Bluetooth HIL task concurrently polls the production controller, HCI event pump and bounded framed USB command owner on the 192-KiB CPU0 stack; Wi-Fi task limits remain separate"
+
+[[reviewed_frames]]
 function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 10496

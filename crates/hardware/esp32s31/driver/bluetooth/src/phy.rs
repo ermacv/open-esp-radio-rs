@@ -76,18 +76,43 @@ impl PhyInitializationReport {
 #[must_use = "failed common PHY registration still owns Bluetooth hardware"]
 pub struct ControllerPhyInitializationFailure<P, const MT: usize, const SC: usize> {
     _controller: Controller<P, MT, SC>,
-    failure: TargetBluetoothPhyRegisterFailure,
+    failure: PhyInitializationFailure,
+}
+
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the allocation-free failure retains the complete registration transition"
+)]
+enum PhyInitializationFailure {
+    Power(oer_esp32s31_hal::power::PowerError),
+    Registration(TargetBluetoothPhyRegisterFailure),
+}
+
+/// Exact failed boundary before a registered Bluetooth PHY can be issued.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyInitializationError {
+    Power(oer_esp32s31_hal::power::PowerError),
+    Registration(TargetBluetoothPhyRegisterError),
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyInitializationFailure<P, MT, SC> {
-    /// Inspect the exact lower target-registration failure.
-    pub const fn error(&self) -> TargetBluetoothPhyRegisterError {
-        self.failure.error()
+    /// Inspect the power prerequisite or lower target-registration failure.
+    pub const fn error(&self) -> PhyInitializationError {
+        match &self.failure {
+            PhyInitializationFailure::Power(error) => PhyInitializationError::Power(*error),
+            PhyInitializationFailure::Registration(failure) => {
+                PhyInitializationError::Registration(failure.error())
+            }
+        }
     }
 
-    /// Inspect target operations completed before failure.
-    pub const fn port_counters(&self) -> PhyTargetPortCounters {
-        self.failure.counters()
+    /// Inspect registration operations completed before failure.
+    /// Power-prerequisite failures have zero registration operations.
+    pub fn port_counters(&self) -> PhyTargetPortCounters {
+        match &self.failure {
+            PhyInitializationFailure::Power(_) => PhyTargetPortCounters::default(),
+            PhyInitializationFailure::Registration(failure) => failure.counters(),
+        }
     }
 }
 
@@ -305,7 +330,8 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyRegistered<P, MT, SC> {
 }
 
 impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
-    /// Run target registration without treating it as Bluetooth-client enable.
+    /// Prepare common PHY power/clocks and run target registration.
+    /// Bluetooth-client acquisition remains a separate transition.
     #[allow(
         clippy::result_large_err,
         reason = "failure retains the complete allocation-free Controller epoch"
@@ -320,6 +346,12 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
     {
+        if let Err(error) = self.common_phy_parts_mut().0.prepare_common_phy_power() {
+            return Err(ControllerPhyInitializationFailure {
+                _controller: self,
+                failure: PhyInitializationFailure::Power(error),
+            });
+        }
         let result = {
             let (task, platform) = self.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
@@ -343,7 +375,7 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
             }
             Err(failure) => Err(ControllerPhyInitializationFailure {
                 _controller: self,
-                failure,
+                failure: PhyInitializationFailure::Registration(failure),
             }),
         }
     }

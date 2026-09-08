@@ -83,7 +83,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 14);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 15);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -260,4 +260,26 @@ fn tracked_file_snapshot_drop_removes_new_file() {
 
     assert!(!lockfile.exists());
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
+    let mut features = FeatureCapabilities {
+        bluetooth_dtm: true,
+        structured_evidence: true,
+        psram_task_stack: true,
+        ..FeatureCapabilities::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::BluetoothDtm)
+    );
+    features.udp = true;
+    assert_eq!(classify_flashed_capabilities(&features), None);
+    assert!(
+        !ImageClass::BluetoothDtm
+            .runtime_features()
+            .contains("open-radio-hil")
+    );
+    assert!(!ImageClass::BluetoothDtm.requires_driver_observation());
 }

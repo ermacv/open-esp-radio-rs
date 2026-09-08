@@ -10,6 +10,8 @@ use crate::scenario::{AccessPointClient, Direction, Scenario, Workload};
 #[serde(deny_unknown_fields)]
 pub(crate) struct Requirements {
     pub(crate) station_network: bool,
+    #[serde(default)]
+    pub(crate) bluetooth_adapter: bool,
     pub(crate) station_control: bool,
     pub(crate) station_udp_rx_capture: bool,
     pub(crate) station_udp_tx_capture: bool,
@@ -23,6 +25,10 @@ impl Requirements {
     pub(crate) fn for_scenario(scenario: &Scenario) -> Self {
         let mut required = Self::default();
         match &scenario.workload {
+            Workload::BluetoothDtm { .. } => {
+                required.bluetooth_adapter = true;
+                return required;
+            }
             Workload::BootSmoke
             | Workload::Timebase { .. }
             | Workload::MemoryBenchmark { .. }
@@ -67,6 +73,7 @@ impl Requirements {
         for scenario in scenarios {
             let next = Self::for_scenario(scenario);
             required.station_network |= next.station_network;
+            required.bluetooth_adapter |= next.bluetooth_adapter;
             required.station_control |= next.station_control;
             required.station_udp_rx_capture |= next.station_udp_rx_capture;
             required.station_udp_tx_capture |= next.station_udp_tx_capture;
@@ -76,6 +83,17 @@ impl Requirements {
             required.laptop_air_monitor |= next.laptop_air_monitor;
         }
         required
+    }
+
+    pub(crate) fn network(self) -> bool {
+        self.station_network
+            || self.station_control
+            || self.station_udp_rx_capture
+            || self.station_udp_tx_capture
+            || self.laptop_client
+            || self.openwrt_client
+            || self.openwrt_tx_monitor
+            || self.laptop_air_monitor
     }
 
     pub(crate) fn local_radio(self) -> bool {

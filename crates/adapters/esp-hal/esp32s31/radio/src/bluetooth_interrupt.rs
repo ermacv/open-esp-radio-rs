@@ -456,6 +456,29 @@ fn service_bound_bluetooth_modem_lp_timer_interrupt() -> EspHalBluetoothModemLpT
 }
 
 impl SchedulerRunInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
+    fn monotonic_micros() -> u64 {
+        esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_micros()
+    }
+
+    fn step_scheduler_stop(
+        &self,
+        controller: &mut ControllerHal<'_>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    > {
+        critical_section::with(|cs| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            match slot.as_mut() {
+                Some(interrupts) => Ok(controller.step_scheduler_stop(interrupts, stop)),
+                None => Err(stop),
+            }
+        })
+    }
+
     type Error = EspHalBluetoothSchedulerRunInterruptError;
 
     fn prepare_scheduler_run_interrupts(
@@ -731,6 +754,29 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
 }
 
 impl SchedulerRunInterruptStorage for BoundEspHalBluetoothInterruptEpoch<'_> {
+    fn monotonic_micros() -> u64 {
+        esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_micros()
+    }
+
+    fn step_scheduler_stop(
+        &self,
+        controller: &mut ControllerHal<'_>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    > {
+        critical_section::with(|cs| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            match slot.as_mut() {
+                Some(interrupts) => Ok(controller.step_scheduler_stop(interrupts, stop)),
+                None => Err(stop),
+            }
+        })
+    }
+
     type Error = EspHalBluetoothSchedulerRunInterruptError;
 
     fn prepare_scheduler_run_interrupts(

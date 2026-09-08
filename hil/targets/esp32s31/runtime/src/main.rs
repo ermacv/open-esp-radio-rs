@@ -16,8 +16,12 @@ extern crate embassy_net_upstream as embassy_net;
     ))
 ))]
 compile_error!("select one network contract: upstream-network, compat-network or owned-network");
-#[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
-compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
+#[cfg(not(any(
+    feature = "boot-smoke",
+    feature = "open-radio-hil",
+    feature = "bluetooth-hil"
+)))]
+compile_error!("select a HIL scenario feature: boot-smoke, open-radio-hil or bluetooth-hil");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
 compile_error!("boot-smoke and open-radio-hil are mutually exclusive scenarios");
 #[cfg(all(feature = "code-flash", feature = "code-psram"))]
@@ -56,6 +60,8 @@ use esp_hal::{
 use oer_esp32s31_embassy_runtime::Executor;
 use static_cell::StaticCell;
 
+#[cfg(feature = "bluetooth-hil")]
+mod bluetooth;
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
@@ -63,6 +69,11 @@ mod capabilities;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 mod exception;
+#[cfg(all(
+    feature = "bluetooth-hil",
+    any(feature = "boot-smoke", feature = "open-radio-hil")
+))]
+compile_error!("bluetooth-hil requires exclusive radio composition");
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(feature = "memory-benchmark")]
@@ -210,6 +221,8 @@ use oer_esp32s31_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    #[cfg(not(feature = "open-radio-hil"))]
+    let _ = info;
     #[cfg(feature = "open-radio-hil")]
     {
         console::panic_origin(info);
@@ -321,6 +334,23 @@ extern "C" fn runtime_main() -> ! {
     // Bootstrap intentionally hands MIE over clear. Timer and software wake
     // interrupt ownership is complete at this point.
     unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+
+    #[cfg(feature = "bluetooth-hil")]
+    bluetooth::start(
+        executor,
+        oer_esp32s31_radio_platform_esp_hal::EspHalRadioPlatform::new(
+            peripherals.MODEM_SYSCON,
+            peripherals.MODEM_LPCON,
+            peripherals.HP_SYS_CLKRST,
+            peripherals.PMU,
+            peripherals.LP_AON_CLK_RST,
+            peripherals.LP_PERI,
+            peripherals.LP_TSENS,
+            peripherals.I2C_ANA_MST,
+        ),
+        peripherals.USB_DEVICE,
+        peripherals.RNG,
+    );
 
     #[cfg(feature = "boot-smoke")]
     executor.run(move |spawner| {

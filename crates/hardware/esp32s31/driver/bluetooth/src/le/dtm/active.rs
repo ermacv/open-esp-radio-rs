@@ -131,6 +131,25 @@ impl<'runtime, S, const CAPACITY: usize> DtmActiveSchedulerWait<'runtime, S, CAP
 where
     S: SchedulerRunInterruptStorage,
 {
+    pub(crate) fn step_stop(
+        self,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> (
+        DtmActiveCompletionStep<'runtime, S, CAPACITY>,
+        Option<oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop>,
+    ) {
+        match self.completion.phase {
+            DtmActiveCompletionPhase::Transmitter(phase) => {
+                let (advance, stop) = step_stopping_role(phase, stop);
+                (map_transmitter_advance(advance), stop)
+            }
+            DtmActiveCompletionPhase::Receiver(phase) => {
+                let (advance, stop) = step_stopping_role(phase, stop);
+                (map_receiver_advance(advance), stop)
+            }
+        }
+    }
+
     /// Durable scheduler wake belonging to this exact Controller epoch.
     pub fn wake(&self) -> &crate::interrupt::SchedulerWakeCell {
         match &self.completion.phase {
@@ -296,6 +315,7 @@ where
 /// Finite fail-closed reason retained by an opaque active-completion owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DtmActiveCompletionFaultCause {
+    SchedulerStopInvariant,
     FinishedListDrainAlreadyActive,
     SchedulerIdentityMismatch,
     FinishedListDrainLost,
@@ -325,6 +345,11 @@ pub enum DtmActiveCompletionFaultCause {
     reason = "opaque fault ownership intentionally prevents graph recovery after fail-stop"
 )]
 enum DtmRoleCompletionFault<'runtime, S, const CAPACITY: usize, Role> {
+    Stop {
+        task: Task<'runtime, S, CAPACITY>,
+        _step: crate::scheduler::core::DtmSchedulerStopStep<Role>,
+    },
+
     Completion {
         task: Task<'runtime, S, CAPACITY>,
         _step: DtmSchedulerCompletionStep<Role>,
@@ -442,6 +467,47 @@ fn drained_or_pending_completed<'runtime, S, const CAPACITY: usize, Role>(
         SchedulerFinishedListDrainState::Pending(pending) => {
             DtmRoleCompletionPhase::CompletionDrain { task, pending }
         }
+    }
+}
+
+fn step_stopping_role<'runtime, S, const CAPACITY: usize, Role>(
+    phase: DtmRoleCompletionPhase<'runtime, S, CAPACITY, Role>,
+    stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+) -> (
+    DtmRoleCompletionAdvance<'runtime, S, CAPACITY, Role>,
+    Option<oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop>,
+)
+where
+    S: SchedulerRunInterruptStorage,
+{
+    use crate::scheduler::core::DtmSchedulerStopStep;
+    let DtmRoleCompletionPhase::RunningAwaitingWake { mut task, running } = phase else {
+        unreachable!("stop starts only after the running finished-list drain is empty")
+    };
+    match task.step_dtm_stop(running, stop) {
+        DtmSchedulerStopStep::Pending { running, stop } => (
+            DtmRoleCompletionAdvance::WaitScheduler(DtmRoleCompletionPhase::RunningAwaitingWake {
+                task,
+                running,
+            }),
+            Some(stop),
+        ),
+        DtmSchedulerStopStep::Retired(DtmSchedulerHardwareHeadRetirementStep::EmptyObserved(
+            observed,
+        )) => (
+            DtmRoleCompletionAdvance::Continue(DtmRoleCompletionPhase::HardwareHeadEmpty {
+                task,
+                observed,
+            }),
+            None,
+        ),
+        step => (
+            DtmRoleCompletionAdvance::Fault {
+                cause: DtmActiveCompletionFaultCause::SchedulerStopInvariant,
+                owner: DtmRoleCompletionFault::Stop { task, _step: step },
+            },
+            None,
+        ),
     }
 }
 
@@ -897,6 +963,8 @@ where
                 match task.recycle_dtm_receiver_success(ready) {
                     DtmSchedulerRxSuccessRecycleStep::Rearmed(rearmed) => {
                         let outcome = rearmed.outcome();
+                        #[cfg(feature = "dtm-diagnostics")]
+                        super::diagnostics::record(status, Some(outcome));
                         DtmActiveCompletionStep::CpuOwned(DtmActiveCpuOwned::Receiver(
                             DtmActiveReceiverReady {
                                 _task: task,
@@ -919,6 +987,8 @@ where
                     }
                 }
             } else {
+                #[cfg(feature = "dtm-diagnostics")]
+                super::diagnostics::record(status, None);
                 match task.recycle_dtm_completed(ready) {
                     DtmSchedulerRecycleStep::Recycled(recycled) => {
                         DtmActiveCompletionStep::CpuOwned(DtmActiveCpuOwned::Receiver(
@@ -1350,6 +1420,13 @@ impl<'runtime, S, const CAPACITY: usize> DtmRecurringRunner<'runtime, S, CAPACIT
 where
     S: SchedulerRunInterruptStorage,
 {
+    pub(super) fn is_event_boundary(&self) -> bool {
+        matches!(
+            self.phase,
+            DtmRecurringPhase::TransmitterCpu(_) | DtmRecurringPhase::ReceiverCpu(_)
+        )
+    }
+
     /// Execute exactly one ownership, Controller-time, publication or RUN transition.
     pub fn step(self) -> DtmRecurringRunnerStep<'runtime, S, CAPACITY> {
         match self.phase {
@@ -1412,9 +1489,10 @@ where
                 owner,
                 metadata,
             } => match epoch.begin_dtm_receiver_recurring_item(owner) {
-                Ok(pending) => {
-                    Self::wait_with(DtmRecurringPhase::ReceiverPreparation { pending, metadata })
-                }
+                Ok(pending) => Self::continue_with(DtmRecurringPhase::ReceiverPreparation {
+                    pending,
+                    metadata,
+                }),
                 Err(terminal) => finish_receiver_recurring(terminal, metadata),
             },
             DtmRecurringPhase::TransmitterCurrent { pending, owner } => match pending.recheck() {
@@ -1436,12 +1514,15 @@ where
             DtmRecurringPhase::TransmitterNow { current, owner } => {
                 match current.begin_dtm_transmitter_recurring_item(owner) {
                     Ok(pending) => {
-                        Self::wait_with(DtmRecurringPhase::TransmitterPreparation(pending))
+                        Self::continue_with(DtmRecurringPhase::TransmitterPreparation(pending))
                     }
                     Err(terminal) => finish_transmitter_recurring(terminal),
                 }
             }
             DtmRecurringPhase::TransmitterPreparation(pending) => match pending.recheck() {
+                DtmControllerPreparationStep::Continue(pending) => {
+                    Self::continue_with(DtmRecurringPhase::TransmitterPreparation(pending))
+                }
                 DtmControllerPreparationStep::Pending(pending) => {
                     Self::wait_with(DtmRecurringPhase::TransmitterPreparation(pending))
                 }
@@ -1451,6 +1532,12 @@ where
             },
             DtmRecurringPhase::ReceiverPreparation { pending, metadata } => {
                 match pending.recheck() {
+                    DtmControllerPreparationStep::Continue(pending) => {
+                        Self::continue_with(DtmRecurringPhase::ReceiverPreparation {
+                            pending,
+                            metadata,
+                        })
+                    }
                     DtmControllerPreparationStep::Pending(pending) => {
                         Self::wait_with(DtmRecurringPhase::ReceiverPreparation {
                             pending,

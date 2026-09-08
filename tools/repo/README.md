@@ -20,11 +20,12 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | --- | --- |
 | `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves |
 | `cargo xtask check architecture` | Compile minimum/default and supported feature profiles; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts |
+| `cargo xtask check bluetooth` | Resolve isolated BLE facade profiles without Wi-Fi dependencies and compile host/target profiles including validation probes |
 | `cargo xtask check safety` | Compiler-enforced unsafe policy and reviewed hardware access boundaries |
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
-| `cargo xtask check examples` | Target type checks of the four examples and all station/AP network contracts |
+| `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
 | `cargo xtask check source-only` | Compose repository suites, Cargo/Clippy, publication and final-image analysis |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |

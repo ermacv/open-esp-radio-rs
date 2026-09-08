@@ -989,6 +989,7 @@ pub enum PhyRfInitPrefixOutcome {
         channel_frequency: PhyChannelFrequencyInitOutcome,
     },
     ChannelFrequencyInitializationFailed(PhyChannelFrequencyInitFailure),
+    XtalDutyCalibrationFailed(crate::analog::crystal_duty::XtalDutyFailure),
     SdmTimedOut,
     PbusForceTestTimedOut(PhyPbusForceTest),
 }
@@ -1284,6 +1285,9 @@ impl PhyRfInitPrefixTransition {
                 XtalDutyCalibrationAction::Complete(_) => {
                     PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate
                 }
+                XtalDutyCalibrationAction::Failed(failure) => PhyRfInitPrefixAction::Complete(
+                    PhyRfInitPrefixOutcome::XtalDutyCalibrationFailed(failure),
+                ),
                 action => PhyRfInitPrefixAction::XtalDuty(action),
             },
             PhyRfInitPrefixStep::FrontEndRegisterUpdate { .. } => {
@@ -1573,6 +1577,9 @@ impl PhyRfInitPrefixTransition {
                             xtal_duty,
                         }
                     }
+                    XtalDutyCalibrationAction::Failed(failure) => PhyRfInitPrefixStep::Complete(
+                        PhyRfInitPrefixOutcome::XtalDutyCalibrationFailed(failure),
+                    ),
                     _ => PhyRfInitPrefixStep::XtalDuty {
                         transition,
                         xtal_parameters,

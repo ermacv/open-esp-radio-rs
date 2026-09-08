@@ -115,6 +115,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-hci"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
+dependencies = [
+ "bt-hci-transport",
+ "btuuid",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "futures-intrusive",
+ "heapless 0.9.3",
+]
+
+[[package]]
+name = "bt-hci-transport"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ffb9819c69cf88877f5eebc8c5ade0ab50f2bf9475bbb3eb714d66c55b0cb64"
+dependencies = [
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+]
+
+[[package]]
+name = "btuuid"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f48f1e9b0aad0a4f05d17bdeae0fa20ff798e272a03a6940ca27ad9c5a6ae7"
+
+[[package]]
 name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -989,6 +1020,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
 
 [[package]]
+name = "futures-intrusive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
+dependencies = [
+ "futures-core",
+ "lock_api",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1174,6 +1215,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1247,6 +1297,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-hci"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
+]
+
+[[package]]
+name = "oer-bluetooth-ll"
+version = "0.1.0"
+
+[[package]]
 name = "oer-embassy-net"
 version = "0.1.0"
 dependencies = [
@@ -1264,6 +1327,61 @@ dependencies = [
  "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-network",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-pac",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-integration"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-embassy",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-radio-platform-esp-hal",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-memory"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "pin-project",
+ "vcell",
 ]
 
 [[package]]
@@ -1367,6 +1485,18 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-radio-platform-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
 ]
 
 [[package]]
@@ -1639,6 +1769,7 @@ dependencies = [
 name = "open-esp-radio-hil-esp32s31-runtime"
 version = "0.1.0"
 dependencies = [
+ "bt-hci",
  "embassy-executor",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1650,11 +1781,16 @@ dependencies = [
  "esp-hal",
  "heapless 0.9.3",
  "log",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-embassy",
+ "oer-esp32s31-bluetooth-integration",
+ "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-board",
  "oer-esp32s31-embassy-runtime",
  "oer-esp32s31-embassy-wifi",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
+ "oer-esp32s31-radio-platform-esp-hal",
  "oer-esp32s31-runtime",
  "oer-esp32s31-soc",
  "oer-esp32s31-wifi-embassy",
@@ -1892,6 +2028,12 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdio"

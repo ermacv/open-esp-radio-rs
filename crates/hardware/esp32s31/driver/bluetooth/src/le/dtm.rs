@@ -1,5 +1,8 @@
 //! Direct Test Mode event, storage and stop ownership.
 
+#[cfg(feature = "dtm-diagnostics")]
+pub mod diagnostics;
+
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod active;
 #[cfg(any(target_arch = "riscv32", test))]

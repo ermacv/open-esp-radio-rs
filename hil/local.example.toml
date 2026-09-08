@@ -11,6 +11,10 @@ serial = "/dev/ttyACM0"
 # Optional opaque calibration/startup state persisted by the HIL runner.
 startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 
+# Optional, used only by Bluetooth workloads.
+[bluetooth]
+adapter = "hci0"
+
 [station]
 ssid = "laboratory-ssid"
 passphrase = "replace-me"

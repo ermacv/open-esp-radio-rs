@@ -46,29 +46,53 @@ fn initial_receiver_window_uses_signed_wrapping_order() {
 #[test]
 fn recurring_receiver_window_selects_the_later_fresh_anchor() {
     let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let nominal = DtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_205));
+    assert_eq!(nominal.anchor().image(), 1_207);
+    assert_eq!(nominal.start().image(), 1_100);
+    assert_eq!(nominal.end().image(), 2_207);
 
-    let nominal = DtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_160));
-    assert_eq!(nominal.anchor().image(), 1_162);
-    assert_eq!(nominal.start().image(), 1_055);
-    assert_eq!(nominal.end().image(), 2_162);
-
-    let rf_limited = DtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_162));
-    assert_eq!(rf_limited.anchor().image(), 1_162);
-    assert_eq!(rf_limited.start().image(), 1_055);
-    assert_eq!(rf_limited.end().image(), 2_162);
+    let rf_limited = DtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_250));
+    assert_eq!(rf_limited.anchor().image(), 1_250);
+    assert_eq!(rf_limited.start().image(), 1_143);
+    assert_eq!(rf_limited.end().image(), 2_250);
 }
 
 #[test]
 fn recurring_receiver_window_uses_signed_wrapping_order() {
     let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let nominal = DtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(173));
+    assert_eq!(nominal.anchor().image(), 175);
+    assert_eq!(nominal.start().image(), 68);
+    assert_eq!(nominal.end().image(), 1_175);
 
-    let nominal = DtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(128));
-    assert_eq!(nominal.anchor().image(), 130);
-    assert_eq!(nominal.start().image(), 23);
-    assert_eq!(nominal.end().image(), 1_130);
+    let rf_limited = DtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(200));
+    assert_eq!(rf_limited.anchor().image(), 200);
+}
 
-    let rf_limited = DtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(130));
-    assert_eq!(rf_limited.anchor().image(), 130);
+#[test]
+fn recurring_receiver_retains_dtm_setup_budget_above_common_admission_guard() {
+    let current = instant(10_000);
+    let window = DtmRxRecurringEventWindow::new(config(), current, current);
+    // Vendor DTM setup 85 us + recurrence lead 15 us. A sequence sample
+    // taken 50 us later must still clear the common 40 us admission guard.
+    assert_eq!(window.start().image() - current.image(), 100);
+    assert!(window.start().image() - 10_050 >= config().late_start_guard_micros());
+}
+
+#[test]
+fn runtime_receiver_reserves_publication_time_without_shortening_rx_window() {
+    let current = instant(10_000);
+    let reference = DtmRxRecurringEventWindow::new(config(), current, current);
+    let runtime = DtmRxRecurringEventWindow::for_runtime(config(), current, current);
+    assert_eq!(runtime.start().image() - reference.start().image(), 500);
+    assert_eq!(runtime.end().image() - runtime.anchor().image(), 1_000);
+    assert!(runtime.start().image() - 10_300 >= config().late_start_guard_micros());
+
+    let rf_limited = DtmRxRecurringEventWindow::for_runtime(config(), current, instant(12_000));
+    assert_eq!(rf_limited.anchor().image(), 12_000);
+    let wrapping =
+        DtmRxRecurringEventWindow::for_runtime(config(), instant(u32::MAX - 99), instant(0));
+    assert_eq!(wrapping.start().image(), 500);
 }
 
 #[test]

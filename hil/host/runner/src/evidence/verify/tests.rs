@@ -230,6 +230,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
             schema: crate::lab::provenance::LAB_PROVENANCE_SCHEMA,
             captured_unix_millis: 150,
             definition: LabDefinition {
+                bluetooth_adapter: None,
                 cell_id: String::from("cell-1"),
                 device_id: device_id.to_owned(),
                 station_ipv4: StationIpv4Definition::Dhcp,
@@ -343,6 +344,44 @@ fn system_provenance_cannot_hide_a_network_workload() {
     );
     fs::remove_file(snapshot).unwrap();
     assert!(validate_lab_provenance(&run, &manifest).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
+    let (root, run) = fixture();
+    add_lab_provenance(&run, "dut-1");
+    let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
+    provenance.scope = crate::lab::provenance::ObservationScope::System;
+    provenance.fixture = FixtureObservation::NotUsed;
+    provenance.definition.bluetooth_adapter = Some("hci0".into());
+    atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
+    let scenario: crate::scenario::Scenario = toml::from_str(include_str!(
+        "../../../../../scenarios/bluetooth/bluetooth-dtm-bidirectional.toml"
+    ))
+    .unwrap();
+    let directory = run.join("scenarios").join(&scenario.id);
+    fs::create_dir_all(&directory).unwrap();
+    atomic_json(&directory.join("scenario.json"), &scenario).unwrap();
+    let plan = crate::evidence::run::RunPlan {
+        schema: RUN_SCHEMA,
+        run_id: "run-1".into(),
+        selection: scenario.id.clone(),
+        firmware: None,
+        entries: vec![crate::evidence::run::PlanEntry {
+            scenario: scenario.id.clone(),
+            image: scenario.image,
+            repetitions: scenario.repetitions,
+            disposition: crate::evidence::run::PlanDisposition::Selected,
+            reason: None,
+            requirements: Some(crate::lab::requirements::Requirements::for_scenario(
+                &scenario,
+            )),
+        }],
+    };
+    atomic_json(&run.join("plan.json"), &plan).unwrap();
+    let manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+    validate_lab_provenance(&run, &manifest).unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 

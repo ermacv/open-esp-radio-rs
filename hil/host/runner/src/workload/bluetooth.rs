@@ -1,0 +1,187 @@
+//! Independent RF observations with silence controls in both directions.
+
+use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
+use open_esp_radio_hil_protocol::{BluetoothDtmOperation as Operation, BluetoothDtmResult};
+use std::{path::Path, time::Duration};
+
+#[derive(Default, serde::Serialize)]
+struct Counts {
+    pc_silence: Option<u16>,
+    esp_silence: Option<u16>,
+    esp_to_pc: Option<u16>,
+    pc_to_esp: Option<u16>,
+    quiet_end_counts: Vec<u16>,
+    quiet_reset_restarted: bool,
+}
+
+pub(crate) fn run(
+    boots: u8,
+    minimum_packets: u16,
+    output: &Path,
+    context: &Context<'_>,
+) -> Result<()> {
+    let adapter = context
+        .lab
+        .bluetooth_adapter
+        .ok_or("set [bluetooth] adapter in the local lab configuration")?;
+    for boot in 1..=boots {
+        let directory = output.join(format!("boot-{boot:03}"));
+        context.with_capture(&directory, |capture| {
+            let mut counts = Counts::default();
+            let result = probe(capture, adapter, &directory, &mut counts)
+                .and_then(|()| validate(&counts, minimum_packets));
+            let cleanup = oer_process::cleanup(|| capture.bluetooth_dtm(Operation::Reset));
+            crate::evidence::run::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
+                "schema": 1, "adapter": adapter.to_string(), "phy": "LE-1M", "channel": 0,
+                "payload": "PRBS9", "payload_bytes": 37, "minimum_packets": minimum_packets,
+                "counts": counts, "passed": result.is_ok() && cleanup.is_ok(),
+                "error": result.as_ref().err().map(ToString::to_string),
+                "esp_restored": cleanup.is_ok(), "cleanup_error": cleanup.as_ref().err().map(ToString::to_string),
+            }))?;
+            match (result, cleanup) {
+                (Ok(()), Ok(_)) => Ok(()),
+                (Err(error), Ok(_)) => Err(error),
+                (Ok(()), Err(error)) => Err(error),
+                (Err(error), Err(cleanup)) => Err(format!("{error}; ESP cleanup: {cleanup}").into()),
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn probe(
+    capture: &SerialCapture,
+    adapter: bluetooth::model::Adapter,
+    output: &Path,
+    counts: &mut Counts,
+) -> Result<()> {
+    let caps = capture.request_capabilities(Duration::from_secs(10))?;
+    if !caps.features.bluetooth_dtm {
+        return Err("firmware lacks Bluetooth DTM control".into());
+    }
+    capture.bluetooth_dtm(Operation::Reset)?;
+    capture.bluetooth_dtm(Operation::Transmit)?;
+    let forward = bluetooth::run_in(&output.join("esp-to-pc"), adapter)?;
+    counts.esp_to_pc = forward.rx_packets;
+    if end(capture)? != 0 {
+        return Err("ESP transmitter returned a receiver count".into());
+    }
+
+    // Exercise repeated RX -> End -> RX with no peer transmission, then
+    // RX -> Reset -> RX -> End without rebooting the target.
+    for _ in 0..3 {
+        capture.bluetooth_dtm(Operation::Receive)?;
+        oer_process::sleep(Duration::from_millis(300))?;
+        counts.quiet_end_counts.push(end(capture)?);
+    }
+    counts.esp_silence = counts.quiet_end_counts.first().copied();
+    capture.bluetooth_dtm(Operation::Receive)?;
+    oer_process::sleep(Duration::from_millis(300))?;
+    capture.bluetooth_dtm(Operation::Reset)?;
+    capture.bluetooth_dtm(Operation::Receive)?;
+    oer_process::sleep(Duration::from_millis(300))?;
+    counts.quiet_end_counts.push(end(capture)?);
+    counts.quiet_reset_restarted = true;
+
+    // The peer helper first receives (ESP is also RX: the PC silence control),
+    // then transmits for 100 ms into the already armed ESP receiver.
+    capture.bluetooth_dtm(Operation::Receive)?;
+    let reverse = bluetooth::run_in(&output.join("pc-to-esp"), adapter)?;
+    counts.pc_silence = reverse.rx_packets;
+    counts.pc_to_esp = Some(end(capture)?);
+    if !same_peer(&forward, &reverse) {
+        return Err("Bluetooth adapter identity changed between directions".into());
+    }
+    Ok(())
+}
+
+fn same_peer(a: &bluetooth::model::Check, b: &bluetooth::model::Check) -> bool {
+    a.address.is_some() && a.address == b.address && a.version.is_some() && a.version == b.version
+}
+
+fn end(capture: &SerialCapture) -> Result<u16> {
+    match capture.bluetooth_dtm(Operation::End)?.result {
+        BluetoothDtmResult::Complete {
+            received_packets: Some(count),
+        } => Ok(count),
+        _ => Err("DTM Test End lacks a receiver count".into()),
+    }
+}
+
+fn validate(counts: &Counts, minimum: u16) -> Result<()> {
+    if counts.quiet_end_counts.len() != 4
+        || counts.quiet_end_counts.iter().any(|&count| count != 0)
+        || !counts.quiet_reset_restarted
+    {
+        return Err("DTM quiet Test End/Reset restart controls failed or are incomplete".into());
+    }
+    if counts.pc_silence != Some(0) || counts.esp_silence != Some(0) {
+        return Err("DTM silence controls failed or are incomplete".into());
+    }
+    if !counts.esp_to_pc.is_some_and(|count| count >= minimum)
+        || !counts.pc_to_esp.is_some_and(|count| count >= minimum)
+    {
+        return Err(format!(
+            "DTM RF delivery below {minimum}: ESP→PC={:?}, PC→ESP={:?}",
+            counts.esp_to_pc, counts.pc_to_esp
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn adapter_replacement_is_not_a_bidirectional_check_of_one_peer() {
+        let mut a = bluetooth::model::Check::new(bluetooth::model::Adapter(0));
+        let mut b = bluetooth::model::Check::new(bluetooth::model::Adapter(0));
+        assert!(!same_peer(&a, &b));
+        a.address = Some("peer-a".into());
+        a.version = Some("firmware-a".into());
+        b.address = a.address.clone();
+        b.version = a.version.clone();
+        assert!(same_peer(&a, &b));
+        b.address = Some("peer-b".into());
+        assert!(!same_peer(&a, &b));
+    }
+    #[test]
+    fn both_receivers_and_both_silence_controls_are_required() {
+        let mut counts = Counts {
+            pc_silence: Some(0),
+            esp_silence: Some(0),
+            esp_to_pc: Some(87),
+            pc_to_esp: Some(42),
+            quiet_end_counts: vec![0; 4],
+            quiet_reset_restarted: true,
+        };
+        assert!(validate(&counts, 10).is_ok());
+        counts.pc_to_esp = Some(0);
+        assert!(validate(&counts, 10).is_err());
+        counts.pc_to_esp = Some(42);
+        counts.esp_silence = Some(1);
+        assert!(validate(&counts, 10).is_err());
+        counts.esp_silence = None;
+        assert!(validate(&counts, 10).is_err());
+    }
+    #[test]
+    fn rf_counts_cannot_hide_missing_quiet_restart_controls() {
+        let mut counts = Counts {
+            pc_silence: Some(0),
+            esp_silence: Some(0),
+            esp_to_pc: Some(87),
+            pc_to_esp: Some(42),
+            quiet_end_counts: vec![0; 4],
+            quiet_reset_restarted: true,
+        };
+        assert!(validate(&counts, 10).is_ok());
+        counts.quiet_reset_restarted = false;
+        assert!(validate(&counts, 10).is_err());
+        counts.quiet_reset_restarted = true;
+        counts.quiet_end_counts.pop();
+        assert!(validate(&counts, 10).is_err());
+        counts.quiet_end_counts.push(1);
+        assert!(validate(&counts, 10).is_err());
+    }
+}

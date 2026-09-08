@@ -46,7 +46,7 @@ use {
 
 use oer_esp32s31_pac::{RadioHardware, RadioPhyReleaseError};
 
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::controller::time::ControllerTimeWorker;
 #[cfg(test)]
 use crate::controller::time::ControllerTimeWorkerPhase;
@@ -224,6 +224,7 @@ pub(crate) fn separate_interrupt_owner(
     (
         TaskResources {
             registers: task,
+            #[cfg(any(target_arch = "riscv32", test))]
             controller_time: ControllerTimeWorker::new_idle(),
         },
         InterruptBankOwner {
@@ -240,6 +241,8 @@ pub(crate) fn separate_interrupt_owner(
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) struct TaskResources {
     registers: HalBluetoothTaskOwner,
+    // Host validation images execute finite register probes without a time runner.
+    #[cfg(any(target_arch = "riscv32", test))]
     controller_time: ControllerTimeWorker,
 }
 
@@ -581,6 +584,39 @@ impl TaskResources {
             .finish_scheduler_software_list_removal(idle, head)
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn step_scheduler_stop(
+        &mut self,
+        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    > {
+        storage.step_scheduler_stop(&mut self.registers.borrow_bluetooth_controller(), stop)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn transfer_stopped_scheduler_finished_lists(
+        &mut self,
+        _stopped: &oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListObservation {
+        self.registers
+            .borrow_bluetooth_controller()
+            .transfer_scheduler_finished_lists()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn retire_stopped_scheduler_head(
+        &mut self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
+        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement {
+        self.registers
+            .borrow_bluetooth_controller()
+            .retire_stopped_scheduler_head(stopped, run)
+    }
+
     /// Recheck the complete post-unlink predicate through the task and stable
     /// interrupt register owners without exporting either owner.
     #[cfg(target_arch = "riscv32")]
@@ -632,6 +668,13 @@ impl TaskResources {
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
         self.registers.borrow_shared_phy()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_common_phy_power(
+        &mut self,
+    ) -> Result<(), oer_esp32s31_hal::power::PowerError> {
+        self.registers.prepare_common_phy_power()
     }
 
     /// Execute the reviewed finite BT baseband-v2 initialization transaction.

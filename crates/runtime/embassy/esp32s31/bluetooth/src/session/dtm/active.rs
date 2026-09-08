@@ -25,6 +25,8 @@ use oer_esp32s31_bluetooth::{
 /// Exact radio-side reason an active-session wait completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DtmActiveRadioSignal {
+    /// Other executor tasks had an opportunity to run between radio events.
+    Cooperative,
     /// The durable scheduler wake cell became non-empty.
     Scheduler,
     /// The exact post-unlink mailbox wake became durable.
@@ -116,6 +118,10 @@ where
                     PostUnlinkSignal::Mailbox => DtmActiveRadioSignal::PostUnlink,
                     PostUnlinkSignal::Recheck => DtmActiveRadioSignal::ControllerTime,
                 }
+            }
+            DtmActiveRadioWait::Cooperative => {
+                embassy_futures::yield_now().await;
+                DtmActiveRadioSignal::Cooperative
             }
             DtmActiveRadioWait::ControllerTime => {
                 controller_time_recheck.await;

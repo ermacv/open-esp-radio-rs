@@ -7,8 +7,14 @@ license.workspace = true
 repository.workspace = true
 publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
+default-run = "open-esp-radio-hil-runner"
+
+[[bin]]
+name = "open-radio-bluetooth"
+path = "src/fixture/bluetooth/helper.rs"
 
 [dependencies]
+bt-hci = "=0.10.1"
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
 oer-process = { path = "../../../tools/process" }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }

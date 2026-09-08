@@ -3,7 +3,9 @@
 //! Test End and Controller Reset share this single ownership machine. Before a
 //! scheduler head is visible it cancels recurrence and drains an abandoned
 //! Controller-time request. Once a head is visible, exactly that event reaches
-//! `RUN` and follows the ordinary completion/unlink/recycle path. The sole
+//! `RUN`; a parked running event enters finite common stop and exact head
+//! retirement, then follows unlink/recycle. One absolute deadline covers every
+//! phase and retains all owners on expiry. The sole
 //! successful terminal is [`DtmActiveCpuOwned`]; command policy and
 //! response ordering remain outside this module.
 
@@ -11,7 +13,6 @@
 
 use crate::{
     controller::SchedulerRunInterruptStorage,
-    interrupt::SchedulerWakeCell,
     le::dtm::{
         DtmActiveCompletion, DtmActiveCompletionFault, DtmActiveCompletionFaultCause,
         DtmActiveCompletionStep, DtmActiveCpuOwned, DtmActivePostUnlinkWait,
@@ -34,6 +35,10 @@ where
 {
     Completion(DtmActiveCompletion<'runtime, S, CAPACITY>),
     SchedulerWait(DtmActiveSchedulerWait<'runtime, S, CAPACITY>),
+    Stop {
+        wait: DtmActiveSchedulerWait<'runtime, S, CAPACITY>,
+        request: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    },
     PostUnlinkWait(DtmActivePostUnlinkWait<'runtime, S, CAPACITY>),
     CancelRecurring(DtmRecurringRunner<'runtime, S, CAPACITY>),
     CancelRejected(DtmRecurringRunner<'runtime, S, CAPACITY>),
@@ -48,10 +53,10 @@ where
     S: SchedulerRunInterruptStorage,
 {
     phase: DtmQuiescencePhase<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 }
 
 pub(crate) enum DtmQuiescenceWait<'runner> {
-    Scheduler(&'runner SchedulerWakeCell),
     PostUnlink(&'runner DtmPostUnlinkWakeCell),
     ControllerTime,
 }
@@ -63,6 +68,7 @@ pub(crate) enum DtmQuiescenceRetryCause<'cause, E> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DtmQuiescenceFaultCause {
+    DeadlineExpired,
     Completion(DtmActiveCompletionFaultCause),
     Recurring(DtmRecurringFaultCause),
     UnexpectedPublishedHeadTransition,
@@ -72,6 +78,9 @@ enum DtmQuiescenceFaultOwner<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    Deadline {
+        _owner: DtmQuiescencePhase<'runtime, S, CAPACITY>,
+    },
     Completion {
         _owner: DtmActiveCompletionFault<'runtime, S, CAPACITY>,
     },
@@ -154,14 +163,16 @@ where
                 }
             }
         };
-        Self { phase }
+        Self {
+            phase,
+            deadline: super::quiescence_policy::DtmQuiescenceDeadline::new(S::monotonic_micros()),
+        }
     }
 
     pub(crate) fn wait(&self) -> Option<DtmQuiescenceWait<'_>> {
         match &self.phase {
-            DtmQuiescencePhase::SchedulerWait(wait) => {
-                Some(DtmQuiescenceWait::Scheduler(wait.wake()))
-            }
+            DtmQuiescencePhase::SchedulerWait(_) => None,
+            DtmQuiescencePhase::Stop { .. } => Some(DtmQuiescenceWait::ControllerTime),
             DtmQuiescencePhase::PostUnlinkWait(wait) => {
                 Some(DtmQuiescenceWait::PostUnlink(wait.wake()))
             }
@@ -192,58 +203,96 @@ where
     }
 
     pub(crate) fn step(self) -> DtmQuiescenceStep<'runtime, S, CAPACITY> {
+        if self.deadline.expired(S::monotonic_micros()) {
+            return DtmQuiescenceStep::Fault(DtmQuiescenceFault {
+                cause: DtmQuiescenceFaultCause::DeadlineExpired,
+                _owner: DtmQuiescenceFaultOwner::Deadline { _owner: self.phase },
+            });
+        }
+        let deadline = self.deadline;
         match self.phase {
-            DtmQuiescencePhase::Completion(completion) => step_completion(completion),
-            DtmQuiescencePhase::SchedulerWait(wait) => match wait.wake().take() {
-                Some(wake) => step_completion(wait.resume(wake)),
-                None => DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::SchedulerWait(wait))),
-            },
-            DtmQuiescencePhase::PostUnlinkWait(wait) => step_completion(wait.resume()),
+            DtmQuiescencePhase::Completion(completion) => step_completion(completion, deadline),
+            DtmQuiescencePhase::SchedulerWait(wait) => {
+                step_stop(wait, Default::default(), deadline)
+            }
+            DtmQuiescencePhase::Stop { wait, request } => step_stop(wait, request, deadline),
+            DtmQuiescencePhase::PostUnlinkWait(wait) => step_completion(wait.resume(), deadline),
             DtmQuiescencePhase::CancelRecurring(recurring)
             | DtmQuiescencePhase::CancelRejected(recurring) => {
-                finish_cancellation(recurring.cancel())
+                finish_cancellation(recurring.cancel(), deadline)
             }
             DtmQuiescencePhase::CancelRetry(retry) => {
-                finish_cancellation(retry.cancel_for_quiescence())
+                finish_cancellation(retry.cancel_for_quiescence(), deadline)
             }
-            DtmQuiescencePhase::CancellationDrain(drain) => step_cancellation_drain(drain),
-            DtmQuiescencePhase::FinishPublished(recurring) => step_published_head(recurring),
-            DtmQuiescencePhase::FinishPublishedRetry(retry) => step_published_head(retry.retry()),
+            DtmQuiescencePhase::CancellationDrain(drain) => {
+                step_cancellation_drain(drain, deadline)
+            }
+            DtmQuiescencePhase::FinishPublished(recurring) => {
+                step_published_head(recurring, deadline)
+            }
+            DtmQuiescencePhase::FinishPublishedRetry(retry) => {
+                step_published_head(retry.retry(), deadline)
+            }
         }
     }
 }
 
 fn runner<'runtime, S, const CAPACITY: usize>(
     phase: DtmQuiescencePhase<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 ) -> DtmQuiescenceRunner<'runtime, S, CAPACITY>
 where
     S: SchedulerRunInterruptStorage,
 {
-    DtmQuiescenceRunner { phase }
+    DtmQuiescenceRunner { phase, deadline }
 }
 
 fn step_completion<'runtime, S, const CAPACITY: usize>(
     completion: DtmActiveCompletion<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 ) -> DtmQuiescenceStep<'runtime, S, CAPACITY>
 where
     S: SchedulerRunInterruptStorage,
 {
-    match completion.step() {
-        DtmActiveCompletionStep::Continue(completion) => {
-            DtmQuiescenceStep::Continue(runner(DtmQuiescencePhase::Completion(completion)))
+    completion_result(completion.step(), deadline)
+}
+
+fn step_stop<'runtime, S: SchedulerRunInterruptStorage, const CAPACITY: usize>(
+    wait: DtmActiveSchedulerWait<'runtime, S, CAPACITY>,
+    request: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
+) -> DtmQuiescenceStep<'runtime, S, CAPACITY> {
+    let (step, request) = wait.step_stop(request);
+    match (step, request) {
+        (DtmActiveCompletionStep::WaitScheduler(wait), Some(request)) => {
+            DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::Stop { wait, request }, deadline))
         }
+        (step, None) => completion_result(step, deadline),
+        _ => unreachable!("pending stop retains exactly one request and running owner"),
+    }
+}
+
+fn completion_result<'runtime, S: SchedulerRunInterruptStorage, const CAPACITY: usize>(
+    step: DtmActiveCompletionStep<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
+) -> DtmQuiescenceStep<'runtime, S, CAPACITY> {
+    match step {
+        DtmActiveCompletionStep::Continue(completion) => DtmQuiescenceStep::Continue(runner(
+            DtmQuiescencePhase::Completion(completion),
+            deadline,
+        )),
         DtmActiveCompletionStep::WaitScheduler(wait) => {
-            DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::SchedulerWait(wait)))
+            DtmQuiescenceStep::Continue(runner(DtmQuiescencePhase::SchedulerWait(wait), deadline))
         }
         DtmActiveCompletionStep::UnrelatedList {
             completion,
             observed,
         } => DtmQuiescenceStep::UnrelatedList {
-            runner: runner(DtmQuiescencePhase::Completion(completion)),
+            runner: runner(DtmQuiescencePhase::Completion(completion), deadline),
             observed,
         },
         DtmActiveCompletionStep::WaitPostUnlink(wait) => {
-            DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::PostUnlinkWait(wait)))
+            DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::PostUnlinkWait(wait), deadline))
         }
         DtmActiveCompletionStep::CpuOwned(owner) => DtmQuiescenceStep::CpuOwned(owner),
         DtmActiveCompletionStep::Fault(fault) => DtmQuiescenceStep::Fault(DtmQuiescenceFault {
@@ -255,21 +304,23 @@ where
 
 fn finish_cancellation<'runtime, S, const CAPACITY: usize>(
     cancelled: DtmRecurringRunnerCancel<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 ) -> DtmQuiescenceStep<'runtime, S, CAPACITY>
 where
     S: SchedulerRunInterruptStorage,
 {
     match cancelled {
         DtmRecurringRunnerCancel::CpuOwned(owner) => DtmQuiescenceStep::CpuOwned(owner),
-        DtmRecurringRunnerCancel::NeedsControllerTimeDrain(drain) => {
-            DtmQuiescenceStep::Continue(runner(DtmQuiescencePhase::CancellationDrain(drain)))
-        }
-        DtmRecurringRunnerCancel::CancellationRejected(recurring) => {
-            DtmQuiescenceStep::Retryable(runner(DtmQuiescencePhase::CancelRejected(recurring)))
-        }
-        DtmRecurringRunnerCancel::HeadPublished(recurring) => {
-            DtmQuiescenceStep::Continue(runner(DtmQuiescencePhase::FinishPublished(recurring)))
-        }
+        DtmRecurringRunnerCancel::NeedsControllerTimeDrain(drain) => DtmQuiescenceStep::Continue(
+            runner(DtmQuiescencePhase::CancellationDrain(drain), deadline),
+        ),
+        DtmRecurringRunnerCancel::CancellationRejected(recurring) => DtmQuiescenceStep::Retryable(
+            runner(DtmQuiescencePhase::CancelRejected(recurring), deadline),
+        ),
+        DtmRecurringRunnerCancel::HeadPublished(recurring) => DtmQuiescenceStep::Continue(runner(
+            DtmQuiescencePhase::FinishPublished(recurring),
+            deadline,
+        )),
         DtmRecurringRunnerCancel::Fault(fault) => DtmQuiescenceStep::Fault(DtmQuiescenceFault {
             cause: DtmQuiescenceFaultCause::Recurring(fault.cause()),
             _owner: DtmQuiescenceFaultOwner::Recurring { _owner: fault },
@@ -279,14 +330,16 @@ where
 
 fn step_cancellation_drain<'runtime, S, const CAPACITY: usize>(
     drain: DtmRecurringCancellationDrain<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 ) -> DtmQuiescenceStep<'runtime, S, CAPACITY>
 where
     S: SchedulerRunInterruptStorage,
 {
     match drain.step() {
-        DtmRecurringCancellationDrainStep::Waiting(drain) => {
-            DtmQuiescenceStep::Waiting(runner(DtmQuiescencePhase::CancellationDrain(drain)))
-        }
+        DtmRecurringCancellationDrainStep::Waiting(drain) => DtmQuiescenceStep::Waiting(runner(
+            DtmQuiescencePhase::CancellationDrain(drain),
+            deadline,
+        )),
         DtmRecurringCancellationDrainStep::CpuOwned(owner) => DtmQuiescenceStep::CpuOwned(owner),
         DtmRecurringCancellationDrainStep::Fault(fault) => {
             DtmQuiescenceStep::Fault(DtmQuiescenceFault {
@@ -299,18 +352,23 @@ where
 
 fn step_published_head<'runtime, S, const CAPACITY: usize>(
     recurring: DtmRecurringRunner<'runtime, S, CAPACITY>,
+    deadline: super::quiescence_policy::DtmQuiescenceDeadline,
 ) -> DtmQuiescenceStep<'runtime, S, CAPACITY>
 where
     S: SchedulerRunInterruptStorage,
 {
     match recurring.step() {
-        DtmRecurringRunnerStep::Running(completion) => {
-            DtmQuiescenceStep::Continue(runner(DtmQuiescencePhase::Completion(completion)))
-        }
+        DtmRecurringRunnerStep::Running(completion) => DtmQuiescenceStep::Continue(runner(
+            DtmQuiescencePhase::Completion(completion),
+            deadline,
+        )),
         DtmRecurringRunnerStep::Retryable(retry)
             if matches!(retry.cause(), DtmRecurringRetryCause::SchedulerStart(_)) =>
         {
-            DtmQuiescenceStep::Retryable(runner(DtmQuiescencePhase::FinishPublishedRetry(retry)))
+            DtmQuiescenceStep::Retryable(runner(
+                DtmQuiescencePhase::FinishPublishedRetry(retry),
+                deadline,
+            ))
         }
         DtmRecurringRunnerStep::Fault(fault) => DtmQuiescenceStep::Fault(DtmQuiescenceFault {
             cause: DtmQuiescenceFaultCause::Recurring(fault.cause()),

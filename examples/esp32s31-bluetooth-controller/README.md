@@ -36,9 +36,16 @@ Before commands, `application entered`, `executor starting`, and
 `Bluetooth Controller cold start submitted` markers distinguish application,
 executor and radio startup; `Bluetooth Controller ready` closes cold start.
 
+Cold-start failures distinguish common-PHY power/readback checkpoints from
+registration and calibration errors. Both retain the powered radio owner and
+prevent HCI startup. See the [Bluetooth capability inventory](../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md)
+for the remaining maintenance and shutdown boundaries.
+
 This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
-and the repository's HIL evidence process.
+and the repository's HIL evidence process. The
+[Bluetooth HIL scenario](../../hil/host/linux-bluetooth/README.md) provides
+host-controlled DTM windows, independent receiver counts and silence controls.
 
 Build and flash the complete application from the repository root:
 
@@ -55,18 +62,17 @@ workspace produces the stage-two ELF, which requires the shared bootstrap.
 
 `advertising-smoke` replaces the DTM commands. After initial Reset, it requests
 nonconnectable `ADV_NONCONN_IND`, then connectable `ADV_IND`, each with a static
-random address, 100 ms intervals, all three advertising channels and the local
+random address, 100 ms intervals and the local
 name `open-radio`. Each case configures address/parameters/data, enables for one
 second, disables, re-enables for one second, resets while enabled, reconfigures,
 enables for one second and finally disables. Run without a connecting peer:
 accepted connections exercise a separate, incomplete peripheral lifecycle.
 
-The current all-channel `ADV_IND` request does not fit the S31 backend's
+The nonconnectable case exercises all three primary channels. The connectable
+case selects channel 37 to fit the S31 backend's
 [single-channel connectable boundary](../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
-The example retains `AdvChannelMap::ALL` for both cases, so the connectable case
-cannot complete the advertised success sequence through the current backend.
-Treat it as an unsupported configuration, not a passing connectable smoke
-test; a supported connectable caller must select exactly one primary channel.
+The application library owns these typed parameter commands; host tests check
+that each smoke command fits its role's channel capacity.
 
 Commands print `advertising <command> submitted` and `complete` markers, with
 the command name in failures and two-second timeouts. Case and dwell markers

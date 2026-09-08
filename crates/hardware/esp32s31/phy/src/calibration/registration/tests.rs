@@ -101,6 +101,54 @@ fn state_owner_cannot_escape_before_a_terminal_parent_outcome() {
 }
 
 #[test]
+fn lowering_failure_identifies_the_pending_action_without_calling_the_port() {
+    use crate::executor::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};
+    use core::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+
+    struct UnreachablePort;
+    impl PhyRegisterPort for UnreachablePort {
+        type Error = ();
+        async fn complete(
+            &mut self,
+            _binding: super::PhyRegisterExternalBinding,
+        ) -> Result<PhyRegisterCompletion, Self::Error> {
+            panic!("an unsupported action must never reach hardware");
+        }
+    }
+
+    let mut transition = PhyRegisterTransition::with_production_config();
+    transition.phase = Some(super::Phase::Prelude(
+        super::PreludeStep::I2cInitialSample { index: 2 },
+    ));
+    let action = PhyRegisterAction::SampleI2cMasterReset {
+        index: 2,
+        sample: 0,
+    };
+    {
+        let mut port = UnreachablePort;
+        let mut future = std::pin::pin!(run_phy_register(&mut transition, &mut port));
+        assert_eq!(
+            future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Ready(Err(PhyRegisterRunError::Lowering {
+                action,
+                error: PhyRegisterBindingError::UnsupportedAction,
+            })),
+        );
+    }
+    assert_eq!(
+        transition.step_local(),
+        Ok(PhyRegisterLocalStep::External(action))
+    );
+    assert!(!transition.state().unwrap().phy_registered());
+    assert!(transition.into_model_parts().is_err());
+}
+
+#[test]
 fn apply_profile_invariant_errors_restore_the_exact_parent_phase() {
     let mut transition = PhyRegisterTransition::with_production_config();
     transition.phase = Some(super::Phase::Prelude(super::PreludeStep::ApplyProfile));

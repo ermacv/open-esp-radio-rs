@@ -179,3 +179,73 @@ fn failed_semantic_readback_names_the_exact_checkpoint() {
         })
     );
 }
+
+#[test]
+fn bluetooth_preparation_retains_the_epoch_on_success_and_each_readback_failure() {
+    for failed in [
+        None,
+        Some(PowerCheckpoint::ResetReleased),
+        Some(PowerCheckpoint::HpActiveIcg),
+        Some(PowerCheckpoint::ModemBusClock),
+        Some(PowerCheckpoint::HpActiveClockMap),
+        Some(PowerCheckpoint::SharedClockMap),
+        Some(PowerCheckpoint::ModemClockSource),
+        Some(PowerCheckpoint::PhyClocks),
+        Some(PowerCheckpoint::I2cSource),
+        Some(PowerCheckpoint::I2cClock),
+    ] {
+        let operations = Rc::new(RefCell::new(Vec::new()));
+        let mut shared = FakeShared::ready(operations.clone());
+        if let Some(checkpoint) = failed {
+            *match checkpoint {
+                PowerCheckpoint::ResetReleased => &mut shared.modem.wifi_reset_released,
+                PowerCheckpoint::HpActiveIcg => &mut shared.platform.hp_active_icg_selected,
+                PowerCheckpoint::ModemBusClock => {
+                    &mut shared.platform.modem_register_bus_clock_enabled
+                }
+                PowerCheckpoint::HpActiveClockMap => &mut shared.modem.active_clock_map_configured,
+                PowerCheckpoint::SharedClockMap => {
+                    &mut shared.observation.power_state_map_configured
+                }
+                PowerCheckpoint::ModemClockSource => {
+                    &mut shared.platform.modem_source_clocks_configured
+                }
+                PowerCheckpoint::PhyClocks => &mut shared.modem.phy_calibration_clocks_enabled,
+                PowerCheckpoint::I2cSource => &mut shared.modem.phy_i2c_160mhz_selected,
+                PowerCheckpoint::I2cClock => &mut shared.observation.phy_i2c_master_clock_enabled,
+            } = false;
+        }
+        let mut reunitable = true;
+        let result = super::execute_bluetooth_owned(&mut reunitable, &mut shared);
+        assert_eq!(
+            result,
+            failed.map_or(Ok(()), |checkpoint| Err(PowerError {
+                checkpoint,
+                expected: true,
+                observed: false,
+            }))
+        );
+        assert!(
+            !reunitable,
+            "a partially powered PHY cannot return a cold owner"
+        );
+        assert_eq!(
+            shared.retain_calls, 1,
+            "the I2C lease belongs to the retained epoch"
+        );
+        let operations = operations.borrow();
+        let reset = operations
+            .iter()
+            .rposition(|op| *op == Operation::ResetBaseband(false))
+            .unwrap();
+        let clocks = operations
+            .iter()
+            .position(|op| *op == Operation::EnablePhyClocks)
+            .unwrap();
+        let source = operations
+            .iter()
+            .position(|op| *op == Operation::SelectI2c160Mhz)
+            .unwrap();
+        assert!(reset < clocks && clocks < source);
+    }
+}

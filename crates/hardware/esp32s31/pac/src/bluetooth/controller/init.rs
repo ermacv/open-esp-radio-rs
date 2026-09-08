@@ -80,8 +80,7 @@ pub struct BluetoothControllerHalInitConfig {
     period: BluetoothHalInitPeriod,
 }
 
-/// Exact integer scale between a raw latched controller tick delta and
-/// microseconds.
+/// Exact scale between a raw latched controller tick delta and microseconds.
 ///
 /// Current and same-chip named bodies compose
 /// `r_btdm_sleep_timer_ticks_get`, `r_btdm_hal_util_ticks_to_us` and
@@ -92,7 +91,16 @@ pub struct BluetoothControllerHalInitConfig {
 /// evidence obligations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothControllerTimeScale {
-    shift_image: u8,
+    period: BluetoothHalInitPeriod,
+}
+
+/// Projection of raw ticks into whole microseconds and an unconsumed remainder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothMicrosecondDeltaProjection {
+    /// Whole microseconds produced by the forward conversion.
+    pub whole_micros: u32,
+    /// Raw ticks discarded by that conversion; retain them across epoch updates.
+    pub remainder_ticks: u8,
 }
 
 /// Projection of one microsecond delta into the raw controller-tick domain.
@@ -109,9 +117,17 @@ pub struct BluetoothRawTickDeltaProjection {
 }
 
 impl BluetoothControllerTimeScale {
-    /// Low-three-bit scale image written by the HAL initialization body.
+    /// Software conversion selector established by the HAL config setter.
+    ///
+    /// This is independent of `BluetoothControllerHalInitConfig::sleep_timer_shift`,
+    /// which configures the hardware divider. The standalone period selects zero:
+    /// two raw ticks per microsecond.
     pub const fn shift_image(self) -> u8 {
-        self.shift_image
+        match self.period {
+            BluetoothHalInitPeriod::Image500 => 2,
+            BluetoothHalInitPeriod::Image1000 => 1,
+            BluetoothHalInitPeriod::Image2000 => 0,
+        }
     }
 
     /// Convert one raw latched-tick delta into microseconds.
@@ -120,15 +136,42 @@ impl BluetoothControllerTimeScale {
     /// shift helper. It does not decide whether a particular wrapped delta is
     /// temporally before or after an anchor.
     pub const fn micros_from_raw_ticks(self, raw_ticks: u32) -> u32 {
-        raw_ticks.wrapping_shl((self.shift_image - 1) as u32)
+        self.project_raw_ticks(raw_ticks).whole_micros
+    }
+
+    /// Convert ticks while preserving the fractional microsecond for re-anchoring.
+    pub const fn project_raw_ticks(self, raw_ticks: u32) -> BluetoothMicrosecondDeltaProjection {
+        match self.period {
+            BluetoothHalInitPeriod::Image500 => BluetoothMicrosecondDeltaProjection {
+                whole_micros: raw_ticks.wrapping_mul(2),
+                remainder_ticks: 0,
+            },
+            BluetoothHalInitPeriod::Image1000 => BluetoothMicrosecondDeltaProjection {
+                whole_micros: raw_ticks,
+                remainder_ticks: 0,
+            },
+            BluetoothHalInitPeriod::Image2000 => BluetoothMicrosecondDeltaProjection {
+                whole_micros: raw_ticks / 2,
+                remainder_ticks: (raw_ticks % 2) as u8,
+            },
+        }
     }
 
     /// Convert microseconds into raw ticks while retaining discarded time.
     pub const fn raw_ticks_from_micros(self, micros: u32) -> BluetoothRawTickDeltaProjection {
-        let shift = (self.shift_image - 1) as u32;
-        BluetoothRawTickDeltaProjection {
-            whole_ticks: micros >> shift,
-            remainder_micros: (micros & ((1_u32 << shift) - 1)) as u8,
+        match self.period {
+            BluetoothHalInitPeriod::Image500 => BluetoothRawTickDeltaProjection {
+                whole_ticks: micros / 2,
+                remainder_micros: (micros % 2) as u8,
+            },
+            BluetoothHalInitPeriod::Image1000 => BluetoothRawTickDeltaProjection {
+                whole_ticks: micros,
+                remainder_micros: 0,
+            },
+            BluetoothHalInitPeriod::Image2000 => BluetoothRawTickDeltaProjection {
+                whole_ticks: micros.wrapping_mul(2),
+                remainder_micros: 0,
+            },
         }
     }
 }
@@ -177,7 +220,7 @@ impl BluetoothControllerHalInitConfig {
     /// initialization profile.
     pub const fn controller_time_scale(self) -> BluetoothControllerTimeScale {
         BluetoothControllerTimeScale {
-            shift_image: self.sleep_timer_shift(),
+            period: self.period,
         }
     }
 

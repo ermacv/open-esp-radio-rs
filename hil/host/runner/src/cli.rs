@@ -177,6 +177,11 @@ mod tests;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum FixtureCommand {
+    /// Execute a bounded DTM v2 command check and restore the Linux adapter.
+    BluetoothCheck {
+        #[arg(long, default_value = "hci0")]
+        adapter: crate::fixture::bluetooth::model::Adapter,
+    },
     /// Install the repository-owned Linux fixture helper and its sudo policy.
     InstallHost,
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.

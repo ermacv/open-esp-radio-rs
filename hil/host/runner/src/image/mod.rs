@@ -34,6 +34,15 @@ struct ImageCapabilitySignature {
 pub(crate) fn classify_flashed_capabilities(
     features: &FeatureCapabilities,
 ) -> Option<crate::image::ImageClass> {
+    if features.bluetooth_dtm {
+        let expected = FeatureCapabilities {
+            bluetooth_dtm: true,
+            structured_evidence: true,
+            psram_task_stack: true,
+            ..FeatureCapabilities::default()
+        };
+        return (*features == expected).then_some(ImageClass::BluetoothDtm);
+    }
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
         task_poll: features.task_poll_evidence,
@@ -391,7 +400,11 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = format!("{},{}", class.runtime_features(), network.feature());
+    let runtime_features = if class == ImageClass::BluetoothDtm {
+        class.runtime_features().to_owned()
+    } else {
+        format!("{},{}", class.runtime_features(), network.feature())
+    };
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -798,7 +811,7 @@ fn audit_radio_observers<'a>(
 ) -> Result<()> {
     if matches!(
         class,
-        ImageClass::BootSmoke | ImageClass::DiagnosticMemoryBenchmark
+        ImageClass::BluetoothDtm | ImageClass::BootSmoke | ImageClass::DiagnosticMemoryBenchmark
     ) {
         return Ok(());
     }

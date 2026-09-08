@@ -2,11 +2,15 @@
 
 `runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
 UART evidence. `linux-net/` contains only privileged fixture operations.
+[Linux Bluetooth setup](linux-bluetooth/README.md) installs the finite DTM
+adapter checker; its Rust
+implementation belongs to the runner's `fixture/bluetooth/` module.
 
 Public commands:
 
 ```console
 cargo hil doctor
+cargo hil fixture bluetooth-check --adapter hci0
 cargo hil doctor timebase
 cargo hil plan udp-rx-ht40-ceiling
 cargo hil scenario list

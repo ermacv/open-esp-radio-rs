@@ -173,3 +173,22 @@ fn cancelling_notified_production_readiness_leaves_exact_command() {
         LeControllerIdleClassifiedCommandRoute::ResponsePending(_)
     ));
 }
+
+#[test]
+fn event_boundary_yield_allows_host_readiness_before_the_next_radio_event() {
+    let mut resources = test_resources();
+    let mut endpoints = resources.split();
+    let LeControllerCommandReadyClaim::Ready(command_ready) =
+        endpoints.controller.claim_initial_command_ready(())
+    else {
+        panic!("fresh command owner");
+    };
+    block_on(endpoints.host.write(&LeTestEnd::new())).unwrap();
+    let selected = block_on(select_radio_first(
+        embassy_futures::yield_now(),
+        endpoints.controller.wait_command_available(&command_ready),
+    ));
+    assert!(matches!(selected, RadioFirst::Other(Ok(()))));
+    // Readiness remains non-consuming across the cancelled cooperative yield.
+    assert!(block_on(endpoints.controller.wait_command_available(&command_ready)).is_ok());
+}

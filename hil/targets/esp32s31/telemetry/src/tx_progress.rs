@@ -7,6 +7,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub struct Counters {
     count: AtomicU32,
+    started_at: AtomicU32,
+    first_at: AtomicU32,
+    errors: AtomicU32,
     last_sequence: AtomicU32,
     last_at: AtomicU32,
     maximum_gap: AtomicU32,
@@ -20,6 +23,8 @@ pub struct Counters {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Snapshot {
     pub count: u32,
+    pub errors: u32,
+    pub first_admission_micros: Option<u32>,
     pub last_sequence: u32,
     pub maximum_gap_micros: u32,
     pub sequence_after_maximum_gap: u32,
@@ -33,6 +38,9 @@ impl Counters {
     pub const fn new() -> Self {
         Self {
             count: AtomicU32::new(0),
+            started_at: AtomicU32::new(0),
+            first_at: AtomicU32::new(0),
+            errors: AtomicU32::new(0),
             last_sequence: AtomicU32::new(0),
             last_at: AtomicU32::new(0),
             maximum_gap: AtomicU32::new(0),
@@ -45,7 +53,9 @@ impl Counters {
     }
 
     /// Called at the workload boundary while the socket producer is suspended.
-    pub fn reset(&self) {
+    pub fn reset(&self, now: u32) {
+        self.started_at.store(now, Ordering::Relaxed);
+        self.errors.store(0, Ordering::Relaxed);
         self.count.store(0, Ordering::Relaxed);
         self.maximum_gap.store(0, Ordering::Relaxed);
         self.sequence_after_gap.store(0, Ordering::Relaxed);
@@ -70,27 +80,45 @@ impl Counters {
                 self.maximum_gap.store(gap, Ordering::Relaxed);
                 self.sequence_after_gap.store(sequence, Ordering::Relaxed);
             }
+        } else {
+            self.first_at.store(now, Ordering::Relaxed);
         }
+        self.finish_wait(now);
+        self.last_at.store(now, Ordering::Relaxed);
+        self.last_sequence.store(sequence, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// A terminal send failure closes the wait; it is not a successful admission.
+    pub fn failed(&self, now: u32) {
+        self.finish_wait(now);
+        self.errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn finish_wait(&self, now: u32) {
         if self.pending.swap(0, Ordering::Relaxed) != 0 {
             self.maximum_wait.fetch_max(
                 now.wrapping_sub(self.pending_since.load(Ordering::Relaxed)),
                 Ordering::Relaxed,
             );
         }
-        self.last_at.store(now, Ordering::Relaxed);
-        self.last_sequence.store(sequence, Ordering::Relaxed);
-        self.count.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self, now: u32) -> Snapshot {
         let count = self.count.load(Ordering::Relaxed);
         Snapshot {
             count,
+            errors: self.errors.load(Ordering::Relaxed),
+            first_admission_micros: (count != 0).then(|| {
+                self.first_at
+                    .load(Ordering::Relaxed)
+                    .wrapping_sub(self.started_at.load(Ordering::Relaxed))
+            }),
             last_sequence: self.last_sequence.load(Ordering::Relaxed),
             maximum_gap_micros: self.maximum_gap.load(Ordering::Relaxed),
             sequence_after_maximum_gap: self.sequence_after_gap.load(Ordering::Relaxed),
             idle_micros: if count == 0 {
-                0
+                now.wrapping_sub(self.started_at.load(Ordering::Relaxed))
             } else {
                 now.wrapping_sub(self.last_at.load(Ordering::Relaxed))
             },

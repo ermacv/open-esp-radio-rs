@@ -542,8 +542,9 @@ impl AggregateTxCounters {
     /// Call on the radio executor before taking the next interval's first
     /// snapshot. Outstanding publications survive the interval boundary.
     pub fn begin_interval(&self) {
-        self.secondary_socket.reset();
-        self.secondary_claim.reset();
+        let now = (self.now_micros)() as u32;
+        self.secondary_socket.reset(now);
+        self.secondary_claim.reset(now);
         self.last_publication_micros.store(0, Ordering::Relaxed);
         self.last_completion_micros.store(0, Ordering::Relaxed);
         self.pending_tx_irq_micros.store(0, Ordering::Relaxed);

@@ -130,16 +130,21 @@ pub(in crate::product_hil) fn aggregate_tx_evidence(
 pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     aggregate: AggregateTxCounterSnapshot,
 ) {
+    let secondary_active = aggregate.secondary_socket.count != 0
+        || aggregate.secondary_socket.pending_polls != 0
+        || aggregate.secondary_socket.errors != 0
+        || aggregate.secondary_claim.count != 0;
     for (frontier, progress) in [
         ("socket", aggregate.secondary_socket),
         ("radio-claim", aggregate.secondary_claim),
     ] {
-        if progress.count != 0 || progress.pending_polls != 0 {
+        if secondary_active {
             runtime_log_reliably(format_args!(
-                "OTXFLOW flow=1 frontier={} count={} last={} gap_us={} after={} idle_us={} pending_polls={} wait_max_us={} pending_us={}",
+                "OTXFLOW flow=1 frontier={} count={} last={} gap_us={} after={} idle_us={} pending_polls={} wait_max_us={} pending_us={} errors={} first_us={:?}",
                 frontier, progress.count, progress.last_sequence, progress.maximum_gap_micros,
                 progress.sequence_after_maximum_gap, progress.idle_micros, progress.pending_polls,
                 progress.maximum_wait_micros, progress.pending_micros,
+                progress.errors, progress.first_admission_micros,
             )).await;
         }
     }

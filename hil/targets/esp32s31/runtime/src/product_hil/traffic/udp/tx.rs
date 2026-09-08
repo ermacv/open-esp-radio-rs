@@ -123,7 +123,7 @@ async fn transmit_multi_flow(
                     match &result {
                         Poll::Pending => counters.blocked(now),
                         Poll::Ready(Ok(())) => counters.admitted(publication.sequence, now),
-                        Poll::Ready(Err(_)) => {}
+                        Poll::Ready(Err(_)) => counters.failed(now),
                     }
                 }
                 result

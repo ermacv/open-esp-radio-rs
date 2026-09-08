@@ -197,6 +197,17 @@ fixture evidence. The monitor is removed before traffic starts and on errors.
 Control transcripts include host Unix timestamps for comparison with pcap; clock
 offset between hosts must be checked before interpreting sub-millisecond timing.
 
+For multi-flow UDP TX with driver observation, terminal `OTXFLOW` records describe
+flow 1 at socket admission and at the radio's claim of an Ethernet owner. Once
+that flow shows activity, both boundaries are printed, including a boundary
+with zero packets. `first_us` measures time from the diagnostic interval start
+to first admission; `idle_us` includes silence before the first packet and after
+the last. `gap_us` measures only intervals between admitted packets. `errors`
+counts terminal socket failures, which close `pending_us` without counting a
+packet. These are supplemental UART diagnostics, not MAC completion or host
+reception evidence. The current per-flow records do not correlate individual
+packets with hardware publication and completion.
+
 `cargo hil fixture install-host` first runs `cargo xtask build hostapd` without
 root, then installs the resulting binary, build provenance and helper through
 interactive sudo. The build uses the pinned hostapd release and reviewed

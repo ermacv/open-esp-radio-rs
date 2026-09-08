@@ -207,3 +207,62 @@ fn terminal_send_error_stops_only_that_flow_without_error_spin() {
     assert_eq!(evidence[0].unwrap().transport_errors, 1);
     assert_eq!(evidence[1].unwrap().tx_units, 2);
 }
+
+#[test]
+fn completely_blocked_producer_resumes_on_socket_event_without_retry_timer() {
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut producer = Producer::new(config(), 0, 12_000_000, 16, 1);
+    let mut waiting = [None, None];
+    let mut polls = [0, 0];
+    assert!(
+        producer
+            .poll(
+                &mut cx,
+                || 0,
+                |index, _, cx| {
+                    polls[index] += 1;
+                    waiting[index] = Some(cx.waker().clone());
+                    Poll::<Result<(), ()>>::Pending
+                }
+            )
+            .is_pending()
+    );
+    assert_eq!(polls, [1, 1]);
+    assert_eq!(wakes.0.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        producer.deadline(),
+        12_000_000,
+        "only the session watchdog remains"
+    );
+
+    waiting[1].take().unwrap().wake();
+    assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+    let mut sent = vec![];
+    assert!(
+        producer
+            .poll(
+                &mut cx,
+                || 6_000_000,
+                |index, packet, _| {
+                    if index == 0 || !sent.is_empty() {
+                        Poll::Pending
+                    } else {
+                        sent.push(packet.sequence);
+                        Poll::Ready(Ok::<_, ()>(()))
+                    }
+                }
+            )
+            .is_pending()
+    );
+    assert_eq!(sent, [0], "blocked publication must retain its sequence");
+    assert_eq!(
+        wakes.0.load(Ordering::Relaxed),
+        1,
+        "no empty self-repoll after the burst"
+    );
+    let evidence = producer.evidence(6_000_000);
+    assert_eq!(evidence[0].unwrap().tx_units, 0);
+    assert_eq!(evidence[1].unwrap().tx_units, 1);
+}

@@ -11,9 +11,19 @@ fn linux_fixture_requires_explicit_radio_and_network_settings() {
         ("country", toml::Value::String("D".into()), false),
         ("channel", toml::Value::Integer(14), false),
         ("address", toml::Value::String("10.42.0.1/32".into()), false),
+        ("coexistence", toml::Value::String("respect".into()), true),
+        (
+            "coexistence",
+            toml::Value::String("force-ht40".into()),
+            true,
+        ),
+        ("coexistence", toml::Value::String("ignore".into()), false),
     ] {
         let mut candidate = raw.clone();
-        candidate["station_fixture"][key] = value;
+        candidate["station_fixture"]
+            .as_table_mut()
+            .unwrap()
+            .insert(key.into(), value);
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
             .unwrap();

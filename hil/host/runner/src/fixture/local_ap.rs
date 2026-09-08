@@ -11,7 +11,7 @@ use crate::{
 };
 use oer_process::CommandExt as _;
 use std::{
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     net::Ipv4Addr,
     path::Path,
     process::{Command, Stdio},
@@ -52,13 +52,29 @@ impl AccessPoint {
         serde_json::json!({"schema": 1, "backend": "local-linux", "verified": true,
             "phy": self.phy, "channel": self.config.channel, "country": self.config.country,
             "frequency_mhz": observed.frequency, "width_mhz": observed.width, "center1_mhz": observed.center,
-            "address": self.config.address, "prefix_length": self.config.prefix_length})
+            "address": self.config.address, "prefix_length": self.config.prefix_length,
+            "coexistence": self.config.coexistence})
     }
 
     pub(crate) fn restart(&self) -> Result<()> {
+        self.start_and_verify().map_err(|error| {
+            let log = startup_log(
+                Path::new("/run/open-radio-hostapd/hostapd.log"),
+                &self.input,
+            );
+            format!("{error}; hostapd log: {}", log.as_str()).into()
+        })
+    }
+
+    fn start_and_verify(&self) -> Result<()> {
         let startup = helper("ap", Some(&self.input))?;
         let mut control = Control::connect(Path::new("/run/open-radio-hostapd/wlan0"))?;
         let status = control.wait_enabled()?;
+        // Detailed scan diagnostics are needed only during preparation, not
+        // during the measured data-plane workload.
+        if control.request("LOG_LEVEL INFO")?.trim() != "OK" {
+            return Err("hostapd rejected restoring normal logging after startup".into());
+        }
         if field(&status, "ieee80211n") != Some("1")
             || (field(&status, "ieee80211ax") == Some("1")) != (self.phy == PhyExpectation::He20)
         {
@@ -82,7 +98,12 @@ impl AccessPoint {
             Geometry::parse(std::str::from_utf8(&info.stdout)?)?,
         )
         .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> {
-            format!("{error}; hostapd startup: {}", startup.trim()).into()
+            format!(
+                "{error}; hostapd secondary_channel={}; startup: {}",
+                field(&status, "secondary_channel").unwrap_or("unknown"),
+                startup.trim()
+            )
+            .into()
         })?;
         let addresses = Command::new("ip")
             .args(["-j", "-4", "address", "show", "dev", &self.config.interface])
@@ -214,13 +235,17 @@ fn profile(
         write!(hex, "{byte:02x}")?;
     }
     Ok(Zeroizing::new(format!(
-        "{hex}\n{passphrase}\n{}\n{}\n{}\n{}\n{}/{}\n{start},{end},{mask}\n",
+        "{hex}\n{passphrase}\n{}\n{}\n{}\n{}\n{}/{}\n{start},{end},{mask}\n{}\n",
         config.country,
         config.channel,
         geometry(config, phy).iw_width()?,
         u8::from(phy == PhyExpectation::He20),
         config.address,
-        config.prefix_length
+        config.prefix_length,
+        u8::from(
+            phy == PhyExpectation::Ht40
+                && config.coexistence == crate::lab::config::Coexistence::ForceHt40
+        )
     )))
 }
 
@@ -272,11 +297,35 @@ fn helper(action: &str, input: Option<&str>) -> Result<Zeroizing<String>> {
 }
 
 fn diagnostic(output: &std::process::Output, input: Option<&str>) -> Zeroizing<String> {
-    let mut text = Zeroizing::new(format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    ));
+    redact(
+        Zeroizing::new(format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )),
+        input,
+    )
+}
+
+fn startup_log(path: &Path, input: &str) -> Zeroizing<String> {
+    let read = || -> std::io::Result<Vec<u8>> {
+        let mut file = std::fs::File::open(path)?;
+        let length = file.metadata()?.len();
+        file.seek(SeekFrom::Start(length.saturating_sub(65536)))?;
+        let mut bytes = Vec::new();
+        file.take(65536).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    };
+    match read() {
+        Ok(bytes) => redact(
+            Zeroizing::new(String::from_utf8_lossy(&bytes).into_owned()),
+            Some(input),
+        ),
+        Err(error) => Zeroizing::new(format!("unavailable ({error})")),
+    }
+}
+
+fn redact(mut text: Zeroizing<String>, input: Option<&str>) -> Zeroizing<String> {
     if let Some(input) = input {
         let mut lines = input.lines();
         let hex = lines.next().unwrap_or_default();

@@ -47,6 +47,7 @@ secondary_client_address = "10.43.0.3/24"
 # country = "DE"
 # channel = 13
 # address = "10.42.0.1/24"
+# coexistence = "respect" # or "force-ht40" for an explicit lab override
 # phys = ["ht20", "ht40", "he20"]
 # or `kind = "external"` with `phys = ["he20"]` for a FRITZ fixture.
 kind = "open-wrt"
@@ -63,5 +64,5 @@ monitor_interface = "open-radio-mon"
 # and channel geometry, then restores the original settings.
 phys = ["ht20", "ht40", "he20"]
 # Uses the laptop's Intel adapter as an independent passive observer while
-# OpenWrt remains the AP. Requires the schema-8 open-radio-net helper.
+# OpenWrt remains the AP. Requires the schema-10 open-radio-net helper.
 independent_laptop_monitor = true

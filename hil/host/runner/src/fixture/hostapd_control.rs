@@ -20,6 +20,8 @@ pub(crate) struct Control {
 
 impl Control {
     pub(crate) fn connect(path: &Path) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        wait_socket(path, Duration::from_secs(20))?;
         let directory = tempfile::tempdir()?;
         let socket = UnixDatagram::bind(directory.path().join("control"))?;
         socket.connect(path)?;
@@ -98,6 +100,82 @@ impl Control {
             }
             let event = self.receive()?;
             require_running(&event)?;
+        }
+    }
+}
+
+/// Observe creation before checking existence, so a fast hostapd cannot race
+/// the subscription. Only the startup watchdog is time based.
+#[cfg(target_os = "linux")]
+fn wait_socket(path: &Path, timeout: Duration) -> Result<()> {
+    use std::{
+        ffi::CString,
+        os::{
+            fd::{FromRawFd, OwnedFd},
+            unix::ffi::OsStrExt,
+        },
+    };
+    let parent = CString::new(
+        path.parent()
+            .ok_or("control socket has no parent")?
+            .as_os_str()
+            .as_bytes(),
+    )?;
+    // SAFETY: no borrowed memory is passed; a successful fd is owned below.
+    let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // SAFETY: fd is a newly created, uniquely owned descriptor.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    // SAFETY: parent is NUL-terminated and remains alive for this call.
+    if unsafe {
+        libc::inotify_add_watch(
+            fd.as_raw_fd(),
+            parent.as_ptr(),
+            libc::IN_CREATE | libc::IN_MOVED_TO,
+        )
+    } < 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut poll = Poll::new()?;
+    poll.registry()
+        .register(&mut SourceFd(&fd.as_raw_fd()), Token(0), Interest::READABLE)?;
+    let wake = Arc::new(Waker::new(poll.registry(), Token(1))?);
+    let _notification = oer_process::notify_on_cancel(move || {
+        let _ = wake.wake();
+    });
+    let deadline = Instant::now() + timeout;
+    loop {
+        oer_process::check_cancelled()?;
+        if path.try_exists()? {
+            return Ok(());
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("hostapd did not create its control socket before its deadline".into());
+        }
+        poll.poll(&mut Events::with_capacity(2), Some(remaining))
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::Interrupted {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })?;
+        let mut events = [0_u8; 4096];
+        // SAFETY: events is a writable buffer of the supplied length. Event
+        // contents are irrelevant; readiness only triggers a new path check.
+        let count = unsafe { libc::read(fd.as_raw_fd(), events.as_mut_ptr().cast(), events.len()) };
+        if count < 0 {
+            let error = std::io::Error::last_os_error();
+            if !matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+            ) {
+                return Err(error.into());
+            }
         }
     }
 }

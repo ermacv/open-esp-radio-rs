@@ -10,6 +10,7 @@ pub mod cargo;
 pub mod checks;
 pub mod firmware;
 pub mod graph;
+pub mod hostapd;
 pub mod paths;
 pub mod process;
 

@@ -120,6 +120,8 @@ enum RawStationFixtureConfig {
         country: String,
         channel: u8,
         address: String,
+        #[serde(default)]
+        coexistence: Coexistence,
     },
     OpenWrt {
         radio: String,
@@ -154,6 +156,15 @@ pub(crate) struct LocalLinuxConfig {
     pub(crate) ht40_above: bool,
     pub(crate) address: Ipv4Addr,
     pub(crate) prefix_length: u8,
+    pub(crate) coexistence: Coexistence,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Coexistence {
+    #[default]
+    Respect,
+    ForceHt40,
 }
 
 #[derive(Clone, Debug)]
@@ -252,6 +263,7 @@ impl LabConfig {
                 country,
                 channel,
                 address,
+                ..
             } => {
                 validate_shell_token("station_fixture.interface", interface)?;
                 if interface != "wlan0" {
@@ -351,6 +363,7 @@ impl LabConfig {
                     country,
                     channel,
                     address,
+                    coexistence,
                 } => {
                     let (address, prefix_length) = parse_cidr("station_fixture.address", &address)?;
                     StationFixtureConfig::LocalLinux(LocalLinuxConfig {
@@ -361,6 +374,7 @@ impl LabConfig {
                         ht40_above: channel <= 9,
                         address,
                         prefix_length,
+                        coexistence,
                     })
                 }
                 RawStationFixtureConfig::OpenWrt {

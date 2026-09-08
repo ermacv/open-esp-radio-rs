@@ -95,6 +95,9 @@ fn read_until(master: &mut File, transcript: &mut Vec<u8>, marker: &[u8]) {
 fn installer_keeps_terminal_control_hides_input_and_preserves_exit_status() {
     let directory = tempfile::tempdir().unwrap();
     let sudo = directory.path().join("sudo");
+    let cargo = directory.path().join("cargo");
+    fs::write(&cargo, "#!/bin/sh\ntest \"$*\" = 'xtask build hostapd'\n").unwrap();
+    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         &sudo,
         r#"#!/bin/sh
@@ -116,6 +119,7 @@ exit 23
     let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
     command
         .args(["fixture", "install-host"])
+        .env("CARGO", &cargo)
         .env(
             "PATH",
             format!("{}:/usr/bin:/bin", directory.path().display()),

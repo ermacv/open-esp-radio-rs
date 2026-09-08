@@ -58,6 +58,7 @@ stop_radio_services() {
     /usr/bin/ip link set wlan0 down 2>/dev/null || true
     /usr/bin/ip address flush dev wlan0 2>/dev/null || true
     /bin/rm -f "$WPA_CONFIG" "$AP_CONFIG"
+    /bin/rm -f "$CTRL_DIR/hostapd.log"
     /bin/rm -rf "$WPA_CTRL"
 }
 
@@ -124,6 +125,8 @@ read_ap_profile() {
     IFS= read -r ap_he
     IFS= read -r ap_address
     IFS= read -r ap_dhcp
+    IFS= read -r ap_noscan
+    case "$ap_noscan" in 0) ;; 1) case "$ap_width" in HT40+|HT40-) ;; *) return 64;; esac;; *) return 64;; esac
     case "$ap_ssid_hex" in ''|*[!0-9a-f]*) return 64;; esac
     test "${#ap_ssid_hex}" -le 64
     test "$(( ${#ap_ssid_hex} % 2 ))" -eq 0
@@ -151,6 +154,7 @@ write_ap_profile() {
     printf 'interface=wlan0\ndriver=nl80211\nctrl_interface=%s\nctrl_interface_group=network\n' "$CTRL_DIR"
     printf 'ssid2=%s\ncountry_code=%s\nhw_mode=g\nchannel=%s\n' "$ap_ssid_hex" "$ap_country" "$ap_channel"
     printf 'ieee80211n=1\nht_capab=%s\nieee80211ax=%s\nwmm_enabled=1\n' "$ap_ht" "$ap_he"
+    printf 'noscan=%s\nht_coex=1\n' "$ap_noscan"
     printf 'auth_algs=1\nwpa=2\nwpa_passphrase=%s\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\n' "$ap_passphrase"
 }
 
@@ -168,7 +172,16 @@ start_ap() {
     /bin/rm -rf "$CTRL_DIR"
     /bin/mkdir -m 0750 "$CTRL_DIR"
     /bin/chown root:network "$CTRL_DIR"
-    "$HOSTAPD" -B -P "$HOSTAPD_PID" "$AP_CONFIG"
+    # Daemonization otherwise discards the scan/coexistence decision made
+    # after startup. Keep it readable by the fixture owner until cleanup.
+    : >"$CTRL_DIR/hostapd.log"
+    /bin/chown root:network "$CTRL_DIR/hostapd.log"
+    /bin/chmod 0640 "$CTRL_DIR/hostapd.log"
+    # The installed hostapd can omit CONFIG_DEBUG_FILE. Capture its foreground
+    # output instead of relying on -f (which can silently do nothing).
+    /usr/bin/setsid /usr/bin/stdbuf -oL -eL "$HOSTAPD" -d "$AP_CONFIG" \
+        </dev/null >"$CTRL_DIR/hostapd.log" 2>&1 &
+    printf '%s\n' "$!" >"$HOSTAPD_PID"
     # The Rust owner attaches to hostapd's control socket and waits for ENABLED.
     /usr/bin/ip address add "$ap_address" dev wlan0
     /usr/bin/dnsmasq \
@@ -304,7 +317,7 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=8 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
+        /usr/bin/printf 'schema=10 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then

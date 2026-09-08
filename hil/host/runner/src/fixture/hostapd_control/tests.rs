@@ -70,3 +70,25 @@ fn absent_readiness_expires_without_a_polling_loop() {
             .contains("deadline")
     );
 }
+#[cfg(target_os = "linux")]
+#[test]
+fn control_socket_creation_and_startup_deadline() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("wlan0");
+    std::thread::scope(|scope| {
+        let waiter = scope.spawn(|| super::wait_socket(&path, std::time::Duration::from_secs(2)));
+        let _socket = std::os::unix::net::UnixDatagram::bind(&path).unwrap();
+        waiter.join().unwrap().unwrap();
+        super::wait_socket(&path, std::time::Duration::ZERO).unwrap();
+    });
+    let error = super::wait_socket(
+        &directory.path().join("missing"),
+        std::time::Duration::from_millis(10),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("did not create its control socket")
+    );
+}

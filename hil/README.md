@@ -167,6 +167,22 @@ stop/cleanup removes it. No installed credential profiles are consumed.
 The runner subscribes to hostapd control events, confirms ENABLED and actual
 HT/HE mode, WPA2, channel geometry and IPv4 address before workload execution.
 It records these non-secret settings in `fixture-applied.json`. The Linux helper
-still owns only `wlan0`; cleanup returns it to managed mode. Hostapd itself remains
-a separately provisioned binary consumed by the installer. Updating the helper
-contract requires rerunning `cargo hil fixture install-host`.
+keeps hostapd startup diagnostics in a group-readable runtime log and includes
+its bounded, credential-redacted tail in preparation errors before cleanup.
+Debug logging ends before the workload starts; cleanup removes the runtime log.
+The Linux helper owns only `wlan0`; cleanup returns it to managed mode.
+
+`cargo hil fixture install-host` first runs `cargo xtask build hostapd` without
+root, then installs the resulting binary, build provenance and helper through
+interactive sudo. The build uses the pinned hostapd release and reviewed
+[coexistence patch](host/linux-net/hostapd/README.md). It requires a C compiler,
+make, pkg-config, libnl3 and OpenSSL development files, curl, tar and patch.
+Verified cached outputs can be reused without downloading or compiling again.
+Updating the helper contract requires rerunning the installer.
+
+For `local-linux`, `station_fixture.coexistence` selects `respect` (default) or
+`force-ht40`. The latter applies `noscan=1` only to HT40 scenarios; the OpenWrt
+patch also skips client coexistence/intolerance handling in this mode. HT20 and
+HE20 retain normal policy. The selected policy is recorded in fixture evidence.
+Either policy still fails preparation when actual channel geometry differs
+from the scenario: requested 40 MHz never silently becomes an accepted 20 MHz run.

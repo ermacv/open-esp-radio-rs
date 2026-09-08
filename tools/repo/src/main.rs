@@ -44,6 +44,8 @@ enum Check {
 
 #[derive(Subcommand)]
 enum Build {
+    /// Build the pinned hostapd with explicit HIL coexistence policy support.
+    Hostapd,
     /// Build and audit a bootable example with the shared ESP32-S31 bootstrap.
     Firmware {
         #[arg(value_parser = ["station", "access-point", "monitor", "bluetooth-controller"])]
@@ -78,6 +80,9 @@ fn run() -> Result<()> {
     };
     let _signals = process::install_signal_handlers()?;
     match cli.command {
+        Task::Build {
+            build: Build::Hostapd,
+        } => oer_xtask::hostapd::build(&ctx),
         Task::Doctor => {
             process::run(ctx.cargo().arg("--version"))?;
             for tool in ["rustc", "git"] {

@@ -15,18 +15,19 @@ case "$operator" in
 esac
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-hostapd_source=/tmp/open-radio-hostap-src/hostapd/hostapd
+repo_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd)
+hostapd_source="$repo_root/target/hil/hostapd/hostapd"
+hostapd_provenance="$repo_root/target/hil/hostapd/provenance.json"
 hostapd_installed=/usr/local/libexec/open-radio-hostapd
-if test ! -x "$hostapd_source" && test ! -x "$hostapd_installed"; then
-    echo "missing patched hostapd: build $hostapd_source or install $hostapd_installed" >&2
+if test ! -x "$hostapd_source" || test ! -s "$hostapd_provenance"; then
+    echo "missing hostapd build: run cargo hil fixture install-host" >&2
     exit 1
 fi
 
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -d -o root -g root -m 0755 /usr/local/sbin
-if test -x "$hostapd_source"; then
-    install -o root -g root -m 0755 "$hostapd_source" "$hostapd_installed"
-fi
+install -o root -g root -m 0755 "$hostapd_source" "$hostapd_installed"
+install -o root -g root -m 0644 "$hostapd_provenance" /usr/local/libexec/open-radio-hostapd.json
 install -o root -g root -m 0755 "$script_dir/open-radio-net" /usr/local/sbin/open-radio-net
 
 rm -f /etc/open-radio/hostapd-ht40.conf /etc/open-radio/hostapd-he20.conf

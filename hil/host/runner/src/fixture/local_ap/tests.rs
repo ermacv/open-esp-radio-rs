@@ -1,6 +1,61 @@
 use super::*;
 
 #[test]
+fn coexistence_override_is_explicit_and_applies_only_to_ht40() {
+    let lab = crate::lab::config::LabConfig::for_test();
+    let mut fixture = config();
+    for policy in [
+        crate::lab::config::Coexistence::Respect,
+        crate::lab::config::Coexistence::ForceHt40,
+    ] {
+        fixture.coexistence = policy;
+        for phy in [
+            PhyExpectation::Ht20,
+            PhyExpectation::Ht40,
+            PhyExpectation::He20,
+        ] {
+            let output = render(&profile(&fixture, &lab.station, phy).unwrap());
+            assert!(output.status.success());
+            let config = String::from_utf8(output.stdout).unwrap();
+            let force =
+                phy == PhyExpectation::Ht40 && policy == crate::lab::config::Coexistence::ForceHt40;
+            assert_eq!(
+                field(&config, "noscan"),
+                Some(if force { "1" } else { "0" })
+            );
+            assert_eq!(field(&config, "ht_coex"), Some("1"));
+        }
+    }
+}
+
+#[test]
+fn startup_log_keeps_bounded_failure_context_and_redacts_credentials() {
+    let lab = crate::lab::config::LabConfig::for_test();
+    let input = profile(&config(), &lab.station, PhyExpectation::Ht40).unwrap();
+    let mut log = tempfile::NamedTempFile::new().unwrap();
+    log.write_all(&vec![b'x'; 70000]).unwrap();
+    writeln!(
+        log,
+        "\n20/40 MHz operation not permitted based on overlapping BSSes"
+    )
+    .unwrap();
+    writeln!(
+        log,
+        "{} {}",
+        lab.station.credentials().0,
+        lab.station.credentials().1
+    )
+    .unwrap();
+    let text = startup_log(log.path(), &input);
+    assert!(text.len() <= 65536);
+    assert!(text.contains("based on overlapping BSSes"));
+    assert!(!text.contains(lab.station.credentials().0));
+    assert!(!text.contains(lab.station.credentials().1));
+    assert!(text.contains("[redacted]"));
+    assert!(startup_log(&log.path().join("absent"), &input).contains("unavailable"));
+}
+
+#[test]
 fn width_downgrade_reports_requested_and_actual_geometry() {
     let expected = geometry(&config(), PhyExpectation::Ht40);
     let observed = geometry(&config(), PhyExpectation::Ht20);
@@ -19,6 +74,7 @@ fn config() -> LocalLinuxConfig {
         ht40_above: false,
         address: "10.42.0.1".parse().unwrap(),
         prefix_length: 24,
+        coexistence: crate::lab::config::Coexistence::Respect,
     }
 }
 

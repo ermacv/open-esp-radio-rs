@@ -8,6 +8,13 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt as _;
+        // All downloads, patching and compilation happen without root, before
+        // the installer takes terminal control for its narrow system writes.
+        oer_process::run(
+            Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+                .current_dir(root)
+                .args(["xtask", "build", "hostapd"]),
+        )?;
 
         // This is a terminal handoff, not a supervised background workload.
         // exec preserves the foreground process group and standard streams so

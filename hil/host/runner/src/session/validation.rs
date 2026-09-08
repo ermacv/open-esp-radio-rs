@@ -158,7 +158,8 @@ impl SessionEvidence {
             .full_block_ack
             .saturating_add(tx.partial_block_ack)
             .saturating_add(tx.empty_block_ack);
-        if tx.block_ack_samples != tx.aggregate_publications
+        if u64::from(tx.block_ack_samples) + u64::from(tx.publications_pending_end)
+            != u64::from(tx.aggregate_publications) + u64::from(tx.publications_pending_start)
             || classified != tx.block_ack_samples
             // Receipt and bitmap coverage are independent axes. A received
             // BlockAck may contain an empty bitmap; a missing BlockAck is also
@@ -257,10 +258,10 @@ fn validate_tx_timing(tx: TxRadioEvidence, timing: TxAggregateTimingEvidence) ->
         || timing.tx_irq_service_samples != tx.tx_irq_service_samples
         || timing.tx_irq_clock_skew_samples != tx.tx_irq_clock_skew_samples
         || timing.tx_publication_to_irq_samples != tx.tx_publication_to_irq_samples
-        || timing.standby_prepared
-            != timing
-                .standby_published
-                .saturating_add(timing.standby_cancelled)
+        || u64::from(timing.standby_prepared) + u64::from(timing.standby_pending_start)
+            != u64::from(timing.standby_published)
+                + u64::from(timing.standby_cancelled)
+                + u64::from(timing.standby_pending_end)
     {
         return Err(format!(
             "typed aggregate-TX timing does not match radio ownership: radio={tx:?} timing={timing:?}"
@@ -291,3 +292,7 @@ pub(super) fn validate_stack_usage(usage: StackUsage) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "validation/tests.rs"]
+mod tests;

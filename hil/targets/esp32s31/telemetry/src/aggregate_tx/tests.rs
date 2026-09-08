@@ -421,3 +421,57 @@ fn ordinary_receipts_do_not_recharge_aggregate_work() {
         Default::default()
     );
 }
+
+#[test]
+fn publication_balance_tracks_attempts_across_live_interval_boundaries() {
+    let counters = AggregateTxCounters::new();
+    counters.record_publication(1, 1);
+    let start = counters.snapshot();
+    counters.begin_interval();
+    counters.observe(AggregateTxObservation::BlockAckProcessed {
+        tx_status: 0,
+        block_ack_received: true,
+        control: 0,
+        first_sequence: 0,
+        starting_sequence: 0,
+        subframes: 2,
+        missing: 1,
+    });
+    counters.record_publication(2, 1); // Retry is a new publication.
+    counters.record_hardware_timeout();
+    counters.record_publication(3, 1); // Remains in flight at the end.
+    let end = counters.snapshot();
+    let interval = end.wrapping_delta_since(start);
+    assert_eq!(interval.publications_pending_start, 1);
+    assert_eq!(interval.publications_pending_end, 1);
+    assert_eq!(interval.aggregate_publications, 2);
+    assert_eq!(interval.block_ack_samples, 1);
+    assert_eq!(interval.hardware_timeouts, 1);
+    counters.record_collision();
+    let next = counters.snapshot().wrapping_delta_since(end);
+    assert_eq!(next.publications_pending_start, 1);
+    assert_eq!(next.publications_pending_end, 0);
+    assert_eq!(next.aggregate_publications, 0);
+    assert_eq!(next.collisions, 1);
+}
+
+#[test]
+fn prepared_standby_owners_survive_interval_reset_until_publish_or_cancel() {
+    let counters = AggregateTxCounters::new();
+    counters.observe(AggregateTxObservation::StandbyPrepared);
+    let start = counters.snapshot();
+    counters.begin_interval();
+    counters.observe(AggregateTxObservation::StandbyPublished);
+    counters.observe(AggregateTxObservation::StandbyPrepared);
+    let end = counters.snapshot();
+    let delta = end.wrapping_delta_since(start);
+    assert_eq!(delta.standby_pending_start, 1);
+    assert_eq!(delta.standby_pending_end, 1);
+    assert_eq!(delta.standby_prepared, 1);
+    assert_eq!(delta.standby_published, 1);
+    counters.observe(AggregateTxObservation::StandbyCancelled);
+    let delta = counters.snapshot().wrapping_delta_since(end);
+    assert_eq!(delta.standby_pending_start, 1);
+    assert_eq!(delta.standby_pending_end, 0);
+    assert_eq!(delta.standby_cancelled, 1);
+}

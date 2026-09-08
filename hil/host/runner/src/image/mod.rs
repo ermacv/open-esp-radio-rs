@@ -815,9 +815,26 @@ fn audit_radio_observers<'a>(
     ) {
         return Ok(());
     }
+    let aggregate_required = matches!(
+        class,
+        ImageClass::Correctness
+            | ImageClass::DiagnosticMacIrq
+            | ImageClass::DiagnosticTxWait
+            | ImageClass::DiagnosticTaskPoll
+            | ImageClass::DiagnosticCore0RxCycles
+            | ImageClass::DiagnosticRxDelivery
+    );
     let range = critical.ok_or("missing critical data for HIL radio observers")?;
     let symbols: Vec<_> = symbols.collect();
     for expected in ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"] {
+        // Without driver-observation the linker may discard aggregate state.
+        // If retained, its clock pointer still requires initialized SRAM.
+        if expected == "AGGREGATE_TX"
+            && !aggregate_required
+            && !symbols.iter().any(|(name, _)| name.contains(expected))
+        {
+            continue;
+        }
         if !symbols
             .iter()
             .any(|(name, address)| name.contains(expected) && range.contains(address))

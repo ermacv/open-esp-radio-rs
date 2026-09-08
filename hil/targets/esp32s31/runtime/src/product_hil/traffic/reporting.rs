@@ -20,7 +20,7 @@ use oer_esp32s31_embassy_wifi::{
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use oer_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 use open_esp_radio_hil_esp32s31_telemetry::{
-    aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
+    aggregate_tx::AggregateTxCounterSnapshot,
     mac_irq::MacIrqClassificationSnapshot,
     rx_pipeline::{RxPipelineCounterSnapshot, RxPipelineCounters},
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
@@ -60,6 +60,8 @@ pub(in crate::product_hil) fn aggregate_tx_evidence(
             aggregate_rate_kbps: aggregate.last_nominal_rate_kbps,
             aggregates_prepared: aggregate.aggregates_prepared,
             aggregate_publications: aggregate.aggregate_publications,
+            publications_pending_start: aggregate.publications_pending_start,
+            publications_pending_end: aggregate.publications_pending_end,
             aggregates_completed: aggregate.aggregates_completed,
             subframes_prepared: aggregate.prepared_subframe_total(),
             subframes_acknowledged: aggregate.subframes_acknowledged,
@@ -119,21 +121,28 @@ pub(in crate::product_hil) fn aggregate_tx_evidence(
         standby_prepared: aggregate.standby_prepared,
         standby_published: aggregate.standby_published,
         standby_cancelled: aggregate.standby_cancelled,
+        standby_pending_start: aggregate.standby_pending_start,
+        standby_pending_end: aggregate.standby_pending_end,
     };
     (radio, timing)
-}
-
-pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
-    earlier: AggregateTxCounterSnapshot,
-    counters: &AggregateTxCounters,
-) {
-    let aggregate = counters.snapshot().wrapping_delta_since(earlier);
-    log_open_radio_ampdu_snapshot(aggregate).await;
 }
 
 pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     aggregate: AggregateTxCounterSnapshot,
 ) {
+    for (frontier, progress) in [
+        ("socket", aggregate.secondary_socket),
+        ("radio-claim", aggregate.secondary_claim),
+    ] {
+        if progress.count != 0 || progress.pending_polls != 0 {
+            runtime_log_reliably(format_args!(
+                "OTXFLOW flow=1 frontier={} count={} last={} gap_us={} after={} idle_us={} pending_polls={} wait_max_us={} pending_us={}",
+                frontier, progress.count, progress.last_sequence, progress.maximum_gap_micros,
+                progress.sequence_after_maximum_gap, progress.idle_micros, progress.pending_polls,
+                progress.maximum_wait_micros, progress.pending_micros,
+            )).await;
+        }
+    }
     let aggregate_min = aggregate.minimum_prepared_subframes().unwrap_or(0);
     let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
     runtime_log_reliably(format_args!(
@@ -341,8 +350,9 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "OAMPP standby_prepared={} standby_published={} standby_cancelled={}",
+        "OAMPP standby_prepared={} standby_published={} standby_cancelled={} pending_start={} pending_end={}",
         aggregate.standby_prepared, aggregate.standby_published, aggregate.standby_cancelled,
+        aggregate.standby_pending_start, aggregate.standby_pending_end,
     ))
     .await;
     yield_now().await;
@@ -359,7 +369,7 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
 }
 
 /// Incoming progress matters for TX too: unresolved ARP can prevent any UDP egress.
-/// Snapshots cover the workload and terminal drain; logging happens afterwards.
+/// Snapshots bound the workload; logging happens afterwards without a guessed drain.
 #[cfg(feature = "mac-irq-telemetry")]
 pub(in crate::product_hil) async fn log_tx_ingress(
     hardware: Option<crate::product_hil::ObservedRxStatistics>,

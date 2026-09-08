@@ -348,3 +348,48 @@ fn beacon_loss_qualification_ignores_previous_boots() {
     ));
     assert_eq!(beacon_loss_count_in(&messages), 1);
 }
+
+#[test]
+fn tx_radio_requires_exact_balance_including_interval_boundary_owners() {
+    use open_esp_radio_hil_protocol::{TxAggregateTimingEvidence, TxRadioEvidence};
+    let check = |publications, pending_start, pending_end| {
+        let mut session = session_with_rx(RxRadioEvidence::default());
+        session.radio.as_mut().unwrap().tx = Some(TxRadioEvidence {
+            bandwidth_mhz: 20,
+            aggregate_rate_kbps: 114700,
+            aggregates_prepared: 1,
+            aggregate_publications: publications,
+            publications_pending_start: pending_start,
+            publications_pending_end: pending_end,
+            aggregates_completed: 1,
+            subframes_prepared: 2,
+            subframes_acknowledged: 2,
+            minimum_subframes: 2,
+            maximum_subframes: 2,
+            prepared_histogram: [0, 1, 0, 0, 0, 0, 0, 0],
+            stopped_on_empty_queue: 1,
+            block_ack_samples: 1,
+            block_ack_received: 1,
+            full_block_ack: 1,
+            ..Default::default()
+        });
+        session.tx_timing = Some(TxAggregateTimingEvidence {
+            preparation_micros: 1,
+            preparation_max_micros: 1,
+            publication_micros: publications,
+            publication_max_micros: u32::from(publications != 0),
+            exchange_micros: 1,
+            exchange_max_micros: 1,
+            first_exchanges: 1,
+            first_exchange_micros: 1,
+            first_exchange_max_micros: 1,
+            ..Default::default()
+        });
+        session.require_tx_radio(20, 100000, 1)
+    };
+    assert!(check(1, 0, 0).is_ok());
+    assert!(check(2, 0, 1).is_ok()); // Last publication is still outstanding.
+    assert!(check(0, 1, 0).is_ok()); // Completion belongs to preceding interval.
+    assert!(check(2, 0, 0).is_err()); // Lost completion remains an error.
+    assert!(check(1, 0, 1).is_err()); // Inventing an owner is also an error.
+}

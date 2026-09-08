@@ -9,11 +9,7 @@ fn radio_observer_placement_remains_required_only_for_radio_compositions() {
         ("runtime::MAC_IRQ", 0x2200),
         ("runtime::TASK_POLLS", 0x2300),
     ];
-    for class in [
-        ImageClass::Performance,
-        ImageClass::Correctness,
-        ImageClass::DiagnosticTaskPoll,
-    ] {
+    for class in [ImageClass::Correctness, ImageClass::DiagnosticTaskPoll] {
         assert!(audit_radio_observers(class, Some(0x2000..0x2400), symbols.into_iter()).is_ok());
         assert!(audit_radio_observers(class, None, symbols.into_iter()).is_err());
         for index in 0..symbols.len() {
@@ -36,6 +32,26 @@ fn radio_observer_placement_remains_required_only_for_radio_compositions() {
                 );
             }
         }
+    }
+    for class in [
+        ImageClass::Performance,
+        ImageClass::DiagnosticTaskResidence,
+        ImageClass::DiagnosticTxArchitecture,
+        ImageClass::DiagnosticCore0RxCoarse,
+        ImageClass::DiagnosticIeee802154EventStatus,
+        ImageClass::DiagnosticIeee802154EdEvent,
+    ] {
+        let without_aggregate = symbols
+            .into_iter()
+            .filter(|(name, _)| !name.ends_with("AGGREGATE_TX"));
+        assert!(audit_radio_observers(class, Some(0x2000..0x2400), without_aggregate).is_ok());
+        let mut misplaced = symbols;
+        misplaced[1].1 = 0x2400;
+        assert!(audit_radio_observers(class, Some(0x2000..0x2400), misplaced.into_iter()).is_err());
+        let missing_rx = symbols
+            .into_iter()
+            .filter(|(name, _)| !name.ends_with("RX_PIPELINE"));
+        assert!(audit_radio_observers(class, Some(0x2000..0x2400), missing_rx).is_err());
     }
     for class in [ImageClass::BootSmoke, ImageClass::DiagnosticMemoryBenchmark] {
         assert!(audit_radio_observers(class, None, std::iter::empty()).is_ok());

@@ -330,6 +330,8 @@ impl PreparedTxSchedulerTimingCounters {
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    pub secondary_socket: crate::tx_progress::Counters,
+    secondary_claim: crate::tx_progress::Counters,
     pub tx_retention: crate::tx_retention::TxRetentionCounters,
     #[cfg(feature = "tx-wait-probe")]
     pub wait_trace: crate::tx_wait::Trace,
@@ -355,7 +357,9 @@ pub struct AggregateTxCounters {
     standby_prepared: AtomicU32,
     standby_published: AtomicU32,
     standby_cancelled: AtomicU32,
+    standby_pending: AtomicU32,
     aggregate_publications: AtomicU32,
+    publications_pending: AtomicU32,
     aggregates_completed: AtomicU32,
     subframes_acknowledged: AtomicU32,
     individual_retries: AtomicU32,
@@ -435,6 +439,8 @@ impl AggregateTxCounters {
             #[cfg(feature = "tx-wait-probe")]
             wait_trace: crate::tx_wait::Trace::new(),
             now_micros,
+            secondary_socket: crate::tx_progress::Counters::new(),
+            secondary_claim: crate::tx_progress::Counters::new(),
             ap_udp_claim_highest: AtomicU32::new(u32::MAX),
             ap_udp_claimed: AtomicU32::new(0),
             ap_udp_claim_backward: AtomicU32::new(0),
@@ -456,7 +462,9 @@ impl AggregateTxCounters {
             standby_prepared: AtomicU32::new(0),
             standby_published: AtomicU32::new(0),
             standby_cancelled: AtomicU32::new(0),
+            standby_pending: AtomicU32::new(0),
             aggregate_publications: AtomicU32::new(0),
+            publications_pending: AtomicU32::new(0),
             aggregates_completed: AtomicU32::new(0),
             subframes_acknowledged: AtomicU32::new(0),
             individual_retries: AtomicU32::new(0),
@@ -531,9 +539,11 @@ impl AggregateTxCounters {
     /// deltas. Correlation endpoints and AP payload sequence state must not:
     /// carrying either across a role restart would manufacture one very long
     /// completion gap and classify the restarted sequence zero as backward.
-    /// The HIL runtime calls this after the preceding workload has drained and
-    /// before taking the next interval's first snapshot.
+    /// Call on the radio executor before taking the next interval's first
+    /// snapshot. Outstanding publications survive the interval boundary.
     pub fn begin_interval(&self) {
+        self.secondary_socket.reset();
+        self.secondary_claim.reset();
         self.last_publication_micros.store(0, Ordering::Relaxed);
         self.last_completion_micros.store(0, Ordering::Relaxed);
         self.pending_tx_irq_micros.store(0, Ordering::Relaxed);
@@ -549,7 +559,10 @@ impl AggregateTxCounters {
     }
 
     pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
+        let now = (self.now_micros)() as u32;
         AggregateTxCounterSnapshot {
+            secondary_socket: self.secondary_socket.snapshot(now),
+            secondary_claim: self.secondary_claim.snapshot(now),
             ap_udp_claimed: self.ap_udp_claimed.load(Ordering::Relaxed),
             ap_udp_claim_backward: self.ap_udp_claim_backward.load(Ordering::Relaxed),
             ap_udp_claim_first_previous: self.ap_udp_claim_first_previous.load(Ordering::Relaxed),
@@ -580,7 +593,11 @@ impl AggregateTxCounters {
             standby_prepared: self.standby_prepared.load(Ordering::Relaxed),
             standby_published: self.standby_published.load(Ordering::Relaxed),
             standby_cancelled: self.standby_cancelled.load(Ordering::Relaxed),
+            standby_pending_start: 0,
+            standby_pending_end: self.standby_pending.load(Ordering::Relaxed),
             aggregate_publications: self.aggregate_publications.load(Ordering::Relaxed),
+            publications_pending_start: 0,
+            publications_pending_end: self.publications_pending.load(Ordering::Relaxed),
             aggregates_completed: self.aggregates_completed.load(Ordering::Relaxed),
             subframes_acknowledged: self.subframes_acknowledged.load(Ordering::Relaxed),
             individual_retries: self.individual_retries.load(Ordering::Relaxed),
@@ -816,6 +833,7 @@ impl AggregateTxCounters {
         self.last_publication_micros
             .store(Self::IRQ_TIME_VALID | at_modulo, Ordering::Release);
         self.aggregate_publications.fetch_add(1, Ordering::Relaxed);
+        self.publications_pending.fetch_add(1, Ordering::Relaxed);
         Self::record_time(
             &self.publication_program_micros,
             &self.publication_program_lifetime_max_micros,
@@ -841,10 +859,12 @@ impl AggregateTxCounters {
     }
 
     pub(crate) fn record_hardware_timeout(&self) {
+        self.publications_pending.fetch_sub(1, Ordering::Relaxed);
         self.hardware_timeouts.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn record_collision(&self) {
+        self.publications_pending.fetch_sub(1, Ordering::Relaxed);
         self.collisions.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -998,12 +1018,15 @@ impl AggregateTxObserver for AggregateTxCounters {
                 self.record_preparation_time(micros);
             }
             AggregateTxObservation::StandbyPrepared => {
+                self.standby_pending.fetch_add(1, Ordering::Relaxed);
                 self.standby_prepared.fetch_add(1, Ordering::Relaxed);
             }
             AggregateTxObservation::StandbyPublished => {
+                self.standby_pending.fetch_sub(1, Ordering::Relaxed);
                 self.standby_published.fetch_add(1, Ordering::Relaxed);
             }
             AggregateTxObservation::StandbyCancelled => {
+                self.standby_pending.fetch_sub(1, Ordering::Relaxed);
                 self.standby_cancelled.fetch_add(1, Ordering::Relaxed);
             }
             AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros } => {
@@ -1024,6 +1047,7 @@ impl AggregateTxObserver for AggregateTxCounters {
                 subframes,
                 missing,
             } => {
+                self.publications_pending.fetch_sub(1, Ordering::Relaxed);
                 self.block_ack_samples.fetch_add(1, Ordering::Relaxed);
                 if block_ack_received {
                     self.block_ack_received.fetch_add(1, Ordering::Relaxed);
@@ -1097,6 +1121,10 @@ impl AggregateTxObserver for AggregateTxCounters {
     }
 
     fn observe_access_point_network_claim(&self, ethernet: &[u8]) {
+        if let Some(sequence) = qualification_udp_sequence_for_port(ethernet, 4_325) {
+            self.secondary_claim
+                .admitted(sequence, (self.now_micros)() as u32);
+        }
         let Some(sequence) = qualification_udp_sequence(ethernet) else {
             return;
         };
@@ -1119,13 +1147,17 @@ impl AggregateTxObserver for AggregateTxCounters {
 }
 
 fn qualification_udp_sequence(ethernet: &[u8]) -> Option<u32> {
+    qualification_udp_sequence_for_port(ethernet, 4_324)
+}
+
+fn qualification_udp_sequence_for_port(ethernet: &[u8], port: u16) -> Option<u32> {
     let ip = 14_usize;
     let version_ihl = *ethernet.get(ip)?;
     if version_ihl >> 4 != 4 || version_ihl & 0x0f < 5 || *ethernet.get(ip + 9)? != 17 {
         return None;
     }
     let udp = ip + usize::from(version_ihl & 0x0f) * 4;
-    if u16::from_be_bytes(ethernet.get(udp..udp + 2)?.try_into().ok()?) != 4_324 {
+    if u16::from_be_bytes(ethernet.get(udp..udp + 2)?.try_into().ok()?) != port {
         return None;
     }
     Some(u32::from_be_bytes(
@@ -1215,6 +1247,8 @@ impl PreparedTxSchedulerTimingSnapshot {
 /// remain exact monotonic observations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
+    pub secondary_socket: crate::tx_progress::Snapshot,
+    pub secondary_claim: crate::tx_progress::Snapshot,
     pub ap_udp_claimed: u32,
     pub ap_udp_claim_backward: u32,
     pub ap_udp_claim_first_previous: u32,
@@ -1239,7 +1273,12 @@ pub struct AggregateTxCounterSnapshot {
     pub standby_prepared: u32,
     pub standby_published: u32,
     pub standby_cancelled: u32,
+    pub standby_pending_start: u32,
+    pub standby_pending_end: u32,
     pub aggregate_publications: u32,
+    /// Outstanding publications at the interval boundaries, not deltas.
+    pub publications_pending_start: u32,
+    pub publications_pending_end: u32,
     pub aggregates_completed: u32,
     pub subframes_acknowledged: u32,
     pub individual_retries: u32,
@@ -1362,6 +1401,12 @@ impl AggregateTxCounterSnapshot {
             aggregate_publications: self
                 .aggregate_publications
                 .wrapping_sub(earlier.aggregate_publications),
+            secondary_socket: self.secondary_socket,
+            secondary_claim: self.secondary_claim,
+            standby_pending_start: earlier.standby_pending_end,
+            standby_pending_end: self.standby_pending_end,
+            publications_pending_start: earlier.publications_pending_end,
+            publications_pending_end: self.publications_pending_end,
             aggregates_completed: self
                 .aggregates_completed
                 .wrapping_sub(earlier.aggregates_completed),

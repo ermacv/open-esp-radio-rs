@@ -6,7 +6,6 @@ mod connection;
 use embassy_futures::join::join;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
@@ -21,7 +20,7 @@ use crate::product_hil::{
 };
 
 use super::{
-    SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_interval,
+    SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_snapshot,
     log_open_radio_task_poll_interval, wait_session_link_requirements,
 };
 
@@ -56,7 +55,6 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     tx_buffer: &'a mut [u8],
     config: TcpBenchmarkConfig,
     pipeline_counters: &RxPipelineCounters,
-    aggregate_counters: &AggregateTxCounters,
     sessions: &'static SessionChannel,
 ) -> ! {
     let mut socket = new_tcp(stack, rx_buffer, tx_buffer);
@@ -105,15 +103,11 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.session_id, session.config.direction, duration_millis,
         ));
 
-        let hardware_start = qualification_sample(QualificationRequester::Tcp)
-            .await
-            .rx_primary;
+        let qualification_start = qualification_sample(QualificationRequester::TcpBegin).await;
+        let hardware_start = qualification_start.rx_primary;
         let task_poll_start = TASK_POLLS.snapshot();
         let pipeline_start = pipeline_counters.snapshot();
-        let aggregate_start = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION.then(|| {
-            aggregate_counters.begin_interval();
-            aggregate_counters.snapshot()
-        });
+        let aggregate_start = qualification_start.aggregate_tx;
         let connection_timeout = duration + Duration::from_secs(5);
         let connected = match with_timeout(
             connection_timeout,
@@ -279,8 +273,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             u8::from(rx.eof),
             u8::from(rx.pattern_ok),
         ));
-        let aggregate = aggregate_start
-            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
+        let aggregate = qualification
+            .aggregate_tx
+            .zip(aggregate_start)
+            .map(|(current, earlier)| current.wrapping_delta_since(earlier));
         let aggregate_evidence = aggregate
             .filter(|_| {
                 matches!(
@@ -290,8 +286,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             })
             .filter(|aggregate| aggregate.rate_selections != 0)
             .map(aggregate_tx_evidence);
-        if let Some(aggregate_start) = aggregate_start {
-            log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
+        if let Some(aggregate) = aggregate {
+            log_open_radio_ampdu_snapshot(aggregate).await;
         }
         log_open_radio_task_poll_interval(
             task_poll_start,

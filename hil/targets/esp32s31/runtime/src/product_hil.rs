@@ -148,7 +148,9 @@ enum NetworkConfigCommand {
 pub(in crate::product_hil) enum QualificationRequester {
     UdpRx,
     UdpTx,
+    UdpTxBegin,
     Tcp,
+    TcpBegin,
 }
 
 #[derive(Clone, Copy)]
@@ -156,6 +158,8 @@ pub(in crate::product_hil) struct QualificationSample {
     pub rx_primary: Option<ObservedRxStatistics>,
     pub rx_interrupt_posts: u32,
     pub tx_vector: Option<ObservedTxVector>,
+    pub aggregate_tx:
+        Option<open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounterSnapshot>,
 }
 
 mod rx_statistics;
@@ -1047,7 +1051,17 @@ async fn radio_runner_task(spawner: Spawner, runner: SystemRunner) {
 async fn qualification_snapshot_task(snapshot: DiagnosticSnapshot) {
     loop {
         let requester = QUALIFICATION_REQUESTS.receive().await;
+        // Aggregate lifecycle observations execute on this same cooperative
+        // radio executor. Sample here, between polls, rather than reading a
+        // partially updated observation from the network core.
+        if matches!(
+            requester,
+            QualificationRequester::UdpTxBegin | QualificationRequester::TcpBegin
+        ) {
+            AGGREGATE_TX.begin_interval();
+        }
         let sample = QualificationSample {
+            aggregate_tx: Some(AGGREGATE_TX.snapshot()),
             rx_primary: snapshot.rx_statistics().map(ObservedRxStatistics::from),
             rx_interrupt_posts: snapshot.rx_interrupt_posts(),
             tx_vector: snapshot.tx_vector().map(|vector| ObservedTxVector {
@@ -1057,8 +1071,12 @@ async fn qualification_snapshot_task(snapshot: DiagnosticSnapshot) {
         };
         match requester {
             QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.send(sample).await,
-            QualificationRequester::UdpTx => UDP_TX_QUALIFICATION.send(sample).await,
-            QualificationRequester::Tcp => TCP_QUALIFICATION.send(sample).await,
+            QualificationRequester::UdpTx | QualificationRequester::UdpTxBegin => {
+                UDP_TX_QUALIFICATION.send(sample).await
+            }
+            QualificationRequester::Tcp | QualificationRequester::TcpBegin => {
+                TCP_QUALIFICATION.send(sample).await
+            }
         }
     }
 }
@@ -1070,8 +1088,12 @@ pub(in crate::product_hil) async fn qualification_sample(
     QUALIFICATION_REQUESTS.send(requester).await;
     match requester {
         QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.receive().await,
-        QualificationRequester::UdpTx => UDP_TX_QUALIFICATION.receive().await,
-        QualificationRequester::Tcp => TCP_QUALIFICATION.receive().await,
+        QualificationRequester::UdpTx | QualificationRequester::UdpTxBegin => {
+            UDP_TX_QUALIFICATION.receive().await
+        }
+        QualificationRequester::Tcp | QualificationRequester::TcpBegin => {
+            TCP_QUALIFICATION.receive().await
+        }
     }
 }
 
@@ -1083,6 +1105,7 @@ pub(in crate::product_hil) async fn qualification_sample(
         rx_primary: None,
         rx_interrupt_posts: 0,
         tx_vector: None,
+        aggregate_tx: None,
     }
 }
 

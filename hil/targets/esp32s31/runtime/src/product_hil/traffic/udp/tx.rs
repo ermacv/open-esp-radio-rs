@@ -12,7 +12,6 @@ use oer_esp32s31_embassy_wifi::TX_PERFORMANCE;
     feature = "core0-rx-coarse-telemetry"
 ))]
 use oer_esp32s31_soc::L1CachePerformanceCounters;
-use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
     FlowTransportEvidence, SESSION_FLOW_CAPACITY, ServiceInfo, SessionConfig, SessionReady,
@@ -116,7 +115,18 @@ async fn transmit_multi_flow(
                         (publication.payload_bytes, ())
                     },
                 );
-                core::pin::pin!(send).as_mut().poll(cx)
+                let result = core::pin::pin!(send).as_mut().poll(cx);
+                #[cfg(feature = "driver-observation")]
+                if index == 1 {
+                    let counters = &crate::product_hil::AGGREGATE_TX.secondary_socket;
+                    let now = Instant::now().as_micros() as u32;
+                    match &result {
+                        Poll::Pending => counters.blocked(now),
+                        Poll::Ready(Ok(())) => counters.admitted(publication.sequence, now),
+                        Poll::Ready(Err(_)) => {}
+                    }
+                }
+                result
             },
         );
         if result.is_ready() {
@@ -138,7 +148,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
     storage: &'a mut [UdpTxStorage; SESSION_FLOW_CAPACITY],
     config: UdpTxBenchmarkConfig,
-    aggregate_counters: &AggregateTxCounters,
     #[cfg(any(
         feature = "core0-rx-cycle-telemetry",
         feature = "core0-rx-coarse-telemetry"
@@ -303,8 +312,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let aggregate_start = if crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
             && session.config.direction != HilDirection::Rx
         {
-            aggregate_counters.begin_interval();
-            Some(aggregate_counters.snapshot())
+            qualification_sample(QualificationRequester::UdpTxBegin)
+                .await
+                .aggregate_tx
         } else {
             None
         };
@@ -440,8 +450,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let cache_interval = l1_cache.snapshot().wrapping_delta_since(cache_start);
         // Freeze terminal evidence before any report can wait for USB capacity.
         // Reuse this same aggregate snapshot for text and structured evidence.
-        let aggregate = aggregate_start
-            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
+        let aggregate = qualification_end
+            .aggregate_tx
+            .zip(aggregate_start)
+            .map(|(current, earlier)| current.wrapping_delta_since(earlier));
         // This live link vector belongs to the associated-STA datapath. AP
         // rate/A-MPDU evidence is owned by its terminal role report instead.
         // A station session that explicitly required BlockAck must never
@@ -486,8 +498,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "mac-irq-telemetry")]
         crate::product_hil::traffic::reporting::log_mac_irq_interval(irq_interval).await;
         #[cfg(feature = "tx-wait-probe")]
-        crate::product_hil::traffic::reporting::log_tx_wait_trace(&aggregate_counters.wait_trace)
-            .await;
+        crate::product_hil::traffic::reporting::log_tx_wait_trace(
+            &crate::product_hil::AGGREGATE_TX.wait_trace,
+        )
+        .await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]

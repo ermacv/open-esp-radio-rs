@@ -1,4 +1,4 @@
-# HIL protocol v84
+# HIL protocol v91
 
 Host and firmware must both use version 84. Other versions are rejected
 before interpreting their command and evidence layouts.
@@ -90,8 +90,19 @@ the replay before acknowledging removal of the retained result.
 
 Evidence is typed. Every session includes transport, UART link health and CPU
 stack watermarks. UDP adds the radio facts needed for qualification; the RX
-diagnostic image also adds delivery-frontier evidence. Detailed histograms and
-timings remain text diagnostics and cannot establish readiness or completion.
+diagnostic image also adds delivery-frontier evidence. Aggregate histograms and
+TX timing have typed records; supplemental text diagnostics cannot establish
+readiness or completion.
+
+TX evidence covers a live interval, not a guessed queue drain. The radio executor
+collects the two aggregate lifecycle snapshots between its polls. Publication
+and prepared-standby owners still outstanding at each boundary are explicit.
+For a failure-free interval, `publications + pending_start = block_ack_samples +
+pending_end`; likewise, `standby_prepared + standby_pending_start =
+standby_published + standby_cancelled + standby_pending_end`. Terminal hardware
+failures remain failures, and a missing completion cannot be replaced by a
+numeric tolerance. TCP and UDP derive text and typed aggregate evidence from
+the same frozen snapshot.
 
 An uncertain host response is resolved without guessing:
 

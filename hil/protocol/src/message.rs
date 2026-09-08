@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 90;
+pub const PROTOCOL_VERSION: u16 = 91;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1971,6 +1971,9 @@ pub struct TxRadioEvidence {
     pub aggregate_rate_kbps: u32,
     pub aggregates_prepared: u32,
     pub aggregate_publications: u32,
+    /// Outstanding publications at the two coherent radio-executor snapshots.
+    pub publications_pending_start: u32,
+    pub publications_pending_end: u32,
     pub aggregates_completed: u32,
     pub subframes_prepared: u32,
     pub subframes_acknowledged: u32,
@@ -2033,6 +2036,9 @@ pub struct TxAggregateTimingEvidence {
     pub standby_prepared: u32,
     pub standby_published: u32,
     pub standby_cancelled: u32,
+    /// Prepared owners retained across the measurement boundaries.
+    pub standby_pending_start: u32,
+    pub standby_pending_end: u32,
 }
 
 /// Sequence evidence collected at one finite UDP RX delivery stage.

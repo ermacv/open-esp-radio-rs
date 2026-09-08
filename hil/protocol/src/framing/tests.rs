@@ -1124,6 +1124,8 @@ fn maximum_radio_evidence_fits_and_round_trips() {
                 bandwidth_mhz: u16::MAX,
                 aggregate_rate_kbps: u32::MAX,
                 aggregates_prepared: u32::MAX,
+                publications_pending_start: u32::MAX,
+                publications_pending_end: u32::MAX,
                 prepared_histogram: [u32::MAX; 8],
                 ..TxRadioEvidence::default()
             }),
@@ -1173,6 +1175,8 @@ fn maximum_tx_aggregate_timing_evidence_fits_and_round_trips() {
                 standby_prepared: u32::MAX,
                 standby_published: u32::MAX,
                 standby_cancelled: u32::MAX,
+                standby_pending_start: u32::MAX,
+                standby_pending_end: u32::MAX,
             },
         )),
     );

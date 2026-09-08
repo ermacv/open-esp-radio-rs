@@ -88,6 +88,8 @@ pub(super) struct AmpduBlockAckSample {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AmpduEvidence {
+    pub(crate) publications_pending_start: u64,
+    pub(crate) publications_pending_end: u64,
     pub(crate) aggregates: u64,
     pub(crate) publications: u64,
     pub(crate) completed: u64,
@@ -150,6 +152,8 @@ impl AmpduEvidence {
         Self {
             aggregates: u64::from(typed.aggregates_prepared),
             publications: u64::from(typed.aggregate_publications),
+            publications_pending_start: u64::from(typed.publications_pending_start),
+            publications_pending_end: u64::from(typed.publications_pending_end),
             completed: u64::from(typed.aggregates_completed),
             subframes: u64::from(typed.subframes_prepared),
             acknowledged: u64::from(typed.subframes_acknowledged),

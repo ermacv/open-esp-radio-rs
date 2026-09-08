@@ -14,7 +14,7 @@ use super::{
     run_open_radio_bidirectional_session_coordinator, run_open_radio_tcp_benchmark,
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark, run_session_dispatcher,
 };
-use crate::product_hil::{AGGREGATE_TX, OPEN_RADIO_TASK_POLL_TELEMETRY, RX_PIPELINE, TASK_POLLS};
+use crate::product_hil::{OPEN_RADIO_TASK_POLL_TELEMETRY, RX_PIPELINE, TASK_POLLS};
 use open_esp_radio_hil_protocol::WifiNetworkInterface;
 
 const UDP_PAYLOAD_CAPACITY: usize = 1_472;
@@ -175,7 +175,6 @@ async fn udp_tx_task(
                     results: &resources.bidirectional_results,
                 },
             },
-            &AGGREGATE_TX,
             #[cfg(any(
                 feature = "core0-rx-cycle-telemetry",
                 feature = "core0-rx-coarse-telemetry"
@@ -211,7 +210,6 @@ async fn tcp_task(stack: Stack<'static>, network_interface: WifiNetworkInterface
                 idle_timeout: Duration::from_secs(3),
             },
             &RX_PIPELINE,
-            &AGGREGATE_TX,
             &resources.tcp_sessions,
         ),
         TASK_POLLS.tcp(),

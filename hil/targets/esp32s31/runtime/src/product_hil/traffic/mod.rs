@@ -78,7 +78,7 @@ pub(super) use evidence::{UdpSequenceEvidence, iperf2_udp_sequence};
 ))]
 pub(super) use reporting::observe_open_radio_core0_task_polls;
 pub(super) use reporting::{
-    aggregate_tx_evidence, log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
+    aggregate_tx_evidence, log_open_radio_ampdu_snapshot, log_open_radio_rx_pipeline_interval,
     log_open_radio_task_poll_interval, observe_open_radio_task_polls,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]

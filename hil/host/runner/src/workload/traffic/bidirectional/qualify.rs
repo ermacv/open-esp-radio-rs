@@ -104,7 +104,8 @@ fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
         .full_block_ack
         .saturating_add(ampdu.partial_block_ack)
         .saturating_add(ampdu.empty_block_ack);
-    if ampdu.block_ack_samples != ampdu.publications
+    if ampdu.block_ack_samples + ampdu.publications_pending_end
+        != ampdu.publications + ampdu.publications_pending_start
         || classified_block_acks != ampdu.block_ack_samples
         // Receipt and bitmap coverage are independent axes. A received
         // BlockAck may contain an empty bitmap; a missing BlockAck is also

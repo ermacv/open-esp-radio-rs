@@ -37,7 +37,7 @@ const PHY_RX_GAIN_BASE_BANK_1: [u16; 11] = [
 ];
 const PHY_RX_GAIN_ADVANCE_BANK_0: [i8; 8] = [8, 8, 10, 8, 5, 7, 6, 0];
 const PHY_RX_GAIN_ADVANCE_BANK_1: [i8; 11] = [6, 5, 5, 5, 7, 5, 7, 7, 5, 4, 0];
-const PHY_RX_GAIN_THRESHOLD_BANK_0: [u8; 8] = [3, 5, 3, 9, 12, 12, 12, 12];
+const PHY_RX_GAIN_THRESHOLD_BANK_0: [u8; 8] = [3, 5, 3, 9, 12, 12, 12, 10];
 const PHY_RX_GAIN_THRESHOLD_BANK_1: [u8; 11] = [0; 11];
 const PHY_RX_GAIN_LOW_FIELD: [u16; 7] = [0, 0x20, 0x30, 0x38, 0x3c, 0x3e, 0x3f];
 
@@ -443,6 +443,9 @@ impl PhyRfRxSaturationPhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyBbMmioAction {
+    SetForcedDigitalGain {
+        enabled: bool,
+    },
     EnableBasebandInitialization,
     SetBasebandMode {
         mode: PhyBbBasebandMode,
@@ -504,6 +507,11 @@ impl PhyBbMmioBinding {
         registers: &mut impl oer_esp32s31_hal::owner::PhyInitializationAccess,
     ) -> PhyBbMmioCompletion {
         match self.action {
+            PhyBbMmioAction::SetForcedDigitalGain { enabled } => {
+                oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
+                    registers, enabled, -120, -120,
+                );
+            }
             PhyBbMmioAction::EnableBasebandInitialization => {
                 registers.set_phy_calibration_clock(true)
             }
@@ -766,6 +774,9 @@ pub enum PhyBbInitTransitionError {
 enum PhyBbInitStep {
     EnableInitialization,
     SetCalibrationMode,
+    EnableForcedDigitalGain,
+    DisableForcedDigitalGain,
+    FailureDisableForcedDigitalGain(PhyBbInitFailure),
     TxDc(crate::tx::dc_offset::PhyTxDcTransition),
     Pwdet(crate::tx::power_detector::PhyPwdetTransition),
     TxCap(crate::tx::calibration::PhyTxCapTransition),
@@ -846,7 +857,7 @@ impl PhyBbInitTransition {
     }
 
     fn begin_failure(&mut self, failure: PhyBbInitFailure) {
-        self.step = PhyBbInitStep::FailureSetIdle(failure);
+        self.step = PhyBbInitStep::FailureDisableForcedDigitalGain(failure);
     }
 
     fn channel_transition(&self) -> crate::channel::PhyChipChannelTransition {
@@ -1018,9 +1029,7 @@ impl PhyBbInitTransition {
             },
             PhyBbInitStep::PbusMemory(transition) => match transition.action() {
                 crate::analog::pbus::memory::PhyPbusMemoryAction::Complete(_) => {
-                    self.step = PhyBbInitStep::TemperatureSecond(
-                        crate::analog::temperature::PhyTemperatureTransition::new(),
-                    );
+                    self.step = PhyBbInitStep::DisableForcedDigitalGain;
                     PhyBbInitLocalStep::StateAdvanced
                 }
                 action => PhyBbInitLocalStep::External(PhyBbInitAction::PbusMemory(action)),
@@ -1112,6 +1121,12 @@ impl PhyBbInitTransition {
                     == (PhyBbMmioAction::SetBasebandMode {
                         mode: PhyBbBasebandMode::Calibration,
                     }) =>
+            {
+                PhyBbInitStep::EnableForcedDigitalGain
+            }
+            (PhyBbInitStep::EnableForcedDigitalGain, PhyBbInitCompletion::Mmio(completed))
+                if completed.action
+                    == (PhyBbMmioAction::SetForcedDigitalGain { enabled: true }) =>
             {
                 if self.state.baseband_calibration_complete() {
                     PhyBbInitStep::TxCfr(PhyTxCfrTransition::new())
@@ -1308,6 +1323,20 @@ impl PhyBbInitTransition {
                     calibration_performed: self.calibration_performed,
                 })
             }
+            (PhyBbInitStep::DisableForcedDigitalGain, PhyBbInitCompletion::Mmio(completed))
+                if completed.action
+                    == (PhyBbMmioAction::SetForcedDigitalGain { enabled: false }) =>
+            {
+                PhyBbInitStep::TemperatureSecond(
+                    crate::analog::temperature::PhyTemperatureTransition::new(),
+                )
+            }
+            (
+                PhyBbInitStep::FailureDisableForcedDigitalGain(failure),
+                PhyBbInitCompletion::Mmio(completed),
+            ) if completed.action == (PhyBbMmioAction::SetForcedDigitalGain { enabled: false }) => {
+                PhyBbInitStep::FailureSetIdle(failure)
+            }
             (PhyBbInitStep::FailureSetIdle(failure), PhyBbInitCompletion::Mmio(completed))
                 if completed.action
                     == (PhyBbMmioAction::SetBasebandMode {
@@ -1335,6 +1364,12 @@ impl PhyBbInitStep {
     const fn mmio_action(self) -> PhyBbMmioAction {
         match self {
             Self::EnableInitialization => PhyBbMmioAction::EnableBasebandInitialization,
+            Self::EnableForcedDigitalGain => {
+                PhyBbMmioAction::SetForcedDigitalGain { enabled: true }
+            }
+            Self::DisableForcedDigitalGain | Self::FailureDisableForcedDigitalGain(_) => {
+                PhyBbMmioAction::SetForcedDigitalGain { enabled: false }
+            }
             Self::SetCalibrationMode => PhyBbMmioAction::SetBasebandMode {
                 mode: PhyBbBasebandMode::Calibration,
             },

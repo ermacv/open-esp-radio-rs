@@ -321,3 +321,95 @@ fn external_lowering_covers_root_and_search_operation_classes() {
         Err(PhyTxDcPwdetExternalBindingError::UnsupportedAction)
     ));
 }
+
+#[test]
+fn wifi_calibration_forces_tx_path_per_row_and_cleans_it_up() {
+    let mut transition = PhyTxDcPwdetTransition::new(PhyTxDcPwdetParameters {
+        dco: [[0; 4]; 3],
+        clear_tone_after_ready: false,
+    });
+    let mut path_values = std::vec::Vec::new();
+    let mut sar_configured = false;
+    let mut awaiting_gain = false;
+    loop {
+        let completion = match transition.action() {
+            PhyTxDcPwdetAction::PrepareRegisters => PhyTxDcPwdetCompletion::RegistersPrepared,
+            PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
+                PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
+            }
+            PhyTxDcPwdetAction::ConfigurePowerDetector => {
+                PhyTxDcPwdetCompletion::PowerDetectorConfigured
+            }
+            PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
+                PhyTxDcPwdetCompletion::PbusDebugModeConfigured
+            }
+            PhyTxDcPwdetAction::ForcePbus(transaction) => {
+                if awaiting_gain {
+                    assert_eq!((transaction.selector(), transaction.path()), (1, 2));
+                    awaiting_gain = false;
+                }
+                if (transaction.selector(), transaction.path()) == (5, 1) {
+                    path_values.push(transaction.value());
+                    if transaction.value() != 0 {
+                        assert!(
+                            sar_configured,
+                            "TX path must not be enabled by the initial TX-on prefix"
+                        );
+                        awaiting_gain = true;
+                    }
+                }
+                PhyTxDcPwdetCompletion::PbusCompleted(transaction)
+            }
+            PhyTxDcPwdetAction::ConfigureTone {
+                enabled,
+                selector,
+                attenuation,
+            } => PhyTxDcPwdetCompletion::ToneConfigured {
+                enabled,
+                selector,
+                attenuation,
+            },
+            PhyTxDcPwdetAction::DelayMicros { phase, micros } => {
+                PhyTxDcPwdetCompletion::DelayElapsed { phase, micros }
+            }
+            PhyTxDcPwdetAction::ConfigureSarCalibration => {
+                sar_configured = true;
+                PhyTxDcPwdetCompletion::SarCalibrationConfigured
+            }
+            PhyTxDcPwdetAction::Search(action) => {
+                assert!(!awaiting_gain);
+                let completion = match action {
+                    PhyTxDcPwdetSearchAction::ForcePbus(transaction) => {
+                        PhyTxDcPwdetSearchCompletion::PbusCompleted(transaction)
+                    }
+                    PhyTxDcPwdetSearchAction::DelayMicros {
+                        identity,
+                        component,
+                        measurement,
+                        micros,
+                    } => PhyTxDcPwdetSearchCompletion::DelayElapsed {
+                        identity,
+                        component,
+                        measurement,
+                        micros,
+                    },
+                    PhyTxDcPwdetSearchAction::ToneSar(action) => {
+                        PhyTxDcPwdetSearchCompletion::ToneSar(tone_sar_completion(action, 100))
+                    }
+                    action => panic!("unexpected search action {action:?}"),
+                };
+                PhyTxDcPwdetCompletion::Search(completion)
+            }
+            PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
+                PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
+                    settle_required: false,
+                }
+            }
+            PhyTxDcPwdetAction::RestoreRegisters => PhyTxDcPwdetCompletion::RegistersRestored,
+            PhyTxDcPwdetAction::Complete(_) => break,
+            action => panic!("unexpected calibration action {action:?}"),
+        };
+        transition.advance(completion).unwrap();
+    }
+    assert_eq!(path_values, [0, 0x1ef, 0x1ef, 0x1e7, 0]);
+}

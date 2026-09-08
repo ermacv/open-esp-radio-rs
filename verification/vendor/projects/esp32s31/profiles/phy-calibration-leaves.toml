@@ -1,0 +1,99 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables"
+
+# Production calibration leaves reviewed against esp-phy-lib
+# b88e4b76e090ae59c51cb00b916d38def895b396 (BLOB_LIBPHY_CALIBRATION_20260907).
+# Supply libphy.a as vendor-artifact and the authentic ROM as vendor-companion.
+# These finite profiles do not qualify complete calibration or coexistence.
+
+[[profiles]]
+name = "phy-tx-gain-compensation-restore"
+claim = "reviewed-domain-equivalence"
+precondition = "restore-enabled-with-two-complementary-mmio-images"
+vendor-source = "phy"
+vendor-symbol = "phy_txgain_comp_pacfg_new"
+rust-symbol = "open_phy_trace_restore_tx_gain_compensation"
+compare-return = false
+mmio-image-cases = ["restore-a", "restore-b"]
+
+[[profiles.argument-values]]
+index = 0
+values = [1]
+
+[[profiles.cases]]
+name = "restore-a"
+arguments = [1]
+mmio-initial = [{ address = 0x20100410, value = 0xa596783c }]
+
+[[profiles.cases]]
+name = "restore-b"
+arguments = [1]
+mmio-initial = [{ address = 0x20100410, value = 0x5a6987c3 }]
+
+[[profiles]]
+name = "phy-forced-digital-gain"
+claim = "whole-function-equivalence"
+vendor-source = "phy"
+vendor-symbol = "phy_force_dig_gain"
+rust-symbol = "open_phy_trace_force_digital_gain"
+compare-return = false
+
+[[profiles.cases]]
+name = "enable-calibration-gain"
+arguments = [1, 0xffffff88, 0xffffff88]
+mmio-initial = [{ address = 0x20100408, value = 0xa5fe1234 }]
+
+[[profiles.cases]]
+name = "disable-calibration-gain"
+arguments = [0, 0xffffff88, 0xffffff88]
+mmio-initial = [{ address = 0x20100408, value = 0x5aff4321 }]
+
+[[profiles.cases]]
+name = "independent-signed-gains"
+arguments = [1, 0xffffff80, 0x7f]
+mmio-initial = [{ address = 0x20100408, value = 0x96a55a69 }]
+
+[[profiles]]
+name = "phy-temperature-to-power"
+claim = "whole-function-equivalence"
+vendor-source = "phy"
+vendor-symbol = "phy_temp_to_power_new"
+rust-symbol = "open_phy_trace_temperature_to_power"
+compare-return = true
+
+[[profiles.cases]]
+name = "wifi-positive"
+arguments = [80, 0, 0]
+[[profiles.cases]]
+name = "wifi-negative"
+arguments = [0, 24, 0]
+[[profiles.cases]]
+name = "bluetooth-positive"
+arguments = [80, 0, 1]
+[[profiles.cases]]
+name = "bluetooth-negative"
+arguments = [0, 24, 1]
+
+[[profiles]]
+name = "phy-post-init-agc-preserves-ftm"
+claim = "whole-function-equivalence"
+vendor-source = "phy"
+vendor-symbol = "phy_reg_update_new"
+rust-symbol = "open_phy_trace_phy_reg_update_new"
+compare-return = false
+
+[[profiles.cases]]
+name = "agc-a"
+mmio-initial = [
+    { address = 0x2010705c, value = 0xa596783c },
+    { address = 0x20107104, value = 0xa596783c },
+    { address = 0x201078c8, value = 0xa596783c },
+]
+[[profiles.cases]]
+name = "agc-b"
+mmio-initial = [
+    { address = 0x2010705c, value = 0x5a6987c3 },
+    { address = 0x20107104, value = 0x5a6987c3 },
+    { address = 0x201078c8, value = 0x5a6987c3 },
+]

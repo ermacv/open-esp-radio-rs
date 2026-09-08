@@ -1366,6 +1366,7 @@ impl PhyState {
 
     pub const fn xtal_duty_parameters(&self) -> XtalDutyCalibrationParameters {
         XtalDutyCalibrationParameters {
+            restore_duty: self.common.xtal_duty[1],
             rf_frequency_offset_base: self.common.crystal_selector,
             pbus_rx_path_value: self.config.pbus_rx_path,
         }

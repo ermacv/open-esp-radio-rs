@@ -5232,6 +5232,33 @@
           <access>read-write</access>
           <fields>
             <field>
+              <name>FORCED_DIGITAL_GAIN_0</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>FORCED_DIGITAL_GAIN_1</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>FORCE_DIGITAL_GAIN_ENABLE</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
               <name>FORCED_POWER_INDEX</name>
               <description>Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument.</description>
               <bitOffset>17</bitOffset>
@@ -10349,13 +10376,13 @@
             </field>
             <field>
               <name>CO_HOSTED_ENABLE</name>
-              <bitOffset>17</bitOffset>
+              <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>MIDDLE_UNKNOWN</name>
-              <bitOffset>18</bitOffset>
-              <bitWidth>3</bitWidth>
+              <name>NONTRANSMITTED_BSSID_WAKEUP_ONLY</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BSS_COLOR</name>

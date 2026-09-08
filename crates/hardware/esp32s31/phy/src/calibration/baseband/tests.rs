@@ -9,11 +9,13 @@ use super::{
 #[test]
 fn rx_gain_generator_reproduces_both_cold_parent_tables() {
     let wifi = generate_phy_rx_gain_table(PhyRxGainBank::Wifi);
-    assert_eq!(wifi.last_index, 69);
+    assert_eq!(wifi.last_index, 71);
     assert_eq!(wifi.words[0], 0x0004_0003);
-    assert_eq!(wifi.words[68], 0x0007_f3c4);
-    assert_eq!(wifi.words[69], 0x0007_f3c5);
-    assert_eq!(wifi.words[70], 0);
+    assert_eq!(wifi.words[70], 0x0007_f3c4);
+    assert_eq!(wifi.words[71], 0x0007_f3c5);
+    assert_ne!(wifi.words[70], 0);
+    assert_ne!(wifi.words[71], 0);
+    assert_eq!(wifi.words[72], 0);
 
     let shared = generate_phy_rx_gain_table(PhyRxGainBank::Shared);
     assert_eq!(shared.last_index, 75);
@@ -200,6 +202,10 @@ fn complete_parent_enters_or_skips_the_guarded_calibration_prefix() {
             mode: PhyBbBasebandMode::Calibration,
         },
     );
+    complete_parent_mmio(
+        &mut fresh,
+        PhyBbMmioAction::SetForcedDigitalGain { enabled: true },
+    );
     assert_eq!(
         fresh.step_local().unwrap(),
         super::PhyBbInitLocalStep::External(super::PhyBbInitAction::TxDc(
@@ -216,6 +222,10 @@ fn complete_parent_enters_or_skips_the_guarded_calibration_prefix() {
         PhyBbMmioAction::SetBasebandMode {
             mode: PhyBbBasebandMode::Calibration,
         },
+    );
+    complete_parent_mmio(
+        &mut retained,
+        PhyBbMmioAction::SetForcedDigitalGain { enabled: true },
     );
     assert_eq!(
         retained.step_local().unwrap(),
@@ -312,6 +322,16 @@ fn complete_parent_failure_always_restores_idle_mode_and_agc() {
     assert_eq!(
         transition.step_local().unwrap(),
         super::PhyBbInitLocalStep::StateAdvanced
+    );
+    assert_eq!(
+        transition.step_local().unwrap(),
+        super::PhyBbInitLocalStep::External(super::PhyBbInitAction::Mmio(
+            PhyBbMmioAction::SetForcedDigitalGain { enabled: false }
+        ))
+    );
+    complete_parent_mmio(
+        &mut transition,
+        PhyBbMmioAction::SetForcedDigitalGain { enabled: false },
     );
     assert_eq!(
         transition.step_local().unwrap(),

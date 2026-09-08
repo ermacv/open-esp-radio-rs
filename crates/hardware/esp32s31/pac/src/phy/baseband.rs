@@ -857,16 +857,37 @@ impl RadioPhyRegisters {
         crate::generated::clear_phy_tone_path_1_low_image(bb);
     }
 
-    /// Program the complete archive calibration-tone leaf and restore TX gain.
+    /// Set digital-gain forcing before publishing both signed gain bytes.
+    /// Disabling retains the supplied gain values for the next calibration.
+    pub fn configure_forced_digital_gain(&mut self, enabled: bool, gain_0: i8, gain_1: i8) {
+        let clock = &self.peripherals.phy_clock_oracle;
+        clock
+            .table_memory_index_source()
+            .modify(|_, w| w.force_digital_gain_enable().bit(enabled));
+        let gain_0 = crate::generated::PhyDigitalGainImage::new(u32::from(gain_0 as u8))
+            .expect("signed gain byte fits its hardware image");
+        let gain_1 = crate::generated::PhyDigitalGainImage::new(u32::from(gain_1 as u8))
+            .expect("signed gain byte fits its hardware image");
+        crate::generated::configure_phy_forced_digital_gain_0(clock, gain_0);
+        crate::generated::configure_phy_forced_digital_gain_1(clock, gain_1);
+    }
+
+    /// Program the calibration tone, restoring TX gain only when stopping it.
     ///
     /// This preserves every fresh-read/write edge in
     /// `libphy.a[phy_reg.o]::phy_start_tx_tone_step_new` and its
     /// `phy_txgain_comp_pacfg_new` child.
     pub fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
+        crate::generated::clear_phy_power_control_tone_stop(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
         self.clear_tx_gain_compensation();
         self.configure_tone_selectors(selector, 0);
         self.configure_tone_paths(enabled, selector, step);
-        self.restore_tx_gain_compensation();
+        if !enabled {
+            crate::generated::stop_phy_tone_paths(&self.peripherals.phy_baseband_config_oracle);
+            self.restore_tx_gain_compensation();
+        }
     }
 
     /// Program the ROM power-control tone with DAC scale and TX gain disabled.

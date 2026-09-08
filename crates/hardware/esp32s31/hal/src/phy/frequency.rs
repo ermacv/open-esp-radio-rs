@@ -163,3 +163,9 @@ pub fn configure_bt_filter(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_bt_filter();
 }
+
+/// Complete the observations after the caller's two-microsecond settling edge.
+#[cfg(target_arch = "riscv32")]
+pub fn observe_software_frequency_boundary(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).observe_software_frequency_boundary();
+}

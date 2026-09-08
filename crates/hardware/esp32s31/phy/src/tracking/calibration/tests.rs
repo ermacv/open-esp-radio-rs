@@ -84,6 +84,12 @@ fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCom
                 )),
             })
         }
+        PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled } => {
+            PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled }
+        }
+        PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle => {
+            PhyCalibrationTrackingCompletion::SoftwareFrequencySettled
+        }
         PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled } => {
             PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled }
         }
@@ -344,6 +350,14 @@ fn force_txrx_parent_proof_requires_both_writes_and_timer_edges() {
     transition
         .advance(PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false })
         .unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle
+    );
+    assert!(transition.begin_force_txrx().is_err());
+    transition
+        .advance(PhyCalibrationTrackingCompletion::SoftwareFrequencySettled)
+        .unwrap();
 
     let child = transition.begin_force_txrx().unwrap();
     assert_eq!(child.parent_action(), transition.action());
@@ -368,6 +382,13 @@ fn force_txrx_parent_proof_requires_both_writes_and_timer_edges() {
     }
     let completion = child.commit().unwrap();
     transition.advance(completion).unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: true }
+    );
+    transition
+        .advance(PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: true })
+        .unwrap();
     assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
 }
 
@@ -687,6 +708,7 @@ fn tx_dc_pwdet_failure_runs_outer_force_frequency_and_gain_cleanup() {
         ))
         .unwrap();
     for expected in [
+        PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: false },
         PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false },
         PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true },
         PhyCalibrationTrackingAction::RestoreTxGainCompensation,
@@ -756,12 +778,23 @@ fn class_pbus_timeout_restores_force_frequency_and_gain_before_failure() {
     transition
         .advance(PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false })
         .unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle
+    );
+    assert!(transition.begin_force_txrx().is_err());
+    transition
+        .advance(PhyCalibrationTrackingCompletion::SoftwareFrequencySettled)
+        .unwrap();
     transition
         .advance(PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
             PhyCalibrationForceTxRxCompletion { enabled: true },
         ))
         .unwrap();
 
+    transition
+        .advance(PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: true })
+        .unwrap();
     let child = transition.begin_pbus_clear().unwrap();
     let mut child = child.commit().unwrap_err();
     let crate::calibration::cold::PhyColdExternalBinding::Mmio(binding) =
@@ -788,6 +821,13 @@ fn class_pbus_timeout_restores_force_frequency_and_gain_before_failure() {
     let completion = child.commit().unwrap();
     transition.advance(completion).unwrap();
 
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: false }
+    );
+    transition
+        .advance(PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: false })
+        .unwrap();
     assert_eq!(
         transition.action(),
         PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false }

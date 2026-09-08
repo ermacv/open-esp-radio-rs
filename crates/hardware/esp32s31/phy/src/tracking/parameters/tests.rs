@@ -398,7 +398,7 @@ fn temperature_to_power_matches_all_signed_16_bit_deltas() {
                 PhyCalibrationTrackClass::Wifi
             ),
             if delta > 0 {
-                expected_positive
+                (delta / 8) as i8
             } else {
                 expected_wifi
             },

@@ -303,8 +303,10 @@ fn drive_pass(
     transition: &mut XtalDutyCalibrationTransition,
     _expected_frequency_code: u16,
     initial_duty: u8,
+    restore_duty: u8,
 ) {
     let mut current_candidate = None;
+    let mut duty_writes = 0;
     let mut rfpll_cap_status_reads = 0;
     loop {
         match transition.action() {
@@ -319,7 +321,15 @@ fn drive_pass(
                     .unwrap();
             }
             XtalDutyCalibrationAction::Pass(XtalDutyPassAction::WriteByte { address, value }) => {
-                assert_eq!(value, initial_duty);
+                assert_eq!(
+                    value,
+                    if duty_writes == 0 {
+                        initial_duty
+                    } else {
+                        restore_duty
+                    }
+                );
+                duty_writes += 1;
                 transition
                     .advance(XtalDutyCalibrationCompletion::Pass(
                         XtalDutyPassCompletion::ByteWrite { address },
@@ -384,6 +394,7 @@ fn drive_pass(
                     ))
                     .unwrap();
                 if pass_complete {
+                    assert_eq!(duty_writes, 2);
                     break;
                 }
             }
@@ -393,7 +404,7 @@ fn drive_pass(
 }
 
 #[test]
-fn evaluates_all_31_candidates_only_after_timer_and_measurement_edges() {
+fn evaluates_all_24_candidates_only_after_timer_and_measurement_edges() {
     let mut transition = XtalDutySearchTransition::new();
     let mut writes = 0;
     let mut delays = 0;
@@ -426,8 +437,8 @@ fn evaluates_all_31_candidates_only_after_timer_and_measurement_edges() {
                 assert_eq!(
                     outcome,
                     XtalDutySearchOutcome {
-                        best_candidate: 0x3e,
-                        best_filtered_power: 0x42 * 0x42,
+                        best_candidate: 0x37,
+                        best_filtered_power: 0x49 * 0x49,
                     }
                 );
                 break;
@@ -435,9 +446,9 @@ fn evaluates_all_31_candidates_only_after_timer_and_measurement_edges() {
             action => panic!("unexpected action: {action:?}"),
         }
     }
-    assert_eq!(writes, 31);
-    assert_eq!(delays, 31);
-    assert_eq!(measurements, 31 * 4);
+    assert_eq!(writes, 24);
+    assert_eq!(delays, 24);
+    assert_eq!(measurements, 24 * 4);
 }
 
 #[test]
@@ -485,6 +496,7 @@ fn each_outlier_uses_at_most_two_identity_bound_replacements() {
 #[test]
 fn preparation_exposes_all_ten_pbus_commands_and_owned_rx_dco_field() {
     let parameter = XtalDutyCalibrationParameters {
+        restore_duty: 0,
         rf_frequency_offset_base: 0x31,
         pbus_rx_path_value: 0x42,
     };
@@ -672,6 +684,7 @@ fn restoration_requires_external_pbus_and_timer_completions() {
 #[test]
 fn pass_rejects_wrong_field_and_stale_parameter_completion() {
     let parameter = XtalDutyCalibrationParameters {
+        restore_duty: 0,
         rf_frequency_offset_base: 0x31,
         pbus_rx_path_value: 0x42,
     };
@@ -713,6 +726,7 @@ fn pass_rejects_wrong_field_and_stale_parameter_completion() {
 fn wrapper_orders_both_frequency_passes_without_hidden_progress() {
     let initial_duty = 0x2a;
     let mut transition = XtalDutyCalibrationTransition::new(XtalDutyCalibrationParameters {
+        restore_duty: 0,
         rf_frequency_offset_base: 0x31,
         pbus_rx_path_value: 0x42,
     });
@@ -735,8 +749,8 @@ fn wrapper_orders_both_frequency_passes_without_hidden_progress() {
         .advance(XtalDutyCalibrationCompletion::CalibrationPathDisabled { field })
         .unwrap();
 
-    drive_pass(&mut transition, 0x988, initial_duty);
-    drive_pass(&mut transition, 0x9b0, initial_duty);
+    drive_pass(&mut transition, 0x988, initial_duty, 0);
+    drive_pass(&mut transition, 0x9b0, initial_duty, 0x35);
 
     assert_eq!(
         transition.action(),
@@ -744,14 +758,54 @@ fn wrapper_orders_both_frequency_passes_without_hidden_progress() {
             initial_duty,
             low_frequency: XtalDutyPassOutcome {
                 frequency_code: 0x988,
-                best_candidate: 0x3e,
-                best_filtered_power: 0x42 * 0x42,
+                best_candidate: 0x35,
+                best_filtered_power: 0x4b * 0x4b,
             },
             high_frequency: XtalDutyPassOutcome {
                 frequency_code: 0x9b0,
-                best_candidate: 0x3e,
-                best_filtered_power: 0x42 * 0x42,
+                best_candidate: 0x35,
+                best_filtered_power: 0x4b * 0x4b,
             },
         })
     );
+}
+
+#[test]
+fn crystal_search_window_tracks_seed_boundaries_and_stays_in_hardware_domain() {
+    for (seed, first, last) in [
+        (0, 0, 23),
+        (11, 11, 34),
+        (12, 0, 23),
+        (47, 35, 58),
+        (48, 24, 47),
+        (63, 39, 62),
+    ] {
+        let mut transition = XtalDutySearchTransition::from_initial_duty(seed);
+        let mut candidates = std::vec::Vec::new();
+        loop {
+            match transition.action() {
+                XtalDutySearchAction::WriteCandidate { address, candidate } => {
+                    candidates.push(candidate);
+                    transition
+                        .advance(XtalDutySearchCompletion::CandidateWritten { address, candidate })
+                        .unwrap();
+                }
+                XtalDutySearchAction::DelayMicros { candidate, .. } => {
+                    transition
+                        .advance(XtalDutySearchCompletion::DelayElapsed { candidate })
+                        .unwrap();
+                }
+                XtalDutySearchAction::SignalPower(_) => {
+                    complete_search_measurement(&mut transition, 64)
+                }
+                XtalDutySearchAction::Complete(_) => break,
+                action => panic!("unexpected search action: {action:?}"),
+            }
+        }
+        assert_eq!(candidates.first(), Some(&first));
+        assert_eq!(candidates.last(), Some(&last));
+        assert_eq!(candidates.len(), 24);
+        assert!(candidates.windows(2).all(|pair| pair[1] == pair[0] + 1));
+        assert!(candidates.iter().all(|candidate| *candidate < 64));
+    }
 }

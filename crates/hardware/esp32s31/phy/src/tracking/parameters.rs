@@ -121,11 +121,10 @@ impl PhyCalibrationTrackClass {
     }
 }
 
-/// Exact non-I/O arithmetic of rev0 ROM `phy_temp_to_power` at
-/// `0x2f82_5f80`.
+/// Non-I/O arithmetic of `phy_temp_to_power_new` in the current PHY archive.
 ///
-/// The ROM first truncates the temperature subtraction to a signed 16-bit
-/// delta. Positive deltas use divisor five for both classes; zero and negative
+/// The function first truncates the temperature subtraction to a signed 16-bit
+/// delta. Positive deltas use divisor eight for Wi-Fi and five for Bluetooth; zero and negative
 /// deltas use divisor three for Wi-Fi and four for Bluetooth/IEEE 802.15.4.
 /// The quotient becomes the protocol gain-base byte and is finally truncated
 /// and sign-extended from eight bits.
@@ -136,7 +135,8 @@ pub const fn temperature_to_tracking_power(
 ) -> i8 {
     let delta = current_temperature.wrapping_sub(reference_temperature);
     let divisor = match (class, delta > 0) {
-        (_, true) => 5,
+        (PhyCalibrationTrackClass::Wifi, true) => 8,
+        (PhyCalibrationTrackClass::BluetoothIeee802154, true) => 5,
         (PhyCalibrationTrackClass::Wifi, false) => 3,
         (PhyCalibrationTrackClass::BluetoothIeee802154, false) => 4,
     };

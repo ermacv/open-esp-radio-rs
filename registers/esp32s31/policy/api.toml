@@ -9193,25 +9193,25 @@ register = "TX_GAIN_COMPENSATION"
 fields = [{ field = "COMPENSATION_BYTE_0_UNKNOWN", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "restore_phy_tx_gain_compensation_byte_1"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_GAIN_COMPENSATION"
 fields = [{ field = "COMPENSATION_BYTE_1_UNKNOWN", source-bit-offset = 0 }]
-value = 0xfa
+value = 0xfb
 exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "restore_phy_tx_gain_compensation_byte_2"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_GAIN_COMPENSATION"
 fields = [{ field = "COMPENSATION_BYTE_2_UNKNOWN", source-bit-offset = 0 }]
-value = 0xff
+value = 0x03
 exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "restore_phy_tx_gain_compensation_byte_3"
@@ -9220,7 +9220,7 @@ register = "TX_GAIN_COMPENSATION"
 fields = [{ field = "COMPENSATION_BYTE_3_UNKNOWN", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "clear_phy_power_control_tone_stop"
@@ -10140,3 +10140,28 @@ fields = [{ field = "SCHEDULER_RUN", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
+
+[[bounded-domains]]
+name = "PhyDigitalGainImage"
+description = "Two-complement digital gain byte."
+min = 0
+max = 255
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+
+[[field-replace-modifies]]
+name = "configure_phy_forced_digital_gain_0"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "FORCED_DIGITAL_GAIN_0", source-bit-offset = 0 }]
+domain = "PhyDigitalGainImage"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+
+[[field-replace-modifies]]
+name = "configure_phy_forced_digital_gain_1"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "FORCED_DIGITAL_GAIN_1", source-bit-offset = 0 }]
+domain = "PhyDigitalGainImage"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]

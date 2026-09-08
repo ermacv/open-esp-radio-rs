@@ -320,3 +320,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 [[sources]]
 id = "BLOB_LIBPP_TRC_AMPDU_PARAM"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete trc.o rcUpdateAMPDUParam body, size 0xde. For non-HE HT peer types it maps HT A-MPDU Parameters bits 1:0, the maximum-length exponent, to byte ceilings 0x1fff, 0x3fff, 0x7fff and 0xffff, and maps minimum MPDU start-spacing code 0..4,5,6,7 to finite hardware values 20,40,76,148 stored at peer-state offset 0x82. Complete pp.o ppCheckTxAMPDUlength compares the accumulated aggregate against that peer byte ceiling. Complete hal_mac_tx.o mac_tx_set_htsig, size 0x23c, reads the spacing halfword and copies it into bits 9:0, 19:10 and 29:20 of the ordinary queue PROTECTION word through three fresh-read RMW edges."
+
+[[sources]]
+id = "BLOB_LIBPP_HE_CONTROL_20260904"
+description = "espressif/esp32-wifi-lib commit dda243ecef8005c7499448569b3800ebe462fb2b, esp32s31/libpp.a, sha256 1b5a3a9e93c5a63e619b0f4f2cc75ff889db99ce2dc6ca6cf2827d28d77abbab; Complete hal_he_init, hal_he_set_co_hosted_bss, hal_he_set_multi_bssid, hal_he_clr_multi_bssid and nontransmitted-BSSID wakeup setter/getter. Co-hosted control uses bit 18 and wakeup-only uses bit 19 of 0x20104020; bit 17 remains unclassified."

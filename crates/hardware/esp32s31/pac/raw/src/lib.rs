@@ -12832,6 +12832,18 @@ pub mod phy_clock_oracle {
         pub type R = crate::R<TableMemoryIndexSourceSpec>;
         #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` writer"]
         pub type W = crate::W<TableMemoryIndexSourceSpec>;
+        #[doc = "Field `FORCED_DIGITAL_GAIN_0` reader - "]
+        pub type ForcedDigitalGain0R = crate::FieldReader;
+        #[doc = "Field `FORCED_DIGITAL_GAIN_0` writer - "]
+        pub type ForcedDigitalGain0W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `FORCED_DIGITAL_GAIN_1` reader - "]
+        pub type ForcedDigitalGain1R = crate::FieldReader;
+        #[doc = "Field `FORCED_DIGITAL_GAIN_1` writer - "]
+        pub type ForcedDigitalGain1W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `FORCE_DIGITAL_GAIN_ENABLE` reader - "]
+        pub type ForceDigitalGainEnableR = crate::BitReader;
+        #[doc = "Field `FORCE_DIGITAL_GAIN_ENABLE` writer - "]
+        pub type ForceDigitalGainEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `FORCED_POWER_INDEX` reader - Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
         pub type ForcedPowerIndexR = crate::FieldReader;
         #[doc = "Field `FORCED_POWER_INDEX` writer - Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
@@ -12845,6 +12857,21 @@ pub mod phy_clock_oracle {
         #[doc = "Field `BASE_INDEX` writer - Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
         pub type BaseIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn forced_digital_gain_0(&self) -> ForcedDigitalGain0R {
+                ForcedDigitalGain0R::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn forced_digital_gain_1(&self) -> ForcedDigitalGain1R {
+                ForcedDigitalGain1R::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn force_digital_gain_enable(&self) -> ForceDigitalGainEnableR {
+                ForceDigitalGainEnableR::new(((self.bits >> 16) & 1) != 0)
+            }
             #[doc = "Bits 17:22 - Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
             #[inline(always)]
             pub fn forced_power_index(&self) -> ForcedPowerIndexR {
@@ -12862,6 +12889,27 @@ pub mod phy_clock_oracle {
             }
         }
         impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn forced_digital_gain_0(
+                &mut self,
+            ) -> ForcedDigitalGain0W<'_, TableMemoryIndexSourceSpec> {
+                ForcedDigitalGain0W::new(self, 0)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn forced_digital_gain_1(
+                &mut self,
+            ) -> ForcedDigitalGain1W<'_, TableMemoryIndexSourceSpec> {
+                ForcedDigitalGain1W::new(self, 8)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn force_digital_gain_enable(
+                &mut self,
+            ) -> ForceDigitalGainEnableW<'_, TableMemoryIndexSourceSpec> {
+                ForceDigitalGainEnableW::new(self, 16)
+            }
             #[doc = "Bits 17:22 - Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
             #[inline(always)]
             pub fn forced_power_index(
@@ -24611,10 +24659,10 @@ pub mod wifi_mac_he_init_suffix {
         pub type CoHostedEnableR = crate::BitReader;
         #[doc = "Field `CO_HOSTED_ENABLE` writer - "]
         pub type CoHostedEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MIDDLE_UNKNOWN` reader - "]
-        pub type MiddleUnknownR = crate::FieldReader;
-        #[doc = "Field `MIDDLE_UNKNOWN` writer - "]
-        pub type MiddleUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `NONTRANSMITTED_BSSID_WAKEUP_ONLY` reader - "]
+        pub type NontransmittedBssidWakeupOnlyR = crate::BitReader;
+        #[doc = "Field `NONTRANSMITTED_BSSID_WAKEUP_ONLY` writer - "]
+        pub type NontransmittedBssidWakeupOnlyW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BSS_COLOR` reader - "]
         pub type BssColorR = crate::FieldReader;
         #[doc = "Field `BSS_COLOR` writer - "]
@@ -24651,15 +24699,15 @@ pub mod wifi_mac_he_init_suffix {
             pub fn multi_bssid_mask(&self) -> MultiBssidMaskR {
                 MultiBssidMaskR::new(((self.bits >> 9) & 0xff) as u8)
             }
-            #[doc = "Bit 17"]
+            #[doc = "Bit 18"]
             #[inline(always)]
             pub fn co_hosted_enable(&self) -> CoHostedEnableR {
-                CoHostedEnableR::new(((self.bits >> 17) & 1) != 0)
+                CoHostedEnableR::new(((self.bits >> 18) & 1) != 0)
             }
-            #[doc = "Bits 18:20"]
+            #[doc = "Bit 19"]
             #[inline(always)]
-            pub fn middle_unknown(&self) -> MiddleUnknownR {
-                MiddleUnknownR::new(((self.bits >> 18) & 7) as u8)
+            pub fn nontransmitted_bssid_wakeup_only(&self) -> NontransmittedBssidWakeupOnlyR {
+                NontransmittedBssidWakeupOnlyR::new(((self.bits >> 19) & 1) != 0)
             }
             #[doc = "Bits 21:26"]
             #[inline(always)]
@@ -24703,15 +24751,17 @@ pub mod wifi_mac_he_init_suffix {
             pub fn multi_bssid_mask(&mut self) -> MultiBssidMaskW<'_, MultiBssidControlSpec> {
                 MultiBssidMaskW::new(self, 9)
             }
-            #[doc = "Bit 17"]
+            #[doc = "Bit 18"]
             #[inline(always)]
             pub fn co_hosted_enable(&mut self) -> CoHostedEnableW<'_, MultiBssidControlSpec> {
-                CoHostedEnableW::new(self, 17)
+                CoHostedEnableW::new(self, 18)
             }
-            #[doc = "Bits 18:20"]
+            #[doc = "Bit 19"]
             #[inline(always)]
-            pub fn middle_unknown(&mut self) -> MiddleUnknownW<'_, MultiBssidControlSpec> {
-                MiddleUnknownW::new(self, 18)
+            pub fn nontransmitted_bssid_wakeup_only(
+                &mut self,
+            ) -> NontransmittedBssidWakeupOnlyW<'_, MultiBssidControlSpec> {
+                NontransmittedBssidWakeupOnlyW::new(self, 19)
             }
             #[doc = "Bits 21:26"]
             #[inline(always)]
@@ -69510,7 +69560,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_1(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
-            let input = 0x000000fa_u32;
+            let input = 0x000000fb_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -69525,7 +69575,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn restore_phy_tx_gain_compensation_byte_2(registers: &crate::PhyBasebandConfigOracle) {
         registers.tx_gain_compensation().modify(|_, writer| {
-            let input = 0x000000ff_u32;
+            let input = 0x00000003_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -70764,6 +70814,34 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.scheduler_run().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields `[FORCED_DIGITAL_GAIN_0]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_forced_digital_gain_0(registers: &crate::PhyClockOracle, input: u32) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .forced_digital_gain_0()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields `[FORCED_DIGITAL_GAIN_1]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_forced_digital_gain_1(registers: &crate::PhyClockOracle, input: u32) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .forced_digital_gain_1()
+                    .bits((input & 0x000000ff) as u8)
+            }
         });
     }
 }

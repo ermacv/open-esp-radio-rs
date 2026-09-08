@@ -159,7 +159,7 @@ fn cap_memory_transition_and_binding_reject_foreign_or_terminal_edges() {
 
 #[test]
 fn crystal_duty_preserves_both_unsigned_vendor_boundaries() {
-    assert_eq!(phy_frequency_xtal_duty(0x967, 0x2a, 0x35), 17);
+    assert_eq!(phy_frequency_xtal_duty(0x967, 0x2a, 0x35), 0x35);
     assert_eq!(phy_frequency_xtal_duty(0x968, 0x2a, 0x35), 0x35);
     assert_eq!(phy_frequency_xtal_duty(0x974, 0x2a, 0x35), 0x35);
     assert_eq!(phy_frequency_xtal_duty(0x975, 0x2a, 0x35), 0x2a);
@@ -171,7 +171,7 @@ fn crystal_duty_preserves_both_unsigned_vendor_boundaries() {
 fn record_packs_cap_sdm_and_duty_without_a_backing_table() {
     assert_eq!(
         phy_frequency_memory_record(REQUEST, 0).words(),
-        [0x00a8_bfc8, 0x0030_0000, 17]
+        [0x00a8_bfc8, 0x0030_0000, 0x35]
     );
     assert_eq!(
         phy_frequency_memory_record(REQUEST, 64).words(),

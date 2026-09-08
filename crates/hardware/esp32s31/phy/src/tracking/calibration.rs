@@ -1,12 +1,12 @@
-//! Exact orchestration model for periodic calibration tracking.
+//! Periodic calibration tracking under exclusive PHY ownership.
 //!
-//! The pinned `libphy.a[phy_track.o]::phy_cal_param_track` body is 602 bytes.
-//! It evaluates three independent temperature references: common DCODE/RX
-//! calibration, Wi-Fi TXDC/gain calibration, and shared Bluetooth/IEEE
-//! 802.15.4 TXDC/gain calibration. This transition preserves the inclusive
-//! threshold, protocol selector, hardware quiesce/restore order, and final
-//! unconditional TX-gain-compensation restore without retaining vendor
-//! parameter offsets.
+//! Common DCODE/RX calibration and each protocol's TXDC/gain calibration
+//! retain independent temperature references. The state owner commits only
+//! completed calibration results; it does not share the vendor's mutable
+//! combined Wi-Fi/Bluetooth tracking reference. Hardware calibration uses
+//! software frequency control and forced digital gain, with explicit release
+//! on both success and failure. Coexistence grant arbitration belongs to the
+//! radio owner and is not implemented by this transition.
 
 use crate::tracking::parameters::PhyCalibrationTrackClass;
 
@@ -51,6 +51,8 @@ pub enum PhyCalibrationTrackingAction {
     RecalibrateRxGain,
     RestoreChipChannel { channel: u16, cbw: u8 },
     SetHardwareFrequencyControl { enabled: bool },
+    AwaitSoftwareFrequencySettle,
+    SetForcedDigitalGain { enabled: bool },
     ForceTxRxOff { enabled: bool },
     ConfigureBasebandChannel { cbw: u8 },
     CalibrateTxDcPwdet { class: PhyCalibrationTrackClass },
@@ -69,6 +71,8 @@ pub enum PhyCalibrationTrackingCompletion {
     RxGainRecalibrated(PhyCalibrationRxGainCompletion),
     ChipChannelRestored(PhyCalibrationChannelCompletion),
     HardwareFrequencyControlSet { enabled: bool },
+    SoftwareFrequencySettled,
+    ForcedDigitalGainSet { enabled: bool },
     ForceTxRxCompleted(PhyCalibrationForceTxRxCompletion),
     BasebandChannelConfigured { cbw: u8 },
     TxDcPwdetCalibrated(PhyCalibrationTxDcPwdetCompletion),
@@ -245,7 +249,10 @@ enum Step {
     CommonRestoreChannel,
     CommonEnableMac,
     ClassDisableHardwareFrequency,
+    ClassSoftwareFrequencySettle,
     ClassForceTxRxOff,
+    ClassForceDigitalGain,
+    ClassReleaseDigitalGain,
     ClassClearPbus,
     ClassConfigureBasebandZero,
     ClassCalibrateTxDcPwdet,
@@ -324,6 +331,15 @@ impl PhyCalibrationTrackingTransition {
             }
             Step::ClassDisableHardwareFrequency => {
                 PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
+            }
+            Step::ClassSoftwareFrequencySettle => {
+                PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle
+            }
+            Step::ClassForceDigitalGain => {
+                PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: true }
+            }
+            Step::ClassReleaseDigitalGain => {
+                PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: false }
             }
             Step::ClassForceTxRxOff => PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
             Step::ClassConfigureBasebandZero => {
@@ -427,11 +443,23 @@ impl PhyCalibrationTrackingTransition {
             (
                 Step::ClassDisableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
+            ) => Step::ClassSoftwareFrequencySettle,
+            (
+                Step::ClassSoftwareFrequencySettle,
+                PhyCalibrationTrackingCompletion::SoftwareFrequencySettled,
             ) => Step::ClassForceTxRxOff,
             (
                 Step::ClassForceTxRxOff,
                 PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
-            ) if completion.enabled => Step::ClassClearPbus,
+            ) if completion.enabled => Step::ClassForceDigitalGain,
+            (
+                Step::ClassForceDigitalGain,
+                PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: true },
+            ) => Step::ClassClearPbus,
+            (
+                Step::ClassReleaseDigitalGain,
+                PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: false },
+            ) => Step::ClassReleaseTxRxOff,
             (
                 Step::ClassClearPbus,
                 PhyCalibrationTrackingCompletion::PbusClearCompleted(completion),
@@ -443,7 +471,7 @@ impl PhyCalibrationTrackingTransition {
                     self.failure = Some(PhyCalibrationTrackingFailure::PbusClearTimedOut(
                         transaction,
                     ));
-                    Step::ClassReleaseTxRxOff
+                    Step::ClassReleaseDigitalGain
                 }
             },
             (
@@ -460,7 +488,7 @@ impl PhyCalibrationTrackingTransition {
                 }
                 Err(failure) => {
                     self.failure = Some(PhyCalibrationTrackingFailure::TxDcPwdet(failure));
-                    Step::ClassReleaseTxRxOff
+                    Step::ClassReleaseDigitalGain
                 }
             },
             (
@@ -480,7 +508,7 @@ impl PhyCalibrationTrackingTransition {
                 PhyCalibrationTrackingCompletion::BasebandChannelConfigured { cbw },
             ) if cbw == self.parameters.channel_bandwidth => Step::ClassEnableMac,
             (Step::ClassEnableMac, PhyCalibrationTrackingCompletion::MacBasebandEnabled) => {
-                Step::ClassReleaseTxRxOff
+                Step::ClassReleaseDigitalGain
             }
             (
                 Step::ClassReleaseTxRxOff,
@@ -1130,6 +1158,7 @@ pub enum PhyCalibrationTrackingBindingError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RegisterAction {
     SetHardwareFrequencyControl { enabled: bool },
+    SetForcedDigitalGain { enabled: bool },
     ConfigureBasebandChannel { cbw: u8 },
     RestoreTxGainCompensation,
 }
@@ -1145,6 +1174,9 @@ impl PhyCalibrationTrackingRegisterBinding {
         action: PhyCalibrationTrackingAction,
     ) -> Result<Self, PhyCalibrationTrackingBindingError> {
         let action = match action {
+            PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled } => {
+                RegisterAction::SetForcedDigitalGain { enabled }
+            }
             PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled } => {
                 RegisterAction::SetHardwareFrequencyControl { enabled }
             }
@@ -1161,6 +1193,9 @@ impl PhyCalibrationTrackingRegisterBinding {
 
     pub const fn action(&self) -> PhyCalibrationTrackingAction {
         match self.action {
+            RegisterAction::SetForcedDigitalGain { enabled } => {
+                PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled }
+            }
             RegisterAction::SetHardwareFrequencyControl { enabled } => {
                 PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled }
             }
@@ -1179,8 +1214,17 @@ impl PhyCalibrationTrackingRegisterBinding {
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
     ) -> PhyCalibrationTrackingCompletion {
         match self.action {
+            RegisterAction::SetForcedDigitalGain { enabled } => {
+                oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
+                    registers, enabled, -120, -120,
+                );
+                PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled }
+            }
             RegisterAction::SetHardwareFrequencyControl { enabled } => {
-                oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, enabled);
+                oer_esp32s31_hal::phy::frequency::set_baseband_mode(
+                    registers,
+                    if enabled { 0 } else { 2 },
+                );
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled }
             }
             RegisterAction::ConfigureBasebandChannel { cbw } => {
@@ -1234,7 +1278,8 @@ impl PhyCalibrationTrackingExternalBinding {
         action: PhyCalibrationTrackingAction,
     ) -> Result<Self, PhyCalibrationTrackingBindingError> {
         match action {
-            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
+            PhyCalibrationTrackingAction::SetForcedDigitalGain { .. }
+            | PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
             | PhyCalibrationTrackingAction::ConfigureBasebandChannel { .. }
             | PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
                 match PhyCalibrationTrackingRegisterBinding::new(action) {

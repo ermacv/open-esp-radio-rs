@@ -439,3 +439,7 @@ name = "BRX"
 start = 0x20108000
 end-exclusive = 0x2010809c
 sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[sources]]
+id = "BLOB_LIBPHY_CALIBRATION_20260907"
+description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; Complete phy_txgain_comp_pacfg_new, phy_start_tx_tone_step_new, phy_force_dig_gain, phy_reg_update_new and their caller sequencing in phy_bb_init/phy_rf_init. Gain compensation bytes are 00 fb 03 00. Tone start clears stop before disabling compensation; only disabling both paths sets stop and restores compensation. Post-init AGC preserves FTM. Forced digital gain updates enable bit 16 before bytes 0 and 1 in 0x20100408."

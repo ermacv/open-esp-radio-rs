@@ -482,6 +482,7 @@ fn rf_prefix_consumes_only_typed_views() {
     assert_eq!(
         state.xtal_duty_parameters(),
         XtalDutyCalibrationParameters {
+            restore_duty: 0,
             rf_frequency_offset_base: 0,
             pbus_rx_path_value: 0xbf,
         }

@@ -271,10 +271,15 @@ fn drive_rf_init_xtal_duty(
     mut inject: impl FnMut(PhyRfInitPrefixAction) -> Option<PhyRfInitPrefixCompletion>,
 ) -> Result<XtalDutyCalibrationOutcome, crate::analog::crystal_duty::XtalDutyFailure> {
     let mut current_candidate = None;
+    let mut duty_writes = 0;
     let mut rfpll_cap_status_reads = 0;
     loop {
         let outer_action = transition.action();
-        if !matches!(outer_action, PhyRfInitPrefixAction::Complete(_)) {
+        if !matches!(
+            outer_action,
+            PhyRfInitPrefixAction::Complete(_)
+                | PhyRfInitPrefixAction::CaptureChannelFrequencyControl
+        ) {
             assert!(
                 PhyColdExternalBinding::lower(outer_action).is_ok(),
                 "reachable crystal-duty action has no external lowering: {outer_action:?}"
@@ -320,7 +325,8 @@ fn drive_rf_init_xtal_duty(
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::WriteByte { address, value },
             )) => {
-                assert_eq!(value, initial_duty);
+                assert_eq!(value, [initial_duty, 0, initial_duty, 0x35][duty_writes]);
+                duty_writes += 1;
                 transition
                     .advance(PhyRfInitPrefixCompletion::XtalDuty(
                         XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::ByteWrite {
@@ -396,8 +402,8 @@ fn drive_rf_init_xtal_duty(
                     ))
                     .unwrap();
             }
-            PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate => {
-                if let PhyRfInitPrefixStep::FrontEndRegisterUpdate { xtal_duty, .. } =
+            PhyRfInitPrefixAction::CaptureChannelFrequencyControl => {
+                if let PhyRfInitPrefixStep::ChannelFrequencyControl { xtal_duty, .. } =
                     transition.step
                 {
                     return Ok(xtal_duty);
@@ -486,6 +492,7 @@ fn xtal_child_timeouts_reach_the_rf_parent_in_both_frequency_passes() {
             transition
                 .advance(PhyRfInitPrefixCompletion::XtalDutyParametersCaptured(
                     XtalDutyCalibrationParameters {
+                        restore_duty: 0,
                         rf_frequency_offset_base: 0x31,
                         pbus_rx_path_value: 0x42,
                     },
@@ -1215,7 +1222,7 @@ fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
         .unwrap();
     assert_eq!(
         already_initialized.action(),
-        PhyRfInitPrefixAction::CaptureXtalDutyParameters
+        PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate
     );
     transition
         .advance(PhyRfInitPrefixCompletion::Masked69Read(0))
@@ -1226,11 +1233,15 @@ fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
         .unwrap();
     assert_eq!(
         transition.action(),
-        PhyRfInitPrefixAction::CaptureXtalDutyParameters
+        PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate
     );
+    transition
+        .advance(PhyRfInitPrefixCompletion::FrontEndRegisterUpdateConfigured)
+        .unwrap();
     transition
         .advance(PhyRfInitPrefixCompletion::XtalDutyParametersCaptured(
             XtalDutyCalibrationParameters {
+                restore_duty: 0,
                 rf_frequency_offset_base: 0x31,
                 pbus_rx_path_value: 0x42,
             },
@@ -1243,23 +1254,17 @@ fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
             initial_duty: 0x2a,
             low_frequency: XtalDutyPassOutcome {
                 frequency_code: 0x988,
-                best_candidate: 0x3e,
-                best_filtered_power: 0x42 * 0x42,
+                best_candidate: 0x35,
+                best_filtered_power: 0x4b * 0x4b,
             },
             high_frequency: XtalDutyPassOutcome {
                 frequency_code: 0x9b0,
-                best_candidate: 0x3e,
-                best_filtered_power: 0x42 * 0x42,
+                best_candidate: 0x35,
+                best_filtered_power: 0x4b * 0x4b,
             },
         }
     );
-    assert_eq!(
-        transition.action(),
-        PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate
-    );
-    transition
-        .advance(PhyRfInitPrefixCompletion::FrontEndRegisterUpdateConfigured)
-        .unwrap();
+
     assert_eq!(
         transition.action(),
         PhyRfInitPrefixAction::CaptureChannelFrequencyControl

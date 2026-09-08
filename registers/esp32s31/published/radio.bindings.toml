@@ -456,6 +456,27 @@ scope = []
 register-method = "table_memory_index_source"
 
 [[registers.fields]]
+svd-name = "FORCED_DIGITAL_GAIN_0"
+method = "forced_digital_gain_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FORCED_DIGITAL_GAIN_1"
+method = "forced_digital_gain_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FORCE_DIGITAL_GAIN_ENABLE"
+method = "force_digital_gain_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "FORCED_POWER_INDEX"
 method = "forced_power_index"
 bit-offset = 17
@@ -11244,15 +11265,15 @@ access = "read-write"
 [[registers.fields]]
 svd-name = "CO_HOSTED_ENABLE"
 method = "co_hosted_enable"
-bit-offset = 17
+bit-offset = 18
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "MIDDLE_UNKNOWN"
-method = "middle_unknown"
-bit-offset = 18
-bit-width = 3
+svd-name = "NONTRANSMITTED_BSSID_WAKEUP_ONLY"
+method = "nontransmitted_bssid_wakeup_only"
+bit-offset = 19
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

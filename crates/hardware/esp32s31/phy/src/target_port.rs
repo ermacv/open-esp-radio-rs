@@ -2345,7 +2345,15 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                 .begin_tx_gain_publication()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
                 .execute_target(self.registers),
-            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
+            PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle => {
+                D::after_micros(2).await;
+                oer_esp32s31_hal::phy::frequency::observe_software_frequency_boundary(
+                    self.registers,
+                );
+                crate::tracking::calibration::PhyCalibrationTrackingCompletion::SoftwareFrequencySettled
+            }
+            PhyCalibrationTrackingAction::SetForcedDigitalGain { .. }
+            | PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
             | PhyCalibrationTrackingAction::ConfigureBasebandChannel { .. }
             | PhyCalibrationTrackingAction::EnableMacBaseband
             | PhyCalibrationTrackingAction::RestoreTxGainCompensation => {

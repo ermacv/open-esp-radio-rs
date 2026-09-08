@@ -39,13 +39,13 @@ maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
 name = "CO_HOSTED_ENABLE"
-bitOffset = 17
+bitOffset = 18
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "MIDDLE_UNKNOWN"
-bitOffset = 18
-bitWidth = 3
+name = "NONTRANSMITTED_BSSID_WAKEUP_ONLY"
+bitOffset = 19
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BSS_COLOR"
@@ -1073,6 +1073,20 @@ sources = [
     "BLOB_LIBPP_MAC_TX_SET_TB",
     "ROM_REV0_MAC_TX_SET_TB",
 ]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.CO_HOSTED_ENABLE"
+sources = ["BLOB_LIBPP_HE_CONTROL_20260904"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.NONTRANSMITTED_BSSID_WAKEUP_ONLY"
+sources = ["BLOB_LIBPP_HE_CONTROL_20260904"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

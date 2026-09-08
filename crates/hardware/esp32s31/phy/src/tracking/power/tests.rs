@@ -151,7 +151,7 @@ fn wifi_update_binds_channel_and_rejects_foreign_completion() {
     assert_eq!(
         transition.advance(PhyTxPowerTrackingCompletion::WifiGainRegenerated {
             channel: 6,
-            gain_base: 5,
+            gain_base: 3,
         }),
         Err(PhyTxPowerTrackingTransitionError::WrongCompletion)
     );
@@ -159,7 +159,7 @@ fn wifi_update_binds_channel_and_rejects_foreign_completion() {
         transition.action(),
         PhyTxPowerTrackingAction::RegenerateWifiGain {
             channel: 11,
-            gain_base: 5,
+            gain_base: 3,
         }
     );
 }

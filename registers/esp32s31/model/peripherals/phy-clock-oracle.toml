@@ -46,6 +46,29 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
+name = "FORCED_DIGITAL_GAIN_0"
+bitOffset = 0
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 255
+
+[[peripherals.registers.register.fields]]
+name = "FORCED_DIGITAL_GAIN_1"
+bitOffset = 8
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 255
+
+[[peripherals.registers.register.fields]]
+name = "FORCE_DIGITAL_GAIN_ENABLE"
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
 name = "FORCED_POWER_INDEX"
 description = "Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."
 bitOffset = 17
@@ -249,3 +272,24 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCED_DIGITAL_GAIN_0"
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCED_DIGITAL_GAIN_1"
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCE_DIGITAL_GAIN_ENABLE"
+sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

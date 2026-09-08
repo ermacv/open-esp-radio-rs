@@ -1134,11 +1134,9 @@ enum PhyRfInitPrefixStep {
         sar2_reinitialized: bool,
     },
     FrontEndRegisterUpdate {
-        xtal_parameters: XtalDutyCalibrationParameters,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
-        xtal_duty: XtalDutyCalibrationOutcome,
     },
     ChannelFrequencyControl {
         xtal_parameters: XtalDutyCalibrationParameters,
@@ -1283,7 +1281,7 @@ impl PhyRfInitPrefixTransition {
             }
             PhyRfInitPrefixStep::XtalDuty { transition, .. } => match transition.action() {
                 XtalDutyCalibrationAction::Complete(_) => {
-                    PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate
+                    PhyRfInitPrefixAction::CaptureChannelFrequencyControl
                 }
                 XtalDutyCalibrationAction::Failed(failure) => PhyRfInitPrefixAction::Complete(
                     PhyRfInitPrefixOutcome::XtalDutyCalibrationFailed(failure),
@@ -1522,7 +1520,7 @@ impl PhyRfInitPrefixTransition {
                         rfpll_lock_observed,
                     }
                 } else {
-                    PhyRfInitPrefixStep::XtalDutyParameters {
+                    PhyRfInitPrefixStep::FrontEndRegisterUpdate {
                         parameter,
                         rfpll_lock_observed,
                         sar2_reinitialized: false,
@@ -1535,7 +1533,7 @@ impl PhyRfInitPrefixTransition {
                     rfpll_lock_observed,
                 },
                 PhyRfInitPrefixCompletion::Sar2Configured,
-            ) => PhyRfInitPrefixStep::XtalDutyParameters {
+            ) => PhyRfInitPrefixStep::FrontEndRegisterUpdate {
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized: true,
@@ -1569,7 +1567,7 @@ impl PhyRfInitPrefixTransition {
                     .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
                 match transition.action() {
                     XtalDutyCalibrationAction::Complete(xtal_duty) => {
-                        PhyRfInitPrefixStep::FrontEndRegisterUpdate {
+                        PhyRfInitPrefixStep::ChannelFrequencyControl {
                             xtal_parameters,
                             parameter,
                             rfpll_lock_observed,
@@ -1591,19 +1589,15 @@ impl PhyRfInitPrefixTransition {
             }
             (
                 PhyRfInitPrefixStep::FrontEndRegisterUpdate {
-                    xtal_parameters,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
-                    xtal_duty,
                 },
                 PhyRfInitPrefixCompletion::FrontEndRegisterUpdateConfigured,
-            ) => PhyRfInitPrefixStep::ChannelFrequencyControl {
-                xtal_parameters,
+            ) => PhyRfInitPrefixStep::XtalDutyParameters {
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized,
-                xtal_duty,
             },
             (
                 PhyRfInitPrefixStep::ChannelFrequencyControl {

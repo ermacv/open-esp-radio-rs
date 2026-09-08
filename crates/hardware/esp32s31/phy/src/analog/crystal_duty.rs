@@ -1,7 +1,7 @@
 //! Event-driven ESP32-S31 crystal-duty search.
 //!
-//! Reference: complete `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal`, size
-//! `0x392`. The pinned cold caller always passes `debug = 0`, so both vendor
+//! Reference: `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal`.
+//! The cold caller passes `debug = 0`, so both vendor
 //! `phy_printf` branches are dead and are intentionally absent here.
 
 use crate::{
@@ -21,8 +21,7 @@ use crate::{
     },
 };
 
-const FIRST_CANDIDATE: u8 = 0x20;
-const LAST_CANDIDATE: u8 = 0x3e;
+const CANDIDATE_COUNT: u8 = 24;
 const INITIAL_SAMPLE_COUNT: u8 = 4;
 const SIGNAL_POWER_SHIFT: u8 = 12;
 
@@ -116,7 +115,7 @@ enum XtalDutySearchStep {
 /// Fixed-size translation of the vendor crystal-duty candidate search.
 ///
 /// The transition owns all samples. It can request at most six measurements
-/// for each of the 31 candidates and cannot advance from `poll`: every
+/// for each of the 24 candidates and cannot advance from `poll`: every
 /// hardware measurement and 20-microsecond interval requires an explicit
 /// external completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,20 +125,32 @@ pub struct XtalDutySearchTransition {
     best_candidate: u8,
     best_filtered_power: i64,
     has_best: bool,
+    last_candidate: u8,
 }
 
 impl XtalDutySearchTransition {
     const DUTY_ADDRESS: PhyI2cAddress = crate::analog::i2c::analog_registers::XTAL_DUTY_CANDIDATE;
 
     pub const fn new() -> Self {
+        Self::from_initial_duty(44)
+    }
+
+    /// Search a bounded window around the measured crystal-duty seed.
+    pub const fn from_initial_duty(initial: u8) -> Self {
+        let first = if initial <= 11 {
+            initial
+        } else if initial <= 47 {
+            initial - 12
+        } else {
+            initial - 24
+        };
         Self {
-            step: XtalDutySearchStep::WriteCandidate {
-                candidate: FIRST_CANDIDATE,
-            },
+            step: XtalDutySearchStep::WriteCandidate { candidate: first },
             signal_power: None,
-            best_candidate: FIRST_CANDIDATE,
+            best_candidate: first,
             best_filtered_power: 0,
             has_best: false,
+            last_candidate: first.wrapping_add(CANDIDATE_COUNT - 1),
         }
     }
 
@@ -211,14 +222,14 @@ impl XtalDutySearchTransition {
             self.best_candidate = candidate;
             self.best_filtered_power = filtered_power;
         }
-        self.step = if candidate == LAST_CANDIDATE {
+        self.step = if candidate == self.last_candidate {
             XtalDutySearchStep::Complete(XtalDutySearchOutcome {
                 best_candidate: self.best_candidate,
                 best_filtered_power: self.best_filtered_power,
             })
         } else {
             XtalDutySearchStep::WriteCandidate {
-                candidate: candidate + 1,
+                candidate: candidate.wrapping_add(1),
             }
         };
     }
@@ -408,6 +419,8 @@ impl Default for XtalDutySearchTransition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XtalDutyCalibrationParameters {
+    /// Middle-band duty restored after each measurement pass.
+    pub restore_duty: u8,
     /// `phy_param[0x4f]`, passed to the RFPLL frequency calculation.
     pub rf_frequency_offset_base: u8,
     /// Byte two of the parameter image published through the rev0 ROM
@@ -936,7 +949,7 @@ enum XtalDutyPassStep {
     WriteInitialDuty,
     Prepare(XtalDutyPrepareTransition),
     Search(XtalDutySearchTransition),
-    RestoreInitialDuty(XtalDutySearchOutcome),
+    RestoreSavedDuty(XtalDutySearchOutcome),
     Restore {
         transition: XtalDutyRestoreTransition,
         search: XtalDutySearchOutcome,
@@ -983,9 +996,9 @@ impl XtalDutyPassTransition {
                 XtalDutyPassAction::Prepare(transition.action())
             }
             XtalDutyPassStep::Search(transition) => XtalDutyPassAction::Search(transition.action()),
-            XtalDutyPassStep::RestoreInitialDuty(_) => XtalDutyPassAction::WriteByte {
+            XtalDutyPassStep::RestoreSavedDuty(_) => XtalDutyPassAction::WriteByte {
                 address: Self::DUTY_ADDRESS,
-                value: self.initial_duty,
+                value: self.parameter.restore_duty,
             },
             XtalDutyPassStep::Restore { transition, .. } => {
                 XtalDutyPassAction::Restore(transition.action())
@@ -1022,9 +1035,9 @@ impl XtalDutyPassTransition {
                     .advance(completion)
                     .map_err(|_| XtalDutyPassTransitionError::WrongCompletion)?;
                 match transition.action() {
-                    XtalDutyPrepareAction::Complete(_) => {
-                        XtalDutyPassStep::Search(XtalDutySearchTransition::new())
-                    }
+                    XtalDutyPrepareAction::Complete(_) => XtalDutyPassStep::Search(
+                        XtalDutySearchTransition::from_initial_duty(self.initial_duty),
+                    ),
                     XtalDutyPrepareAction::Failed(failure) => {
                         XtalDutyPassStep::Failed(XtalDutyFailure::Prepare(failure))
                     }
@@ -1040,7 +1053,7 @@ impl XtalDutyPassTransition {
                     .map_err(|_| XtalDutyPassTransitionError::WrongCompletion)?;
                 match transition.action() {
                     XtalDutySearchAction::Complete(outcome) => {
-                        XtalDutyPassStep::RestoreInitialDuty(outcome)
+                        XtalDutyPassStep::RestoreSavedDuty(outcome)
                     }
                     XtalDutySearchAction::Failed(failure) => {
                         XtalDutyPassStep::Failed(XtalDutyFailure::Search(failure))
@@ -1049,7 +1062,7 @@ impl XtalDutyPassTransition {
                 }
             }
             (
-                XtalDutyPassStep::RestoreInitialDuty(outcome),
+                XtalDutyPassStep::RestoreSavedDuty(outcome),
                 XtalDutyPassCompletion::ByteWrite { address },
             ) if address == Self::DUTY_ADDRESS => XtalDutyPassStep::Restore {
                 transition: XtalDutyRestoreTransition::new(),
@@ -1219,7 +1232,10 @@ impl XtalDutyCalibrationTransition {
                             transition: XtalDutyPassTransition::new(
                                 0x9b0,
                                 transition.initial_duty,
-                                self.parameter,
+                                XtalDutyCalibrationParameters {
+                                    restore_duty: low_frequency.best_candidate,
+                                    ..self.parameter
+                                },
                             ),
                             low_frequency,
                             initial_duty: transition.initial_duty,

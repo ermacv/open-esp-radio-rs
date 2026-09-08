@@ -1878,6 +1878,29 @@ impl PhyRxGainTableLastIndex {
     }
 }
 
+/// Two-complement digital gain byte.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyDigitalGainImage(u32);
+
+impl PhyDigitalGainImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -7633,6 +7656,24 @@ pub(crate) fn mask_bluetooth_scheduler_run_interrupts_bank_1(
 #[inline]
 pub(crate) fn disable_ble_scheduler_run_event_source(registers: &crate::svd::BtmacBlePhyInit) {
     crate::svd::field_replace_modify::disable_ble_scheduler_run_event_source(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_forced_digital_gain_0` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_forced_digital_gain_0(
+    registers: &crate::svd::PhyClockOracle,
+    value: PhyDigitalGainImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_forced_digital_gain_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_forced_digital_gain_1` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_forced_digital_gain_1(
+    registers: &crate::svd::PhyClockOracle,
+    value: PhyDigitalGainImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_forced_digital_gain_1(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

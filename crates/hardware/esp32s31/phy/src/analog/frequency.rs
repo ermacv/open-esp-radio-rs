@@ -110,9 +110,7 @@ pub const fn phy_frequency_xtal_duty(
     middle_xtal_duty: u8,
     outer_xtal_duty: u8,
 ) -> u8 {
-    if frequency_code <= 0x967 {
-        17
-    } else if frequency_code.wrapping_sub(0x975) <= 38 {
+    if frequency_code.wrapping_sub(0x975) <= 38 {
         middle_xtal_duty
     } else {
         outer_xtal_duty

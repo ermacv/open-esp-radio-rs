@@ -66,7 +66,7 @@ fn complete(action: PhyRxGainPublishAction) -> PhyRxGainPublishCompletion {
 }
 
 #[test]
-fn complete_publisher_emits_70_wifi_and_76_shared_entries() {
+fn complete_publisher_emits_72_wifi_and_76_shared_entries() {
     let mut transition = PhyRxGainPublishTransition::new(parameters());
     let mut wifi_entries = 0;
     let mut shared_entries = 0;
@@ -82,7 +82,7 @@ fn complete_publisher_emits_70_wifi_and_76_shared_entries() {
                 ..
             } => shared_entries += 1,
             PhyRxGainPublishAction::Complete(outcome) => {
-                assert_eq!(outcome.wifi_entries, 70);
+                assert_eq!(outcome.wifi_entries, 72);
                 assert_eq!(outcome.shared_entries, 76);
                 break;
             }
@@ -90,7 +90,7 @@ fn complete_publisher_emits_70_wifi_and_76_shared_entries() {
         }
         transition.advance(complete(action)).unwrap();
     }
-    assert_eq!(wifi_entries, 70);
+    assert_eq!(wifi_entries, 72);
     assert_eq!(shared_entries, 76);
 }
 

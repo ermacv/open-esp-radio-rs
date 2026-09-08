@@ -105,6 +105,16 @@ impl RadioPhyRegisters {
         crate::generated::release_phy_frequency_module_reset(frequency);
     }
 
+    /// Retain the two ordered observations after software frequency ownership settles.
+    pub fn observe_software_frequency_boundary(&mut self) {
+        let _ = self.sample_sdm_deadline_counter();
+        let _ = self
+            .peripherals
+            .phy_frequency_channel_oracle
+            .i2c_number_control()
+            .read();
+    }
+
     /// Select whether hardware owns frequency updates.
     pub fn set_hardware_frequency_control(&mut self, enabled: bool) {
         let state = if enabled {

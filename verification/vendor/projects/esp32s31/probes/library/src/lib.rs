@@ -1237,6 +1237,53 @@ pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut 
     oer_esp32s31_hal::phy::baseband::configure_tx_power_tracking(registers, input & 1 != 0);
 }
 
+/// Current vendor TX-gain restore boundary, compiled from production HAL/PAC.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_restore_tx_gain_compensation(
+    _enabled: u32,
+    registers: &mut RadioPhyRegisters,
+) {
+    oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation(registers);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_force_digital_gain(
+    enabled: u32,
+    gain_0: u32,
+    gain_1: u32,
+    registers: &mut RadioPhyRegisters,
+) {
+    oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
+        registers,
+        enabled & 1 != 0,
+        gain_0 as i8,
+        gain_1 as i8,
+    );
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_temperature_to_power(
+    current: u32,
+    reference: u32,
+    bluetooth: u32,
+) -> i32 {
+    let class = if bluetooth == 0 {
+        oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::Wifi
+    } else {
+        oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::BluetoothIeee802154
+    };
+    i32::from(
+        oer_esp32s31_phy::tracking::parameters::temperature_to_tracking_power(
+            current as i16,
+            reference as i16,
+            class,
+        ),
+    )
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_reg_update_new(registers: &mut RadioPhyRegisters) {
@@ -1721,6 +1768,9 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_phy_trace_phy_set_rx_comp_new as *const ());
     core::hint::black_box(open_phy_trace_phy_bb_txpwr_track as *const ());
     core::hint::black_box(open_phy_trace_phy_reg_update_new as *const ());
+    core::hint::black_box(open_phy_trace_restore_tx_gain_compensation as *const ());
+    core::hint::black_box(open_phy_trace_force_digital_gain as *const ());
+    core::hint::black_box(open_phy_trace_temperature_to_power as *const ());
     core::hint::black_box(open_phy_trace_phy_dc_mem_clr as *const ());
     core::hint::black_box(open_phy_trace_phy_set_ftm_en as *const ());
     core::hint::black_box(open_phy_trace_phy_stop_tx_tone_new as *const ());

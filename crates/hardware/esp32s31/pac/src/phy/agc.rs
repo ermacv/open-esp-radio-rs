@@ -185,7 +185,7 @@ impl RadioPhyRegisters {
         crate::svd::field_read::observe_phy_ftm_enabled(&self.peripherals.phy_agc_oracle)
     }
 
-    /// Apply complete pinned `phy_reg_update_new` and both finite children.
+    /// Apply `phy_reg_update_new` while preserving the independently owned FTM mode.
     pub fn update_agc_post_initialization(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
         crate::generated::set_phy_agc_post_initialization_flag(agc);
@@ -194,7 +194,6 @@ impl RadioPhyRegisters {
         crate::generated::configure_phy_agc_post_initialization_window(agc);
         crate::generated::configure_phy_agc_post_initialization_low(agc);
         crate::generated::configure_phy_agc_post_initialization_high(agc);
-        self.set_ftm_enabled(true);
     }
 
     /// Apply either complete branch of rev0 ROM `phy_rx_11b_opt`.

@@ -528,7 +528,7 @@ fn periodic_outer_tracking_commits_power_i2c_and_temperature_children() {
     );
     let completion = complete_power_child(wifi);
     tracking.advance(completion).unwrap();
-    assert_eq!(state.channel_parameters().tx_gain_base, 16);
+    assert_eq!(state.channel_parameters().tx_gain_base, 10);
     assert_eq!(tracking.action(), PhyParamTrackingAction::TemperatureRead);
 
     let temperature = tracking.begin_temperature_read(&mut state).unwrap();

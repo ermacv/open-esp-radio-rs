@@ -303,3 +303,14 @@ pub fn configure_tx_pa_on(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_tx_pa_on();
 }
+
+/// Publish both signed digital gains through the shared PHY owner.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_forced_digital_gain(
+    registers: &mut impl SharedPhyAccess,
+    enabled: bool,
+    gain_0: i8,
+    gain_1: i8,
+) {
+    phy_pac_mut(registers).configure_forced_digital_gain(enabled, gain_0, gain_1);
+}

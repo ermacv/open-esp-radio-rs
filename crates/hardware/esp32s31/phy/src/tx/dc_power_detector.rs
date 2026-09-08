@@ -558,6 +558,7 @@ enum RootStep {
     BluetoothForcePath { value: u16 },
     BluetoothForceTxPath,
     Sar,
+    ForceTxPath,
     Gain,
     Search(PhyTxDcPwdetSearchTransition),
     CleanupDco { index: u8, terminal: RootTerminal },
@@ -619,8 +620,7 @@ const fn tx_on(index: u8) -> PhyPbusForceTest {
         6 => PhyPbusForceTest::new(2, 2, 0x100),
         7 => PhyPbusForceTest::new(3, 2, 0x100),
         8 => PhyPbusForceTest::new(1, 2, 0),
-        9 => PhyPbusForceTest::new(4, 1, 0x0b),
-        _ => PhyPbusForceTest::new(5, 1, 0x1ef),
+        _ => PhyPbusForceTest::new(4, 1, 0x0b),
     }
 }
 
@@ -710,6 +710,11 @@ impl PhyTxDcPwdetTransition {
             },
             RootStep::TxOn { index } => PhyTxDcPwdetAction::ForcePbus(tx_on(index)),
             RootStep::Sar => PhyTxDcPwdetAction::ConfigureSarCalibration,
+            RootStep::ForceTxPath => PhyTxDcPwdetAction::ForcePbus(PhyPbusForceTest::new(
+                5,
+                1,
+                if self.row == 2 { 0x1e7 } else { 0x1ef },
+            )),
             RootStep::Gain => PhyTxDcPwdetAction::ForcePbus(PhyPbusForceTest::new(
                 1,
                 2,
@@ -770,7 +775,7 @@ impl PhyTxDcPwdetTransition {
             ),
             RootStep::TxOn { index } => (
                 tx_on(index),
-                if index == 10 {
+                if index == 9 {
                     match self.mode {
                         PhyTxDcPwdetMode::Wifi => RootStep::Sar,
                         PhyTxDcPwdetMode::Bluetooth { .. } => RootStep::BluetoothReadForcedPath,
@@ -792,6 +797,10 @@ impl PhyTxDcPwdetTransition {
                     RootStep::Sar,
                 )
             }
+            RootStep::ForceTxPath => (
+                PhyPbusForceTest::new(5, 1, if self.row == 2 { 0x1e7 } else { 0x1ef }),
+                RootStep::Gain,
+            ),
             RootStep::Gain => (
                 PhyPbusForceTest::new(1, 2, TX_BB_GAIN[self.row as usize]),
                 RootStep::Search(PhyTxDcPwdetSearchTransition::new(
@@ -877,7 +886,7 @@ impl PhyTxDcPwdetTransition {
                 },
             ) => self.step = RootStep::TxOn { index: 0 },
             (RootStep::Sar, PhyTxDcPwdetCompletion::SarCalibrationConfigured) => {
-                self.step = RootStep::Gain;
+                self.step = RootStep::ForceTxPath;
             }
             (
                 RootStep::BluetoothReadForcedPath,
@@ -904,7 +913,7 @@ impl PhyTxDcPwdetTransition {
                             if self.row == 3 {
                                 self.cleanup(RootTerminal::Complete);
                             } else {
-                                self.step = RootStep::Gain;
+                                self.step = RootStep::ForceTxPath;
                             }
                         }
                         _ => self.step = RootStep::Search(transition),
@@ -969,6 +978,7 @@ impl PhyTxDcPwdetTransition {
                 | RootStep::TxOn { .. }
                 | RootStep::BluetoothForcePath { .. }
                 | RootStep::BluetoothForceTxPath
+                | RootStep::ForceTxPath
                 | RootStep::Gain
                 | RootStep::CleanupDco { .. }
                 | RootStep::CleanupTxOff { .. },
@@ -980,6 +990,7 @@ impl PhyTxDcPwdetTransition {
                 | RootStep::TxOn { .. }
                 | RootStep::BluetoothForcePath { .. }
                 | RootStep::BluetoothForceTxPath
+                | RootStep::ForceTxPath
                 | RootStep::Gain
                 | RootStep::CleanupDco { .. }
                 | RootStep::CleanupTxOff { .. },

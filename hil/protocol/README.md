@@ -1,6 +1,6 @@
 # HIL protocol v91
 
-Host and firmware must both use version 84. Other versions are rejected
+Host and firmware must both use version 91. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
@@ -29,6 +29,11 @@ command/event kind, protocol version, boot ID, message sequence, session ID,
 request ID and payload length. CRC covers header and body. A wrong kind or
 version is rejected before postcard decoding. Host and target treat decode
 errors, sequence gaps and bounded-queue loss as protocol failure.
+
+The optional `async-io` feature exposes `write_frame` for an already encoded
+frame. It writes all bytes and flushes before returning success. Callers must
+bound the complete operation, including flush: accepting bytes alone does not
+complete a USB transfer whose final packet is full.
 
 Boot is role-neutral:
 

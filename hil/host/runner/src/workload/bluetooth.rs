@@ -11,12 +11,13 @@ struct Counts {
     esp_to_pc: Option<u16>,
     pc_to_esp: Option<u16>,
     quiet_end_counts: Vec<u16>,
-    quiet_reset_restarted: bool,
+    quiet_reset_restarts: u16,
 }
 
 pub(crate) fn run(
     boots: u8,
     minimum_packets: u16,
+    quiet_cycles: Option<u16>,
     output: &Path,
     context: &Context<'_>,
 ) -> Result<()> {
@@ -28,11 +29,11 @@ pub(crate) fn run(
         let directory = output.join(format!("boot-{boot:03}"));
         context.with_capture(&directory, |capture| {
             let mut counts = Counts::default();
-            let result = probe(capture, adapter, &directory, &mut counts)
-                .and_then(|()| validate(&counts, minimum_packets));
+            let result = probe(capture, adapter, &directory, &mut counts, quiet_cycles)
+                .and_then(|()| validate(&counts, minimum_packets, quiet_cycles));
             let cleanup = oer_process::cleanup(|| capture.bluetooth_dtm(Operation::Reset));
             crate::evidence::run::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
-                "schema": 1, "adapter": adapter.to_string(), "phy": "LE-1M", "channel": 0,
+                "schema": 2, "quiet_cycles": quiet_cycles, "adapter": adapter.to_string(), "phy": "LE-1M", "channel": 0,
                 "payload": "PRBS9", "payload_bytes": 37, "minimum_packets": minimum_packets,
                 "counts": counts, "passed": result.is_ok() && cleanup.is_ok(),
                 "error": result.as_ref().err().map(ToString::to_string),
@@ -54,6 +55,7 @@ fn probe(
     adapter: bluetooth::model::Adapter,
     output: &Path,
     counts: &mut Counts,
+    quiet_cycles: Option<u16>,
 ) -> Result<()> {
     let caps = capture.request_capabilities(Duration::from_secs(10))?;
     if !caps.features.bluetooth_dtm {
@@ -67,21 +69,25 @@ fn probe(
         return Err("ESP transmitter returned a receiver count".into());
     }
 
-    // Exercise repeated RX -> End -> RX with no peer transmission, then
-    // RX -> Reset -> RX -> End without rebooting the target.
-    for _ in 0..3 {
+    // Every cycle proves both terminal paths and a post-Reset restart without
+    // a board reset. Retain partial counts so a failed cycle remains visible.
+    for _ in 0..quiet_cycles.unwrap_or(1) {
+        // An omitted count preserves the original three End controls and
+        // one Reset restart, including archived scenario snapshots.
+        for _ in 0..if quiet_cycles.is_some() { 1 } else { 3 } {
+            capture.bluetooth_dtm(Operation::Receive)?;
+            oer_process::sleep(Duration::from_millis(300))?;
+            counts.quiet_end_counts.push(end(capture)?);
+            counts.esp_silence = counts.quiet_end_counts.first().copied();
+        }
+        capture.bluetooth_dtm(Operation::Receive)?;
+        oer_process::sleep(Duration::from_millis(300))?;
+        capture.bluetooth_dtm(Operation::Reset)?;
         capture.bluetooth_dtm(Operation::Receive)?;
         oer_process::sleep(Duration::from_millis(300))?;
         counts.quiet_end_counts.push(end(capture)?);
+        counts.quiet_reset_restarts += 1;
     }
-    counts.esp_silence = counts.quiet_end_counts.first().copied();
-    capture.bluetooth_dtm(Operation::Receive)?;
-    oer_process::sleep(Duration::from_millis(300))?;
-    capture.bluetooth_dtm(Operation::Reset)?;
-    capture.bluetooth_dtm(Operation::Receive)?;
-    oer_process::sleep(Duration::from_millis(300))?;
-    counts.quiet_end_counts.push(end(capture)?);
-    counts.quiet_reset_restarted = true;
 
     // The peer helper first receives (ESP is also RX: the PC silence control),
     // then transmits for 100 ms into the already armed ESP receiver.
@@ -108,10 +114,12 @@ fn end(capture: &SerialCapture) -> Result<u16> {
     }
 }
 
-fn validate(counts: &Counts, minimum: u16) -> Result<()> {
-    if counts.quiet_end_counts.len() != 4
+fn validate(counts: &Counts, minimum: u16, quiet_cycles: Option<u16>) -> Result<()> {
+    let (ends, resets) = quiet_cycles.map_or((4, 1), |cycles| (usize::from(cycles) * 2, cycles));
+    if resets == 0
+        || counts.quiet_end_counts.len() != ends
         || counts.quiet_end_counts.iter().any(|&count| count != 0)
-        || !counts.quiet_reset_restarted
+        || counts.quiet_reset_restarts != resets
     {
         return Err("DTM quiet Test End/Reset restart controls failed or are incomplete".into());
     }
@@ -154,16 +162,16 @@ mod tests {
             esp_to_pc: Some(87),
             pc_to_esp: Some(42),
             quiet_end_counts: vec![0; 4],
-            quiet_reset_restarted: true,
+            quiet_reset_restarts: 2,
         };
-        assert!(validate(&counts, 10).is_ok());
+        assert!(validate(&counts, 10, Some(2)).is_ok());
         counts.pc_to_esp = Some(0);
-        assert!(validate(&counts, 10).is_err());
+        assert!(validate(&counts, 10, Some(2)).is_err());
         counts.pc_to_esp = Some(42);
         counts.esp_silence = Some(1);
-        assert!(validate(&counts, 10).is_err());
+        assert!(validate(&counts, 10, Some(2)).is_err());
         counts.esp_silence = None;
-        assert!(validate(&counts, 10).is_err());
+        assert!(validate(&counts, 10, Some(2)).is_err());
     }
     #[test]
     fn rf_counts_cannot_hide_missing_quiet_restart_controls() {
@@ -173,15 +181,35 @@ mod tests {
             esp_to_pc: Some(87),
             pc_to_esp: Some(42),
             quiet_end_counts: vec![0; 4],
-            quiet_reset_restarted: true,
+            quiet_reset_restarts: 2,
         };
-        assert!(validate(&counts, 10).is_ok());
-        counts.quiet_reset_restarted = false;
-        assert!(validate(&counts, 10).is_err());
-        counts.quiet_reset_restarted = true;
+        assert!(validate(&counts, 10, Some(2)).is_ok());
+        counts.quiet_reset_restarts = 1;
+        assert!(validate(&counts, 10, Some(2)).is_err());
+        counts.quiet_reset_restarts = 2;
         counts.quiet_end_counts.pop();
-        assert!(validate(&counts, 10).is_err());
+        assert!(validate(&counts, 10, Some(2)).is_err());
         counts.quiet_end_counts.push(1);
-        assert!(validate(&counts, 10).is_err());
+        assert!(validate(&counts, 10, Some(2)).is_err());
+    }
+
+    #[test]
+    fn stress_gate_requires_every_requested_cycle() {
+        let mut counts = Counts {
+            pc_silence: Some(0),
+            esp_silence: Some(0),
+            esp_to_pc: Some(87),
+            pc_to_esp: Some(42),
+            quiet_end_counts: vec![0; 200],
+            quiet_reset_restarts: 100,
+        };
+        assert!(validate(&counts, 10, Some(100)).is_ok());
+        counts.quiet_reset_restarts = 99;
+        assert!(validate(&counts, 10, Some(100)).is_err());
+        counts.quiet_end_counts = vec![0; 4];
+        counts.quiet_reset_restarts = 1;
+        assert!(validate(&counts, 10, None).is_ok());
+        assert!(validate(&counts, 10, Some(100)).is_err());
+        assert!(validate(&counts, 10, Some(0)).is_err());
     }
 }

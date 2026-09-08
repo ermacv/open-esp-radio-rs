@@ -116,6 +116,13 @@ mod tests {
         assert_eq!(counters.rejected_packets, 1);
         assert_eq!(counters.counted_packets, 0);
     }
+    #[test]
+    fn aborted_event_is_not_a_packet_or_a_hardware_error() {
+        let mut counters = DtmRxDiagnostics::default();
+        let before = counters;
+        counters.observe(DtmSchedulerItemCompletionStatus::Aborted, None);
+        assert_eq!(counters, before);
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -130,11 +137,4 @@ pub(crate) fn record_sequence(lead_ticks: i32, rejected: bool) {
         counters.last_sequence_lead_ticks = lead_ticks;
         cell.set(counters);
     });
-    #[test]
-    fn aborted_event_is_not_a_packet_or_a_hardware_error() {
-        let mut counters = DtmRxDiagnostics::default();
-        let before = counters;
-        counters.observe(DtmSchedulerItemCompletionStatus::Aborted, None);
-        assert_eq!(counters, before);
-    }
 }

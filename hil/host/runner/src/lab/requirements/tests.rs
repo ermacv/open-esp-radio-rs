@@ -95,6 +95,7 @@ fn bluetooth_requires_its_adapter_without_a_network() {
     let required = Requirements::for_scenario(&scenario(Workload::BluetoothDtm {
         boots: 2,
         minimum_packets: 10,
+        quiet_cycles: Some(100),
     }));
     assert!(required.bluetooth_adapter);
     assert!(!required.network());

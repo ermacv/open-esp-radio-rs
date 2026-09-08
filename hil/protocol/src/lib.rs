@@ -7,9 +7,13 @@
 
 mod bluetooth;
 mod framing;
+#[cfg(feature = "async-io")]
+mod io;
 pub use bluetooth::{
     BluetoothDtmEvidence, BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
 };
+#[cfg(feature = "async-io")]
+pub use io::write_frame;
 mod memory_benchmark;
 mod message;
 mod wifi_airtime;

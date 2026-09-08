@@ -9,7 +9,7 @@ use bt_hci::{
     controller::Controller,
 };
 use embassy_time::{Duration, Instant, with_timeout};
-use embedded_io_async::{Read as _, Write as _};
+use embedded_io_async::Read as _;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
 use oer_esp32s31_bluetooth::{
     le::{
@@ -128,7 +128,10 @@ impl Console {
             .expect("bounded HIL response");
         // USB backpressure cannot keep a DTM transmitter alive indefinitely.
         if !matches!(
-            with_timeout(Duration::from_secs(2), self.usb.write_all(bytes)).await,
+            with_timeout(
+                Duration::from_secs(2),
+                open_esp_radio_hil_protocol::write_frame(&mut self.usb, bytes),
+            ).await,
             Ok(Ok(()))
         ) {
             let _ = execute(hci, Operation::Reset).await;

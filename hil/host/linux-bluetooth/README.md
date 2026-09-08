@@ -58,16 +58,21 @@ the Wi-Fi runtime. It provides Reset, Receive, Transmit and Test End on LE 1M,
 channel 0 with the same 37-byte PRBS9 payload as the helper. Active ESP tests
 expire after 30 seconds; expiry and HCI errors attempt Reset, retain a failed
 state and require a board reset before another test.
+USB responses write and flush within one two-second deadline, including
+responses whose encoded length is an exact USB packet multiple.
 
-The production receiver currently lacks active scheduler cancellation.
-An RX event waiting for a packet may outlive Test End and logical Reset;
-the silence/end control reports failure and recovery requires a board reset.
-Receiving packets while the peer is transmitting does not close this gap.
+Test End and logical Reset share bounded production scheduler stop and exact
+descriptor retirement. A deadline or ownership fault retains the graph and
+fails the command; it never reports successful cancellation or reclaims
+hardware-owned memory. The quiet controls exercise this path without packets.
 
 The scenario first holds ESP TX while the helper counts packets on the PC.
-With the PC adapter restored and inactive, it repeats three 300-ms ESP RX
-windows ending in Test End, then checks RX/Reset/RX/Test End without a board
-reset. All four Test End counts must be zero and the Reset restart must finish.
+With the PC adapter restored and inactive, each quiet cycle checks RX/Test End
+and RX/Reset/RX/Test End, using 300-ms receive windows without a board reset.
+The workload's `quiet_cycles` accepts 1 through 1000; the catalog requests 100
+per boot. Omitting it preserves three End controls and one Reset restart.
+Every Test End count must be zero and every
+Reset restart must finish. Partial counts are retained on failure.
 Finally ESP remains in RX throughout another helper invocation: the helper's
 RX window measures PC silence, and its TX window supplies packets to ESP.
 Thus each receiver has both a positive-delivery requirement and a zero-count

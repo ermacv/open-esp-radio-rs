@@ -407,7 +407,11 @@ impl Scenario {
             Workload::BluetoothDtm {
                 boots,
                 minimum_packets,
+                quiet_cycles,
             } => {
+                if let Some(cycles) = quiet_cycles {
+                    bounded(*cycles, 1, 1000, self, "quiet_cycles")?;
+                }
                 bounded(*boots, 1, 10, self, "boots")?;
                 bounded(*minimum_packets, 1, 160, self, "minimum_packets")?;
                 if self.link.is_some()

@@ -2953,6 +2953,7 @@ version = "0.1.0"
 dependencies = [
  "cobs",
  "crc",
+ "embedded-io-async 0.7.0",
  "heapless 0.9.3",
  "postcard",
  "serde",

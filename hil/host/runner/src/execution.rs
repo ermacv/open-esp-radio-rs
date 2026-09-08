@@ -68,7 +68,14 @@ fn execute_workload_inner(
         Workload::BluetoothDtm {
             boots,
             minimum_packets,
-        } => crate::workload::bluetooth::run(*boots, *minimum_packets, output, context),
+            quiet_cycles,
+        } => crate::workload::bluetooth::run(
+            *boots,
+            *minimum_packets,
+            *quiet_cycles,
+            output,
+            context,
+        ),
         Workload::BootSmoke => boot_smoke(output, context),
         Workload::MemoryBenchmark {
             boots,

@@ -9,3 +9,4 @@ tags = ["bluetooth", "dtm", "diagnostic"]
 kind = "bluetooth-dtm"
 boots = 2
 minimum_packets = 10
+quiet_cycles = 100

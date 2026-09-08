@@ -928,11 +928,21 @@ fn bluetooth_dtm_is_bounded_and_requires_its_own_image() {
     scenario.workload = Workload::BluetoothDtm {
         boots: 0,
         minimum_packets: 10,
+        quiet_cycles: Some(100),
     };
     assert!(scenario.validate().is_err());
     scenario.workload = Workload::BluetoothDtm {
         boots: 1,
         minimum_packets: 0,
+        quiet_cycles: Some(100),
     };
     assert!(scenario.validate().is_err());
+    for quiet_cycles in [0, 1001] {
+        scenario.workload = Workload::BluetoothDtm {
+            boots: 1,
+            minimum_packets: 10,
+            quiet_cycles: Some(quiet_cycles),
+        };
+        assert!(scenario.validate().is_err());
+    }
 }

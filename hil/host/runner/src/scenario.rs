@@ -146,6 +146,8 @@ impl PhyExpectation {
 pub enum Workload {
     BluetoothDtm {
         boots: u8,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        quiet_cycles: Option<u16>,
         minimum_packets: u16,
     },
     BootSmoke,

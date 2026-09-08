@@ -80,20 +80,27 @@ pub enum LegacyConnectablePeripheralFirstHciRunningOrder<'runtime> {
     ResponsePending(LeControllerResponsePending<'runtime, ()>),
 }
 
-enum LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> {
+pub(super) enum LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> {
     CommandReady(LeControllerCommandReady<'runtime, Owner>),
     ResponsePending(LeControllerResponsePending<'runtime, Owner>),
 }
 
 impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> {
-    const fn axis(&self) -> LegacyConnectablePeripheralFirstHciAxis {
+    pub(super) fn owner(&self) -> &Owner {
+        match self {
+            Self::CommandReady(ordered) => ordered.owner(),
+            Self::ResponsePending(response) => response.owner(),
+        }
+    }
+
+    pub(super) const fn axis(&self) -> LegacyConnectablePeripheralFirstHciAxis {
         match self {
             Self::CommandReady(_) => LegacyConnectablePeripheralFirstHciAxis::CommandReady,
             Self::ResponsePending(_) => LegacyConnectablePeripheralFirstHciAxis::ResponsePending,
         }
     }
 
-    fn into_parts(
+    pub(super) fn into_parts(
         self,
     ) -> (
         Owner,
@@ -117,7 +124,7 @@ impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> 
         }
     }
 
-    fn map_owner<Next>(
+    pub(super) fn map_owner<Next>(
         self,
         map: impl FnOnce(Owner) -> Next,
     ) -> LegacyConnectablePeripheralFirstHciOrder<'runtime, Next> {
@@ -131,7 +138,7 @@ impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> 
         }
     }
 
-    async fn wait_response_capacity<
+    pub(super) async fn wait_response_capacity<
         M: RawMutex,
         const H2C: usize,
         const C2H: usize,
@@ -151,7 +158,7 @@ impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> 
         }
     }
 
-    fn try_publish_response<
+    pub(super) fn try_publish_response<
         M: RawMutex,
         const H2C: usize,
         const C2H: usize,
@@ -194,7 +201,7 @@ impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> 
     }
 }
 
-enum LegacyConnectablePeripheralFirstHciOrderPublication<'runtime, Owner> {
+pub(super) enum LegacyConnectablePeripheralFirstHciOrderPublication<'runtime, Owner> {
     CommandReady(LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner>),
     Published(LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner>),
     Pending(LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner>),
@@ -685,7 +692,7 @@ impl_hci_io!(LegacyConnectablePeripheralFirstHciRecovered);
 impl_hci_io!(LegacyConnectablePeripheralFirstHciRetry);
 impl_hci_io!(LegacyConnectablePeripheralFirstHciRunning);
 
-fn map_order_publication<'runtime, Owner, State>(
+pub(super) fn map_order_publication<'runtime, Owner, State>(
     publication: LegacyConnectablePeripheralFirstHciOrderPublication<'runtime, Owner>,
     map: impl FnOnce(LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner>) -> State,
 ) -> LegacyConnectablePeripheralFirstHciResponsePublication<State> {

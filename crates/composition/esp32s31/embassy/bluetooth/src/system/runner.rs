@@ -113,6 +113,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | ControllerCommandBoundary::LegacyConnectableAdvertisingActiveFailStop(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingPendingFailStop(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingStoppingFailStop(_)
+        | ControllerCommandBoundary::PeripheralConnectionActiveFailStop(_)
         | ControllerCommandBoundary::PeripheralConnectionFirstFailStop(_)
         | ControllerCommandBoundary::PeripheralConnectionResetFailStop(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingCommandEndpointMismatch(_)

@@ -116,13 +116,13 @@ remains outside the LE program.
 | Feature | Status | Current production boundary |
 | --- | --- | --- |
 | Broadcaster / Observer | PARTIAL | The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent. |
-| Peripheral | PARTIAL | `CONNECT_IND` handoff and first connection event exist. The active actor retains the running owner without driving radio completion and recurring events. |
+| Peripheral | PARTIAL | `CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Reliable ACL, active commands and LLCP remain unsupported. |
 | Central / Initiator | ABSENT | No Create Connection/initiator scheduling or Central connection owner exists. |
 | Simultaneous Broadcaster + Observer + Central + Peripheral | ABSENT | Individual role subsets do not form a simultaneous multi-role runtime. |
 | Multiple connections / multi-connection optimization | ABSENT | No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists. |
 | `CONNECT_IND` decoding and admission | IMPLEMENTED | [Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only. |
 | First peripheral connection window | PARTIAL | Causal timestamp projection, window planning, SRAM preparation and first hardware `RUN` exist; a successful connection exchange is not established. |
-| Recurring peripheral events | PARTIAL | [Lower recurrence](src/le/peripheral/connection/recurring.rs) prepares and publishes successor events. The active Controller actor does not invoke the complete completion/recurrence lifecycle. |
+| Recurring peripheral events | PARTIAL | [Active lifecycle](src/le/peripheral/active.rs) drives completion, recycle, fresh controller time and contiguous successor RUN through lower recurrence. Requires an explicit local clock accuracy bound; no missed-anchor recovery or hardware timing qualification. |
 | Channel Selection Algorithm #1 | PARTIAL | Portable channel progression exists within the incomplete connection owner. |
 | Channel Selection Algorithm #2 | PARTIAL | Portable CSA#2 exists, but S31 connectable advertising marks local CSA#2 support unsupported and rejects requests requiring it. |
 | Peripheral latency | PARTIAL | Timing is validated and retained; live skip/recovery scheduling is not complete. |
@@ -311,9 +311,19 @@ does not compose a missing caller or transfer protocol policy between roles.
 ## Peripheral timing limits
 
 The [active controller branch](../../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs)
-services a pending HCI response and returns `PeripheralConnectionActive`.
-Repeated observations of that boundary do not represent successive radio
-events.
+drives completion and recycle before preparing a contiguous successor through
+fresh controller time, validation and scheduler publication. Each
+`PeripheralConnectionActive` boundary represents a first or successor `RUN`.
+Response backpressure does not block radio readiness; cancellation retains
+both the radio phase and HCI authority. Completion or preparation failures
+seal both owners in `PeripheralConnectionActiveFailStop`.
+
+`PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must
+supply the local clock accuracy bound. The default configuration leaves it
+unset and stops with `TimingPolicyUnavailable` when recurrence is attempted.
+This actor does not yet consume active HCI commands, implement reliable
+SN/NESN/ACL exchanges or LLCP, or enforce supervision and missed-anchor
+recovery. A compiled lifecycle does not establish a successful over-air link.
 
 Lower recurrence requires a caller-owned local clock accuracy bound. Its
 software window widening does not establish arbitrary missed-event anchor

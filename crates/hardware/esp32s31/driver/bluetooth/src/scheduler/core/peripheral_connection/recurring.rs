@@ -283,10 +283,6 @@ pub(crate) struct PeripheralConnectionRecurringSchedulerValidationFailure {
 }
 
 impl PeripheralConnectionRecurringSchedulerValidationFailure {
-    #[expect(
-        dead_code,
-        reason = "the active peripheral actor does not yet inspect recurring scheduler validation failures"
-    )]
     pub(crate) const fn error(&self) -> SchedulerHeadPublicationError {
         self.error
     }
@@ -349,10 +345,6 @@ pub(crate) struct PeripheralConnectionRecurringSchedulerPublicationFailStop {
 }
 
 impl PeripheralConnectionRecurringSchedulerPublicationFailStop {
-    #[expect(
-        dead_code,
-        reason = "the active peripheral actor does not yet inspect recurring publication fail-stop diagnostics"
-    )]
     pub(crate) const fn error(
         &self,
     ) -> oer_esp32s31_bluetooth_memory::PeripheralConnectionMemoryGraphPublicationError {

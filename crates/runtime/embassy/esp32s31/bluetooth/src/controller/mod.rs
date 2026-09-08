@@ -151,7 +151,8 @@ use oer_esp32s31_bluetooth::{
             LegacyConnectablePeripheralFirstHciResetFailStop,
             LegacyConnectablePeripheralFirstHciResetOutcome,
             LegacyConnectablePeripheralFirstHciResponsePublication,
-            LegacyConnectablePeripheralFirstHciRunning,
+            PeripheralConnectionActiveFault, PeripheralConnectionActiveSession,
+            PeripheralConnectionActiveStep, PeripheralConnectionActiveWait,
         },
         scanning::{
             PassiveScanHciActiveCommandIntake, PassiveScanHciActiveCommandMismatch,
@@ -176,6 +177,8 @@ use oer_esp32s31_bluetooth::{
 mod dispatch;
 #[cfg(any(target_arch = "riscv32", test))]
 mod owner;
+#[cfg(any(target_arch = "riscv32", test))]
+mod peripheral_work;
 #[cfg(target_arch = "riscv32")]
 mod reset;
 mod response;

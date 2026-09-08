@@ -84,9 +84,11 @@ where
     LegacyConnectableAdvertisingRecurringMergedCommandEndpointMismatch(
         ConnectableRecurringMergedMismatch<'runtime, 'epoch, S, CAPACITY>,
     ),
-    /// The first peripheral event reached scheduler `RUN`; its exact running
+    /// A first or successor peripheral event reached scheduler `RUN`; its exact running
     /// owner and HCI-order axis remain inside the sole actor.
     PeripheralConnectionActive,
+    /// Completion or recurrence failed closed with radio and HCI owners retained.
+    PeripheralConnectionActiveFailStop(PeripheralConnectionActiveFault<'runtime, S, CAPACITY>),
     /// Accepted-connection publication failed closed before the first peripheral `RUN`.
     PeripheralConnectionFirstFailStop(
         LegacyConnectablePeripheralFirstHciFailStop<'runtime, S, CAPACITY>,

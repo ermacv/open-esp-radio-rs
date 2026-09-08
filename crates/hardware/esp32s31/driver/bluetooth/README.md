@@ -13,7 +13,7 @@ and final storage and hardware composition live in
 | `le/advertising/legacy` | Legacy advertising preparation, timing, completion and recurring execution |
 | `le/advertising/connectable` | Connectable advertising activation, completion and recurring sequence/HCI/state |
 | `le/scanning/passive` | Passive scanning activation, recurring execution and completion |
-| `le/peripheral` | First HCI handoff, start, connection owner and peripheral completion |
+| `le/peripheral` | First HCI handoff, connection owner, completion and contiguous active recurrence |
 | `scheduler` | Shared scheduler resources and single-item completion |
 | `controller` | Shared controller bootstrap and hardware lifecycle |
 | `phy` | Common PHY power/readback, registration, Bluetooth-client acquisition and initial tracking |

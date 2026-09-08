@@ -13,3 +13,12 @@ Runtime modules retain owners across awaits, cancellation and shutdown. The
 hardware backend owns MMIO transitions and quiescence proofs; final composition
 owns task storage and platform resources. Public types live in their owning
 module, without root compatibility exports.
+
+The active peripheral branch drives the chip-owned completion and contiguous
+successor transaction. Scheduler/post-unlink readiness and controller-time
+rechecks progress independently of pending HCI response capacity, with radio
+readiness winning a tie. Every await borrows the session retained in the actor.
+A progress boundary represents a newly published RUN; a radio failure retains
+all owners in a terminal boundary. See the driver's
+[peripheral timing limits](../../../../hardware/esp32s31/driver/bluetooth/FEATURES.md#peripheral-timing-limits)
+for the required clock bound and unsupported link behavior.

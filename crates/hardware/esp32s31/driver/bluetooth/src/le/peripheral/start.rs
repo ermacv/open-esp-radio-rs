@@ -468,6 +468,25 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    /// Reuse the same completion/recycle lifecycle after a recurring RUN.
+    pub(super) fn from_recurring(
+        task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        running: crate::scheduler::core::SingleItemSchedulerRunning<
+            PeripheralConnectionCompletionRole,
+        >,
+        event_counter: u16,
+        evidence: LegacyConnectablePeripheralFirstRunningEvidence,
+    ) -> Self {
+        Self {
+            task,
+            phase: LegacyConnectablePeripheralFirstRunningPhase::Completion(
+                SingleItemCompletion::new(running),
+            ),
+            event_counter,
+            evidence,
+        }
+    }
+
     pub const fn event_counter(&self) -> u16 {
         self.event_counter
     }

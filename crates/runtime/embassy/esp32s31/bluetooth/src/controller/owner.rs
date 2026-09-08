@@ -206,7 +206,7 @@ where
         LegacyConnectablePeripheralFirstControllerTimeWait<'runtime, S, CAPACITY>,
     ),
     PeripheralConnectionFirstRetry(PeripheralFirstSessionRetry<'runtime, S, CAPACITY>),
-    PeripheralConnectionActive(LegacyConnectablePeripheralFirstHciRunning<'runtime, S, CAPACITY>),
+    PeripheralConnectionActive(PeripheralConnectionActiveSession<'runtime, S, CAPACITY>),
     PassiveScanFirst(PassiveScanFirstControllerTimeWait<'runtime, S, CAPACITY>),
     PassiveScanRetry(PassiveScanHciFirstRunnerFailure<'runtime, S, CAPACITY>),
     PassiveScanResponse(PassiveScanHciResponsePendingSession<'runtime, S, CAPACITY>),
@@ -718,7 +718,9 @@ where
                 self.store_transition(
                     from,
                     ControllerCommandStimulus::PeripheralConnectionActive,
-                    ControllerCommandState::PeripheralConnectionActive(running),
+                    ControllerCommandState::PeripheralConnectionActive(
+                        PeripheralConnectionActiveSession::from_first(running),
+                    ),
                 );
                 Some(ControllerCommandBoundary::PeripheralConnectionActive)
             }

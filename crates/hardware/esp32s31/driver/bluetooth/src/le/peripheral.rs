@@ -1,6 +1,8 @@
 //! Peripheral connection establishment and completion.
 
 #[cfg(target_arch = "riscv32")]
+mod active;
+#[cfg(target_arch = "riscv32")]
 pub(crate) mod completion;
 pub(crate) mod connection;
 #[cfg(target_arch = "riscv32")]
@@ -53,4 +55,11 @@ pub use start::{
     LegacyConnectablePeripheralFirstRunnerStep, LegacyConnectablePeripheralFirstRunning,
     LegacyConnectablePeripheralFirstRunningContinuations,
     LegacyConnectablePeripheralFirstRunningEvidence, LegacyConnectablePeripheralFirstRunningWait,
+};
+
+#[cfg(target_arch = "riscv32")]
+pub use active::{
+    PeripheralConnectionActiveFault, PeripheralConnectionActiveFaultCause,
+    PeripheralConnectionActiveSession, PeripheralConnectionActiveStep,
+    PeripheralConnectionActiveWait,
 };

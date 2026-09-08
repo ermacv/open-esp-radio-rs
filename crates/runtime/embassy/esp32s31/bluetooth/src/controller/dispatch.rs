@@ -1363,13 +1363,63 @@ where
                     else {
                         unreachable!("the selected peripheral active owner did not change")
                     };
-                    if running.hci_axis() == LegacyConnectablePeripheralFirstHciAxis::CommandReady {
-                        return self.retain_boundary(
-                            ControllerCommandBoundary::PeripheralConnectionActive,
-                        );
-                    }
-                    if running.wait_response_capacity(controller).await.is_err() {
-                        return self.retain_boundary(ControllerCommandBoundary::EndpointMismatch);
+                    let radio = async {
+                        match running.radio_wait() {
+                            None => {}
+                            Some(PeripheralConnectionActiveWait::Scheduler(wake)) => {
+                                wakers.wait_scheduler_ready(wake).await
+                            }
+                            Some(PeripheralConnectionActiveWait::PostUnlink(wake)) => {
+                                wakers
+                                    .wait_post_unlink_or_recheck(
+                                        wake,
+                                        recheck.wait_until_absolute_recheck(),
+                                    )
+                                    .await;
+                            }
+                            Some(PeripheralConnectionActiveWait::ControllerTime) => {
+                                recheck.wait_until_absolute_recheck().await
+                            }
+                        }
+                    };
+                    let response = (running.hci_axis()
+                        == LegacyConnectablePeripheralFirstHciAxis::ResponsePending)
+                        .then(|| running.wait_response_capacity(controller));
+                    match super::peripheral_work::wait(radio, response).await {
+                        super::peripheral_work::Work::Radio => {
+                            let ControllerCommandState::PeripheralConnectionActive(running) =
+                                self.owner.take()
+                            else {
+                                unreachable!("the awaited peripheral radio owner did not change")
+                            };
+                            match running.step_radio() {
+                                PeripheralConnectionActiveStep::Continue(running) => {
+                                    self.store_retained_state(
+                                        ControllerCommandPhase::PeripheralConnectionActive,
+                                        ControllerCommandState::PeripheralConnectionActive(running),
+                                    );
+                                }
+                                PeripheralConnectionActiveStep::Published(running) => {
+                                    self.store_retained_state(
+                                        ControllerCommandPhase::PeripheralConnectionActive,
+                                        ControllerCommandState::PeripheralConnectionActive(running),
+                                    );
+                                    return self.retain_boundary(
+                                        ControllerCommandBoundary::PeripheralConnectionActive,
+                                    );
+                                }
+                                PeripheralConnectionActiveStep::Fault(fault) => {
+                                    return self.terminal_boundary(ControllerCommandPhase::PeripheralConnectionActive,
+                                        ControllerCommandBoundary::PeripheralConnectionActiveFailStop(fault));
+                                }
+                            }
+                            continue;
+                        }
+                        super::peripheral_work::Work::Response(Err(_)) => {
+                            return self
+                                .retain_boundary(ControllerCommandBoundary::EndpointMismatch);
+                        }
+                        super::peripheral_work::Work::Response(Ok(_)) => {}
                     }
                     let ControllerCommandState::PeripheralConnectionActive(running) =
                         self.owner.take()
@@ -1404,8 +1454,7 @@ where
                             );
                         }
                     }
-                    return self
-                        .retain_boundary(ControllerCommandBoundary::PeripheralConnectionActive);
+                    continue;
                 }
                 ControllerCommandPhase::PassiveScanFirst => {
                     if matches!(

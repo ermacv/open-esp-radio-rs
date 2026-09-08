@@ -28,6 +28,10 @@ pub struct ApBeacon<'storage> {
 }
 
 impl<'storage> ApBeacon<'storage> {
+    pub(crate) fn advertisement(&self) -> &[u8] {
+        &self.storage[..self.len]
+    }
+
     pub fn new(
         storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         access_point: [u8; 6],

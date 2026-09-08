@@ -40,6 +40,7 @@ enum PendingPublication {
         dtim_group_frames: u16,
     },
     Authentication,
+    ProbeResponse,
     Association {
         peer: [u8; 6],
         begin_wpa2: bool,
@@ -65,6 +66,7 @@ enum PendingPublication {
 pub enum ApPendingPublicationKind {
     Beacon,
     Authentication,
+    ProbeResponse,
     Association,
     Eapol,
     Data,
@@ -77,6 +79,7 @@ impl PendingPublication {
     const fn kind(self) -> ApPendingPublicationKind {
         match self {
             Self::Beacon { .. } => ApPendingPublicationKind::Beacon,
+            Self::ProbeResponse => ApPendingPublicationKind::ProbeResponse,
             Self::Authentication => ApPendingPublicationKind::Authentication,
             Self::Association { .. } => ApPendingPublicationKind::Association,
             Self::Eapol { .. } => ApPendingPublicationKind::Eapol,
@@ -443,6 +446,7 @@ where
         if let Some(peer) = request
             .get(10..16)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+            && request.first().is_some_and(|fc| fc & 0xf0 != 0x40)
             && self.engine.tx_block_ack_agreement(peer).is_some()
         {
             self.block_ack_alarm = None;
@@ -457,6 +461,8 @@ where
             .start_encoded(hardware, ApTxClass::Management, &scratch[..len])?;
         self.pending = Some(if begin_wpa2 {
             PendingPublication::Association { peer, begin_wpa2 }
+        } else if scratch[0] == 0x50 {
+            PendingPublication::ProbeResponse
         } else if scratch[0] == 0xb0 {
             PendingPublication::Authentication
         } else {
@@ -910,6 +916,7 @@ where
                     }
                 }
             }
+            PendingPublication::ProbeResponse => ApTxCompletionAction::None,
             PendingPublication::Authentication => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {

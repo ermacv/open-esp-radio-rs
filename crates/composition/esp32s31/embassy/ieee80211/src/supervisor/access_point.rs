@@ -728,12 +728,7 @@ impl ProductionWifiEpochRunner {
         if let Some(airtime) = task.parked.station.board.access_point_airtime.as_mut() {
             airtime.storage = oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage::new(airtime.configuration.quantum_micros).with_observer(airtime.configuration.observer);
         }
-        diagnostics_event!("open-radio: AP supervisor publishing start completion");
-        endpoint
-            .respond(EmbassyWifiSupervisorResponse::AccessPoint(Ok(
-                WifiStartReport::new(generation),
-            )))
-            .await;
+        let mut started = false;
         #[cfg(feature = "diagnostics")]
         let rx_statistics_before = task.registers.receive_statistics_snapshot();
         #[cfg(feature = "diagnostics")]
@@ -799,7 +794,15 @@ impl ProductionWifiEpochRunner {
                             }
                         }
                     },
-                    wait_for_active_wifi_role_stop(endpoint),
+                    || async {
+                        // The runtime constructs this future only after RX IRQ
+                        // activation and the first beacon publication succeed.
+                        endpoint.respond(EmbassyWifiSupervisorResponse::AccessPoint(Ok(
+                            WifiStartReport::new(generation),
+                        ))).await;
+                        started = true;
+                        wait_for_active_wifi_role_stop(endpoint).await;
+                    },
                     |status| {
                         crate::status::publish_access_point_status(generation, status);
                     },
@@ -1038,11 +1041,13 @@ impl ProductionWifiEpochRunner {
             #[cfg(not(feature = "diagnostics"))]
             let _ = _error;
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
-            endpoint
-                .respond(EmbassyWifiSupervisorResponse::Stop(Err(
-                    self.fault_error(&faulted)
-                )))
-                .await;
+            let error = self.fault_error(&faulted);
+            let response = if started {
+                EmbassyWifiSupervisorResponse::Stop(Err(error))
+            } else {
+                EmbassyWifiSupervisorResponse::AccessPoint(Err(WifiStartFailure::faulted(error)))
+            };
+            endpoint.respond(response).await;
             return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
         }
         #[cfg(feature = "diagnostics")]

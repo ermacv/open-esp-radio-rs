@@ -103,7 +103,9 @@ where
         >,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
         #[cfg(feature = "diagnostics")] mut live_hardware_observer: impl FnMut(&mut H),
-        stop: F,
+        // Construct the supervisor control future only after RX activation and
+        // first beacon publication. It may acknowledge start before awaiting stop.
+        control: impl FnOnce() -> F,
         mut status_observer: impl FnMut(AccessPointServiceStatus),
         security_material: N,
     ) -> Result<AccessPointRunObservation, AccessPointRunError<IR::Error>>
@@ -234,7 +236,7 @@ where
             crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
             services,
         );
-        let exit = await_stack_boundary!(runner.run_until(stop)).map_err(|error| match error {
+        let exit = await_stack_boundary!(runner.run_until(control())).map_err(|error| match error {
             AccessPointDatapathError::Control(error) => {
                 AccessPointRunError::Control(error)
             }

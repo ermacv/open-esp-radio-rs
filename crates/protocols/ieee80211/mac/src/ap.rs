@@ -17,6 +17,7 @@ use crate::{
     station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
+pub mod probe;
 pub mod profile;
 use profile::Advertisement;
 
@@ -525,6 +526,10 @@ impl ApProtectedDataFrame<'_> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApManagementRequest<'a> {
+    Probe {
+        peer: [u8; 6],
+        ssid: &'a [u8],
+    },
     OpenAuthentication {
         peer: [u8; 6],
     },
@@ -570,7 +575,7 @@ pub struct ApAssociationSecurityObservation<'a> {
     pub malformed_elements: bool,
 }
 
-/// Parse only management requests addressed to this AP.
+/// Parse requests addressed to this AP, including broadcast probe discovery.
 ///
 /// Beacons, responses, foreign BSS traffic and unsupported authentication
 /// algorithms are intentionally ignored rather than being promoted into AP
@@ -580,10 +585,7 @@ pub fn parse_ap_management_request<'a>(
     frame: &'a [u8],
     access_point: [u8; 6],
 ) -> Option<ApManagementRequest<'a>> {
-    if frame.len() < MANAGEMENT_HEADER_LEN
-        || frame[4..10] != access_point
-        || frame[16..22] != access_point
-    {
+    if frame.len() < MANAGEMENT_HEADER_LEN {
         return None;
     }
     let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
@@ -591,7 +593,25 @@ pub fn parse_ap_management_request<'a>(
         return None;
     }
     let subtype = (frame_control >> 4) & 0x0f;
-    let peer = frame[10..16].try_into().ok()?;
+    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
+    if subtype == 4 {
+        if frame_control & 0x470f != 0
+            || frame[22] & 0x0f != 0
+            || peer[0] & 1 != 0
+            || peer == [0; 6]
+            || (frame[4..10] != access_point && frame[4..10] != [0xff; 6])
+            || (frame[16..22] != access_point && frame[16..22] != [0xff; 6])
+        {
+            return None;
+        }
+        return Some(ApManagementRequest::Probe {
+            peer,
+            ssid: probe::ssid(&frame[24..])?,
+        });
+    }
+    if frame[4..10] != access_point || frame[16..22] != access_point {
+        return None;
+    }
     match subtype {
         11 => {
             let body = frame.get(24..30)?;

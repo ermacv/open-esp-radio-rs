@@ -50,6 +50,25 @@ impl<'storage> ApEngine<'storage> {
         };
         let retry = frame.get(1).is_some_and(|byte| byte & 0x08 != 0);
         match request {
+            ApManagementRequest::Probe { peer, ssid } => {
+                if !oer_ieee80211::ap::probe::matches_ssid(self.beacon.advertisement(), ssid) {
+                    return Ok(ApManagementOutcome::Ignored);
+                }
+                let sequence = self.service.next_management_sequence();
+                let len = oer_ieee80211::ap::probe::write_response(
+                    self.beacon.advertisement(),
+                    peer,
+                    sequence,
+                    now_micros,
+                    output,
+                )
+                .map_err(ApEngineError::Probe)?;
+                Ok(ApManagementOutcome::Response {
+                    len,
+                    begin_wpa2: false,
+                })
+            }
+
             ApManagementRequest::OpenAuthentication { peer } => {
                 if retry
                     && self

@@ -317,3 +317,5 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
     assert_eq!(hardware.publications, 0);
     assert!(!mac.tx_pending());
 }
+
+mod probe;

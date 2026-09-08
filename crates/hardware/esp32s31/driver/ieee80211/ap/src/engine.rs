@@ -53,6 +53,7 @@ use oer_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApEngineError {
     Beacon(ApBeaconBuildError),
+    Probe(oer_ieee80211::ap::probe::ResponseError),
     Crypto(CryptoKeyError),
     Security(ApSecurityError),
     Service(ApServiceError),

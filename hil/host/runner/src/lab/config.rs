@@ -117,6 +117,9 @@ enum RawStationFixtureConfig {
     LocalLinux {
         interface: String,
         phys: Vec<PhyExpectation>,
+        country: String,
+        channel: u8,
+        address: String,
     },
     OpenWrt {
         radio: String,
@@ -146,6 +149,11 @@ pub(crate) enum StationFixtureConfig {
 pub(crate) struct LocalLinuxConfig {
     pub(crate) interface: String,
     pub(crate) phys: Vec<PhyExpectation>,
+    pub(crate) country: String,
+    pub(crate) channel: u8,
+    pub(crate) ht40_above: bool,
+    pub(crate) address: Ipv4Addr,
+    pub(crate) prefix_length: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -238,12 +246,33 @@ impl LabConfig {
         }
         let ipv4 = parse_ipv4(raw.station.ipv4.clone())?;
         match &raw.station_fixture {
-            RawStationFixtureConfig::LocalLinux { interface, phys } => {
+            RawStationFixtureConfig::LocalLinux {
+                interface,
+                phys,
+                country,
+                channel,
+                address,
+            } => {
                 validate_shell_token("station_fixture.interface", interface)?;
                 if interface != "wlan0" {
                     return Err("the installed local HIL helper currently owns only `wlan0`".into());
                 }
                 validate_phys("local-linux", phys)?;
+                if country.len() != 2 || !country.bytes().all(|byte| byte.is_ascii_uppercase()) {
+                    return Err(
+                        "local AP country must be a two-letter uppercase country code".into(),
+                    );
+                }
+                if !(1..=13).contains(channel) {
+                    return Err("local AP channel must be in 1..=13".into());
+                }
+                let (address, prefix) = parse_cidr("station_fixture.address", address)?;
+                if !(1..=30).contains(&prefix) || address.is_unspecified() || address.is_multicast()
+                {
+                    return Err(
+                        "local AP address requires a unicast subnet with host addresses".into(),
+                    );
+                }
             }
             RawStationFixtureConfig::OpenWrt {
                 radio,
@@ -316,8 +345,23 @@ impl LabConfig {
             station,
             access_point,
             station_fixture: match raw.station_fixture {
-                RawStationFixtureConfig::LocalLinux { interface, phys } => {
-                    StationFixtureConfig::LocalLinux(LocalLinuxConfig { interface, phys })
+                RawStationFixtureConfig::LocalLinux {
+                    interface,
+                    phys,
+                    country,
+                    channel,
+                    address,
+                } => {
+                    let (address, prefix_length) = parse_cidr("station_fixture.address", &address)?;
+                    StationFixtureConfig::LocalLinux(LocalLinuxConfig {
+                        interface,
+                        phys,
+                        country,
+                        channel,
+                        ht40_above: channel <= 9,
+                        address,
+                        prefix_length,
+                    })
                 }
                 RawStationFixtureConfig::OpenWrt {
                     radio,
@@ -379,6 +423,10 @@ impl LabConfig {
                 };
             }
             if let StationFixtureConfig::OpenWrt(config) = &mut lab.station_fixture {
+                config.channel = lab.access_point.channel;
+                config.ht40_above = lab.access_point.channel_width == WifiChannelWidth::Mhz40Above;
+            }
+            if let StationFixtureConfig::LocalLinux(config) = &mut lab.station_fixture {
                 config.channel = lab.access_point.channel;
                 config.ht40_above = lab.access_point.channel_width == WifiChannelWidth::Mhz40Above;
             }

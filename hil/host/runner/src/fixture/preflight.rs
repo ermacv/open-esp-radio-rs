@@ -31,8 +31,9 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                     super::openwrt_fixture::doctor_tools(config)?;
                 }
             }
-            StationFixtureConfig::LocalLinux(_) => {
-                super::controlled_ap::doctor_local()?;
+            StationFixtureConfig::LocalLinux(config) => {
+                super::local_ap::check(config, &lab.station, lab.fixture_phy(scenario))
+                    .map_err(super::Error::context)?;
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     crate::image::require_program(std::ffi::OsStr::new("dumpcap"))?;
                 }

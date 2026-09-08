@@ -2,6 +2,8 @@
 set -eu
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export LC_ALL
 
 HOSTAPD=/usr/local/libexec/open-radio-hostapd
 HOSTAPD_PID=/run/open-radio-hostapd.pid
@@ -12,10 +14,11 @@ PHY_STATE="$STATE_DIR/phy"
 MAC_STATE="$STATE_DIR/mac"
 WPA_PID="$STATE_DIR/wpa-supplicant.pid"
 WPA_CONFIG="$STATE_DIR/wpa-supplicant.conf"
+AP_CONFIG="$STATE_DIR/hostapd.conf"
 WPA_CTRL="$STATE_DIR/wpa-supplicant-control"
 
 usage() {
-    echo "usage: open-radio-net {capabilities|identity|start-ht40|start-he20|client|monitor|monitor-1|monitor-6|monitor-11|observer|managed|stop|status|usb-reset|kernel-log}" >&2
+    echo "usage: open-radio-net {capabilities|identity|ap|client|monitor|monitor-1|monitor-6|monitor-11|observer|managed|stop|status|usb-reset|kernel-log}" >&2
     exit 64
 }
 
@@ -54,7 +57,7 @@ stop_radio_services() {
         >/dev/null 2>&1 || true
     /usr/bin/ip link set wlan0 down 2>/dev/null || true
     /usr/bin/ip address flush dev wlan0 2>/dev/null || true
-    /bin/rm -f "$WPA_CONFIG"
+    /bin/rm -f "$WPA_CONFIG" "$AP_CONFIG"
     /bin/rm -rf "$WPA_CTRL"
 }
 
@@ -111,52 +114,68 @@ recreate_managed_interface() {
     /usr/bin/ip address flush dev wlan0 2>/dev/null || true
 }
 
+# A fixed stdin protocol: no caller-provided paths or hostapd directives.
+read_ap_profile() {
+    IFS= read -r ap_ssid_hex
+    IFS= read -r ap_passphrase
+    IFS= read -r ap_country
+    IFS= read -r ap_channel
+    IFS= read -r ap_width
+    IFS= read -r ap_he
+    IFS= read -r ap_address
+    IFS= read -r ap_dhcp
+    case "$ap_ssid_hex" in ''|*[!0-9a-f]*) return 64;; esac
+    test "${#ap_ssid_hex}" -le 64
+    test "$(( ${#ap_ssid_hex} % 2 ))" -eq 0
+    test "${#ap_passphrase}" -ge 8
+    test "${#ap_passphrase}" -le 63
+    case "$ap_passphrase" in *"$(printf '\r')"*) return 64;; esac
+    case "$ap_country" in [A-Z][A-Z]) ;; *) return 64;; esac
+    case "$ap_channel" in [1-9]|1[0-3]) ;; *) return 64;; esac
+    case "$ap_width" in
+        HT20) ap_ht='[SHORT-GI-20]';;
+        HT40+) test "$ap_channel" -le 9; ap_ht='[HT40+][SHORT-GI-20][SHORT-GI-40]';;
+        HT40-) test "$ap_channel" -ge 5; ap_ht='[HT40-][SHORT-GI-20][SHORT-GI-40]';;
+        *) return 64;;
+    esac
+    case "$ap_he" in 0) ;; 1) test "$ap_width" = HT20;; *) return 64;; esac
+    # Validate the small network argument grammar before touching the radio.
+    # ip/dnsmasq additionally validate address and mask semantics.
+    case "$ap_address" in ''|*[!0-9./]*) return 64;; esac
+    case "$ap_dhcp" in ''|*[!0-9.,]*) return 64;; esac
+    printf '%s\n' "$ap_address" | /usr/bin/awk -F/ 'NF != 2 || $2 < 1 || $2 > 30 {exit 1} {n=split($1,a,"."); if(n!=4) exit 1; for(i=1;i<=4;i++) if(a[i]=="" || a[i]>255) exit 1}'
+    printf '%s\n' "$ap_dhcp" | /usr/bin/awk -F, 'NF != 3 {exit 1} {for(j=1;j<=3;j++) {n=split($j,a,"."); if(n!=4) exit 1; for(i=1;i<=4;i++) if(a[i]=="" || a[i]>255) exit 1}}'
+}
+
+write_ap_profile() {
+    printf 'interface=wlan0\ndriver=nl80211\nctrl_interface=%s\nctrl_interface_group=network\n' "$CTRL_DIR"
+    printf 'ssid2=%s\ncountry_code=%s\nhw_mode=g\nchannel=%s\n' "$ap_ssid_hex" "$ap_country" "$ap_channel"
+    printf 'ieee80211n=1\nht_capab=%s\nieee80211ax=%s\nwmm_enabled=1\n' "$ap_ht" "$ap_he"
+    printf 'auth_algs=1\nwpa=2\nwpa_passphrase=%s\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\n' "$ap_passphrase"
+}
+
 start_ap() {
-    config=$1
-    expected_width=$2
-    expected_channel=$3
+    read_ap_profile
     take_network_manager_ownership
     remember_wifi_identity
     stop_radio_services
     restore_managed_interface
     /usr/bin/ip link set wlan0 up
+    /bin/mkdir -p "$STATE_DIR"
+    /bin/chmod 0700 "$STATE_DIR"
+    umask 077
+    write_ap_profile >"$AP_CONFIG"
     /bin/rm -rf "$CTRL_DIR"
     /bin/mkdir -m 0750 "$CTRL_DIR"
     /bin/chown root:network "$CTRL_DIR"
-    "$HOSTAPD" -B -P "$HOSTAPD_PID" "$config"
-    # Regulatory initialization and the 20/40 MHz coexistence scan can take
-    # longer than five seconds after an iwlwifi firmware reload. Poll the
-    # observable channel contract instead of treating the old timing as part
-    # of the qualification contract.
-    attempts=0
-    maximum_attempts=200
-    while test "$attempts" -lt "$maximum_attempts"; do
-        info=$(/usr/bin/iw dev wlan0 info 2>/dev/null || true)
-        if /usr/bin/printf '%s\n' "$info" \
-            | /usr/bin/grep -Fq "channel $expected_channel " \
-            && /usr/bin/printf '%s\n' "$info" \
-            | /usr/bin/grep -Fq "width: $expected_width MHz"
-        then
-            break
-        fi
-        attempts=$((attempts + 1))
-        /bin/sleep 0.1
-    done
-    if test "$attempts" -eq "$maximum_attempts"; then
-        echo "open-radio-net: AP did not enter the required $expected_width MHz channel width" >&2
-        if test "$expected_width" -eq 40; then
-            echo "open-radio-net: HT40 may have been rejected by 20/40 BSS coexistence; do not qualify this run as HT40" >&2
-        fi
-        /usr/bin/iw dev wlan0 info >&2 2>/dev/null || true
-        stop_radio_services
-        exit 1
-    fi
-    /usr/bin/ip address add 10.42.0.1/24 dev wlan0
+    "$HOSTAPD" -B -P "$HOSTAPD_PID" "$AP_CONFIG"
+    # The Rust owner attaches to hostapd's control socket and waits for ENABLED.
+    /usr/bin/ip address add "$ap_address" dev wlan0
     /usr/bin/dnsmasq \
         --conf-file=/dev/null \
         --interface=wlan0 \
         --bind-interfaces \
-        --dhcp-range=10.42.0.10,10.42.0.254,255.255.255.0,1h \
+        --dhcp-range="$ap_dhcp,1h" \
         --pid-file="$DNSMASQ_PID"
 }
 
@@ -285,7 +304,7 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=7 station_ap=he20,ht40 client=1 observer=20,40 managed=1\n'
+        /usr/bin/printf 'schema=8 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then
@@ -297,11 +316,8 @@ case "$1" in
             /usr/bin/printf '%s\n' "$phy"
         fi
         ;;
-    start-ht40)
-        start_ap /etc/open-radio/hostapd-ht40.conf 40 1
-        ;;
-    start-he20)
-        start_ap /etc/open-radio/hostapd-he20.conf 20 11
+    ap)
+        start_ap
         ;;
     client)
         start_client

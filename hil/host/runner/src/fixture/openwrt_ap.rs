@@ -258,42 +258,12 @@ pub(crate) fn probe(config: &OpenWrtConfig, profile: Profile) -> Result<()> {
 }
 
 fn verify_capabilities(profile: Profile, info: &str) -> Result<()> {
-    let primary = format!("[{}]", profile.channel);
-    let channel = info
-        .lines()
-        .find(|line| line.split_whitespace().any(|word| word == primary))
-        .ok_or("OpenWrt PHY does not advertise the requested channel")?;
-    if channel.contains("disabled") || channel.contains("no IR") {
-        return Err(
-            "OpenWrt regulatory state prohibits AP operation on the requested channel".into(),
-        );
-    }
-    if !info.lines().any(|line| line.trim() == "* AP") || !info.contains("HT20/HT40") {
-        return Err("OpenWrt radio does not advertise the required HT AP capability".into());
-    }
-    if profile.phy == PhyExpectation::He20
-        && !info.lines().any(|line| {
-            line.contains("HE Iftypes:") && line.split([' ', ',', '\t']).any(|word| word == "AP")
-        })
-    {
-        return Err("OpenWrt radio does not advertise HE support for the AP interface type".into());
-    }
-    if profile.phy == PhyExpectation::Ht40 {
-        let secondary = if profile.ht40_above {
-            profile.channel + 4
-        } else {
-            profile.channel - 4
-        };
-        let marker = format!("[{secondary}]");
-        if !info.lines().any(|line| {
-            line.split_whitespace().any(|word| word == marker)
-                && !line.contains("disabled")
-                && !line.contains("no IR")
-        }) {
-            return Err("OpenWrt cannot use the HT40 secondary channel".into());
-        }
-    }
-    Ok(())
+    super::channel::verify_ap_capabilities(
+        profile.channel,
+        (profile.phy == PhyExpectation::Ht40).then_some(profile.ht40_above),
+        profile.phy == PhyExpectation::He20,
+        info,
+    )
 }
 
 fn ssh(config: &OpenWrtConfig, script: &str) -> Command {

@@ -24,18 +24,16 @@ fi
 
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -d -o root -g root -m 0755 /usr/local/sbin
-install -d -o root -g root -m 0755 /etc/open-radio
 if test -x "$hostapd_source"; then
     install -o root -g root -m 0755 "$hostapd_source" "$hostapd_installed"
 fi
 install -o root -g root -m 0755 "$script_dir/open-radio-net" /usr/local/sbin/open-radio-net
-install -o root -g root -m 0644 "$script_dir/hostapd-ht40.conf" /etc/open-radio/hostapd-ht40.conf
-install -o root -g root -m 0644 "$script_dir/hostapd-he20.conf" /etc/open-radio/hostapd-he20.conf
+
+rm -f /etc/open-radio/hostapd-ht40.conf /etc/open-radio/hostapd-he20.conf
 
 sudoers=/etc/sudoers.d/open-radio-net
 {
-    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net start-ht40"
-    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net start-he20"
+    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net ap"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net capabilities"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net identity"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net client"

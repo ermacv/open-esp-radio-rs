@@ -84,6 +84,12 @@ impl Prepared {
                     &owner.report()?,
                 )?;
             }
+            if let ControlledAp::Local(owner) = &ap {
+                crate::evidence::run::atomic_json(
+                    &output.join("fixture-applied.json"),
+                    &owner.report(),
+                )?;
+            }
             Some(RefCell::new(ap))
         } else {
             None

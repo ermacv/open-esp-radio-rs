@@ -156,6 +156,17 @@ cargo hil fixture install-host
 non-interactive sudo capability before a scenario takes ownership of WLAN.
 
 The installer needs interactive sudo authorization. Routine scenarios use the
-installed narrow helper without prompting. Local Linux AP profiles still require
-the separately installed hostapd binary and profile credentials; this local
-provisioning path is distinct from the automatically configured OpenWrt backend.
+installed narrow helper without prompting. Local Linux AP profiles are generated
+from the station credentials and `station_fixture.country`, `channel` and CIDR
+`address`; HT/HE mode comes from the scenario. The DHCP range excludes the AP
+address and stays inside its subnet. Static station addresses must agree with
+that subnet and gateway. The helper receives these values on stdin and keeps the
+temporary hostapd configuration under root-owned `/run` with private permissions;
+stop/cleanup removes it. No installed credential profiles are consumed.
+
+The runner subscribes to hostapd control events, confirms ENABLED and actual
+HT/HE mode, WPA2, channel geometry and IPv4 address before workload execution.
+It records these non-secret settings in `fixture-applied.json`. The Linux helper
+still owns only `wlan0`; cleanup returns it to managed mode. Hostapd itself remains
+a separately provisioned binary consumed by the installer. Updating the helper
+contract requires rerunning `cargo hil fixture install-host`.

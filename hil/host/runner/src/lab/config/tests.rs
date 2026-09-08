@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn linux_fixture_requires_explicit_radio_and_network_settings() {
+    use std::io::Write;
+    let mut raw: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    raw["station_fixture"] = toml::from_str("kind='local-linux'\ninterface='wlan0'\nphys=['ht20','ht40','he20']\ncountry='DE'\nchannel=13\naddress='10.42.0.1/24'\n").unwrap();
+    for (key, value, valid) in [
+        ("country", toml::Value::String("DE".into()), true),
+        ("country", toml::Value::String("D".into()), false),
+        ("channel", toml::Value::Integer(14), false),
+        ("address", toml::Value::String("10.42.0.1/32".into()), false),
+    ] {
+        let mut candidate = raw.clone();
+        candidate["station_fixture"][key] = value;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
+            .unwrap();
+        assert_eq!(LabConfig::load(file.path()).is_ok(), valid, "{key}");
+    }
+}
+
+#[test]
 fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
     let lab = LabConfig::for_test();
     let catalog =

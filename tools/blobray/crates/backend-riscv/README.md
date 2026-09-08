@@ -10,3 +10,19 @@ typed harness specification. The backend depends on the analysis model and
 Reviewed memory facts are declared in `analysis-model`; this backend retains
 its public re-exports for existing consumers. Pointer-layout recognition and
 all instruction/ABI semantics remain here.
+
+`ExecutableImage::load_entry` accepts a linked ELF or a regular static archive.
+For an archive, it links the selected entry and its dependencies into a temporary
+RV32 analysis image using the installed Rust toolchain's `rust-lld`.
+`BLOBRAY_RISCV_LINKER` can select a GNU-compatible RV32 linker instead.
+The analysis link disables relaxation and retains relocations. Missing callees
+remain unresolved, and missing data definitions poison their relocation sites;
+reaching either cannot establish equivalence. Unrelated unreachable definitions
+do not prevent execution. Link errors (including conflicting definitions and
+unsupported relocations) are reported explicitly.
+
+`advanced execute run` and `advanced execute compare` use this entry loader.
+Reports identify the original archive and its hash. Archive code addresses use
+an analysis placement starting at `0x40000000`; they are not firmware addresses
+or evidence of final linker placement. Authentic firmware ELF images remain
+necessary when the behavior depends on final placement or runtime initialization.

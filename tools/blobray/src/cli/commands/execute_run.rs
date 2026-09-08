@@ -128,7 +128,7 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap, target: &TargetSpec)
     let concrete_only = arguments.concrete_only;
     let print_timeline = arguments.timeline;
     let companion = arguments.companion;
-    let mut image = execution::ExecutableImage::load(&artifact)?;
+    let mut image = execution::ExecutableImage::load_entry(&artifact, &symbol)?;
     if let Some(companion) = companion.as_deref() {
         image.add_companion(companion)?;
     }

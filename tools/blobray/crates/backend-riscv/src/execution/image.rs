@@ -1,6 +1,7 @@
 //! Linked ELF image model and stable executable-analysis facade.
 
 mod access;
+mod archive;
 mod closure_identity;
 mod coverage;
 mod loader;

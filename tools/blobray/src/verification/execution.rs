@@ -484,12 +484,12 @@ pub(crate) fn compare_execution_scenarios(
     }
     let vendor_report = artifact_report(vendor)?;
     let rust_report = artifact_report(rust)?;
-    let mut vendor_image = execution::ExecutableImage::load(vendor.artifact)?;
+    let mut vendor_image = execution::ExecutableImage::load_entry(vendor.artifact, vendor.symbol)?;
     if let Some(companion) = vendor.companion {
         vendor_image.add_companion(companion)?;
     }
     vendor_image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
-    let mut rust_image = execution::ExecutableImage::load(rust.artifact)?;
+    let mut rust_image = execution::ExecutableImage::load_entry(rust.artifact, rust.symbol)?;
     if let Some(companion) = rust.companion {
         rust_image.add_companion(companion)?;
     }

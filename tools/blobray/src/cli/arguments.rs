@@ -855,7 +855,7 @@ impl FromStr for CaseArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ExecuteRunArgs {
-    /// Executable artifact containing the entry function.
+    /// ELF or static archive containing the entry function.
     #[arg(long)]
     pub(crate) artifact: Option<PathBuf>,
     /// Companion image used for symbol and call resolution.
@@ -901,7 +901,7 @@ pub(crate) struct ExecuteReplayArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ExecuteCompareArgs {
-    /// Vendor executable containing the reference function.
+    /// Vendor ELF or static archive containing the reference function.
     #[arg(long)]
     pub(crate) vendor_artifact: Option<PathBuf>,
     /// Companion image for the vendor executable.
@@ -910,7 +910,7 @@ pub(crate) struct ExecuteCompareArgs {
     /// Vendor function symbol.
     #[arg(long)]
     pub(crate) vendor_symbol: Option<String>,
-    /// Rust executable containing the candidate function.
+    /// Rust ELF or static archive containing the candidate function.
     #[arg(long)]
     pub(crate) rust_artifact: Option<PathBuf>,
     /// Companion image for the Rust executable.
@@ -932,13 +932,13 @@ pub(crate) struct VerifyProfilesArgs {
     /// Execution profile manifest.
     #[arg(long)]
     pub(crate) profiles: Option<PathBuf>,
-    /// Vendor executable tested by every selected profile.
+    /// Vendor ELF or static archive tested by every selected profile.
     #[arg(long)]
     pub(crate) vendor_artifact: Option<PathBuf>,
     /// Companion image for the vendor executable.
     #[arg(long)]
     pub(crate) vendor_companion: Option<PathBuf>,
-    /// Rust executable tested by every selected profile.
+    /// Rust ELF or static archive tested by every selected profile.
     #[arg(long)]
     pub(crate) rust_artifact: Option<PathBuf>,
     /// Companion image for the Rust executable.

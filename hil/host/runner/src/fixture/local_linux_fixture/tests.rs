@@ -7,11 +7,9 @@ fn failed_or_malformed_capture_is_infrastructure() {
         "echo 'injected dumpcap failure' >&2; exit 7",
         "echo 'Packets captured: 4' >&2",
     ] {
-        let child = Command::new("sh")
-            .args(["-c", script])
-            .stderr(Stdio::piped())
-            .spawn_owned()
-            .unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", &format!("echo 'ready' >&2; read command; {script}")]);
+        let child = Capture::start(&mut command, "ready".into(), Duration::from_secs(5)).unwrap();
         let error = LocalPacketCapture { child: Some(child) }
             .finish()
             .unwrap_err();

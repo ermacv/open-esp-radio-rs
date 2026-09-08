@@ -14,7 +14,6 @@ use open_esp_radio_hil_protocol::WifiMonitorCaptureRequest;
 
 use crate::{
     Result,
-    fixture::controlled_ap::ControlledAp,
     scenario::PhyExpectation,
     session::{MonitorCaptureEvidence, SerialCapture},
     workload::ieee80211::control::{scan, start_station, stop_station},
@@ -32,14 +31,9 @@ pub(crate) fn run(
     options: Config,
     artifact_dir: &Path,
     context: &Context<'_>,
-    phy: PhyExpectation,
+    _phy: PhyExpectation,
 ) -> Result<()> {
     let options = options.validate()?;
-    let _access_point = Some(ControlledAp::start(
-        &context.lab.station,
-        &context.lab.station_fixture,
-        phy,
-    )?);
     fs::create_dir_all(artifact_dir)?;
     if let Some(parent) = options.output.parent()
         && !parent.as_os_str().is_empty()

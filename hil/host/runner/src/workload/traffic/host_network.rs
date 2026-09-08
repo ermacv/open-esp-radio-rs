@@ -163,9 +163,14 @@ pub(crate) fn reject_overlapping_ipv4_links(device: Ipv4Addr) -> Result<()> {
         .supervised_output()
     {
         Ok(output) if output.status.success() => output.stdout,
-        // The runner remains usable on non-Linux hosts. Linux qualification
-        // cells have `ip` and therefore get the strict ARP-flux preflight.
-        Ok(_) | Err(_) => return Ok(()),
+        Ok(output) => {
+            return Err(crate::fixture::Error::new(format!(
+                "cannot inspect host IPv4 topology: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
+            .into());
+        }
+        Err(error) => return Err(crate::fixture::Error::context(error)),
     };
     let links = overlapping_ipv4_links(&String::from_utf8_lossy(&output), device);
     if links.len() > 1 {

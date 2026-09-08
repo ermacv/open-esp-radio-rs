@@ -1,12 +1,8 @@
 //! Session-bounded evidence from the laptop-owned nl80211 AP.
 
+use super::capture_process::{self, Capture};
 use oer_process::CommandExt as _;
-use oer_process::owned::Child;
-use std::{
-    net::Ipv4Addr,
-    process::{Command, Stdio},
-    time::Duration,
-};
+use std::{net::Ipv4Addr, process::Command, time::Duration};
 
 use crate::{Result, lab::config::LocalLinuxConfig, scenario::PhyExpectation};
 
@@ -59,7 +55,7 @@ pub(crate) struct LocalLinuxTxCapture {
 }
 
 struct LocalPacketCapture {
-    child: Option<Child>,
+    child: Option<Capture>,
 }
 
 impl LocalLinuxRxCapture {
@@ -158,32 +154,13 @@ impl LocalLinuxTxCapture {
 
 impl LocalPacketCapture {
     fn start(interface: &str, filter: &str, traffic_duration: Duration) -> Result<Self> {
-        let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
-        let mut child = Command::new("dumpcap")
-            .args([
-                "-q",
-                "-i",
-                interface,
-                "-f",
-                filter,
-                "-a",
-                &format!("duration:{}", timeout.as_secs().max(1)),
-                "-w",
-                "/dev/null",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn_owned()
-            .map_err(|error| crate::error::context("start packet capture", error))?
-            .with_timeout(timeout.saturating_add(Duration::from_secs(10)));
-        oer_process::sleep(Duration::from_millis(500))?;
-        if child.try_wait()?.is_some() {
-            return Err(crate::fixture::Error::new(
-                "local AP packet capture exited before the HIL session started",
-            )
-            .into());
-        }
+        let child = capture_process::dumpcap(
+            interface,
+            Some(filter),
+            128,
+            std::path::Path::new("/dev/null"),
+            traffic_duration,
+        )?;
         Ok(Self { child: Some(child) })
     }
 
@@ -192,7 +169,7 @@ impl LocalPacketCapture {
             .child
             .take()
             .expect("local fixture owns packet capture")
-            .wait_with_output()?;
+            .finish()?;
         if !output.status.success() {
             return Err(crate::fixture::Error::new(format!(
                 "local AP packet capture exited with {}: {}",
@@ -211,17 +188,6 @@ impl LocalPacketCapture {
             .into());
         }
         Ok(udp_packets)
-    }
-}
-
-impl Drop for LocalPacketCapture {
-    fn drop(&mut self) {
-        oer_process::cleanup(|| {
-            if let Some(capture) = &mut self.child {
-                let _ = capture.kill();
-                let _ = capture.wait();
-            }
-        });
     }
 }
 

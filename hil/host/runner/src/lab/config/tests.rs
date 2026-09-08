@@ -1,5 +1,44 @@
 use super::*;
 
+#[test]
+fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
+    let lab = LabConfig::for_test();
+    let catalog =
+        crate::scenario::Catalog::load(&repository_root().unwrap().join("hil/scenarios")).unwrap();
+    let mut tested = 0;
+    for scenario in catalog.all() {
+        if !matches!(
+            scenario.workload,
+            crate::scenario::Workload::AccessPoint { .. }
+        ) {
+            continue;
+        }
+        let resolved = lab.resolve_scenario(scenario);
+        let StationFixtureConfig::OpenWrt(config) = &resolved.station_fixture else {
+            panic!("OpenWrt test lab");
+        };
+        assert_eq!(config.channel, resolved.access_point.channel());
+        let expected = if resolved.fixture_phy(scenario) == PhyExpectation::Ht40 {
+            40
+        } else {
+            20
+        };
+        assert_eq!(resolved.access_point.bandwidth_mhz(), expected);
+        if expected == 40 {
+            assert_eq!(
+                config.ht40_above,
+                resolved.access_point.channel_width() == WifiChannelWidth::Mhz40Above
+            );
+        }
+        tested += 1;
+    }
+    assert!(tested > 0);
+    assert_eq!(
+        lab.access_point.channel_width(),
+        WifiChannelWidth::Mhz40Above
+    );
+}
+
 fn openwrt_config(phys: &[&str]) -> tempfile::NamedTempFile {
     use std::io::Write;
 

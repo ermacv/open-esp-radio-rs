@@ -8,7 +8,7 @@ use crate::Result;
 pub(crate) const PATH: &str = "/usr/local/sbin/open-radio-net";
 pub(crate) const ASSOCIATION_TIMEOUT: i32 = 10;
 const REQUIRED_CAPABILITIES: &str =
-    "schema=6 station_ap=he20,ht40 client=1 observer=ht40 managed=1";
+    "schema=7 station_ap=he20,ht40 client=1 observer=20,40 managed=1";
 
 /// Validate the installed command protocol before a selected run can flash or
 /// reset the DUT. System-only and remote-only workloads do not need this helper.

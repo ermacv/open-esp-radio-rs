@@ -1,7 +1,9 @@
 //! Independent passive 802.11 evidence from the laptop radio.
 
+use super::capture_process::{self, Capture};
+use super::channel::Geometry;
 use oer_process::CommandExt as _;
-use oer_process::owned::Child;
+use std::io::Write as _;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -20,6 +22,21 @@ use crate::{
 const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;
 const RETRY_GROUP_SECONDS: f64 = 0.100;
+
+/// Exercise monitor setup, capture readiness, decoding and restoration without
+/// contacting a target. The synthetic MAC is only a parser filter, never TX.
+pub(crate) fn check_without_device(config: &OpenWrtConfig, output: &Path) -> Result<()> {
+    let geometry = resolve_observer_action(config)?;
+    let capture = LocalAirMonitorCapture::start_for_target(
+        "02:00:00:00:00:01".into(),
+        Duration::from_secs(1),
+        output,
+        Some(geometry),
+        true,
+    )?;
+    let evidence = capture.finish()?;
+    crate::evidence::run::atomic_json(&output.join("fixture-monitor.json"), &evidence)
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct LocalAirMonitorEvidence {
@@ -73,7 +90,7 @@ pub(crate) struct TargetEgressAirTimingEvidence {
 pub(crate) struct LocalAirMonitorCapture {
     output: PathBuf,
     target_mac: String,
-    child: Option<Child>,
+    child: Option<Capture>,
     owns_monitor: bool,
 }
 
@@ -92,7 +109,7 @@ impl LocalAirMonitorCapture {
             target_mac,
             duration,
             output,
-            resolve_observer_action(config).map_err(crate::fixture::Error::context)?,
+            Some(resolve_observer_action(config).map_err(crate::fixture::Error::context)?),
             true,
         )
     }
@@ -105,14 +122,14 @@ impl LocalAirMonitorCapture {
         duration: Duration,
         output: &Path,
     ) -> Result<Self> {
-        Self::start_for_target(target_mac, duration, output, "monitor", false)
+        Self::start_for_target(target_mac, duration, output, None, false)
     }
 
     fn start_for_target(
         target_mac: String,
         duration: Duration,
         output: &Path,
-        observer_action: &str,
+        geometry: Option<Geometry>,
         restore_managed: bool,
     ) -> Result<Self> {
         let mut owner = Self {
@@ -121,36 +138,49 @@ impl LocalAirMonitorCapture {
             child: None,
             owns_monitor: restore_managed,
         };
-        helper_action(observer_action)?;
-        let timeout = duration.saturating_add(Duration::from_secs(3));
-        owner.child = Some(
-            Command::new("dumpcap")
-                // libpcap's `wlan host` capture filter drops the target's HT40
-                // A-MPDU records on this radiotap interface. Capture the bounded
-                // channel view and apply the exact target-MAC display filter in
-                // `parse_capture` instead.
-                .args(["-q", "-i", MONITOR_INTERFACE, "-s", "512"])
-                .args(["-a", &format!("duration:{}", timeout.as_secs().max(1))])
-                .arg("-w")
-                .arg(&owner.output)
-                .stdin(Stdio::null())
+        if let Some(geometry) = geometry {
+            let mut command = Command::new("sudo");
+            command
+                .args(["-n", crate::fixture::network_helper::PATH, "observer"])
+                .stdin(Stdio::piped())
                 .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn_owned()?
-                .with_timeout(timeout.saturating_add(Duration::from_secs(10))),
-        );
-        oer_process::sleep(Duration::from_millis(500))?;
-        if let Some(status) = owner
-            .child
-            .as_mut()
-            .expect("capture owns its child")
-            .try_wait()?
-        {
-            return Err(crate::fixture::Error::new(format!(
-                "independent laptop capture exited before the session started: {status}"
-            ))
-            .into());
+                .stderr(Stdio::piped());
+            let mut child = command.spawn_owned()?;
+            writeln!(
+                child.stdin.take().ok_or("observer stdin unavailable")?,
+                "{} {}",
+                geometry.frequency,
+                geometry.iw_width()?
+            )?;
+            let result = child.wait_with_output_timeout(Some(Duration::from_secs(20)))?;
+            if !result.status.success() {
+                return Err(crate::fixture::Error::new(format!(
+                    "cannot prepare observer: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                ))
+                .into());
+            }
+            let observed = Command::new("iw")
+                .args(["dev", MONITOR_INTERFACE, "info"])
+                .supervised_output()?;
+            if !observed.status.success()
+                || Geometry::parse(&String::from_utf8(observed.stdout)?)? != geometry
+            {
+                return Err(crate::fixture::Error::new(
+                    "observer channel differs from the active OpenWrt channel",
+                )
+                .into());
+            }
+        } else {
+            helper_action("monitor")?;
         }
+        owner.child = Some(capture_process::dumpcap(
+            MONITOR_INTERFACE,
+            None,
+            512,
+            &owner.output,
+            duration,
+        )?);
         Ok(owner)
     }
 
@@ -159,7 +189,7 @@ impl LocalAirMonitorCapture {
             .child
             .take()
             .expect("independent monitor capture owns its child")
-            .wait_with_output();
+            .finish();
         let restore = self.restore_managed();
         let output = output?;
         restore?;
@@ -203,7 +233,7 @@ impl LocalAirMonitorCapture {
     }
 }
 
-fn resolve_observer_action(config: &OpenWrtConfig) -> Result<&'static str> {
+fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
     let output = Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
@@ -219,37 +249,14 @@ fn resolve_observer_action(config: &OpenWrtConfig) -> Result<&'static str> {
     resolve_observer_action_from_iw(&String::from_utf8(output.stdout)?)
 }
 
-fn resolve_observer_action_from_iw(info: &str) -> Result<&'static str> {
-    let channel = info.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix("channel ")?
-            .split_whitespace()
-            .next()?
-            .parse::<u8>()
-            .ok()
-    });
-    match channel {
-        Some(1) => Ok("observer-ht40-1"),
-        Some(6) => Ok("observer-ht40-6"),
-        Some(11) => Ok("observer-ht40-11"),
-        Some(13) => Ok("observer-ht40-13"),
-        Some(channel) => Err(crate::fixture::Error::new(format!(
-            "independent HT40 monitor does not support OpenWrt primary channel {channel}"
-        ))
-        .into()),
-        None => {
-            Err(crate::fixture::Error::new("OpenWrt interface did not report its channel").into())
-        }
-    }
+fn resolve_observer_action_from_iw(info: &str) -> Result<Geometry> {
+    Geometry::parse(info).map_err(crate::fixture::Error::context)
 }
 
 impl Drop for LocalAirMonitorCapture {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
-            if let Some(child) = &mut self.child {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+            drop(self.child.take());
             crate::fixture::cleanup::record("restore monitor interface", || self.restore_managed());
         });
     }

@@ -101,6 +101,17 @@ fn run() -> Result<()> {
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
         CliCommand::Archive { command } => archive::run(&root, command),
+        CliCommand::Fixture {
+            command: cli::FixtureCommand::InstallHost,
+        } => fixture::install::run(&root),
+        CliCommand::Fixture {
+            command: cli::FixtureCommand::Check { scenario },
+        } => {
+            let catalog = crate::scenario::Catalog::load(&catalog_path)?;
+            let selected = catalog.get(&scenario)?;
+            let lab = crate::lab::config::LabConfig::load(&lab_path)?;
+            crate::fixture::prepared::check_without_device(&root, &lab, selected)
+        }
         CliCommand::Doctor(selection) => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
@@ -335,7 +346,11 @@ fn run_all(
         }
         let mut executable = Vec::with_capacity(class_scenarios.len());
         for entry in class_scenarios {
-            if let Some(failure) = scenario_precondition(lab, entry) {
+            if let Some(failure) = scenario_precondition(lab, entry).or_else(|| {
+                fixture::preflight::check(lab, entry)
+                    .err()
+                    .map(|error| execution::classify(&*error))
+            }) {
                 session.record_event(
                     "scenario-blocked",
                     Some(&entry.id),
@@ -396,7 +411,11 @@ fn run_one(
         Some(firmware.plan()),
         invocation,
     )?;
-    if let Some(failure) = scenario_precondition(lab, selected) {
+    if let Some(failure) = scenario_precondition(lab, selected).or_else(|| {
+        fixture::preflight::check(lab, selected)
+            .err()
+            .map(|error| execution::classify(&*error))
+    }) {
         session.record_event(
             "scenario-blocked",
             Some(&selected.id),
@@ -509,17 +528,18 @@ fn scenario_precondition(
     lab: &crate::lab::config::LabConfig,
     selected: &crate::scenario::Scenario,
 ) -> Option<crate::evidence::run::Failure> {
-    selected.link.and_then(|link| {
-        lab.station_fixture
-            .require_phy(link.phy)
-            .err()
-            .map(|error| {
-                crate::evidence::run::Failure::new(
-                    crate::evidence::run::FailureKind::Precondition,
-                    error.to_string(),
-                )
-            })
-    })
+    if !crate::lab::requirements::Requirements::for_scenario(selected).station_network {
+        return None;
+    }
+    lab.station_fixture
+        .require_phy(lab.fixture_phy(selected))
+        .err()
+        .map(|error| {
+            crate::evidence::run::Failure::new(
+                crate::evidence::run::FailureKind::Precondition,
+                error.to_string(),
+            )
+        })
 }
 
 fn prepare_image(
@@ -707,11 +727,16 @@ fn run_scenario_repetition(
     artifacts: &Path,
     output: &Path,
 ) -> Result<crate::evidence::run::RepetitionResult> {
+    let resolved = lab.resolve_scenario(selected);
+    let lab = &resolved;
     let started_unix_millis = crate::evidence::run::unix_millis()?;
     let started = std::time::Instant::now();
     let cleanup = crate::fixture::cleanup::Scope::new(output);
     let (mut outcome, mut failure, measurements) =
-        match validate_flashed_image(lab, selected.image, output) {
+        match crate::fixture::prepared::Prepared::start(lab, selected, output).and_then(|fixture| {
+            validate_flashed_image(lab, selected.image, output)?;
+            Ok(fixture)
+        }) {
             Err(error) => {
                 use crate::evidence::run::{FailureKind, Outcome};
                 let mut failure = execution::classify(&*error);
@@ -727,8 +752,8 @@ fn run_scenario_repetition(
                 };
                 (outcome, Some(failure), Vec::new())
             }
-            Ok(()) => {
-                let evidence = execution::execute_workload(lab, selected, output);
+            Ok(fixture) => {
+                let evidence = execution::execute_workload(lab, selected, output, &fixture);
                 (evidence.outcome(), evidence.failure, evidence.measurements)
             }
         };

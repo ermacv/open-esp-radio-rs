@@ -26,11 +26,10 @@ pub(crate) fn run(
     timeout: Duration,
     output: &Path,
     context: &Context<'_>,
-    phy: PhyExpectation,
+    _phy: PhyExpectation,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
-    let mut upstream =
-        ControlledAp::start(&context.lab.station, &context.lab.station_fixture, phy)?;
+    let mut upstream = context.ap()?;
     context.with_capture(output, |capture| {
         qualify(capture, timeout, context, &mut upstream)
     })?;

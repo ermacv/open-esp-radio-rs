@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn before_observation_accepts_down_vifs_but_does_not_hide_probe_errors() {
+    assert!(!openwrt_has_active_channel(Some(42), "").unwrap());
+    assert!(!openwrt_has_active_channel(Some(0), "Interface phy0-ap0\n\ttype AP\n").unwrap());
+    assert!(openwrt_has_active_channel(Some(0), "\tchannel 13 (2472 MHz)\n").unwrap());
+    assert!(openwrt_has_active_channel(Some(1), "").is_err());
+    assert!(openwrt_has_active_channel(Some(255), "").is_err());
+}
+
+#[test]
+fn inactive_before_state_is_valid_provenance_for_a_network_scenario() {
+    let lab = LabConfig::for_test();
+    let mut provenance = LabProvenance::capture(&lab, Default::default()).unwrap();
+    provenance.scope = ObservationScope::Network;
+    provenance.fixture = FixtureObservation::OpenWrtInactive {
+        wireless_interface: "phy0-ap0".into(),
+    };
+    provenance
+        .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+        .unwrap();
+    provenance.fixture = FixtureObservation::OpenWrtInactive {
+        wireless_interface: "another-radio".into(),
+    };
+    assert!(
+        provenance
+            .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+            .is_err()
+    );
+}
+
+#[test]
 fn system_observation_does_not_contact_the_configured_access_point() {
     let mut lab = LabConfig::for_test();
     let StationFixtureConfig::OpenWrt(config) = &mut lab.station_fixture else {

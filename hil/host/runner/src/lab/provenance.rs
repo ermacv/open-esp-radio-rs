@@ -142,6 +142,7 @@ pub(crate) enum FixtureObservation {
     NotUsed,
     LocalLinux,
     OpenWrt(Box<OpenWrtObservation>),
+    OpenWrtInactive { wireless_interface: String },
     External { managed: bool },
 }
 
@@ -195,9 +196,7 @@ impl LabProvenance {
         } else {
             match &lab.station_fixture {
                 StationFixtureConfig::LocalLinux(_) => FixtureObservation::LocalLinux,
-                StationFixtureConfig::OpenWrt(config) => {
-                    FixtureObservation::OpenWrt(Box::new(capture_openwrt(config)?))
-                }
+                StationFixtureConfig::OpenWrt(config) => capture_openwrt_before(config)?,
                 StationFixtureConfig::External(_) => {
                     FixtureObservation::External { managed: false }
                 }
@@ -254,19 +253,12 @@ impl LabProvenance {
                 StationFixtureDefinition::OpenWrt {
                     wireless_interface,
                     ingress_interface,
-                    phys,
                     ..
                 },
                 FixtureObservation::OpenWrt(observation),
             ) => {
-                let width_matches = phys.iter().any(|phy| match phy {
-                    PhyExpectation::He20 | PhyExpectation::Ht20 => observation.width_mhz == 20,
-                    PhyExpectation::Ht40 => observation.width_mhz == 40,
-                });
                 if observation.wireless_interface != *wireless_interface
                     || observation.ingress_interface != *ingress_interface
-                    || observation.interface_type != "AP"
-                    || !width_matches
                     || !observation.concurrent_interfaces.iter().any(|interface| {
                         interface.name == *wireless_interface
                             && interface.interface_type == observation.interface_type
@@ -275,6 +267,14 @@ impl LabProvenance {
                     return Err("lab provenance has an inconsistent OpenWrt observation".into());
                 }
             }
+            (
+                StationFixtureDefinition::OpenWrt {
+                    wireless_interface, ..
+                },
+                FixtureObservation::OpenWrtInactive {
+                    wireless_interface: observed,
+                },
+            ) if wireless_interface == observed => {}
             (
                 StationFixtureDefinition::External { .. },
                 FixtureObservation::External { managed: false },
@@ -466,6 +466,37 @@ fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
     })
 }
 
+fn capture_openwrt_before(config: &OpenWrtConfig) -> Result<FixtureObservation> {
+    let output = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .arg(&config.ssh_target)
+        .arg(format!(
+            "if test -d /sys/class/net/{interface}; then iw dev {interface} info; else exit 42; fi",
+            interface = config.wireless_interface
+        ))
+        .supervised_output()
+        .and_then(crate::fixture::Error::ssh_output)?;
+    if openwrt_has_active_channel(output.status.code(), std::str::from_utf8(&output.stdout)?)? {
+        Ok(FixtureObservation::OpenWrt(Box::new(capture_openwrt(
+            config,
+        )?)))
+    } else {
+        Ok(FixtureObservation::OpenWrtInactive {
+            wireless_interface: config.wireless_interface.clone(),
+        })
+    }
+}
+
+fn openwrt_has_active_channel(status: Option<i32>, info: &str) -> Result<bool> {
+    match status {
+        // A present but down VIF can have no channel. This is a before-state
+        // observation, not a requirement for a ready AP.
+        Some(0) => Ok(tagged_iw_value(info, "channel").is_some()),
+        Some(42) => Ok(false),
+        _ => Err("cannot observe OpenWrt interface state".into()),
+    }
+}
+
 fn capture_openwrt(config: &OpenWrtConfig) -> Result<OpenWrtObservation> {
     let script = format!(
         "set -eu; . /etc/openwrt_release; \
@@ -509,21 +540,6 @@ fn capture_openwrt(config: &OpenWrtConfig) -> Result<OpenWrtObservation> {
         &config.wireless_interface,
         &config.ingress_interface,
     )?;
-    let expected_widths = config
-        .phys
-        .iter()
-        .map(|phy| match phy {
-            PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
-            PhyExpectation::Ht40 => 40,
-        })
-        .collect::<Vec<_>>();
-    if !expected_widths.contains(&observation.width_mhz) {
-        return Err(format!(
-            "OpenWrt pre-run width {} MHz is outside configured fixture PHY widths {:?}",
-            observation.width_mhz, expected_widths
-        )
-        .into());
-    }
     Ok(observation)
 }
 

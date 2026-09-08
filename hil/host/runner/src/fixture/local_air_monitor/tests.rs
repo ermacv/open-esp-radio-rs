@@ -136,14 +136,22 @@ fn monitor_action_follows_openwrt_primary_channel() {
             "type AP\n\tchannel 6 (2437 MHz), width: 40 MHz, center1: 2447 MHz\n"
         )
         .unwrap(),
-        "observer-ht40-6"
+        Geometry {
+            frequency: 2437,
+            width: 40,
+            center: 2447
+        }
     );
     assert_eq!(
         resolve_observer_action_from_iw(
             "type AP\n\tchannel 13 (2472 MHz), width: 40 MHz, center1: 2462 MHz\n"
         )
         .unwrap(),
-        "observer-ht40-13"
+        Geometry {
+            frequency: 2472,
+            width: 40,
+            center: 2462
+        }
     );
     assert!(resolve_observer_action_from_iw("channel 3 (2422 MHz)").is_err());
 }

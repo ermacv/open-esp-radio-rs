@@ -25,6 +25,11 @@ pub(crate) enum CliCommand {
     },
     /// Check the selected scenarios' tools and fixture, without resetting hardware.
     Doctor(Selection),
+    /// Apply and verify a scenario's fixture, then restore it. Never accesses the DUT.
+    Fixture {
+        #[command(subcommand)]
+        command: FixtureCommand,
+    },
     /// Resolve scenario requirements offline, without opening a device or lab config.
     Plan(Selection),
     /// Inspect and validate the host-owned scenario catalog.
@@ -169,3 +174,11 @@ pub(crate) enum ReportCommand {
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum FixtureCommand {
+    /// Install the repository-owned Linux fixture helper and its sudo policy.
+    InstallHost,
+    /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
+    Check { scenario: String },
+}

@@ -10,7 +10,6 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    fixture::controlled_ap::{ControlledAp, require_station_credentials},
     scenario::{PhyExpectation, WifiOperation as Operation},
     session::SerialCapture,
 };
@@ -31,20 +30,10 @@ pub(crate) fn run(
     options: Config,
     output: &Path,
     context: &Context<'_>,
-    phy: PhyExpectation,
+    _phy: PhyExpectation,
 ) -> Result<()> {
     let options = options.validate()?;
 
-    let _access_point = if operation == Operation::AccessPoint {
-        require_station_credentials(&context.lab.station)?;
-        None
-    } else {
-        Some(ControlledAp::start(
-            &context.lab.station,
-            &context.lab.station_fixture,
-            phy,
-        )?)
-    };
     fs::create_dir_all(output)?;
     context.with_capture(output, |capture| {
         qualify(capture, context, operation, &options)

@@ -15,7 +15,7 @@ use crate::Result;
 /// Holds exclusive fixture ownership until the hardware command returns.
 pub(crate) struct FixtureLock {
     _cell: ResourceLease,
-    _device: oer_firmware::device::DeviceLease,
+    _device: Option<oer_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
 }
 
@@ -28,8 +28,17 @@ impl FixtureLock {
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        use sha2::{Digest, Sha256};
         let device = oer_firmware::device::DeviceLease::acquire(&lab.device.serial)?;
+        let mut owner = Self::acquire_without_device(lab, required)?;
+        owner._device = Some(device);
+        Ok(owner)
+    }
+
+    pub(crate) fn acquire_without_device(
+        lab: &super::config::LabConfig,
+        required: super::requirements::Requirements,
+    ) -> Result<Self> {
+        use sha2::{Digest, Sha256};
         let directory = oer_firmware::device::lease_directory()?.join(format!(
             "cell-{:x}",
             Sha256::digest(lab.cell_id().as_bytes())
@@ -39,7 +48,7 @@ impl FixtureLock {
         let resources = Self::acquire_resources(&root, resource_keys(lab, required)?)?;
         Ok(Self {
             _cell: cell,
-            _device: device,
+            _device: None,
             _resources: resources,
         })
     }
@@ -145,6 +154,22 @@ fn resource_keys(
 }
 
 fn local_radio_key(interface: &Path) -> Result<String> {
+    if interface == Path::new("/sys/class/net/wlan0") && !interface.exists() {
+        let output = Command::new("sudo")
+            .args(["-n", crate::fixture::network_helper::PATH, "identity"])
+            .supervised_output()?;
+        if !output.status.success() {
+            return Err("cannot resolve saved HIL radio identity".into());
+        }
+        let phy = std::str::from_utf8(&output.stdout)?.trim();
+        if !phy.strip_prefix("phy").is_some_and(|index| {
+            !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+        }) {
+            return Err("HIL helper returned an invalid physical radio identity".into());
+        }
+        let radio = Path::new("/sys/class/ieee80211").join(phy).canonicalize()?;
+        return Ok(format!("local-radio:{}", radio.display()));
+    }
     let radio = interface.join("phy80211").canonicalize().map_err(|error| {
         format!(
             "cannot resolve physical radio for {}: {error}",

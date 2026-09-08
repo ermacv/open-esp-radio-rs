@@ -89,7 +89,7 @@ pub(crate) struct OpenWrtClientLinkObservation {
     before: OpenWrtClientLinkSnapshot,
 }
 
-pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
+pub(crate) fn doctor(_access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
     let status = Command::new("sh")
         .args(["-c", "command -v wpa_passphrase >/dev/null"])
         .supervised_status()?;
@@ -106,14 +106,9 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
          command -v nft >/dev/null; \
          command -v fw4 >/dev/null; \
          test \"$(sysctl -n net.ipv4.ip_forward)\" = 1; \
-         test -r /sys/class/net/{}/phy80211/name; \
-         phy=$(cat /sys/class/net/{}/phy80211/name); \
-         iw phy \"$phy\" info | grep -q '#{{ managed }}'; \
-         iw dev {} info | grep -q 'channel {} '",
-        fixture.wireless_interface,
-        fixture.wireless_interface,
-        fixture.wireless_interface,
-        access_point.channel(),
+         phy=$(ubus call iwinfo phyname '{{\"section\":\"{}\"}}' | jsonfilter -e '@.phyname'); \
+         iw phy \"$phy\" info | grep -q '#{{ managed }}'",
+        fixture.radio,
     );
     let output = ssh(fixture, &script)?;
     if !output.status.success() {
@@ -127,47 +122,27 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
 }
 
 impl ControlledOpenWrtClient {
-    /// Rebuild the fixture's complete mac80211/mt76 radio epoch before AP HIL.
-    ///
-    /// Repeated creation and destruction of the scoped managed interface can
-    /// leave the fixture accepting every BA32 while inserting milliseconds of
-    /// unexplained idle time between aggregates. Neither retry counters nor
-    /// driver recovery logs expose that state. A fresh OpenWrt wireless epoch
-    /// is therefore part of the controlled-client measurement boundary, just
-    /// like resetting the DUT is part of the target boundary.
+    /// Prepare the scoped client after the scenario owner has configured and
+    /// restarted the selected radio. This owner never resets global wireless.
     pub(crate) fn prepare_fixture(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
     ) -> Result<OpenWrtClientFixturePreparation> {
         let started = Instant::now();
-        oer_process::check_cancelled()?;
-        let recovery = crate::fixture::cleanup::Rollback::new(
-            "restore OpenWrt wireless after preparation",
-            || {
-                let output = ssh(fixture, "wifi up")?;
-                if !output.status.success() {
-                    return Err(format!(
-                        "cannot restore OpenWrt wireless: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    )
-                    .into());
-                }
-                Ok(())
-            },
-        );
-        let script = prepare_fixture_script(access_point, fixture);
-        let output = ssh(fixture, &script)?;
-        if !output.status.success() {
+        restore(fixture)?;
+        let observed = super::openwrt_ap::observe(fixture)?;
+        let width = access_point.bandwidth_mhz();
+        if !observed.enabled
+            || observed.channel != access_point.channel()
+            || !observed.geometry.contains(&format!("width: {width} MHz"))
+        {
             return Err(crate::fixture::Error::new(format!(
-                "cannot establish a fresh OpenWrt AP-client radio epoch ({}): {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim(),
+                "prepared OpenWrt AP-client geometry differs from the target AP: {observed:?}"
             ))
             .into());
         }
-        recovery.disarm();
         Ok(OpenWrtClientFixturePreparation {
-            wireless_restarted: true,
+            wireless_restarted: false,
             elapsed_millis: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         })
     }
@@ -359,41 +334,6 @@ fn require_association(output: std::process::Output) -> Result<()> {
     } else {
         Err(crate::fixture::Error::new(message).into())
     }
-}
-
-fn prepare_fixture_script(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> String {
-    let cleanup = cleanup_forwarding_script();
-    format!(
-        r#"set -eu; \
-         {cleanup}; \
-         if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
-         iw dev {INTERFACE} del 2>/dev/null || true; \
-         rm -f {PID_FILE} {CONFIG_FILE}; \
-         restore_wireless() {{ status=$?; trap - EXIT; wifi up || exit 1; exit "$status"; }}; \
-         trap restore_wireless EXIT; \
-         trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
-         wifi down; \
-         sleep 2; \
-         wifi up; \
-         trap - EXIT HUP INT TERM; \
-         ready=0; \
-         for attempt in $(seq 1 20); do \
-             if iw dev {} info >/dev/null 2>&1; then ready=1; break; fi; \
-             sleep 1; \
-         done; \
-         if test "$ready" != 1; then echo 'OpenWrt AP interface did not become ready after wireless restart' >&2; exit 1; fi; \
-         info=$(iw dev {} info); \
-         if ! printf '%s\n' "$info" | grep -q 'channel {channel} ' || \
-            ! printf '%s\n' "$info" | grep -q 'width: {width} MHz'; then \
-             echo 'OpenWrt AP-client radio mismatch: expected channel {channel}, width {width} MHz' >&2; \
-             printf '%s\n' "$info" | awk '$1 == "channel" {{print "observed: " $0}}' >&2; \
-             exit 1; \
-         fi"#,
-        fixture.wireless_interface,
-        fixture.wireless_interface,
-        channel = access_point.channel(),
-        width = access_point.bandwidth_mhz(),
-    )
 }
 
 impl OpenWrtClientLinkObservation {

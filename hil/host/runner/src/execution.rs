@@ -33,8 +33,10 @@ pub(crate) fn execute_workload(
     lab: &crate::lab::config::LabConfig,
     selected: &crate::scenario::Scenario,
     output: &Path,
+    fixture: &crate::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
-    let context = context::Context::new(lab, context::Settings::from(selected), output);
+    let context =
+        context::Context::new(lab, context::Settings::from(selected), output).with_fixture(fixture);
     let result = execute_workload_inner(&context, selected, output);
     let mut evidence = ExecutionEvidence {
         measurements: context.measurements.snapshot(),
@@ -61,31 +63,6 @@ fn execute_workload_inner(
     use crate::scenario::{Direction, Workload};
     use crate::workload::{ieee80211, traffic};
     use std::time::Duration;
-
-    let lab = context.lab;
-
-    // Ordinary station workloads own their AP fixture for the complete run.
-    // Loss/absence and Wi-Fi-role workloads manage that lifetime internally;
-    // target-AP and timebase workloads must not materialize a station AP.
-    let _station_ap = matches!(
-        &selected.workload,
-        Workload::Udp { .. }
-            | Workload::Tcp { .. }
-            | Workload::Icmp { .. }
-            | Workload::StationReconnect { .. }
-            | Workload::StationAccessPoint { .. }
-    )
-    .then(|| {
-        crate::fixture::controlled_ap::ControlledAp::start(
-            &lab.station,
-            &lab.station_fixture,
-            selected
-                .link
-                .expect("validated station workload has a link expectation")
-                .phy,
-        )
-    })
-    .transpose()?;
 
     match &selected.workload {
         Workload::BootSmoke => boot_smoke(output, context),

@@ -1,13 +1,8 @@
 //! Session-bounded, read-only evidence from the laboratory OpenWrt AP.
 
+use super::capture_process;
 use oer_process::CommandExt as _;
-use oer_process::owned::Child;
-use std::{
-    io::Read as _,
-    net::Ipv4Addr,
-    process::{Command, Stdio},
-    time::Duration,
-};
+use std::{net::Ipv4Addr, process::Command, time::Duration};
 
 use crate::{
     Result,
@@ -68,7 +63,7 @@ pub(crate) struct OpenWrtStationLinkEvidence {
 
 struct Capture {
     name: &'static str,
-    child: Child,
+    child: capture_process::Capture,
 }
 
 struct OpenWrtRateMask {
@@ -176,7 +171,7 @@ impl OpenWrtRxCapture {
         let before = snapshot(config, target, None).map_err(crate::fixture::Error::context)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
-        let mut ingress = spawn_capture(
+        let ingress = spawn_capture(
             config,
             "OpenWrt Ethernet ingress",
             &config.ingress_interface,
@@ -184,34 +179,14 @@ impl OpenWrtRxCapture {
             port,
             timeout,
         )?;
-        let mut wireless = match spawn_capture(
+        let wireless = spawn_capture(
             config,
             "OpenWrt Wi-Fi egress",
             &config.wireless_interface,
             target,
             port,
             timeout,
-        ) {
-            Ok(capture) => capture,
-            Err(error) => {
-                let mut ingress = ingress;
-                let _ = ingress.child.kill();
-                let _ = ingress.child.wait();
-                return Err(error);
-            }
-        };
-        // tcpdump opens the packet socket before entering its capture loop.
-        // This guard is outside the measured session and avoids admitting a
-        // prefix before both independently owned sockets exist.
-        oer_process::sleep(Duration::from_secs(1))?;
-        let early_exit = capture_early_exit(&mut ingress)?.or(capture_early_exit(&mut wireless)?);
-        if let Some(error) = early_exit {
-            let _ = ingress.child.kill();
-            let _ = ingress.child.wait();
-            let _ = wireless.child.kill();
-            let _ = wireless.child.wait();
-            return Err(crate::fixture::Error::context(error.into()));
-        }
+        )?;
         Ok(Self {
             config: config.clone(),
             target,
@@ -563,31 +538,13 @@ fn delta(name: &str, before: u64, after: u64) -> Result<u64> {
     })
 }
 
-impl Drop for OpenWrtRxCapture {
-    fn drop(&mut self) {
-        oer_process::cleanup(|| {
-            for capture in [&mut self.ingress, &mut self.wireless]
-                .into_iter()
-                .flatten()
-            {
-                let _ = capture.child.kill();
-                let _ = capture.child.wait();
-            }
-        });
-    }
-}
-
-pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
+pub(crate) fn doctor_tools(config: &OpenWrtConfig) -> Result<()> {
     let script = format!(
         "set -eu; command -v tcpdump >/dev/null; command -v timeout >/dev/null; \
          command -v ubus >/dev/null; command -v jsonfilter >/dev/null; \
          test -d /sys/kernel/debug/ieee80211; \
-         test -d /sys/class/net/{ingress}; \
-         test -d /sys/class/net/{wireless}; \
-         iw dev {wireless} info | grep -q 'type AP'; \
-         iw dev {wireless} info | grep -q 'width: [24]0 MHz'",
+         test -d /sys/class/net/{ingress}",
         ingress = config.ingress_interface,
-        wireless = config.wireless_interface,
     );
     let output = Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
@@ -604,21 +561,6 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
     Ok(())
 }
 
-fn capture_early_exit(capture: &mut Capture) -> Result<Option<String>> {
-    let Some(status) = capture.child.try_wait()? else {
-        return Ok(None);
-    };
-    let mut stderr = String::new();
-    if let Some(mut pipe) = capture.child.stderr.take() {
-        pipe.read_to_string(&mut stderr)?;
-    }
-    Ok(Some(format!(
-        "{} exited before the HIL session started with {status}: {}",
-        capture.name,
-        stderr.trim()
-    )))
-}
-
 fn spawn_capture(
     config: &OpenWrtConfig,
     name: &'static str,
@@ -627,30 +569,37 @@ fn spawn_capture(
     port: u16,
     timeout: Duration,
 ) -> Result<Capture> {
-    let seconds = timeout.as_secs().max(1);
     let filter = format!("udp and dst host {target} and dst port {port}");
-    let script = format!(
-        "exec timeout -s INT {seconds} tcpdump -i {interface} -n -q -U -w /dev/null '{filter}'"
+    let program = format!(
+        "tcpdump -i {interface} -n -q -U -w /dev/null {}",
+        capture_process::quote(&filter)
     );
-    let child = Command::new("ssh")
+    let lifetime = timeout.saturating_add(Duration::from_secs(120));
+    let script = format!(
+        "LC_ALL=C timeout -s TERM {} sh -c {}",
+        lifetime.as_secs(),
+        capture_process::quote(&capture_process::controlled(&program, ":"))
+    );
+    let mut command = Command::new("ssh");
+    command
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
-        .arg(script)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn_owned()
-        .map_err(|error| crate::error::context("start packet capture", error))?
-        .with_timeout(timeout.saturating_add(Duration::from_secs(10)));
+        .arg(script);
+    let child = capture_process::Capture::start(
+        &mut command,
+        format!("tcpdump: listening on {interface},"),
+        lifetime,
+    )?;
     Ok(Capture { name, child })
 }
 
 fn finish_capture(capture: Capture) -> Result<u64> {
-    let output = capture.child.wait_with_output()?;
+    let output = capture.child.finish()?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     let captured = parse_summary_value(&stderr, "packets captured")
         .ok_or_else(|| format!("{} did not report a packet count: {stderr}", capture.name))?;
-    let dropped = parse_summary_value(&stderr, "packets dropped by kernel").unwrap_or(0);
+    let dropped = parse_summary_value(&stderr, "packets dropped by kernel")
+        .ok_or("tcpdump omitted its drop count")?;
     if dropped != 0 {
         return Err(crate::fixture::Error::new(format!(
             "{} dropped {dropped} captured packets",
@@ -658,10 +607,7 @@ fn finish_capture(capture: Capture) -> Result<u64> {
         ))
         .into());
     }
-    // BusyBox timeout returns 124 after delivering SIGINT. tcpdump may also
-    // translate SIGINT to a normal exit. Any other terminal status is a lost
-    // fixture, not valid qualification evidence.
-    if !output.status.success() && output.status.code() != Some(124) {
+    if !output.status.success() {
         return Err(crate::fixture::Error::new(format!(
             "{} exited with {}: {stderr}",
             capture.name, output.status
@@ -669,6 +615,29 @@ fn finish_capture(capture: Capture) -> Result<u64> {
         .into());
     }
     Ok(captured)
+}
+
+pub(crate) fn check_capture(config: &OpenWrtConfig) -> Result<()> {
+    let address = Ipv4Addr::new(192, 0, 2, 1);
+    let ingress = spawn_capture(
+        config,
+        "OpenWrt ingress self-check",
+        &config.ingress_interface,
+        address,
+        9,
+        Duration::from_secs(1),
+    )?;
+    let wireless = spawn_capture(
+        config,
+        "OpenWrt wireless self-check",
+        &config.wireless_interface,
+        address,
+        9,
+        Duration::from_secs(1),
+    )?;
+    finish_capture(ingress)?;
+    finish_capture(wireless)?;
+    Ok(())
 }
 
 fn parse_summary_value(stderr: &str, suffix: &str) -> Option<u64> {

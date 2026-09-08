@@ -9,11 +9,6 @@ const HARNESS: &str = "fixture::test_support::fixture_lifecycle_harness";
 fn preparation_and_monitor_recover_from_partial_setup() {
     use std::os::unix::fs::PermissionsExt;
     for case in [
-        "prepare-success",
-        "prepare-error",
-        "prepare-wrong-channel",
-        "prepare-cancel",
-        "prepare-cleanup-error",
         "monitor-existing",
         "monitor-error",
         "monitor-cancel",
@@ -151,33 +146,7 @@ fn fixture_lifecycle_harness() {
             assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
         })
     });
-    if case.starts_with("prepare-") {
-        let result = super::controlled_openwrt_client::ControlledOpenWrtClient::prepare_fixture(
-            &lab.access_point,
-            config,
-        );
-        assert_eq!(result.is_ok(), case == "prepare-success");
-        if case == "prepare-wrong-channel" {
-            let error = result.as_ref().unwrap_err();
-            assert_eq!(
-                crate::execution::classify(&**error).kind,
-                crate::evidence::run::FailureKind::Infrastructure
-            );
-            assert!(error.to_string().contains("expected channel 6"));
-            assert!(error.to_string().contains("observed: channel 13"));
-        }
-        if case.ends_with("cancel") {
-            assert!(oer_process::is_cancelled(&*result.unwrap_err()));
-        }
-        assert_eq!(
-            fs::read_to_string(root.join("wireless")).unwrap(),
-            if case == "prepare-cleanup-error" {
-                "down"
-            } else {
-                "up"
-            }
-        );
-    } else {
+    {
         if case == "monitor-existing" {
             fs::write(root.join("monitor"), "external").unwrap();
         }
@@ -219,9 +188,6 @@ fn fixture_lifecycle_harness() {
         canceller.join().unwrap();
     }
     let records = scope.finish().unwrap();
-    assert_eq!(records.len(), usize::from(case != "prepare-success"));
-    assert_eq!(
-        records.iter().any(|r| r.failure.is_some()),
-        case == "prepare-cleanup-error"
-    );
+    assert_eq!(records.len(), 1);
+    assert!(!records.iter().any(|r| r.failure.is_some()));
 }

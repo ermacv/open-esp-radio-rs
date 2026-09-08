@@ -27,10 +27,10 @@ mode = "dhcp"
 [access_point]
 ssid = "open-radio-device"
 passphrase = "replace-me-too"
-channel = 6
+channel = 13
 # `mhz20`, `mhz40-above`, or `mhz40-below`; HT40 geometry must keep the
 # secondary channel inside channels 1..=13.
-channel_width = "mhz40-above"
+channel_width = "mhz40-below"
 # Admission limit enforced before an association obtains an AID/key slot.
 # The ESP32-S31 AP implementation accepts 1..=15.
 client_limit = 4
@@ -47,14 +47,18 @@ secondary_client_address = "10.43.0.3/24"
 # phys = ["he20", "ht40"]
 # or `kind = "external"` with `phys = ["he20"]` for a FRITZ fixture.
 kind = "open-wrt"
+# Stable UCI ownership; discovery also works when the netdev is absent.
+radio = "radio0"
+ap_section = "default_radio0"
+channel = 13
 ssh_target = "open-radio-ap"
 wireless_interface = "phy0-ap0"
 ingress_interface = "br-lan"
 monitor_interface = "open-radio-mon"
-# Declare the modes supported by this fixture, for example
-# ["ht20", "ht40", "he20"]. Configure the OpenWrt radio for the scenario's
-# requested mode before running; HIL still checks the active PHY evidence.
-phys = ["ht40"]
+# Allowed scenario modes; actual AP capabilities are discovered from OpenWrt.
+# The runner applies channel, mode, WPA2 credentials and WMM, verifies hostapd
+# and channel geometry, then restores the original settings.
+phys = ["ht20", "ht40", "he20"]
 # Uses the laptop's Intel adapter as an independent passive observer while
-# OpenWrt remains the AP. Requires the schema-3 open-radio-net helper.
+# OpenWrt remains the AP. Requires the schema-7 open-radio-net helper.
 independent_laptop_monitor = true

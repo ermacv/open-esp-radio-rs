@@ -1,13 +1,11 @@
 //! Lifetime-safe access to the repository-controlled HIL access point.
 
 use oer_process::CommandExt as _;
-use std::{fs, process::Command, time::Duration};
-
-use zeroize::Zeroizing;
+use std::{fs, process::Command};
 
 use crate::{
     Result,
-    lab::config::{OpenWrtConfig, StationConfig, StationFixtureConfig},
+    lab::config::{StationConfig, StationFixtureConfig},
     scenario::PhyExpectation,
 };
 
@@ -16,15 +14,8 @@ const INSTALLED_HE20_CONFIG: &str = "/etc/open-radio/hostapd-he20.conf";
 /// Restores the selected AP frontier on every normal or error return.
 pub(crate) enum ControlledAp {
     Local(PhyExpectation),
-    OpenWrt(OpenWrtControlledAp),
+    OpenWrt(Box<super::openwrt_ap::AccessPoint>),
     External,
-}
-
-pub(crate) struct OpenWrtControlledAp {
-    config: OpenWrtConfig,
-    radio: String,
-    phy: PhyExpectation,
-    stopped: bool,
 }
 
 impl ControlledAp {
@@ -57,25 +48,10 @@ impl ControlledAp {
                 helper_action(action)?;
                 Ok(owner)
             }
-            StationFixtureConfig::OpenWrt(openwrt) => {
-                let radio = require_openwrt_ap_credentials(station, openwrt)
-                    .map_err(crate::fixture::Error::context)?;
-                // `wifi up` may asynchronously replace an already-present
-                // hostapd netdev. Treating that stale netdev as ready lets the
-                // target begin association inside the reload window. A ready
-                // controlled AP needs no state transition; otherwise wait for
-                // both the requested PHY geometry and the new hostapd owner.
-                if !openwrt_interface_ready(openwrt, phy)? {
-                    openwrt_action(openwrt, &radio, "up")?;
-                    wait_for_openwrt_interface(openwrt, phy)?;
-                }
-                Ok(Self::OpenWrt(OpenWrtControlledAp {
-                    config: openwrt.clone(),
-                    radio,
-                    phy,
-                    stopped: false,
-                }))
-            }
+            StationFixtureConfig::OpenWrt(openwrt) => Ok(Self::OpenWrt(Box::new(
+                super::openwrt_ap::AccessPoint::start(openwrt, station, phy)
+                    .map_err(super::Error::context)?,
+            ))),
             StationFixtureConfig::External(_) => {
                 require_station_credentials(station)?;
                 Ok(Self::External)
@@ -86,13 +62,7 @@ impl ControlledAp {
     pub(crate) fn stop(&mut self) -> Result<()> {
         match self {
             Self::Local(_) => helper_action("stop"),
-            Self::OpenWrt(ap) => {
-                // A failed command may already have stopped the radio.
-                ap.stopped = true;
-                openwrt_action(&ap.config, &ap.radio, "down")?;
-                wait_for_openwrt_interface_down(&ap.config)?;
-                Ok(())
-            }
+            Self::OpenWrt(ap) => ap.stop(),
             Self::External => Err(crate::fixture::Error::new(
                 "an external station fixture cannot be stopped by HIL",
             )
@@ -112,12 +82,7 @@ impl ControlledAp {
                     .into());
                 }
             }),
-            Self::OpenWrt(ap) => {
-                openwrt_action(&ap.config, &ap.radio, "up")?;
-                wait_for_openwrt_interface(&ap.config, ap.phy)?;
-                ap.stopped = false;
-                Ok(())
-            }
+            Self::OpenWrt(ap) => ap.restart(),
             Self::External => Err(crate::fixture::Error::new(
                 "an external station fixture cannot be restarted by HIL",
             )
@@ -132,12 +97,6 @@ impl Drop for ControlledAp {
             Self::Local(_) => {
                 crate::fixture::cleanup::record("restore managed Wi-Fi", || {
                     helper_action("managed")
-                });
-            }
-            Self::OpenWrt(ap) if ap.stopped => {
-                crate::fixture::cleanup::record("restore OpenWrt access point", || {
-                    openwrt_action(&ap.config, &ap.radio, "up")?;
-                    wait_for_openwrt_interface(&ap.config, ap.phy)
                 });
             }
             Self::OpenWrt(_) | Self::External => {}
@@ -179,138 +138,6 @@ fn require_local_ap_credentials(station: &StationConfig, phy: PhyExpectation) ->
         .into());
     }
     Ok(())
-}
-
-fn require_openwrt_ap_credentials(
-    station: &StationConfig,
-    openwrt: &OpenWrtConfig,
-) -> Result<String> {
-    // Resolve the UCI radio from the configured credentials rather than from
-    // the transient netdev. The netdev intentionally disappears while the AP
-    // is down, but this stored owner must still be able to restore it.
-    let script = r#"set -eu; for section in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do radio=$(uci -q get wireless.$section.device || true); ssid=$(uci -q get wireless.$section.ssid || true); key=$(uci -q get wireless.$section.key || true); printf '%s\t%s\t%s\n' "$radio" "$ssid" "$key"; done"#;
-    let mut output = openwrt_command(openwrt, script)?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "cannot read the controlled OpenWrt AP profile: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
-    }
-    let profile = Zeroizing::new(String::from_utf8(core::mem::take(&mut output.stdout))?);
-    let (ssid, passphrase) = station.credentials();
-    let mut matched = None;
-    for line in profile.lines() {
-        let mut fields = line.split('\t');
-        let radio = fields.next().unwrap_or_default();
-        let profile_ssid = fields.next().unwrap_or_default();
-        let profile_passphrase = fields.next().unwrap_or_default();
-        if fields.next().is_some() {
-            return Err(
-                crate::fixture::Error::new("OpenWrt AP profile returned malformed data").into(),
-            );
-        }
-        if ssid == profile_ssid && passphrase == profile_passphrase {
-            if matched.is_some() || !matches!(radio, "radio0" | "radio1") {
-                return Err(crate::fixture::Error::new(
-                    "OpenWrt AP profile does not identify one safe radio owner",
-                )
-                .into());
-            }
-            matched = Some(radio.to_owned());
-        }
-    }
-    matched.ok_or_else(|| {
-        "HIL network credentials do not match the controlled OpenWrt AP profile".into()
-    })
-}
-
-fn openwrt_action(config: &OpenWrtConfig, radio: &str, action: &str) -> Result<()> {
-    if !matches!(radio, "radio0" | "radio1") {
-        return Err(
-            crate::fixture::Error::new("controlled OpenWrt AP has an invalid radio owner").into(),
-        );
-    }
-    let action = match action {
-        "up" => "up",
-        "down" => "down",
-        _ => {
-            return Err(crate::fixture::Error::new("unsupported OpenWrt AP action").into());
-        }
-    };
-    let script = format!("set -eu; wifi {action} {radio}");
-    let output = openwrt_command(config, &script)?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "controlled OpenWrt AP action failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
-    }
-    Ok(())
-}
-
-fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Result<()> {
-    for _ in 0..50 {
-        if openwrt_interface_ready(config, phy)? {
-            return Ok(());
-        }
-        oer_process::sleep(Duration::from_millis(100))?;
-    }
-    let expected_width = expected_width(phy);
-    Err(crate::fixture::Error::new(format!(
-        "controlled OpenWrt AP did not restore an enabled {expected_width} MHz hostapd interface"
-    ))
-    .into())
-}
-
-fn openwrt_interface_ready(config: &OpenWrtConfig, phy: PhyExpectation) -> Result<bool> {
-    Ok(openwrt_command(config, &openwrt_ready_script(config, phy))?
-        .status
-        .success())
-}
-
-fn openwrt_ready_script(config: &OpenWrtConfig, phy: PhyExpectation) -> String {
-    let interface = &config.wireless_interface;
-    let width = expected_width(phy);
-    format!(
-        "set -eu; iw dev {interface} info 2>/dev/null | grep -Fq 'width: {width} MHz'; \
-         ubus call hostapd.{interface} get_status 2>/dev/null | \
-         jsonfilter -e '@.status' | grep -Fxq ENABLED"
-    )
-}
-
-const fn expected_width(phy: PhyExpectation) -> u8 {
-    match phy {
-        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
-        PhyExpectation::Ht40 => 40,
-    }
-}
-
-fn wait_for_openwrt_interface_down(config: &OpenWrtConfig) -> Result<()> {
-    for _ in 0..50 {
-        let output = openwrt_command(
-            config,
-            &format!("iw dev {} info >/dev/null 2>&1", config.wireless_interface),
-        )?;
-        if !output.status.success() {
-            return Ok(());
-        }
-        oer_process::sleep(Duration::from_millis(100))?;
-    }
-    Err(crate::fixture::Error::new(
-        "controlled OpenWrt AP interface remained present after radio shutdown",
-    )
-    .into())
-}
-
-fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
-    Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
-        .arg(&config.ssh_target)
-        .arg(script)
-        .supervised_output()
-        .and_then(crate::fixture::Error::ssh_output)
 }
 
 fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {

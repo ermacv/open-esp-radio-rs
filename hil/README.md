@@ -71,10 +71,49 @@ use the local IPv4 route selected for the discovered target. External AP
 fixtures provide compatibility workloads; exact-delivery scenarios require
 the controlled fixture declared by the scenario.
 
-AP scenarios that use a controlled OpenWrt client begin with a fresh wireless
-epoch. The runner removes scoped forwarding/VIF state, restarts wireless and
-checks channel and width before resetting the DUT. The report records fixture
-preparation and its duration separately from the measured workload.
+Every network scenario owns a prepared station AP, including target-AP tests
+that first qualify a station connection. OpenWrt `radio` and `ap_section` identify
+the UCI resources; the transient netdev is not used to infer ownership. The
+runner discovers PHY/AP capabilities, applies the scenario's HT20/HT40/HE20
+profile, channel, WPA2 credentials and WMM, then checks enabled hostapd, generated
+HT/HE settings, width and center frequency. `phys` is an access policy, not
+hardware discovery. Original options, pending UCI edits and radio up/down state
+are restored; HIL does not commit temporary settings to flash.
+
+AP scenarios derive target bandwidth from their link profile. A router hosting
+their managed client uses the same primary and secondary channel. These scenarios
+start a fresh epoch of the selected radio; other radios and the wired uplink are
+not brought down. Scoped client forwarding/VIF cleanup remains a separate owner.
+`fixture-applied.json` records actual settings without network credentials.
+Cleanup failures are retained and quarantine subsequent network workloads in
+the same runner invocation.
+
+Fixture preparation can be exercised without opening the serial port, building
+firmware, resetting or transmitting traffic from the DUT:
+
+```console
+cargo hil fixture check udp-tx-he20
+```
+
+This command uses the same prerequisites and profile owner as `run`, opens and
+stops the required OpenWrt packet captures, restores the AP and writes its report
+to `target/hil/fixture-checks`. Control scenarios also exercise AP stop/restart.
+Scenarios requesting the independent laptop observer exercise Linux monitor
+setup, capture readiness, tshark decoding and managed-interface restoration;
+`fixture-monitor.json` retains the capture result. This passive check uses a
+synthetic parser filter and sends no target traffic.
+It does not establish target associations or qualify target throughput.
+`doctor` checks available tools and capabilities without applying a profile;
+a successful doctor result does not assert that current radio settings already
+match the selected scenario.
+
+Capture handles acknowledge readiness before the session starts. Dumpcap's
+opened-file notification and tcpdump's opened-interface notification replace
+startup sleeps. The runner explicitly stops capture after session collection;
+traffic duration does not set an early capture stop. Independent process
+watchdogs and file limits remain failure bounds. Passive observers use the AP's
+actual primary frequency, width and center frequency, including HE20 geometry.
+Tshark parsing and monitor setup/teardown are invoked by the runner.
 
 AP workload evidence and qualification are separate. `cycle-progress.json`
 retains each available traffic, link and teardown result even if another stage
@@ -110,9 +149,13 @@ The Linux helper is installed separately because its narrowly scoped AP,
 managed-client, monitor and USB-reset operations require root privileges:
 
 ```console
-cargo build -p open-esp-radio-hil-runner
-sudo hil/host/linux-net/install.sh
+cargo hil fixture install-host
 ```
 
 `cargo hil doctor` also verifies the installed helper schema and its
 non-interactive sudo capability before a scenario takes ownership of WLAN.
+
+The installer needs interactive sudo authorization. Routine scenarios use the
+installed narrow helper without prompting. Local Linux AP profiles still require
+the separately installed hostapd binary and profile credentials; this local
+provisioning path is distinct from the automatically configured OpenWrt backend.

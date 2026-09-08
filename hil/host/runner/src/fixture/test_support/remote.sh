@@ -46,6 +46,7 @@ uci() {
     esac
 }
 kill() {
+    case "$OER_TEST_CASE" in monitor-*) command kill "$@"; return;; esac
     touch "$OER_TEST_STATE/kill-attempted"
     case "$OER_TEST_CASE" in cleanup-process-error) return 1;; cleanup-process-noop) return 0;; esac
     command rm -f "$OER_TEST_STATE/process"
@@ -56,16 +57,7 @@ rm() {
 }
 wifi() {
     if test "$OER_TEST_CASE" = ap-command-error; then return 1; fi
-    if test "$1" = up && test "$OER_TEST_CASE" = prepare-cleanup-error; then
-        echo 'injected wireless recovery failure' >&2; return 1
-    fi
     printf %s "$1" > "$OER_TEST_STATE/wireless"
-}
-sleep() {
-    case "$OER_TEST_CASE" in
-        prepare-error|prepare-cleanup-error) return 1;;
-        prepare-cancel) touch "$OER_TEST_STATE/ready"; command sleep 20;;
-    esac
 }
 iw() {
     case "$*" in
@@ -76,8 +68,6 @@ iw() {
         'dev phy0-ap0 info')
             if test "$OER_TEST_CASE" = ap-command-error; then
                 return 1
-            elif test "$OER_TEST_CASE" = prepare-wrong-channel; then
-                printf 'wiphy 0\nchannel 13 (2472 MHz), width: 40 MHz\n'
             else
                 printf 'wiphy 0\nchannel 6 (2437 MHz), width: 40 MHz\n'
             fi;;
@@ -105,4 +95,14 @@ mkdir() {
     printf '%s\n' "$1" > "$OER_TEST_STATE/remote-directory"
     command mkdir "$@"
 }
-timeout() { command sleep 20; }
+timeout() {
+    shift 3
+    test "$1" = sh && test "$2" = -c || return 1
+    eval "$3"
+}
+tcpdump() {
+    trap 'exit 0' TERM
+    printf 'tcpdump: listening on open-radio-mon, link-type IEEE802_11_RADIO\n' >&2
+    touch "$OER_TEST_STATE/ready"
+    command sleep 20
+}

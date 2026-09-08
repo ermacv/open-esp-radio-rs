@@ -14,6 +14,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{Result, repository_root, scenario::PhyExpectation};
 
+#[derive(Clone)]
 pub(crate) struct LabConfig {
     path: PathBuf,
     cell_id: String,
@@ -47,7 +48,7 @@ struct RawDeviceConfig {
     startup_artifact: Option<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct DeviceConfig {
     pub(crate) id: String,
     pub(crate) serial: PathBuf,
@@ -72,6 +73,7 @@ enum RawIpv4Config {
     },
 }
 
+#[derive(Clone)]
 pub(crate) struct StationConfig {
     ssid: Zeroizing<String>,
     passphrase: Zeroizing<String>,
@@ -96,6 +98,7 @@ const fn default_ap_client_limit() -> u8 {
     4
 }
 
+#[derive(Clone)]
 pub(crate) struct AccessPointConfig {
     ssid: Zeroizing<String>,
     passphrase: Zeroizing<String>,
@@ -116,6 +119,9 @@ enum RawStationFixtureConfig {
         phys: Vec<PhyExpectation>,
     },
     OpenWrt {
+        radio: String,
+        ap_section: String,
+        channel: u8,
         ssh_target: String,
         wireless_interface: String,
         ingress_interface: String,
@@ -144,6 +150,10 @@ pub(crate) struct LocalLinuxConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct OpenWrtConfig {
+    pub(crate) ht40_above: bool,
+    pub(crate) radio: String,
+    pub(crate) ap_section: String,
+    pub(crate) channel: u8,
     pub(crate) ssh_target: String,
     pub(crate) wireless_interface: String,
     pub(crate) ingress_interface: String,
@@ -236,6 +246,9 @@ impl LabConfig {
                 validate_phys("local-linux", phys)?;
             }
             RawStationFixtureConfig::OpenWrt {
+                radio,
+                ap_section,
+                channel,
                 ssh_target,
                 wireless_interface,
                 ingress_interface,
@@ -243,7 +256,12 @@ impl LabConfig {
                 phys,
                 independent_laptop_monitor: _,
             } => {
+                if !(1..=13).contains(channel) {
+                    return Err("OpenWrt channel must be in 1..=13".into());
+                }
                 for (name, value) in [
+                    ("station_fixture.radio", radio.as_str()),
+                    ("station_fixture.ap_section", ap_section.as_str()),
                     ("station_fixture.ssh_target", ssh_target.as_str()),
                     (
                         "station_fixture.wireless_interface",
@@ -302,6 +320,9 @@ impl LabConfig {
                     StationFixtureConfig::LocalLinux(LocalLinuxConfig { interface, phys })
                 }
                 RawStationFixtureConfig::OpenWrt {
+                    radio,
+                    ap_section,
+                    channel,
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
@@ -309,6 +330,10 @@ impl LabConfig {
                     phys,
                     independent_laptop_monitor,
                 } => StationFixtureConfig::OpenWrt(OpenWrtConfig {
+                    ht40_above: channel <= 9,
+                    radio,
+                    ap_section,
+                    channel,
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
@@ -321,6 +346,44 @@ impl LabConfig {
                 }
             },
         })
+    }
+
+    pub(crate) fn fixture_phy(&self, scenario: &crate::scenario::Scenario) -> PhyExpectation {
+        scenario.link.map(|link| link.phy).unwrap_or_else(|| {
+            if self.access_point.bandwidth_mhz() == 40 {
+                PhyExpectation::Ht40
+            } else {
+                PhyExpectation::Ht20
+            }
+        })
+    }
+
+    pub(crate) fn resolve_scenario(&self, scenario: &crate::scenario::Scenario) -> Self {
+        let mut lab = self.clone();
+        if matches!(
+            scenario.workload,
+            crate::scenario::Workload::AccessPoint { .. }
+        ) {
+            if let Some(link) = scenario.link {
+                lab.access_point.channel_width = match link.phy {
+                    PhyExpectation::Ht20 | PhyExpectation::He20 => WifiChannelWidth::Mhz20,
+                    PhyExpectation::Ht40
+                        if self.access_point.channel_width.bandwidth_mhz() == 40 =>
+                    {
+                        self.access_point.channel_width
+                    }
+                    PhyExpectation::Ht40 if self.access_point.channel <= 9 => {
+                        WifiChannelWidth::Mhz40Above
+                    }
+                    PhyExpectation::Ht40 => WifiChannelWidth::Mhz40Below,
+                };
+            }
+            if let StationFixtureConfig::OpenWrt(config) = &mut lab.station_fixture {
+                config.channel = lab.access_point.channel;
+                config.ht40_above = lab.access_point.channel_width == WifiChannelWidth::Mhz40Above;
+            }
+        }
+        lab
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -358,6 +421,10 @@ impl LabConfig {
                 prefix_length: 24,
             },
             station_fixture: StationFixtureConfig::OpenWrt(OpenWrtConfig {
+                ht40_above: true,
+                radio: String::from("radio0"),
+                ap_section: String::from("default_radio0"),
+                channel: 6,
                 ssh_target: String::from("open-radio-ap"),
                 wireless_interface: String::from("phy0-ap0"),
                 ingress_interface: String::from("br-lan"),

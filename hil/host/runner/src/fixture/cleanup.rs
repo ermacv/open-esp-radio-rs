@@ -15,6 +15,17 @@ pub(crate) struct Record {
     pub(crate) failure: Option<String>,
 }
 thread_local! { static RECORDS: RefCell<Option<Vec<Record>>> = const { RefCell::new(None) }; }
+thread_local! { static QUARANTINE: RefCell<Option<String>> = const { RefCell::new(None) }; }
+
+pub(crate) fn require_healthy() -> Result<()> {
+    QUARANTINE.with_borrow(|failure| match failure {
+        Some(failure) => Err(super::Error::new(format!(
+            "fixture quarantined after failed restoration: {failure}"
+        ))
+        .into()),
+        None => Ok(()),
+    })
+}
 
 pub(crate) struct Scope {
     output: PathBuf,
@@ -56,6 +67,9 @@ pub(crate) fn record(operation: &'static str, restore: impl FnOnce() -> Result<(
         .map(|error| error.to_string());
     if let Some(error) = &failure {
         eprintln!("fixture cleanup failed ({operation}): {error}");
+        QUARANTINE.with_borrow_mut(|failure| {
+            failure.get_or_insert_with(|| format!("{operation}: {error}"));
+        });
     }
     RECORDS.with_borrow_mut(|records| {
         if let Some(records) = records {
@@ -78,33 +92,6 @@ pub(crate) fn command(operation: &'static str, command: &mut std::process::Comma
             Err(format!("{operation} failed with {status}").into())
         }
     });
-}
-
-/// Install recovery before a fallible preparation; disarm only after success.
-pub(crate) struct Rollback<F: FnOnce() -> Result<()>> {
-    operation: &'static str,
-    restore: Option<F>,
-}
-
-impl<F: FnOnce() -> Result<()>> Rollback<F> {
-    pub(crate) fn new(operation: &'static str, restore: F) -> Self {
-        Self {
-            operation,
-            restore: Some(restore),
-        }
-    }
-
-    pub(crate) fn disarm(mut self) {
-        self.restore = None;
-    }
-}
-
-impl<F: FnOnce() -> Result<()>> Drop for Rollback<F> {
-    fn drop(&mut self) {
-        if let Some(restore) = self.restore.take() {
-            record(self.operation, restore);
-        }
-    }
 }
 
 #[cfg(test)]

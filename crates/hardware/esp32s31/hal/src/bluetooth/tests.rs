@@ -10,6 +10,7 @@ use super::{
 enum RxListPublicationStep {
     CurrentHead,
     NextHeadCleared,
+    InitialControlReset,
 }
 
 #[derive(Default)]
@@ -18,6 +19,14 @@ struct RecordingRxListPublication {
 }
 
 impl RxMemoryListInitialPublication for RecordingRxListPublication {
+    fn reset_initial_control(&mut self) {
+        assert_eq!(
+            self.steps.last(),
+            Some(&RxListPublicationStep::NextHeadCleared)
+        );
+        self.steps.push(RxListPublicationStep::InitialControlReset);
+    }
+
     fn publish_current_head(&mut self) {
         self.steps.push(RxListPublicationStep::CurrentHead);
     }
@@ -28,7 +37,7 @@ impl RxMemoryListInitialPublication for RecordingRxListPublication {
 }
 
 #[test]
-fn receive_list_publication_finishes_the_current_head_before_clearing_next() {
+fn receive_list_publication_resets_control_after_both_pointer_operations() {
     let mut transaction = RecordingRxListPublication::default();
 
     execute_rx_memory_list_initial_publication(&mut transaction);
@@ -38,6 +47,7 @@ fn receive_list_publication_finishes_the_current_head_before_clearing_next() {
         [
             RxListPublicationStep::CurrentHead,
             RxListPublicationStep::NextHeadCleared,
+            RxListPublicationStep::InitialControlReset,
         ]
     );
 }

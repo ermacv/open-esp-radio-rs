@@ -1,6 +1,35 @@
 use super::{LeRxError, NonScanningRxMemoryModelAddress, NonScanningRxMemoryStorage};
 
 #[test]
+fn published_cursor_preserves_both_receive_slots_across_rearming() {
+    let storage = std::boxed::Box::leak(std::boxed::Box::new(NonScanningRxMemoryStorage::new()));
+    let mut owner = NonScanningRxMemoryStorage::pin_static_model(
+        storage,
+        NonScanningRxMemoryModelAddress::new(0x2f00_8000).unwrap(),
+    )
+    .unwrap();
+    let initial_cursor = owner.current_cursor();
+    let first = [0x02, 6, 1, 2, 3, 4, 5, 6];
+    let second = [0x02, 6, 6, 5, 4, 3, 2, 1];
+    for _ in 0..2 {
+        assert!(owner.extract_completed_rx_batch().unwrap().is_empty());
+        let cursor = owner.model_controller_receive_after_current(initial_cursor, &first);
+        let batch = owner
+            .extract_completed_rx_batch()
+            .expect("the first RX has no completion gap");
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch.packet(0).unwrap().as_bytes(), &first);
+        owner.model_controller_receive_after_current(cursor, &second);
+        let batch = owner.extract_completed_rx_batch().unwrap();
+        assert_eq!(batch.len(), 2);
+        assert_eq!(batch.packet(1).unwrap().as_bytes(), &second);
+        owner.reinitialize_after_event();
+        assert_eq!(owner.current_cursor(), initial_cursor);
+        assert!(owner.is_initialized());
+    }
+}
+
+#[test]
 fn pinned_pool_forms_one_initialized_two_node_rotation() {
     let storage = std::boxed::Box::leak(std::boxed::Box::new(NonScanningRxMemoryStorage::new()));
     let base = NonScanningRxMemoryModelAddress::new(0x2f00_4000)

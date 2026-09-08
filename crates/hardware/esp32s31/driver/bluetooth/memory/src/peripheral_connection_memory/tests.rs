@@ -74,6 +74,7 @@ fn completed_graph(
                 .expect("the first receive wait fits its short form"),
             PeripheralConnectionDefaultTxPowerDbm::new(0),
             PeripheralConnectionSchedulerPriority::FIRST_EVENT,
+            92,
         )
         .install_direction_finding_workspace(workspace.binding().link())
         .prepare_scheduler_admission();
@@ -133,6 +134,146 @@ fn active_graph(graph_base: u32) -> super::PeripheralConnectionMemoryGraphActive
         .commit()
         .into_parts()
         .0
+}
+
+#[test]
+fn first_sequence_preserves_the_admitted_duration_after_its_lead() {
+    let completed = completed_graph(
+        0x2f04_1000,
+        PeripheralConnectionSchedulerItemCompletionStatus::Zero,
+        PeripheralConnectionCapturedAnchorAvailability::Absent,
+    );
+    let graph = completed.running.prepared.storage();
+    // The helper admits 100..200 and supplies a 92-tick sequence lead.
+    for now in [99, 191, 192, 200, 291] {
+        assert!(!graph.model_controller_sequence_elapsed(now), "now={now}");
+    }
+    assert!(graph.model_controller_sequence_elapsed(292));
+}
+
+#[test]
+fn peripheral_publication_receives_both_successors_without_a_chain_gap() {
+    let completed = completed_graph(
+        0x2f05_1000,
+        PeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+        PeripheralConnectionCapturedAnchorAvailability::Absent,
+    );
+    let pool = completed.running.prepared.receive_pool();
+    let cursor = completed.running.prepared.receive_head();
+    let first = [0x01, 0];
+    let second = [0x02, 1, 0x55];
+    let cursor = pool.model_controller_receive_after_current(cursor, &first);
+    let first_batch = pool
+        .extract_completed_rx_batch()
+        .expect("the first packet starts the completed prefix");
+    assert_eq!(first_batch.packet(0).unwrap().as_bytes(), first);
+    pool.model_controller_receive_after_current(cursor, &second);
+    let address = completed.scheduler_item_address();
+    let recycled = completed
+        .prepare_recycle_after_software_list_removal(removal_ready(
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            address,
+        ))
+        .unwrap_or_else(|_| panic!("exact removal"))
+        .extract_received()
+        .unwrap_or_else(|_| panic!("both packets form a contiguous completed prefix"))
+        .commit();
+    let (active, batch, _, _) = recycled.into_parts();
+    assert_eq!(batch.packet(0).unwrap().as_bytes(), first);
+    assert_eq!(batch.packet(1).unwrap().as_bytes(), second);
+    let prepared = active
+        .prepare_reviewed_recurring_event_fields(
+            PeripheralConnectionDataChannel::new(3).unwrap(),
+            PeripheralConnectionEventSpan::new(2_000).unwrap(),
+            PeripheralConnectionSchedulerWindow::new(1_000, 2_000).unwrap(),
+            PeripheralConnectionRecurringReceiveWait::new(100).unwrap(),
+            PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+            92,
+        )
+        .prepare_scheduler_admission()
+        .prepare_publication();
+    let pool = prepared.prepared.prepared.receive_pool();
+    pool.model_controller_receive_after_current(prepared.receive_head(), &first);
+    assert_eq!(
+        pool.extract_completed_connection_rx_batch()
+            .unwrap()
+            .packet(0)
+            .unwrap()
+            .as_bytes(),
+        first
+    );
+}
+
+#[test]
+fn peripheral_radio_requests_survive_recycle_and_recurring_cancellation() {
+    let completed = completed_graph(
+        0x2f04_9000,
+        PeripheralConnectionSchedulerItemCompletionStatus::Zero,
+        PeripheralConnectionCapturedAnchorAvailability::Absent,
+    );
+    assert!(
+        completed
+            .running
+            .prepared
+            .storage()
+            .model_controller_can_request_radio()
+    );
+    let active = active_graph(0x2f04_d000);
+    let prepared = active.prepare_reviewed_recurring_event_fields(
+        PeripheralConnectionDataChannel::new(3).unwrap(),
+        PeripheralConnectionEventSpan::new(2_000).unwrap(),
+        PeripheralConnectionSchedulerWindow::new(1_000, 2_000).unwrap(),
+        PeripheralConnectionRecurringReceiveWait::new(100).unwrap(),
+        PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        92,
+    );
+    assert!(
+        prepared
+            .active
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_controller_can_request_radio()
+    );
+    let active = prepared.prepare_scheduler_admission().cancel().cancel();
+    assert!(
+        active
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_controller_can_request_radio()
+    );
+}
+
+#[test]
+fn recurring_sequence_replaces_old_timing_across_clock_wrap() {
+    let active = active_graph(0x2f04_5000);
+    let prepared = active.prepare_reviewed_recurring_event_fields(
+        PeripheralConnectionDataChannel::new(19).unwrap(),
+        PeripheralConnectionEventSpan::new(2_000).unwrap(),
+        PeripheralConnectionSchedulerWindow::new(u32::MAX - 99, 100).unwrap(),
+        PeripheralConnectionRecurringReceiveWait::new(100).unwrap(),
+        PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        92,
+    );
+    let graph = prepared.active.storage.as_ref().get_ref();
+    // With a 92-tick lead, the sequencer starts at MAX-7 and ends at 192.
+    for now in [u32::MAX - 8, u32::MAX - 7, 0, 100, 191] {
+        assert!(!graph.model_controller_sequence_elapsed(now), "now={now}");
+    }
+    assert!(graph.model_controller_sequence_elapsed(192));
+    let active = prepared.cancel();
+    let prepared = active.prepare_reviewed_recurring_event_fields(
+        PeripheralConnectionDataChannel::new(7).unwrap(),
+        PeripheralConnectionEventSpan::new(2_000).unwrap(),
+        PeripheralConnectionSchedulerWindow::new(1_000, 1_300).unwrap(),
+        PeripheralConnectionRecurringReceiveWait::new(100).unwrap(),
+        PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        92,
+    );
+    let graph = prepared.active.storage.as_ref().get_ref();
+    assert!(!graph.model_controller_sequence_elapsed(1_391));
+    assert!(graph.model_controller_sequence_elapsed(1_392));
 }
 
 #[test]
@@ -199,6 +340,7 @@ fn recurring_preparation_is_cancellable_without_replacing_persistent_owners() {
         window,
         receive_wait,
         PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        92,
     );
     assert_eq!(prepared.channel(), channel);
     assert_eq!(prepared.event_span(), event_span);
@@ -249,6 +391,7 @@ fn recurring_event_converges_on_the_common_publication_and_completion_lifecycle(
             PeripheralConnectionRecurringReceiveWait::new(8_750)
                 .expect("the recurring wait has exact short representation"),
             PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+            92,
         )
         .prepare_scheduler_admission();
     let scheduler_head = admission.scheduler_head();
@@ -484,4 +627,127 @@ fn recycle_preserves_an_event_without_a_capture() {
         capture,
         PeripheralConnectionCapturedAnchorAvailability::Absent
     );
+}
+
+#[test]
+fn control_tx_retains_unacknowledged_payload_and_rotates_after_ack() {
+    let mut owner = active_graph(0x2f00_4000);
+    let first = [9, 0, 0, 0, 0, 0, 0, 0, 0];
+    let second = [7, 0xf1];
+    for _ in 0..3 {
+        assert!(owner.enqueue_control_transmission(&first).unwrap());
+        assert!(!owner.enqueue_control_transmission(&second).unwrap());
+        let storage = owner.storage.as_ref().get_ref();
+        let transmitted = storage
+            .model_transmit_control(&owner.binding, false)
+            .unwrap();
+        assert_eq!(&transmitted[..2], &[3, 9]);
+        assert_eq!(&transmitted[2..], &first);
+        assert!(!owner.reclaim_control_transmission());
+        let storage = owner.storage.as_ref().get_ref();
+        assert_eq!(
+            storage
+                .model_transmit_control(&owner.binding, true)
+                .unwrap(),
+            transmitted
+        );
+        assert!(owner.reclaim_control_transmission());
+        assert!(!owner.reclaim_control_transmission());
+        assert!(owner.enqueue_control_transmission(&second).unwrap());
+        let storage = owner.storage.as_ref().get_ref();
+        assert_eq!(
+            storage
+                .model_transmit_control(&owner.binding, true)
+                .unwrap(),
+            [3, 2, 7, 0xf1]
+        );
+        assert!(owner.reclaim_control_transmission());
+    }
+}
+
+#[test]
+fn cancelling_recurring_preparation_preserves_a_pending_control_response() {
+    let mut owner = active_graph(0x2f00_4000);
+    let response = [9, 0, 0, 0, 0, 0, 0, 0, 0];
+    assert!(owner.enqueue_control_transmission(&response).unwrap());
+    let mut owner = owner
+        .prepare_reviewed_recurring_event_fields(
+            PeripheralConnectionDataChannel::new(3).unwrap(),
+            PeripheralConnectionEventSpan::new(23_000).unwrap(),
+            PeripheralConnectionSchedulerWindow::new(1000, 2000).unwrap(),
+            PeripheralConnectionRecurringReceiveWait::new(1250).unwrap(),
+            PeripheralConnectionSchedulerPriority::FIRST_EVENT,
+            92,
+        )
+        .cancel();
+    assert!(!owner.reclaim_control_transmission());
+    assert!(!owner.enqueue_control_transmission(&[7, 0xf1]).unwrap());
+    let pdu = owner
+        .storage
+        .as_ref()
+        .get_ref()
+        .model_transmit_control(&owner.binding, true)
+        .unwrap();
+    assert_eq!(&pdu[2..], &response);
+    assert!(owner.reclaim_control_transmission());
+}
+
+#[test]
+fn oversized_control_payload_leaves_empty_queue_reusable() {
+    let mut owner = active_graph(0x2f00_4000);
+    assert!(owner.enqueue_control_transmission(&[0; 28]).is_err());
+    assert!(
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_transmit_control(&owner.binding, false)
+            .is_none()
+    );
+    assert!(owner.enqueue_control_transmission(&[7, 0xf1]).unwrap());
+}
+
+#[test]
+fn recurring_rx_retains_private_cursor_and_rotates_its_successor() {
+    let mut owner = active_graph(0x2f00_4000);
+    let first = [3, 9, 8, 0, 0, 0, 0, 0, 0, 0, 0];
+    let second = [2, 7, 3, 0, 4, 0, 2, 5, 2];
+    for pdu in [&first[..], &second[..], &first[..]] {
+        let current = owner.storage.as_ref().get_ref().model_receive_current();
+        let next = owner
+            .pool
+            .model_controller_receive_after_current(current, pdu);
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_advance_receive_current(next);
+        let batch = owner
+            .pool
+            .extract_completed_connection_rx_batch()
+            .expect("each new RX starts after the retained current cursor");
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch.packet(0).unwrap().as_bytes(), pdu);
+        owner.restore_after_event();
+        assert_eq!(
+            owner.storage.as_ref().get_ref().model_receive_current(),
+            next
+        );
+        assert!(owner.event_resources_are_recycled());
+        assert!(
+            owner
+                .pool
+                .extract_completed_connection_rx_batch()
+                .unwrap()
+                .is_empty()
+        );
+        owner.restore_after_event();
+        assert!(
+            owner
+                .pool
+                .extract_completed_connection_rx_batch()
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

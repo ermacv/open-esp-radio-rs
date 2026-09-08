@@ -282,6 +282,7 @@ fn tracked_file_snapshot_drop_removes_new_file() {
 fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
     let mut features = FeatureCapabilities {
         bluetooth_dtm: true,
+        bluetooth_peripheral: true,
         structured_evidence: true,
         psram_task_stack: true,
         ..FeatureCapabilities::default()

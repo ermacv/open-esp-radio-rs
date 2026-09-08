@@ -34,9 +34,10 @@ struct ImageCapabilitySignature {
 pub(crate) fn classify_flashed_capabilities(
     features: &FeatureCapabilities,
 ) -> Option<crate::image::ImageClass> {
-    if features.bluetooth_dtm {
+    if features.bluetooth_dtm || features.bluetooth_peripheral {
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
+            bluetooth_peripheral: true,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()

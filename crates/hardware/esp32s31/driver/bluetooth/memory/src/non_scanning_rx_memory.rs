@@ -3,16 +3,19 @@
 //! The current controller routes ordinary advertising and connection items to
 //! positional RX-list selector two. The vendor allocator and its global
 //! bookkeeping are not part of this boundary: the open driver owns the
-//! smallest reusable two-node rotation graph directly and transfers its
-//! affine owner between response-capable advertising and a connection.
+//! initial completed packetless cursor followed by two writable packet nodes.
+//! It transfers its affine owner between response-capable advertising and a
+//! connection. Recurring connection events retain the current packet node and
+//! rearm the other node as its writable successor.
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{cell::Cell, marker::PhantomPinned, pin::Pin};
 
 use crate::{
     le_rx_packet::{
-        LeReceivedBatch, LeRxError, LeRxNodeStorage, LeRxPacketAddress, extract_completed_rx_batch,
+        LeReceivedBatch, LeRxBufferHeaderStorage, LeRxError, LeRxNodeStorage, LeRxPacketAddress,
+        extract_completed_rx_batch,
     },
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -29,9 +32,28 @@ use pin_project::pin_project;
 /// Receive nodes retained by the first non-scanning BLE pool.
 pub const BLUETOOTH_NON_SCANNING_RX_NODE_COUNT: usize = 2;
 
+#[derive(Clone, Copy)]
+enum ConnectionRxCursor {
+    Initial,
+    First,
+    Second,
+}
+
+impl ConnectionRxCursor {
+    fn index(self) -> Option<usize> {
+        match self {
+            Self::Initial => None,
+            Self::First => Some(0),
+            Self::Second => Some(1),
+        }
+    }
+}
+
 #[repr(C)]
 #[pin_project]
 pub struct NonScanningRxMemoryStorage {
+    predecessor: LeRxBufferHeaderStorage,
+    connection_cursor: Cell<ConnectionRxCursor>,
     nodes: [LeRxNodeStorage; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT],
     #[pin]
     _pin: PhantomPinned,
@@ -39,6 +61,7 @@ pub struct NonScanningRxMemoryStorage {
 
 const STORAGE_BYTES: u32 = core::mem::size_of::<NonScanningRxMemoryStorage>() as u32;
 const NODE_BYTES: u32 = core::mem::size_of::<LeRxNodeStorage>() as u32;
+const NODES_OFFSET: u32 = core::mem::offset_of!(NonScanningRxMemoryStorage, nodes) as u32;
 const PACKET_OFFSET: u32 = core::mem::offset_of!(LeRxNodeStorage, packet) as u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,8 +72,8 @@ struct NonScanningRxNodeBinding {
 
 struct NonScanningRxMemoryBinding {
     identity: NonScanningRxMemoryIdentity,
-    base: u32,
     end_exclusive: u32,
+    predecessor: ControllerSramLinkAddress,
     nodes: [NonScanningRxNodeBinding; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT],
 }
 
@@ -70,6 +93,8 @@ impl NonScanningRxMemoryBinding {
 
         let node = |index: u32| {
             let node_base = base
+                .checked_add(NODES_OFFSET)
+                .ok_or(NonScanningRxMemoryBindError::ExtentOutsidePhysicalSram)?
                 .checked_add(
                     index
                         .checked_mul(NODE_BYTES)
@@ -92,8 +117,9 @@ impl NonScanningRxMemoryBinding {
 
         Ok(Self {
             identity,
-            base,
             end_exclusive,
+            predecessor: ControllerSramLinkAddress::new(base)
+                .map_err(|_| NonScanningRxMemoryBindError::ZeroCompressedLink)?,
             nodes: [node(0)?, node(1)?],
         })
     }
@@ -198,8 +224,8 @@ impl NonScanningRxMemoryCpuOwned {
         self.binding.identity
     }
 
-    pub(crate) const fn head(&self) -> BluetoothControllerSramAddress {
-        self.binding.nodes[0].header.controller_address()
+    pub(crate) const fn current_cursor(&self) -> BluetoothControllerSramAddress {
+        self.binding.predecessor.controller_address()
     }
 
     pub(crate) const fn tail(&self) -> BluetoothControllerSramAddress {
@@ -207,18 +233,24 @@ impl NonScanningRxMemoryCpuOwned {
     }
 
     pub(crate) const fn controller_range(&self) -> (u32, u32) {
-        (self.binding.base, self.binding.end_exclusive)
+        (
+            self.binding.predecessor.controller_address().address(),
+            self.binding.end_exclusive,
+        )
     }
 
-    /// Whether both packet allocations are armed in the bounded rotation graph.
+    /// Whether the initial cursor precedes both armed packet allocations.
     pub fn is_initialized(&self) -> bool {
         let storage = self.storage.as_ref().get_ref();
         let [first, second] = self.binding.nodes;
-        storage.nodes[0].packet.is_armed()
+        storage.predecessor.is_packetless()
+            && storage.predecessor.completion_observed()
+            && storage.predecessor.successor() == Some(first.header.compressed_image())
+            && storage.nodes[0].packet.is_armed()
             && storage.nodes[1].packet.is_armed()
             && storage.nodes[0].header.retains_packet(first.packet)
             && storage.nodes[0].header.successor() == Some(second.header.compressed_image())
-            && storage.nodes[0].header.predecessor().is_none()
+            && storage.nodes[0].header.predecessor() == Some(self.current_cursor().address())
             && storage.nodes[0].header.rotates_into_successor()
             && storage.nodes[1].header.retains_packet(second.packet)
             && storage.nodes[1].header.successor().is_none()
@@ -238,9 +270,151 @@ impl NonScanningRxMemoryCpuOwned {
         extract_completed_rx_batch(&self.storage.as_ref().get_ref().nodes)
     }
 
+    pub(crate) fn extract_completed_connection_rx_batch(
+        &self,
+    ) -> Result<LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>, LeRxError> {
+        let storage = self.storage.as_ref().get_ref();
+        match storage.connection_cursor.get().index() {
+            None => crate::le_rx_packet::extract_completed_connection_rx_batch(&storage.nodes),
+            Some(current) => crate::le_rx_packet::extract_completed_rx_nodes(
+                core::iter::once(&storage.nodes[1 - current]),
+                true,
+            ),
+        }
+    }
+
+    pub(crate) fn connection_current_cursor(&self) -> BluetoothControllerSramAddress {
+        match self
+            .storage
+            .as_ref()
+            .get_ref()
+            .connection_cursor
+            .get()
+            .index()
+        {
+            None => self.current_cursor(),
+            Some(current) => self.binding.nodes[current].header.controller_address(),
+        }
+    }
+
+    pub(crate) fn connection_tail(&self) -> BluetoothControllerSramAddress {
+        match self
+            .storage
+            .as_ref()
+            .get_ref()
+            .connection_cursor
+            .get()
+            .index()
+        {
+            None => self.tail(),
+            Some(current) => self.binding.nodes[1 - current].header.controller_address(),
+        }
+    }
+
+    pub(crate) fn connection_resources_ready(&self) -> bool {
+        let storage = self.storage.as_ref().get_ref();
+        let Some(current) = storage.connection_cursor.get().index() else {
+            return self.is_initialized();
+        };
+        let next = 1 - current;
+        storage.nodes[current].header.completion_observed()
+            && storage.nodes[current].header.successor()
+                == Some(self.binding.nodes[next].header.compressed_image())
+            && !storage.nodes[next].header.completion_observed()
+            && storage.nodes[next]
+                .header
+                .retains_packet(self.binding.nodes[next].packet)
+            && storage.nodes[next].header.successor().is_none()
+            && storage.nodes[next].packet.is_armed()
+    }
+
+    /// Retain the last completed descriptor and its packet until hardware has
+    /// advanced to its successor. Recurring events have one writable RX slot.
+    pub(crate) fn rotate_after_connection_event(&mut self) {
+        let storage = self.storage.as_ref().get_ref();
+        let cursor = match storage.connection_cursor.get().index() {
+            None => {
+                if storage.nodes[1].header.completion_observed() {
+                    ConnectionRxCursor::Second
+                } else if storage.nodes[0].header.completion_observed() {
+                    ConnectionRxCursor::First
+                } else {
+                    return;
+                }
+            }
+            Some(current) => {
+                let advanced = storage.nodes[1 - current].header.completion_observed();
+                match (current, advanced) {
+                    (0, false) | (1, true) => ConnectionRxCursor::First,
+                    _ => ConnectionRxCursor::Second,
+                }
+            }
+        };
+        let current = cursor.index().expect("a connection cursor is retained");
+        let next = 1 - current;
+        // Only the non-current allocation is reusable. Rewinding the private
+        // hardware cursor or rearming its packet breaks the next exchange.
+        storage.nodes[next].packet.initialize();
+        storage.nodes[next].header.install(
+            self.binding.nodes[next].packet,
+            None,
+            Some(self.binding.nodes[current].header.controller_address()),
+            false,
+        );
+        storage.nodes[current]
+            .header
+            .append_successor(self.binding.nodes[next].header);
+        storage.connection_cursor.set(cursor);
+    }
+
+    pub(crate) fn observe_nodes(
+        &self,
+    ) -> [crate::LeRxNodeObservation; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT] {
+        let storage = self.storage.as_ref().get_ref();
+        core::array::from_fn(|index| {
+            let node = &storage.nodes[index];
+            node.packet
+                .observe(&node.header, self.binding.nodes[index].packet)
+        })
+    }
+
     /// Rearm both packet allocations after the completed event was copied.
     pub(crate) fn reinitialize_after_event(&mut self) {
         self.reinitialize();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn model_controller_receive_after_current(
+        &self,
+        current: BluetoothControllerSramAddress,
+        pdu: &[u8],
+    ) -> BluetoothControllerSramAddress {
+        let storage = self.storage.as_ref().get_ref();
+        let header = if current == self.binding.predecessor.controller_address() {
+            &storage.predecessor
+        } else {
+            let index = self
+                .binding
+                .nodes
+                .iter()
+                .position(|node| node.header.controller_address() == current)
+                .expect("the current cursor belongs to the retained pool");
+            &storage.nodes[index].header
+        };
+        let next = header.successor().expect("a writable RX successor remains");
+        let index = self
+            .binding
+            .nodes
+            .iter()
+            .position(|node| node.header.compressed_image() == next)
+            .expect("the successor is a retained packet-bearing node");
+        assert!(
+            storage.nodes[index]
+                .header
+                .retains_packet(self.binding.nodes[index].packet)
+        );
+        self.model_controller_receive(index, pdu, -42, 1_000);
+        self.binding.nodes[index].header.controller_address()
     }
 
     #[cfg(test)]
@@ -267,13 +441,20 @@ impl NonScanningRxMemoryCpuOwned {
     fn reinitialize(&mut self) {
         let bindings = self.binding.nodes;
         let storage = self.storage.as_mut().project();
+        storage.connection_cursor.set(ConnectionRxCursor::Initial);
+        storage
+            .predecessor
+            .install_completed_predecessor(bindings[0].header);
         for (node, binding) in storage.nodes.iter().zip(bindings) {
             node.packet.initialize();
             node.header.install(binding.packet, None, None, false);
         }
-        storage.nodes[0]
-            .header
-            .install(bindings[0].packet, Some(bindings[1].header), None, true);
+        storage.nodes[0].header.install(
+            bindings[0].packet,
+            Some(bindings[1].header),
+            Some(self.binding.predecessor.controller_address()),
+            true,
+        );
         storage.nodes[1].header.install(
             bindings[1].packet,
             None,
@@ -286,6 +467,8 @@ impl NonScanningRxMemoryCpuOwned {
 impl NonScanningRxMemoryStorage {
     pub const fn new() -> Self {
         Self {
+            predecessor: LeRxBufferHeaderStorage::new(),
+            connection_cursor: Cell::new(ConnectionRxCursor::Initial),
             nodes: [LeRxNodeStorage::new(), LeRxNodeStorage::new()],
             _pin: PhantomPinned,
         }

@@ -120,7 +120,7 @@ semantic values and performs these positional transforms privately:
 | --- | --- | --- |
 | link state `+0x00` | owned empty TX sentinel | stores the compressed endpoint, 251-octet S31 capability and the two transmit-path ready states |
 | link state `+0x04` | signed default TX power | shared S31 five-bit rounded-power projection |
-| link state `+0x08` | owned initialized RX pool | stores the compressed head and initial unconsumed receive sentinel |
+| link state `+0x08` | owned initialized RX pool | stores the compressed packetless predecessor and initial unconsumed receive sentinel |
 | link state `+0x0c` | S31 baseline control policy | installs the duplicated value 2 and makes that policy active |
 | link state `+0x18` | negotiated connection interval | interval converted as a duration into raw controller ticks |
 | link state `+0x14`, `+0x1c`, `+0x20`, `+0x30` | new unencrypted connection | clears packet history/control state and installs the recovered initial sequence profile |
@@ -135,6 +135,36 @@ semantic values and performs these positional transforms privately:
 | scheduler item `+0x38` | new event | clears the initial status |
 | scheduler item `+0x44`, `+0x48` | resolved common-scheduler window | stores the accepted start and end only after overlap resolution |
 | scheduler item `+0x4c` | new event | clears the reviewed low bookkeeping byte |
+
+The common sequence projection also applies to peripheral events. Current
+`libbtdm_common.a` member `19.o`, `r_sym_bt_zpuzq1MeZSgFAehUuR9n`, is
+byte-identical to named `r_btdm_sched_calc_seq_time` (146 bytes). It writes the
+accepted start plus the converted sequence lead to item `+0x0c`, and accepted
+end minus accepted start to `+0x10`. The software bounds at `+0x44/+0x48` alone
+do not schedule a hardware receive event. Both first and recurring Rust paths
+pass the reservation's actual timing-policy lead after sequence authorization;
+the memory codec installs those hardware inputs without resampling time.
+
+The connection allocator also retains the common allocation bits installed by
+`61.o:r_sym_ble_UCGCRefyBslibNM003px`. Current
+`51.o:r_sym_ble_O0vMjkEidHi2LMntMUtT` preserves them while linking the item,
+then applies the connection-specific mask to the common flags at `+0x1c`.
+Its call to `51.o:r_sym_ble_Usz94okxdD4AJlhlWrI6` initializes the two five-bit
+radio-request priorities at `+0x24`; advertising has a different, four-lane
+producer. The dedicated open radio uses equal nonzero priorities of 15 in
+the two peripheral lanes as product policy. This does not identify the
+vendor's coexistence-table defaults. Recycle and recurring cancellation retain
+these allocation fields while replacing event timing.
+
+The fixed open connection pool starts with a completed, packetless predecessor
+followed by two packet-bearing nodes. Both the connection's private receive
+cursor and the selector-two publication refer to that predecessor. The
+controller advances to its successor before receiving; publishing the first
+packet-bearing node would skip it and produce a completion-chain gap.
+After recycle the same predecessor is rearmed for the next event. This bounded
+pool is an open ownership choice, not proof of equivalence to the vendor's
+persistent global buffer rotation; the shared hardware cursor contract is
+described in [the RX-list reference](bluetooth-passive-scanning.md).
 
 The priority is not an application-supplied integer. The retained
 current options object and the older named options object are byte-identical:
@@ -354,3 +384,29 @@ that executed in hardware. Only an accepted proposal may commit LL time,
 channel selection and event-counter advancement. Scheduler admission,
 continuation/destroy classification, SN/NESN, retransmission, supervision and
 ACL delivery retain separate ownership and evidence requirements.
+
+## Connection control packet ownership
+
+Connection RX uses the acceptance gate from current `conn_rx_process`, separately
+from advertising RX. Rejected completed observations are counted and skipped
+without hiding later accepted packets in the same bounded list. The connection pool retains its last completed RX descriptor and packet, and
+rearms only the other packet allocation as its next writable successor. It does
+not rewind the private hardware cursor or clear the adjacent controller word.
+Extraction skips the retained current descriptor, preventing a previous packet
+from being dispatched twice. The first event has two writable nodes; recurrence
+has one writable successor. Software RX endpoints track this rotation. This is a
+bounded counterpart of the vendor append/recycle path, not its dynamic allocator.
+
+The live CPU-owned graph retains two TX headers and one bounded packet allocation.
+Appending links a fully initialized successor after the current descriptor and
+updates the software tail, following `conn_txbuf_insert_after`. Reclamation uses
+the packet descriptor's completion, as in `get_txed_buffer`; scheduler completion
+alone leaves the packet queued. When the completed packet is the tail, the
+descriptor remains the hardware current cursor while its packet binding is
+released. A later append reuses the other header. Recurrence does not reset
+SN/NESN or the TX current path. Hardware publication remains the existing fenced
+scheduler transition. The portable control responder owns LLCP payload bytes.
+
+These contracts are a bounded implementation of the reviewed append and tail
+reclamation paths. They do not establish equivalence with the vendor's dynamic
+queue, priority insertion or encryption paths.

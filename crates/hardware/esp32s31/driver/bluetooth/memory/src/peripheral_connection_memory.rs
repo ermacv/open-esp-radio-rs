@@ -492,7 +492,7 @@ impl PeripheralConnectionMemoryGraphIdentityPrepared {
         self.storage
             .as_ref()
             .get_ref()
-            .install_receive_pool(pool.head(), pool.tail());
+            .install_receive_pool(pool.current_cursor(), pool.tail());
         PeripheralConnectionMemoryGraphReceivePrepared {
             storage: self.storage,
             binding: self.binding,
@@ -529,6 +529,9 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
     ///
     /// This is not a publishable descriptor: direction-finding workspace and
     /// scheduler admission remain outside this state.
+    /// `raw_sequence_lead` is the accepted scheduler policy's duration in
+    /// controller ticks. It shifts the hardware start while preserving the
+    /// complete admitted window duration.
     #[expect(
         clippy::too_many_arguments,
         reason = "the complete typed first-event fields cross this ownership boundary together"
@@ -542,6 +545,7 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
         receive_wait: PeripheralConnectionReceiveWait,
         default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
         priority: PeripheralConnectionSchedulerPriority,
+        raw_sequence_lead: u32,
     ) -> PeripheralConnectionMemoryGraphEventFieldsPrepared {
         let graph = self.storage.as_ref().get_ref();
         let input = PeripheralConnectionFirstEventCodecInput {
@@ -552,8 +556,13 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
             receive_wait,
             default_tx_power,
             priority,
+            raw_sequence_lead,
         };
-        graph.prepare_reviewed_first_event_fields(&self.binding, self.pool.head(), &input);
+        graph.prepare_reviewed_first_event_fields(
+            &self.binding,
+            self.pool.current_cursor(),
+            &input,
+        );
         PeripheralConnectionMemoryGraphEventFieldsPrepared {
             storage: self.storage,
             binding: self.binding,
@@ -750,10 +759,10 @@ impl PeripheralConnectionMemoryGraphPreparedEvent {
         }
     }
 
-    const fn receive_head(&self) -> BluetoothControllerSramAddress {
+    fn receive_head(&self) -> BluetoothControllerSramAddress {
         match self {
-            Self::First(first) => first.prepared.pool.head(),
-            Self::Recurring(recurring) => recurring.active.pool.head(),
+            Self::First(first) => first.prepared.pool.current_cursor(),
+            Self::Recurring(recurring) => recurring.active.pool.connection_current_cursor(),
         }
     }
 
@@ -812,7 +821,7 @@ impl PeripheralConnectionMemoryGraphSchedulerAdmissionCore {
         self.prepared.binding().scheduler_head()
     }
 
-    const fn receive_head(&self) -> BluetoothControllerSramAddress {
+    fn receive_head(&self) -> BluetoothControllerSramAddress {
         self.prepared.receive_head()
     }
 
@@ -912,7 +921,7 @@ impl PeripheralConnectionMemoryGraphPublicationPrepared {
 
     /// Validated receive header retained by this affine graph.
     #[doc(hidden)]
-    pub const fn receive_head(&self) -> BluetoothControllerSramAddress {
+    pub fn receive_head(&self) -> BluetoothControllerSramAddress {
         self.prepared.receive_head()
     }
 
@@ -1235,7 +1244,7 @@ impl PeripheralConnectionMemoryGraphRecyclePrepared {
             .running
             .prepared
             .receive_pool()
-            .extract_completed_rx_batch()
+            .extract_completed_connection_rx_batch()
         {
             Ok(batch) => batch,
             Err(error) => {
@@ -1352,7 +1361,27 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
             .as_ref()
             .get_ref()
             .event_resources_are_recycled(&self.binding)
-            && self.pool.is_initialized()
+            && self.pool.connection_resources_ready()
+    }
+
+    /// Reclaim a completed control payload while retaining the hardware cursor.
+    /// A scheduler completion by itself does not complete a queued transmission.
+    pub fn reclaim_control_transmission(&mut self) -> bool {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .reclaim_control_tx(&self.binding)
+    }
+
+    /// Queue a control payload under exclusive CPU ownership. `false` leaves
+    /// both the queued packet and its retransmission state unchanged.
+    pub fn enqueue_control_transmission(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<bool, crate::LeTxPacketPrepareError> {
+        self.storage
+            .as_mut()
+            .enqueue_control_tx(&self.binding, payload)
     }
 
     /// Prepare the reviewed dynamic fields for one software-widened recurrence.
@@ -1360,6 +1389,8 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
     /// Connection identity, packet history, sequence state, RX ownership and
     /// the installed direction-finding workspace remain untouched. This step
     /// performs no publication and can be cancelled back to this exact owner.
+    /// `raw_sequence_lead` must come from the reservation's timing policy after
+    /// sequence authorization, just as for the first event.
     pub fn prepare_reviewed_recurring_event_fields(
         self,
         channel: PeripheralConnectionDataChannel,
@@ -1367,6 +1398,7 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
         window: PeripheralConnectionSchedulerWindow,
         receive_wait: PeripheralConnectionRecurringReceiveWait,
         priority: PeripheralConnectionSchedulerPriority,
+        raw_sequence_lead: u32,
     ) -> PeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
         let input = PeripheralConnectionRecurringEventCodecInput {
             channel,
@@ -1374,6 +1406,7 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
             window,
             receive_wait,
             priority,
+            raw_sequence_lead,
         };
         self.storage
             .as_ref()
@@ -1394,7 +1427,11 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
             .as_ref()
             .get_ref()
             .restore_scheduler_admission(&self.binding);
-        self.pool.reinitialize_after_event();
+        self.pool.rotate_after_connection_event();
+        self.storage.as_ref().get_ref().install_receive_pool(
+            self.pool.connection_current_cursor(),
+            self.pool.connection_tail(),
+        );
     }
 }
 

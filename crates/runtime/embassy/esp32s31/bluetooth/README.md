@@ -22,3 +22,14 @@ A progress boundary represents a newly published RUN; a radio failure retains
 all owners in a terminal boundary. See the driver's
 [peripheral timing limits](../../../../hardware/esp32s31/driver/bluetooth/FEATURES.md#peripheral-timing-limits)
 for the required clock bound and unsupported link behavior.
+
+Connectable advertising also reports progress at the first and recurring RUN
+publication. Publishing an HCI response does not duplicate that observation.
+The actor retains the most recent reclaimed no-connection item status for
+diagnostics, including an opaque nonzero value. It does not interpret that
+status as reception evidence. It also retains a checked cumulative count of
+received PDUs rejected by portable connection-request admission and the last
+rejected header with its admission reason. Empty events preserve that last
+observation; ordinary scan requests also count as rejected connection requests.
+Recoverable recurrence boundaries preserve their
+semantic cause; storage-specific interrupt errors remain with the retained owner.

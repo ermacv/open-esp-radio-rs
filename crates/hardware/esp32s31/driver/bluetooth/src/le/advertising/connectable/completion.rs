@@ -85,6 +85,14 @@ pub(crate) struct LegacyConnectableAdvertisingRecycleReady {
 }
 
 impl LegacyConnectableAdvertisingRecycleReady {
+    pub(crate) fn receive_observations(
+        &self,
+    ) -> Option<[oer_esp32s31_bluetooth_memory::LeRxNodeObservation; 2]> {
+        self.item
+            .memory
+            .observe_receive_nodes_after_removal(&self.removal)
+    }
+
     pub(crate) const fn new(
         item: LegacyConnectableAdvertisingCompletionObserved,
         removal: BluetoothSchedulerSoftwareListRemovalReady,

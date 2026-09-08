@@ -891,6 +891,7 @@ impl RxMemoryListPublished {
 trait RxMemoryListInitialPublication {
     fn publish_current_head(&mut self);
     fn clear_next_head(&mut self);
+    fn reset_initial_control(&mut self);
 }
 
 fn execute_rx_memory_list_initial_publication(
@@ -898,6 +899,7 @@ fn execute_rx_memory_list_initial_publication(
 ) {
     transaction.publish_current_head();
     transaction.clear_next_head();
+    transaction.reset_initial_control();
 }
 
 struct PacBluetoothRxMemoryListInitialPublication<'registers> {
@@ -907,6 +909,19 @@ struct PacBluetoothRxMemoryListInitialPublication<'registers> {
 }
 
 impl RxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublication<'_> {
+    #[allow(
+        unsafe_code,
+        reason = "the transaction retains the serialized RX-list lifecycle"
+    )]
+    fn reset_initial_control(&mut self) {
+        // SAFETY: the enclosing operation retains the same pinned graph and
+        // exclusive list lifecycle through pointer publication and this reset.
+        unsafe {
+            self.registers
+                .reset_memory_list_initial_control(self.selector)
+        };
+    }
+
     #[allow(
         unsafe_code,
         reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"

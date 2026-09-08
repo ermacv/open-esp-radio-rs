@@ -1,8 +1,11 @@
 //! Contiguous Peripheral LE1M events with independently retained HCI order.
 //!
 //! Requires an explicit local-clock timing policy in the runtime configuration.
-//! This lifecycle does not yet consume active commands, implement LLCP/ACL,
-//! or recover missed anchors. Any radio failure seals all transaction owners.
+//! Central feature requests and unsupported optional LLCP requests enter a
+//! bounded control-response queue. Active HCI commands, ACL delivery, mandatory
+//! connection updates and graceful teardown remain unavailable. Version exchange
+//! requires a caller-supplied Controller implementation identity.
+//! Any radio or unsupported mandatory-control transition seals its owners.
 
 #![forbid(unsafe_code)]
 
@@ -25,6 +28,7 @@ pub use radio::{PeripheralConnectionActiveFaultCause, PeripheralConnectionActive
 #[must_use = "drive or retain the exact active connection owner"]
 pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     order: Order<'a, radio::Radio<'a, S, N>>,
+    control: oer_bluetooth_ll::control::LePeripheralControl,
 }
 
 /// One finite radio transition; only `Published` represents a new scheduler RUN.
@@ -59,6 +63,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         };
         Self {
             order: order.map_owner(|()| radio::Radio::Running(running)),
+            control: oer_bluetooth_ll::control::LePeripheralControl::new(),
         }
     }
 
@@ -72,13 +77,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     }
 
     pub fn step_radio(self) -> PeripheralConnectionActiveStep<'a, S, N> {
-        let (radio, order) = self.order.into_parts();
-        match radio.step() {
+        let Self { order, mut control } = self;
+        let (radio, order) = order.into_parts();
+        match radio.step(&mut control) {
             radio::Step::Continue(radio) => PeripheralConnectionActiveStep::Continue(Self {
                 order: order.map_owner(|()| radio),
+                control,
             }),
             radio::Step::Published(radio) => PeripheralConnectionActiveStep::Published(Self {
                 order: order.map_owner(|()| radio),
+                control,
             }),
             radio::Step::Fault(radio) => {
                 PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
@@ -111,8 +119,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         self,
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
     ) -> Publication<Self> {
-        map_order_publication(self.order.try_publish_response(controller), |order| Self {
+        let Self { order, control } = self;
+        map_order_publication(order.try_publish_response(controller), |order| Self {
             order,
+            control,
         })
     }
 }

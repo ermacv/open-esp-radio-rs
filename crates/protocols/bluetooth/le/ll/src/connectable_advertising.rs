@@ -512,6 +512,8 @@ impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
     }
 
     /// Validate one received `CONNECT_IND` without losing the event on failure.
+    /// Channel selection uses both the transmitted advertisement and request:
+    /// algorithm two requires both ChSel bits; otherwise algorithm one applies.
     pub fn admit_connection_request(
         self,
         pdu: &[u8],
@@ -537,18 +539,14 @@ impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
                 },
             );
         }
-        if request.channel_selection() == LeChannelSelectionAlgorithm::AlgorithmTwo
-            && advertisement.channel_selection_two()
-                == LeChannelSelectionAlgorithmTwoSupport::Unsupported
-        {
-            return LegacyConnectableConnectionRequestAdmission::Rejected(
-                LegacyConnectableConnectionRequestRejected {
-                    in_flight: self,
-                    error:
-                        LegacyConnectableConnectionRequestRejection::UnsupportedChannelSelectionAlgorithmTwo,
-                },
-            );
-        }
+        let advertised_algorithm = match advertisement.channel_selection_two() {
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported => {
+                LeChannelSelectionAlgorithm::AlgorithmOne
+            }
+            LeChannelSelectionAlgorithmTwoSupport::Supported => {
+                LeChannelSelectionAlgorithm::AlgorithmTwo
+            }
+        };
 
         LegacyConnectableConnectionRequestAdmission::Accepted(
             LegacyConnectableConnectionRequestAccepted {
@@ -557,7 +555,7 @@ impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
                     set: self.prepared.event.set,
                 },
                 identity: self.prepared.event.identity,
-                connection: LePeripheralConnection::from_request(request),
+                connection: LePeripheralConnection::from_request(request, advertised_algorithm),
             },
         )
     }
@@ -632,7 +630,6 @@ impl<'a> LegacyConnectableConnectionRequestRejected<'a> {
 pub enum LegacyConnectableConnectionRequestRejection {
     Malformed(LeLegacyConnectionRequestError),
     DifferentAdvertiser,
-    UnsupportedChannelSelectionAlgorithmTwo,
 }
 
 /// Completed connectable event retaining its reusable configuration.

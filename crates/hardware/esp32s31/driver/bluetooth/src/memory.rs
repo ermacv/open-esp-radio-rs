@@ -17,5 +17,6 @@ pub use oer_esp32s31_bluetooth_memory::LegacyAdvertisingMemoryGraphModelAddress;
 
 pub use oer_esp32s31_bluetooth_memory::{
     LegacyAdvertisingMemoryGraphBindError, LegacyAdvertisingMemoryGraphBindFailure,
-    LegacyAdvertisingMemoryGraphCpuOwned, LegacyAdvertisingMemoryGraphStorage, RxMemoryListClass,
+    LegacyAdvertisingMemoryGraphCpuOwned, LegacyAdvertisingMemoryGraphStorage,
+    LegacyConnectableAdvertisingSchedulerItemCompletionStatus, RxMemoryListClass,
 };

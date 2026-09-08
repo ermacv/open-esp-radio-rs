@@ -284,7 +284,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             }
         };
         let resolved_window = reservation.window();
-        match candidate.prepare_resolved_event_image(resolved_window) {
+        match candidate.prepare_resolved_event_image(
+            resolved_window,
+            reservation.timing_policy().sequence_lead_raw_delta(),
+        ) {
             Ok(image) => Ok(LegacyConnectableAdvertisingEventPrepared { image, reservation }),
             Err(failure) => {
                 let error = failure.error();

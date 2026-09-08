@@ -23,7 +23,10 @@ pub enum ControllerRetry {
     FirstEvent,
     LegacyAdvertisingFirst,
     LegacyConnectableAdvertisingFirst,
-    LegacyConnectableAdvertisingRecurring,
+    #[cfg(target_arch = "riscv32")]
+    LegacyConnectableAdvertisingRecurring(
+        oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingRecurringRetryCause<()>,
+    ),
     PeripheralConnectionFirst,
     LegacyAdvertisingRecurring,
     LegacyAdvertisingDisableRestore,

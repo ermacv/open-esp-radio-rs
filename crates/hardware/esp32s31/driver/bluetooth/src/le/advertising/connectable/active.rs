@@ -155,6 +155,29 @@ where
         self.completed.identity()
     }
 
+    /// Completed item status is diagnostic, not proof of an RF packet.
+    pub const fn scheduler_status(
+        &self,
+    ) -> oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus
+    {
+        self.completed.scheduler_status()
+    }
+
+    /// Received PDUs rejected by portable connection-request admission.
+    pub const fn rejected_packets(&self) -> usize {
+        self.completed.rejected_packets()
+    }
+
+    /// Last rejected PDU header and the portable admission reason for this event.
+    pub const fn last_receive_rejection(
+        &self,
+    ) -> Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )> {
+        self.completed.last_receive_rejection()
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -350,6 +373,28 @@ where
 {
     pub const fn cause(&self) -> LegacyConnectableAdvertisingActiveFailStopCause {
         self.cause
+    }
+
+    /// Read-only RX progress from the retained, removed graph.
+    pub fn receive_observations(
+        &self,
+    ) -> Option<[oer_esp32s31_bluetooth_memory::LeRxNodeObservation; 2]> {
+        match &self._owner {
+            LegacyConnectableAdvertisingActiveFailStopOwner::Recycle {
+                _step: LegacyConnectableAdvertisingRecycleStep::ReceiveInvalid { _ready, .. },
+            } => _ready.receive_observations(),
+            _ => None,
+        }
+    }
+
+    /// Exact RX extraction rejection retained by the sealed recycle owner.
+    pub fn receive_error(&self) -> Option<oer_esp32s31_bluetooth_memory::LeRxError> {
+        match &self._owner {
+            LegacyConnectableAdvertisingActiveFailStopOwner::Recycle {
+                _step: LegacyConnectableAdvertisingRecycleStep::ReceiveInvalid { _error, .. },
+            } => Some(*_error),
+            _ => None,
+        }
     }
 }
 

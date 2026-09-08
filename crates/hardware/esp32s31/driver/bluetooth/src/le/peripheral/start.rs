@@ -388,7 +388,9 @@ pub enum LegacyConnectablePeripheralFirstRecycleFailStopCause {
     SchedulerIdentityMismatch,
     FinishedListDrainStillActive,
     MemoryIdentityMismatch,
-    ReceiveInvalid,
+    ReceiveProducerSentinelRetained,
+    ReceiveEpochSentinelRetained,
+    ReceiveCompletionChainGap,
     ReservationIdentityMismatch,
 }
 
@@ -838,9 +840,17 @@ where
         PeripheralConnectionRecycleFailureCause::MemoryIdentityMismatch(_) => {
             LegacyConnectablePeripheralFirstRecycleFailStopCause::MemoryIdentityMismatch
         }
-        PeripheralConnectionRecycleFailureCause::ReceiveInvalid(_) => {
-            LegacyConnectablePeripheralFirstRecycleFailStopCause::ReceiveInvalid
-        }
+        PeripheralConnectionRecycleFailureCause::ReceiveInvalid(error) => match error {
+            oer_esp32s31_bluetooth_memory::LeRxError::ProducerSentinelRetained => {
+                LegacyConnectablePeripheralFirstRecycleFailStopCause::ReceiveProducerSentinelRetained
+            }
+            oer_esp32s31_bluetooth_memory::LeRxError::EpochSentinelRetained => {
+                LegacyConnectablePeripheralFirstRecycleFailStopCause::ReceiveEpochSentinelRetained
+            }
+            oer_esp32s31_bluetooth_memory::LeRxError::CompletionChainGap => {
+                LegacyConnectablePeripheralFirstRecycleFailStopCause::ReceiveCompletionChainGap
+            }
+        },
         PeripheralConnectionRecycleFailureCause::ReservationIdentityMismatch => {
             LegacyConnectablePeripheralFirstRecycleFailStopCause::ReservationIdentityMismatch
         }

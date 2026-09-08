@@ -109,6 +109,7 @@ fn peripheral_connection_publication_prepared() -> PeripheralConnectionMemoryGra
                 .expect("the first receive wait is representable"),
             PeripheralConnectionDefaultTxPowerDbm::new(0),
             PeripheralConnectionSchedulerPriority::FIRST_EVENT,
+            92,
         )
         .install_direction_finding_workspace(workspace.binding().link())
         .prepare_scheduler_admission()

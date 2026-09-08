@@ -458,6 +458,19 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    pub(crate) fn process_peripheral_control(
+        &mut self,
+        completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
+        completed.process_control(
+            control,
+            self.peripheral_connection_resources
+                .config()
+                .version_information(),
+        )
+    }
+
     /// Build one provisional recurrence from the real completed connection owner.
     ///
     /// The default runtime remains fail-closed because neither main-XTAL

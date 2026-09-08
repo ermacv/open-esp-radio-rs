@@ -1843,6 +1843,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             };
         }
 
+        #[cfg(feature = "dtm-diagnostics")]
+        if let Some(nodes) = ready.receive_observations() {
+            crate::le::advertising::diagnostics::record(nodes);
+        }
         let (item, removal, reservation) = ready.into_parts();
         let (memory, remainder) = item.into_parts();
         let prepared = match memory.prepare_recycle_after_software_list_removal(removal) {

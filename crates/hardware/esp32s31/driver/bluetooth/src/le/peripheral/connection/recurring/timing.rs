@@ -37,8 +37,9 @@ const MAX_FORWARD_MICROS: u32 = i32::MAX as u32;
 /// Reviewed maximum error of the local sleep clock, in parts per million.
 ///
 /// This value is deliberately distinct from the Central's SCA class carried
-/// by `CONNECT_IND`. A future powered source must supply the local clock fact;
-/// absence cannot silently select an accuracy.
+/// by `CONNECT_IND`. The board configuration supplies the local bound; clock
+/// source read-back and PHY calibration do not measure worst-case oscillator
+/// accuracy. Absence cannot silently select an accuracy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PeripheralConnectionLocalSleepClockAccuracy {
     worst_case_ppm: u16,

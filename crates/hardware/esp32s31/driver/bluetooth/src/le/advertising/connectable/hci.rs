@@ -91,6 +91,29 @@ impl<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    /// Preserve the completed item status across the HCI ordering boundary.
+    pub const fn scheduler_status(
+        &self,
+    ) -> oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus
+    {
+        self.ordered.owner().scheduler_status()
+    }
+
+    /// Received PDUs rejected by connection-request admission.
+    pub const fn rejected_packets(&self) -> usize {
+        self.ordered.owner().rejected_packets()
+    }
+
+    /// Last rejected PDU header and the portable admission reason for this event.
+    pub const fn last_receive_rejection(
+        &self,
+    ) -> Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )> {
+        self.ordered.owner().last_receive_rejection()
+    }
+
     pub(crate) fn into_ordered(
         self,
     ) -> LeControllerCommandReady<
@@ -138,6 +161,16 @@ where
         &self,
     ) -> crate::le::advertising::LegacyConnectableAdvertisingActiveFailStopCause {
         self._ordered.owner().cause()
+    }
+
+    pub fn receive_observations(
+        &self,
+    ) -> Option<[oer_esp32s31_bluetooth_memory::LeRxNodeObservation; 2]> {
+        self._ordered.owner().receive_observations()
+    }
+
+    pub fn receive_error(&self) -> Option<oer_esp32s31_bluetooth_memory::LeRxError> {
+        self._ordered.owner().receive_error()
     }
 }
 
@@ -216,6 +249,29 @@ impl<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    /// Preserve the completed item status across the HCI ordering boundary.
+    pub const fn scheduler_status(
+        &self,
+    ) -> oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus
+    {
+        self.transaction.owner().scheduler_status()
+    }
+
+    /// Received PDUs rejected by connection-request admission.
+    pub const fn rejected_packets(&self) -> usize {
+        self.transaction.owner().rejected_packets()
+    }
+
+    /// Last rejected PDU header and the portable admission reason for this event.
+    pub const fn last_receive_rejection(
+        &self,
+    ) -> Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )> {
+        self.transaction.owner().last_receive_rejection()
+    }
+
     pub(crate) fn into_transaction(
         self,
     ) -> LeControllerResponsePending<

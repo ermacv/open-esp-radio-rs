@@ -208,6 +208,7 @@ impl PeripheralConnectionFirstWindow {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PeripheralConnectionRuntimeConfig {
     default_tx_power_dbm: PeripheralConnectionDefaultTxPowerDbm,
+    version_information: Option<oer_bluetooth_ll::control::LeVersionInformation>,
     #[cfg(any(target_arch = "riscv32", test))]
     recurring_timing_policy: Option<PeripheralConnectionRecurringTimingPolicy>,
 }
@@ -217,9 +218,25 @@ impl PeripheralConnectionRuntimeConfig {
     pub const fn new(default_tx_power_dbm: PeripheralConnectionDefaultTxPowerDbm) -> Self {
         Self {
             default_tx_power_dbm,
+            version_information: None,
             #[cfg(any(target_arch = "riscv32", test))]
             recurring_timing_policy: None,
         }
+    }
+
+    /// Supply the identity of this Controller implementation for LL version exchange.
+    pub const fn with_version_information(
+        mut self,
+        version: oer_bluetooth_ll::control::LeVersionInformation,
+    ) -> Self {
+        self.version_information = Some(version);
+        self
+    }
+
+    pub const fn version_information(
+        self,
+    ) -> Option<oer_bluetooth_ll::control::LeVersionInformation> {
+        self.version_information
     }
 
     /// Opt in to the reviewed software window-widening profile.
@@ -833,6 +850,7 @@ impl PeripheralConnectionFirstEventCandidate {
     pub(crate) fn prepare_resolved_event_fields(
         self,
         resolved_window: SchedulerRawWindow,
+        raw_sequence_lead: u32,
         default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
     ) -> Result<PeripheralConnectionFirstEventFieldsPrepared, Self> {
         let Some(window) = PeripheralConnectionSchedulerWindow::new(
@@ -868,6 +886,7 @@ impl PeripheralConnectionFirstEventCandidate {
             receive_wait,
             default_tx_power,
             priority,
+            raw_sequence_lead,
         );
         Ok(PeripheralConnectionFirstEventFieldsPrepared {
             graph,

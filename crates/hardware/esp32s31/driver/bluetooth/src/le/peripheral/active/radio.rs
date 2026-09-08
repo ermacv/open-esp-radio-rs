@@ -27,6 +27,7 @@ pub enum PeripheralConnectionActiveWait<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionActiveFaultCause {
     Completion(super::super::LegacyConnectablePeripheralFirstCompletionFailStopCause),
+    Control(oer_bluetooth_ll::control::LePeripheralControlError),
     Recycle(super::super::LegacyConnectablePeripheralFirstRecycleFailStopCause),
     UnrelatedFinishedList,
     SchedulerEpochUnavailable,
@@ -81,6 +82,11 @@ pub(super) struct Fault<'a, S: SchedulerRunInterruptStorage, const N: usize> {
 )]
 enum FaultOwner<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     Completion(CompletionFault<'a, S, N>),
+    Control(
+        Task<'a, S, N>,
+        sched::PeripheralConnectionSchedulerCompleted,
+        Evidence,
+    ),
     Recycle(RecycleFault<'a, S, N>),
     Unrelated(
         Running<'a, S, N>,
@@ -164,7 +170,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         }
     }
 
-    pub(super) fn step(self) -> Step<'a, S, N> {
+    pub(super) fn step(
+        self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+    ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
         match self {
             Self::Running(running) => running.step_radio_with(
@@ -197,7 +206,13 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 ),
             ),
             Self::Completed(completed) => {
-                let (mut task, completed, evidence) = completed.into_parts();
+                let (mut task, mut completed, evidence) = completed.into_parts();
+                if let Err(error) = task.process_peripheral_control(&mut completed, control) {
+                    return fault(
+                        Cause::Control(error),
+                        FaultOwner::Control(task, completed, evidence),
+                    );
+                }
                 // Only contiguous successors are composed. Missed-anchor recovery,
                 // peripheral latency and supervision policy remain separate work.
                 let delta =

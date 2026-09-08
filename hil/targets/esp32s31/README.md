@@ -3,8 +3,27 @@
 The separate `bluetooth-dtm` image selects `bluetooth-hil`, the production
 Bluetooth composition and the framed HIL control protocol without a Wi-Fi
 network feature. Its USB owner translates bounded DTM requests into typed HCI
-commands; radio execution remains in production crates. See the
+commands; radio execution remains in production crates. The same image exposes
+the bounded [peripheral diagnostic commands](../../protocol/README.md) for
+starting a single-channel connectable advertisement and observing execution.
+They require a fresh boot and host reset after the attempt; they do not qualify
+a connection or ACL traffic. See the
 [Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
+
+The peripheral diagnostic explicitly configures software window widening with
+a 500-ppm local-clock bound through `BluetoothColdStartConfig::with_peripheral_connection`.
+Cold start retains and verifies selection of the main XTAL. The bound assumes
+that the board meets BLE clock requirements; it is the broadest permitted
+bound, not a measurement from PHY calibration. ESP-IDF's `BT_LE_LL_SCA` default
+is 60 ppm. Oscillator accuracy and connection readiness remain unqualified.
+Other cold-start callers retain the default of unavailable recurring timing
+until they supply their board's clock policy.
+
+The diagnostic also supplies an explicit development Controller identity for
+LL Version Exchange: Core version 5.4, unassigned company value `0xffff` and
+subversion 1. Production callers supply their own identity through
+`PeripheralConnectionRuntimeConfig::with_version_information`; none is
+inferred from the ESP32-S31 or its PHY calibration.
 
 This workspace selects the shared board boot and memory profile and owns Embassy
 executors, network stacks, UART transport and HIL workloads. `cargo hil image

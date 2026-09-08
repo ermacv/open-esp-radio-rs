@@ -298,7 +298,10 @@ impl PeripheralConnectionRecurringEventCandidate {
     ///
     /// The plan already owns a nonempty forward-half-range raw window, which is
     /// the identical invariant required by the memory semantic type.
-    pub(super) fn prepare_event_fields(self) -> PeripheralConnectionRecurringEventFieldsPrepared {
+    pub(super) fn prepare_event_fields(
+        self,
+        raw_sequence_lead: u32,
+    ) -> PeripheralConnectionRecurringEventFieldsPrepared {
         let window = PeripheralConnectionSchedulerWindow::new(
             self.protocol.proposal.window.start(),
             self.protocol.proposal.window.end(),
@@ -315,6 +318,7 @@ impl PeripheralConnectionRecurringEventCandidate {
             window,
             protocol.proposal.receive_wait,
             PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+            raw_sequence_lead,
         );
         let PeripheralConnectionRecurringProtocolCandidate {
             provisional,

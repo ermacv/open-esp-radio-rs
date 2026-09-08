@@ -424,7 +424,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             }
         };
         ControlFlow::Continue(PeripheralConnectionRecurringEventPrepared {
-            event: candidate.prepare_event_fields(),
+            event: candidate
+                .prepare_event_fields(reservation.timing_policy().sequence_lead_raw_delta()),
             reservation,
         })
     }

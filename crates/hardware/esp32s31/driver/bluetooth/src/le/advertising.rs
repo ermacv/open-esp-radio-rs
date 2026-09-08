@@ -3,6 +3,9 @@
 pub(crate) mod connectable;
 pub(crate) mod legacy;
 
+#[cfg(feature = "dtm-diagnostics")]
+pub mod diagnostics;
+
 pub use connectable::LegacyConnectableAdvertisingRuntimeResources;
 #[cfg(target_arch = "riscv32")]
 pub use connectable::{

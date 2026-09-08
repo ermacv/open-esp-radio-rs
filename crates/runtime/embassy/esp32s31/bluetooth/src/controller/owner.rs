@@ -359,6 +359,14 @@ pub struct ControllerCommandTask<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    pub(super) advertising_rejected_packets: Option<u32>,
+    pub(super) advertising_last_receive_rejection: Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )>,
+    pub(super) advertising_completion: Option<
+        oer_esp32s31_bluetooth::memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    >,
     pub(super) owner: ControllerOwnerSlot<ControllerCommandState<'runtime, S, CAPACITY>>,
 }
 
@@ -371,7 +379,35 @@ where
     pub const fn new(idle: ControllerIdleCommandTask<'runtime, S, CAPACITY>) -> Self {
         Self {
             owner: ControllerOwnerSlot::new(ControllerCommandState::Idle(idle)),
+            advertising_completion: None,
+            advertising_rejected_packets: Some(0),
+            advertising_last_receive_rejection: None,
         }
+    }
+
+    /// Boot-lifetime count of received advertising PDUs rejected by LL admission.
+    /// None means that the diagnostic count overflowed.
+    pub const fn advertising_rejected_packets(&self) -> Option<u32> {
+        self.advertising_rejected_packets
+    }
+
+    /// Last received PDU rejected by portable connection-request admission.
+    pub const fn advertising_last_receive_rejection(
+        &self,
+    ) -> Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )> {
+        self.advertising_last_receive_rejection
+    }
+
+    /// Latest reclaimed no-connection item; this does not prove RF success.
+    pub const fn advertising_completion(
+        &self,
+    ) -> Option<
+        oer_esp32s31_bluetooth::memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    > {
+        self.advertising_completion
     }
 
     /// Current retained lifecycle phase.
@@ -666,7 +702,7 @@ where
                         running.into_response_pending(),
                     ),
                 );
-                None
+                Some(ControllerCommandBoundary::LegacyConnectableAdvertisingActive)
             }
             LegacyConnectableAdvertisingFirstDrive::Failed(failure) => {
                 self.store_legacy_connectable_advertising_failure(from, failure)

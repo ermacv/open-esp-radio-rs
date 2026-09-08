@@ -10165,3 +10165,39 @@ fields = [{ field = "FORCED_DIGITAL_GAIN_1", source-bit-offset = 0 }]
 domain = "PhyDigitalGainImage"
 exposure = "facade"
 sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_1_initial_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_A"
+fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "preserve_bluetooth_memory_list_1_initial_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_A"
+fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_2_initial_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_A"
+fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "preserve_bluetooth_memory_list_2_initial_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_A"
+fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]

@@ -122,7 +122,10 @@ fn peripheral_connection_candidate() -> (
         .begin_event()
         .expect("the sole connection allocation starts idle")
         .prepare_first_event(
-            LePeripheralConnection::from_request(request),
+            LePeripheralConnection::from_request(
+                request,
+                oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ),
             crate::le::peripheral::Le1MPacketStartTiming::from_scheduler_micros(21_000),
         )
         .project_scheduler_window(

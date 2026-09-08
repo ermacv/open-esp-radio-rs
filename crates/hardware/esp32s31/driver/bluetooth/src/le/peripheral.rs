@@ -63,3 +63,6 @@ pub use active::{
     PeripheralConnectionActiveSession, PeripheralConnectionActiveStep,
     PeripheralConnectionActiveWait,
 };
+
+#[cfg(feature = "dtm-diagnostics")]
+pub mod diagnostics;

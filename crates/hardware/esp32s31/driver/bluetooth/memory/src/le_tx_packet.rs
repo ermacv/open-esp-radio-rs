@@ -176,6 +176,39 @@ impl LeTxBufferHeaderStorage {
         ]);
     }
 
+    /// Completed packetless cursor retained by a connection TX list.
+    pub(super) fn initialize_empty_cursor(&self) {
+        self.install([0, 0, 0, 0x8000_0000, 2, 0]);
+    }
+
+    pub(super) fn is_empty_cursor(&self) -> bool {
+        self.packet_base_link().is_none() && self.transmission_completed()
+    }
+
+    pub(super) fn link_successor(&self, successor: ControllerSramLinkAddress) {
+        self.words[0]
+            .set((self.read_word(0) & !Self::COMPRESSED_LINK_MASK) | successor.compressed_image());
+    }
+
+    pub(super) fn transmission_completed(&self) -> bool {
+        self.read_word(3) & 0x8000_0000 != 0
+    }
+
+    pub(super) fn mark_complete_control_packet(&self) {
+        // Software completion metadata: end of packet and LL control PDU.
+        self.words[4].set(self.read_word(4) | 6);
+    }
+
+    /// Retain the hardware cursor after acknowledging the packet to software.
+    pub(super) fn release_completed_packet(&self) {
+        self.words[1].set(self.read_word(1) & !Self::COMPRESSED_LINK_MASK);
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_complete_transmission(&self) {
+        self.words[3].set(self.read_word(3) | 0x8000_0000);
+    }
+
     pub(super) fn packet_base_link(&self) -> Option<LeTxPacketBaseLink> {
         LeTxPacketBaseLink::from_image(self.read_word(1) & Self::COMPRESSED_LINK_MASK)
     }
@@ -404,6 +437,20 @@ impl<const ALLOCATION_BYTES: usize> LeTxPacketStorage<ALLOCATION_BYTES> {
         LeTxPacketPreparedLength(length)
     }
 
+    /// Legacy advertising hardware inserts AdvA before consuming these bytes.
+    /// Keep its on-air length, while moving only advertising data after the header.
+    pub(super) fn omit_legacy_advertiser_address(
+        &mut self,
+        length: LeTxPacketPreparedLength<ALLOCATION_BYTES>,
+    ) {
+        let payload_length = usize::from(length.payload_bytes());
+        assert!(payload_length >= 6, "the advertising role supplies AdvA");
+        let start = BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES;
+        self.bytes
+            .copy_within(start + 6..start + payload_length, start);
+        self.bytes[start + payload_length - 6..start + payload_length].fill(0);
+    }
+
     /// Borrow the semantic Link Layer PDU installed by the enclosing owner.
     pub fn prepared_pdu(&self, length: LeTxPacketPreparedLength<ALLOCATION_BYTES>) -> &[u8] {
         &self.bytes[CONTROLLER_METADATA_BYTES..][..length.pdu_bytes()]
@@ -414,6 +461,11 @@ impl<const ALLOCATION_BYTES: usize> LeTxPacketStorage<ALLOCATION_BYTES> {
         length: LeTxPacketPreparedLength<ALLOCATION_BYTES>,
     ) -> &[u8] {
         &self.bytes[..BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + usize::from(length.payload_bytes())]
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_pdu(&self) -> &[u8] {
+        &self.bytes[CONTROLLER_METADATA_BYTES..][..2 + usize::from(self.bytes[PDU_LENGTH_BYTE])]
     }
 
     pub(super) fn clear(&mut self) {

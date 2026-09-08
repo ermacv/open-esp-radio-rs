@@ -16,6 +16,7 @@ pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
             bluetooth_dtm: false,
+            bluetooth_peripheral: false,
             udp: !cfg!(feature = "memory-benchmark"),
             tcp: !cfg!(feature = "memory-benchmark"),
             rx: !cfg!(feature = "memory-benchmark"),

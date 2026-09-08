@@ -41,7 +41,8 @@ use oer_bluetooth_ll::{
         LegacyConnectableAdvertiserConfigured, LegacyConnectableAdvertisingEvent,
         LegacyConnectableAdvertisingEventComplete, LegacyConnectableAdvertisingEventInFlight,
         LegacyConnectableAdvertisingSet, LegacyConnectableConnectionRequestAccepted,
-        LegacyConnectableConnectionRequestAdmission, LegacyPreparedConnectableAdvertisingEvent,
+        LegacyConnectableConnectionRequestAdmission, LegacyConnectableConnectionRequestRejection,
+        LegacyPreparedConnectableAdvertisingEvent,
     },
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -769,6 +770,7 @@ impl LegacyConnectableAdvertisingEventCandidate {
     pub(crate) fn prepare_resolved_event_image(
         self,
         resolved_window: SchedulerRawWindow,
+        raw_sequence_lead: u32,
     ) -> Result<
         LegacyConnectableAdvertisingEventImagePrepared,
         LegacyConnectableAdvertisingEventImagePrepareFailure,
@@ -784,7 +786,11 @@ impl LegacyConnectableAdvertisingEventCandidate {
             memory,
             reserved,
         } = prepared;
-        match memory.prepare_event_fields(resolved_window.start(), resolved_window.end()) {
+        match memory.prepare_event_fields(
+            resolved_window.start(),
+            resolved_window.end(),
+            raw_sequence_lead,
+        ) {
             Ok(memory) => Ok(LegacyConnectableAdvertisingEventImagePrepared {
                 definition,
                 portable,
@@ -1195,7 +1201,7 @@ impl LegacyConnectableAdvertisingPostRunRemainder {
         };
 
         let packets = [batch.packet(0).copied(), batch.packet(1).copied()];
-        match classify_received_pdus(self.portable, packets, 0, 0) {
+        match classify_received_pdus(self.portable, packets, 0, LegacyConnectableAdvertisingRejectedPackets::default()) {
             LegacyConnectableAdvertisingPortableRxOutcome::NoConnection {
                 complete,
                 rejected_packets,
@@ -1226,7 +1232,7 @@ impl LegacyConnectableAdvertisingPostRunRemainder {
                         ),
                         phase: self.phase,
                         scheduler_status,
-                        rejected_packets,
+                        rejected_packets: rejected_packets.count as usize,
                     },
                 )
             }
@@ -1246,7 +1252,7 @@ impl LegacyConnectableAdvertisingPostRunRemainder {
                             _batch: batch,
                             _scheduler_status: scheduler_status,
                             _phase: self.phase,
-                            _rejected_packets: rejected_packets,
+                            _rejected_packets: rejected_packets.count as usize,
                         },
                 },
             ),
@@ -1254,21 +1260,39 @@ impl LegacyConnectableAdvertisingPostRunRemainder {
     }
 }
 
+/// Bounded rejection evidence retained with the exact completed RX batch.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LegacyConnectableAdvertisingRejectedPackets {
+    count: u8,
+    last: Option<(u8, LegacyConnectableConnectionRequestRejection)>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl LegacyConnectableAdvertisingRejectedPackets {
+    fn record(mut self, pdu: &[u8], reason: LegacyConnectableConnectionRequestRejection) -> Self {
+        assert!(usize::from(self.count) < BLUETOOTH_NON_SCANNING_RX_NODE_COUNT);
+        self.count += 1;
+        self.last = pdu.first().map(|header| (*header, reason));
+        self
+    }
+}
+
 #[cfg(any(target_arch = "riscv32", test))]
 enum LegacyConnectableAdvertisingPortableRxOutcome<P> {
     NoConnection {
         complete: LegacyConnectableAdvertisingEventComplete<'static>,
-        rejected_packets: usize,
+        rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
     },
     ConnectionAccepted {
         accepted: LegacyConnectableConnectionRequestAccepted<'static>,
         packet: P,
-        rejected_packets: usize,
+        rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
     },
     PacketAfterConnection {
         accepted: LegacyConnectableConnectionRequestAccepted<'static>,
         packet: P,
-        rejected_packets: usize,
+        rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
     },
 }
 
@@ -1289,7 +1313,7 @@ fn classify_received_pdus<P: LegacyConnectableAdvertisingReceivedPdu>(
     in_flight: LegacyConnectableAdvertisingEventInFlight<'static>,
     packets: [Option<P>; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT],
     index: usize,
-    rejected_packets: usize,
+    rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
 ) -> LegacyConnectableAdvertisingPortableRxOutcome<P> {
     let Some(packet) = packets.get(index).copied().flatten() else {
         return LegacyConnectableAdvertisingPortableRxOutcome::NoConnection {
@@ -1313,12 +1337,15 @@ fn classify_received_pdus<P: LegacyConnectableAdvertisingReceivedPdu>(
                 }
             }
         }
-        LegacyConnectableConnectionRequestAdmission::Rejected(rejected) => classify_received_pdus(
-            rejected.into_in_flight(),
-            packets,
-            index + 1,
-            rejected_packets + 1,
-        ),
+        LegacyConnectableConnectionRequestAdmission::Rejected(rejected) => {
+            let rejected_packets = rejected_packets.record(packet.pdu_bytes(), rejected.error());
+            classify_received_pdus(
+                rejected.into_in_flight(),
+                packets,
+                index + 1,
+                rejected_packets,
+            )
+        }
     }
 }
 
@@ -1345,7 +1372,7 @@ pub(crate) struct LegacyConnectableAdvertisingNoConnection {
     complete: LegacyConnectableAdvertisingEventComplete<'static>,
     phase: LegacyAdvertisingEventPhase,
     scheduler_status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    rejected_packets: usize,
+    rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
 }
 
 /// Restored no-connection event ready for a later recurrence decision.
@@ -1356,7 +1383,7 @@ pub(crate) struct LegacyConnectableAdvertisingNoConnectionRestored {
     complete: LegacyConnectableAdvertisingEventComplete<'static>,
     phase: LegacyAdvertisingEventPhase,
     scheduler_status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    rejected_packets: usize,
+    rejected_packets: LegacyConnectableAdvertisingRejectedPackets,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -1380,7 +1407,14 @@ impl LegacyConnectableAdvertisingNoConnectionRestored {
     }
 
     pub(crate) const fn rejected_packets(&self) -> usize {
-        self.rejected_packets
+        self.rejected_packets.count as usize
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn last_receive_rejection(
+        &self,
+    ) -> Option<(u8, LegacyConnectableConnectionRequestRejection)> {
+        self.rejected_packets.last
     }
 
     /// Attach the caller's fresh advertising delay through the portable LL.
@@ -1416,7 +1450,7 @@ impl LegacyConnectableAdvertisingNoConnectionRestored {
             start_offset_micros,
             previous_phase: phase,
             previous_scheduler_status: scheduler_status,
-            rejected_packets,
+            rejected_packets: rejected_packets.count as usize,
         }
     }
 
@@ -1442,7 +1476,7 @@ impl LegacyConnectableAdvertisingNoConnectionRestored {
             identity,
             phase,
             scheduler_status,
-            rejected_packets,
+            rejected_packets.count as usize,
         );
         (configured, stopped)
     }

@@ -178,11 +178,14 @@ fn accepted_transfer(
         identity,
         peripheral: PeripheralConnectionAcceptedRequest::new(
             allocation,
-            LePeripheralConnection::from_request(request),
+            LePeripheralConnection::from_request(
+                request,
+                oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ),
             packet,
         ),
         phase,
-        scheduler_status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        scheduler_status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
         rejected_packets: 2,
     }
 }
@@ -193,7 +196,12 @@ fn empty_dispatch_completes_without_using_scheduler_status_as_an_outcome() {
         definition(PrimaryAdvertisingChannelMap::new(true, false, false).unwrap()).unwrap();
     let in_flight = portable_in_flight(definition);
 
-    let outcome = classify_received_pdus::<TestReceivedPdu<'_>>(in_flight, [None, None], 0, 0);
+    let outcome = classify_received_pdus::<TestReceivedPdu<'_>>(
+        in_flight,
+        [None, None],
+        0,
+        Default::default(),
+    );
     let LegacyConnectableAdvertisingPortableRxOutcome::NoConnection {
         complete,
         rejected_packets,
@@ -201,7 +209,7 @@ fn empty_dispatch_completes_without_using_scheduler_status_as_an_outcome() {
     else {
         panic!("an empty copied batch cannot accept a connection")
     };
-    assert_eq!(rejected_packets, 0);
+    assert_eq!(rejected_packets.count, 0);
     assert_eq!(complete.disable().set(), definition.set());
 }
 
@@ -221,7 +229,7 @@ fn rejected_packet_then_addressed_connect_ind_transfers_the_connection() {
             Some(TestReceivedPdu(&request)),
         ],
         0,
-        0,
+        Default::default(),
     );
     let LegacyConnectableAdvertisingPortableRxOutcome::ConnectionAccepted {
         accepted,
@@ -231,12 +239,48 @@ fn rejected_packet_then_addressed_connect_ind_transfers_the_connection() {
     else {
         panic!("the final addressed CONNECT_IND must be admitted")
     };
-    assert_eq!(rejected_packets, 1);
+    assert_eq!(rejected_packets.count, 1);
     assert_eq!(packet.pdu_bytes(), request.as_slice());
     assert_eq!(accepted.request().advertiser().wire_bytes(), advertiser);
     let (configured, _identity, connection) = accepted.into_parts();
     assert_eq!(configured.set(), definition.set());
     assert_eq!(connection.event_counter(), 0);
+}
+
+#[test]
+fn rejected_batch_retains_the_last_header_and_admission_reason() {
+    use oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection;
+
+    let definition =
+        definition(PrimaryAdvertisingChannelMap::new(true, false, false).unwrap()).unwrap();
+    let other_advertiser = [7, 8, 9, 10, 11, 12];
+    let request = connection_request(other_advertiser);
+    let scan_request = [0x03, 0];
+    let outcome = classify_received_pdus(
+        portable_in_flight(definition),
+        [
+            Some(TestReceivedPdu(&scan_request)),
+            Some(TestReceivedPdu(&request)),
+        ],
+        0,
+        Default::default(),
+    );
+    let LegacyConnectableAdvertisingPortableRxOutcome::NoConnection {
+        complete,
+        rejected_packets,
+    } = outcome
+    else {
+        panic!("neither packet requests a connection to this advertiser")
+    };
+    assert_eq!(rejected_packets.count, 2);
+    assert_eq!(
+        rejected_packets.last,
+        Some((
+            request[0],
+            LegacyConnectableConnectionRequestRejection::DifferentAdvertiser
+        ))
+    );
+    assert_eq!(complete.disable().set(), definition.set());
 }
 
 #[test]
@@ -255,7 +299,7 @@ fn packet_after_accepted_connect_ind_is_not_silently_discarded() {
             Some(TestReceivedPdu(&later_pdu)),
         ],
         0,
-        0,
+        Default::default(),
     );
     let LegacyConnectableAdvertisingPortableRxOutcome::PacketAfterConnection {
         accepted,
@@ -265,7 +309,7 @@ fn packet_after_accepted_connect_ind_is_not_silently_discarded() {
     else {
         panic!("the later PDU must preserve the accepted connection as a sealed outcome")
     };
-    assert_eq!(rejected_packets, 0);
+    assert_eq!(rejected_packets.count, 0);
     assert!(core::ptr::eq(packet.0, request.as_slice()));
     let (configured, accepted_identity, connection) = accepted.into_parts();
     assert_eq!(accepted_identity, identity);
@@ -374,8 +418,8 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
             allocation,
             complete,
             phase,
-            scheduler_status: oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
-            rejected_packets: 1,
+            scheduler_status: oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
+            rejected_packets: super::LegacyConnectableAdvertisingRejectedPackets { count: 1, last: None },
         };
 
     let restored = connectable
@@ -388,7 +432,7 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
     assert_eq!(restored.rejected_packets(), 1);
     assert_eq!(
             restored.scheduler_status(),
-            oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+            oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1)
         );
     let completed_identity = restored.identity();
     let delay = AdvertisingDelay::from_micros(7_500)
@@ -432,7 +476,7 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
     assert_eq!(scheduled_from_phase, phase);
     assert_eq!(
             previous_status,
-            oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+            oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1)
         );
     assert_eq!(previous_rejected_packets, 1);
 
@@ -492,7 +536,7 @@ fn foreign_no_connection_restore_preserves_the_exact_role_owner() {
             complete,
             phase,
             scheduler_status: oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
-            rejected_packets: 0,
+            rejected_packets: super::LegacyConnectableAdvertisingRejectedPackets { count: 0, last: None },
         };
 
     let outcome = match foreign.restore_no_connection(outcome, &mut peripheral) {
@@ -670,7 +714,7 @@ fn explicit_reset_restores_the_exact_accepted_connection_allocation_losslessly()
     assert_eq!(evidence.phase(), phase);
     assert_eq!(
         evidence.scheduler_status(),
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1)
     );
     assert_eq!(evidence.rejected_packets(), 2);
 

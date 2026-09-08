@@ -116,7 +116,7 @@ remains outside the LE program.
 | Feature | Status | Current production boundary |
 | --- | --- | --- |
 | Broadcaster / Observer | PARTIAL | The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent. |
-| Peripheral | PARTIAL | `CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Reliable ACL, active commands and LLCP remain unsupported. |
+| Peripheral | PARTIAL | `CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Central-initiated feature exchange has a bounded control-response path; reliable ACL, active commands and general LLCP remain unsupported. |
 | Central / Initiator | ABSENT | No Create Connection/initiator scheduling or Central connection owner exists. |
 | Simultaneous Broadcaster + Observer + Central + Peripheral | ABSENT | Individual role subsets do not form a simultaneous multi-role runtime. |
 | Multiple connections / multi-connection optimization | ABSENT | No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists. |
@@ -130,13 +130,15 @@ remains outside the LE program.
 | Establishment / supervision timeout | ABSENT | Request timing validation is present, but no complete live timeout and disconnect owner exists. |
 | Missed-event recovery | ABSENT | No complete connection resynchronization and accumulated-uncertainty policy exists. |
 | LL Data PDU RX | PARTIAL | Lower peripheral RX extraction and buffer recycling exist without a reliable recurring ACL link. |
-| LL Data PDU TX | ABSENT | No complete connected TX queue, publication and retry owner exists. |
-| SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledgments | ABSENT | No reliable connected LL exchange is composed. Scanner report deduplication is a separate operation. |
-| LLCP framework | ABSENT | No connected control-procedure transaction owner exists. |
+| LL Data PDU TX | PARTIAL | One controller control-PDU payload is retained through publication and descriptor completion; its cursor survives reclamation. ACL TX and general queueing are absent. |
+| SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledgments | PARTIAL | The bounded control path preserves hardware sequence state and uncompleted TX packets; connection RX applies the reviewed acceptance gate. General ACL reliability is not qualified. |
+| LLCP framework | PARTIAL | A bounded peripheral responder queues feature and unknown responses. Procedure timers, general transaction collisions and mandatory live updates are absent. |
 | Connection Update / Channel Map Update | ABSENT | Initial parameters are retained; live negotiation, instant handling and application are absent. |
 | PHY Update | ABSENT | No connected PHY negotiation/application owner exists; DTM selection does not implement LLCP. |
 | Data Length Extension / Data Length Update | ABSENT | No negotiated connected packet-length owner exists. |
-| Version Exchange / Feature Exchange / LE Ping | ABSENT | No connected LLCP producer/consumer and response lifecycle exists. |
+| Feature Exchange | PARTIAL | Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with zero optional feature bits. Peripheral-initiated exchange and remote-feature HCI routing are absent. |
+| Version Exchange | PARTIAL | A peer request receives at most one queued reply using the configured Controller identity; no identity is inferred from the chip. Host-initiated version routing is absent. |
+| LE Ping | ABSENT | No ping procedure owner exists. |
 | Termination | ABSENT | No on-air termination transaction plus HCI disconnection lifecycle exists. |
 | Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps and CSA progression exist. Dynamic assessment and map updates are absent. |
 | LE Channel Classification | ABSENT | No connected classification generation/report/update procedure exists. |
@@ -321,9 +323,9 @@ seal both owners in `PeripheralConnectionActiveFailStop`.
 `PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must
 supply the local clock accuracy bound. The default configuration leaves it
 unset and stops with `TimingPolicyUnavailable` when recurrence is attempted.
-This actor does not yet consume active HCI commands, implement reliable
-SN/NESN/ACL exchanges or LLCP, or enforce supervision and missed-anchor
-recovery. A compiled lifecycle does not establish a successful over-air link.
+The actor responds to central feature requests through a bounded TX queue.
+It does not consume active HCI commands, deliver ACL data, implement general
+LLCP, or enforce supervision and missed-anchor recovery. A compiled lifecycle does not establish a successful over-air link.
 
 Lower recurrence requires a caller-owned local clock accuracy bound. Its
 software window widening does not establish arbitrary missed-event anchor

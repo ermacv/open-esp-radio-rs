@@ -12,12 +12,13 @@ use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
 use crate::{
     le_tx_packet::{
         BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxBufferHeaderStorage, LeTxPacketAddress,
-        LeTxPacketPrepareError, LeTxPacketPreparedLength, LeTxPacketStorage,
+        LeTxPacketPrepareError, LeTxPacketPreparedLength,
     },
     legacy_advertising_event_image::{
         LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress, LegacyAdvertisingPduError,
         LegacyAdvertisingPrimaryChannelPlan, LegacyAdvertisingSchedulerItemWords,
     },
+    legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     scheduler_context::SchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -295,7 +296,7 @@ pub struct LegacyAdvertisingMemoryGraphStorage {
     scheduler_items: [LegacyAdvertisingSchedulerItemStorage;
         BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
     tx_header: LeTxBufferHeaderStorage,
-    tx_packet: LeTxPacketStorage<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>,
+    tx_packet: LegacyAdvertisingTxPacketStorage<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>,
     #[pin]
     _pin: PhantomPinned,
 }
@@ -613,6 +614,11 @@ impl LegacyAdvertisingMemoryGraphPacketPrepared {
                 });
             }
         };
+        self.storage
+            .as_mut()
+            .project()
+            .tx_packet
+            .lower_advertiser_address(self.packet_length);
         self.storage
             .as_mut()
             .project()
@@ -1277,7 +1283,7 @@ impl LegacyAdvertisingMemoryGraphStorage {
             scheduler_items: [const { LegacyAdvertisingSchedulerItemStorage::new() };
                 BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
             tx_header: LeTxBufferHeaderStorage::new(),
-            tx_packet: LeTxPacketStorage::new(),
+            tx_packet: LegacyAdvertisingTxPacketStorage::new(),
             _pin: PhantomPinned,
         }
     }

@@ -111,6 +111,38 @@ impl BluetoothMemoryListPointerImage {
 }
 
 impl BluetoothTaskRegisters {
+    /// Finish the reviewed initial RX-list reset after current/next publication.
+    ///
+    /// Current `61.o:r_sym_ble_HL6xpyhopnPTnSDqTURd` clears CONTROL_20,
+    /// then freshly reads and writes back the whole current-pointer register.
+    /// The second operation preserves any intervening hardware update. Its
+    /// broader control/rotation meaning remains unassigned. Selector three
+    /// has no corresponding operation in that reset body.
+    ///
+    /// # Safety
+    /// The caller must retain the same powered, serialized list lifecycle and
+    /// pinned storage required by `program_memory_list_pointer`.
+    #[allow(unsafe_code, reason = "the caller owns the serialized RX-list reset")]
+    #[doc(hidden)]
+    pub unsafe fn reset_memory_list_initial_control(
+        &mut self,
+        selector: BluetoothMemoryListSelector,
+    ) {
+        let controller = &self.bluetooth.bluetooth_controller_core;
+        match selector {
+            BluetoothMemoryListSelector::One => {
+                crate::generated::clear_bluetooth_memory_list_1_initial_control(controller);
+                crate::generated::preserve_bluetooth_memory_list_1_initial_control(controller);
+            }
+            BluetoothMemoryListSelector::Two => {
+                crate::generated::clear_bluetooth_memory_list_2_initial_control(controller);
+                crate::generated::preserve_bluetooth_memory_list_2_initial_control(controller);
+            }
+            BluetoothMemoryListSelector::Three => {}
+        }
+        device_fence();
+    }
+
     /// Program one controller receive-list pointer.
     ///
     /// SOURCE: complete ESP32-S31 `libble_app.a` `ble_phy.c` member `72.o`

@@ -51,10 +51,34 @@ fn claimed_runtime_retains_the_idle_allocation() {
 }
 
 #[test]
+fn recurring_timing_requires_explicit_local_clock_policy() {
+    let config =
+        PeripheralConnectionRuntimeConfig::new(PeripheralConnectionDefaultTxPowerDbm::new(-3));
+    assert!(config.recurring_timing_policy.is_none());
+
+    let configured = config.with_software_recurring_timing(500).unwrap();
+    assert_eq!(
+        configured.default_tx_power_dbm(),
+        config.default_tx_power_dbm()
+    );
+    assert_eq!(
+        configured.recurring_timing_policy,
+        Some(super::PeripheralConnectionRecurringTimingPolicy::new(
+            super::PeripheralConnectionLocalSleepClockAccuracy::new(500),
+            super::PeripheralConnectionWindowWideningMode::SoftwareZeroAccumulatedUncertainty,
+        ))
+    );
+    assert!(config.with_software_recurring_timing(501).is_none());
+}
+
+#[test]
 fn portable_event_can_prepare_identity_and_cancel_losslessly() {
     let mut runtime = runtime(0x2f00_2000);
     let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
-    let connection = LePeripheralConnection::from_request(request);
+    let connection = LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
 
     let prepared = runtime
         .begin_event()
@@ -173,7 +197,10 @@ fn foreign_pool_rejection_preserves_both_original_pairs() {
 fn first_event_uses_the_received_packet_start_for_its_absolute_window() {
     let mut runtime = runtime(0x2f00_3000);
     let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
-    let connection = LePeripheralConnection::from_request(request);
+    let connection = LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
 
     let prepared = runtime
         .begin_event()
@@ -210,15 +237,21 @@ fn first_event_uses_the_received_packet_start_for_its_absolute_window() {
 fn first_event_projects_one_preparation_window_without_losing_ownership() {
     let mut runtime = runtime(0x2f00_5000);
     let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
-    let expected_channel = LePeripheralConnection::from_request(request)
-        .prepare_event()
-        .channel();
+    let expected_channel = LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    )
+    .prepare_event()
+    .channel();
     let packet_start_micros = 10_000;
     let prepared = runtime
         .begin_event()
         .expect("the sole allocation starts idle")
         .prepare_first_event(
-            LePeripheralConnection::from_request(request),
+            LePeripheralConnection::from_request(
+                request,
+                oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ),
             Le1MPacketStartTiming::from_scheduler_micros(packet_start_micros),
         );
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
@@ -280,7 +313,10 @@ fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
         .begin_event()
         .expect("the sole allocation starts idle")
         .prepare_first_event(
-            LePeripheralConnection::from_request(request),
+            LePeripheralConnection::from_request(
+                request,
+                oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ),
             Le1MPacketStartTiming::from_scheduler_micros(packet_start),
         )
         .project_scheduler_window(epoch, config)
@@ -309,9 +345,12 @@ fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
 fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
     let mut runtime = runtime(0x2f00_7000);
     let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
-    let expected_channel = LePeripheralConnection::from_request(request)
-        .prepare_event()
-        .channel();
+    let expected_channel = LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    )
+    .prepare_event()
+    .channel();
     let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(300), 20_000, scale);
@@ -319,7 +358,10 @@ fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
         .begin_event()
         .expect("the sole allocation starts idle")
         .prepare_first_event(
-            LePeripheralConnection::from_request(request),
+            LePeripheralConnection::from_request(
+                request,
+                oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ),
             Le1MPacketStartTiming::from_scheduler_micros(21_000),
         )
         .project_scheduler_window(epoch, SchedulerSoftwareConfig::reviewed_standalone())
@@ -334,7 +376,7 @@ fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
     let priority = PeripheralConnectionSchedulerPriority::FIRST_EVENT;
 
     let prepared = candidate
-        .prepare_resolved_event_fields(resolved, default_tx_power)
+        .prepare_resolved_event_fields(resolved, 92, default_tx_power)
         .unwrap_or_else(|_| panic!("a resolved scheduler window remains non-empty"));
 
     assert_eq!(prepared.event_counter(), 0);

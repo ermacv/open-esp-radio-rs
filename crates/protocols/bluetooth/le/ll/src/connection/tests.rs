@@ -143,7 +143,10 @@ fn csa1_commits_hop_only_after_exact_event_completion() {
     let mut pdu = connection_request(false);
     pdu[30..35].copy_from_slice(&[0x06, 0, 0, 0, 0]);
     let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
-    let connection = LePeripheralConnection::from_request(request);
+    let connection = LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
 
     let first = connection.prepare_event();
     assert_eq!(first.event_counter(), 0);
@@ -177,7 +180,10 @@ fn csa1_commits_hop_only_after_exact_event_completion() {
 #[test]
 fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let connection = LePeripheralConnection::from_request(request);
+    let connection = LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
     assert_eq!(connection.state(), LePeripheralConnectionState::Created);
     assert_eq!(connection.next_event_distance_from_establishment(), None);
     assert_eq!(
@@ -253,7 +259,10 @@ fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
 #[test]
 fn event_counter_wraps_without_reusing_an_in_flight_owner() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut connection = LePeripheralConnection::from_request(request);
+    let mut connection = LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
     connection.event_counter = u16::MAX;
 
     let in_flight = connection.prepare_event().into_submitted();
@@ -287,7 +296,10 @@ fn recurring_event_delta_is_nonzero_and_rejects_skipped_overflow() {
 #[test]
 fn delta_one_prepares_immediate_csa1_successor_without_double_advance() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let completed = complete_missed(LePeripheralConnection::from_request(request));
+    let completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
     let delta = LePeripheralConnectionEventDelta::from_skipped(0).unwrap();
 
     let provisional = completed.prepare_recurring_event(delta);
@@ -313,12 +325,18 @@ fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
     pdu[30..35].copy_from_slice(&[0x06, 0, 0, 0, 0]);
     let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
 
-    let completed = complete_missed(LePeripheralConnection::from_request(request));
+    let completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
     let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
     let provisional = completed.prepare_recurring_event(delta);
 
-    let mut reference =
-        complete_missed(LePeripheralConnection::from_request(request)).into_connection();
+    let mut reference = complete_missed(LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ))
+    .into_connection();
     for _ in 0..3 {
         reference = complete_missed(reference).into_connection();
     }
@@ -345,8 +363,14 @@ fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
 #[test]
 fn recurring_candidate_cancel_restores_exact_completed_owner() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let completed = complete_missed(LePeripheralConnection::from_request(request));
-    let expected = complete_missed(LePeripheralConnection::from_request(request));
+    let completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
+    let expected = complete_missed(LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
     let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
 
     let restored = completed.prepare_recurring_event(delta).cancel();
@@ -360,7 +384,10 @@ fn recurring_candidate_cancel_restores_exact_completed_owner() {
 #[test]
 fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut connection = LePeripheralConnection::from_request(request);
+    let mut connection = LePeripheralConnection::from_request(
+        request,
+        crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    );
     connection.event_counter = u16::MAX;
     let completed = complete_missed(connection);
     let delta = LePeripheralConnectionEventDelta::from_skipped(1).unwrap();

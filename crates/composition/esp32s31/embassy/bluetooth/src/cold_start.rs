@@ -119,6 +119,7 @@ pub struct BluetoothColdStartConfig {
     retained_calibration: Option<PhyCalibrationSnapshot>,
     dtm: DtmRuntimeConfig,
     passive_scan: PassiveScanRuntimeConfig,
+    peripheral_connection: PeripheralConnectionRuntimeConfig,
     recheck_period: DtmRecheckPeriod,
 }
 
@@ -138,8 +139,27 @@ impl BluetoothColdStartConfig {
             retained_calibration,
             dtm,
             passive_scan,
+            peripheral_connection: PeripheralConnectionRuntimeConfig::new(
+                oer_esp32s31_bluetooth_memory::PeripheralConnectionDefaultTxPowerDbm::new(
+                    dtm.default_tx_power_dbm().dbm(),
+                ),
+            ),
             recheck_period,
         }
+    }
+
+    /// Bind the connection power and local-clock policy for this epoch.
+    ///
+    /// Recurring timing is unavailable until the supplied configuration opts
+    /// in with the selected clock's worst-case accuracy. PHY calibration does
+    /// not supply that bound. This cold start retains the main XTAL throughout
+    /// the epoch, so the bound must cover that oscillator on the caller's board.
+    pub const fn with_peripheral_connection(
+        mut self,
+        config: PeripheralConnectionRuntimeConfig,
+    ) -> Self {
+        self.peripheral_connection = config;
+        self
     }
 }
 
@@ -564,6 +584,7 @@ pub async fn start_esp32s31_bluetooth<
         retained_calibration,
         dtm,
         passive_scan,
+        peripheral_connection,
         recheck_period,
     } = config;
 
@@ -689,31 +710,26 @@ pub async fn start_esp32s31_bluetooth<
             ));
         }
     };
-    let peripheral_connection_runtime = match claim_production_peripheral_connection_runtime(
-        PeripheralConnectionRuntimeConfig::new(
-            oer_esp32s31_bluetooth_memory::PeripheralConnectionDefaultTxPowerDbm::new(
-                dtm.default_tx_power_dbm().dbm(),
-            ),
-        ),
-    ) {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            return Err(BluetoothColdStartError::PeripheralConnectionMemory(
-                BluetoothReservedFailure::new(
-                    BluetoothPeripheralConnectionMemoryFailure {
-                        error,
-                        owners,
-                        ble_phy: ble_phy_memory,
-                        direction_finding: direction_finding_memory,
-                        dtm: dtm_runtime,
-                        legacy_advertising: legacy_advertising_runtime,
-                        passive_scan: passive_scan_runtime,
-                    },
-                    slot,
-                ),
-            ));
-        }
-    };
+    let peripheral_connection_runtime =
+        match claim_production_peripheral_connection_runtime(peripheral_connection) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                return Err(BluetoothColdStartError::PeripheralConnectionMemory(
+                    BluetoothReservedFailure::new(
+                        BluetoothPeripheralConnectionMemoryFailure {
+                            error,
+                            owners,
+                            ble_phy: ble_phy_memory,
+                            direction_finding: direction_finding_memory,
+                            dtm: dtm_runtime,
+                            legacy_advertising: legacy_advertising_runtime,
+                            passive_scan: passive_scan_runtime,
+                        },
+                        slot,
+                    ),
+                ));
+            }
+        };
     let legacy_connectable_advertising_runtime =
         match claim_production_legacy_connectable_advertising_runtime(
             LegacyAdvertisingDefaultTxPowerDbm::new(dtm.default_tx_power_dbm().dbm()),

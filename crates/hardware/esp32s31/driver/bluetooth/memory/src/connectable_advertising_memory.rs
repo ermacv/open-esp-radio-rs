@@ -53,6 +53,8 @@ type AdvertisingTxPacketInput<'a> = LeTxPacketPreparedInput<'a, LEGACY_ADVERTISI
 /// Why an encoded advertising PDU cannot fit this S31 allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegacyConnectableAdvertisingPduFitError {
+    /// Address insertion requires the complete six-byte advertiser address.
+    AdvertiserAddressMissing { payload_bytes: usize },
     /// The complete encoded extent disagrees with the trusted payload length.
     EncodedExtentMismatch {
         expected_bytes: usize,
@@ -85,6 +87,11 @@ fn allocation_checked_packet(
                 expected_bytes,
                 actual_bytes: pdu.len(),
             },
+        );
+    }
+    if payload_bytes < 6 {
+        return Err(
+            LegacyConnectableAdvertisingPduFitError::AdvertiserAddressMissing { payload_bytes },
         );
     }
     Ok(AdvertisingTxPacketInput::from_validated_encoded_pdu(
@@ -324,7 +331,7 @@ impl LegacyConnectableAdvertisingMemoryGraphCpuOwned {
             codec::response_capable_post_anchor_duration(input.adv_ind.0.payload_bytes());
         self.storage.as_ref().get_ref().graph.prepare_profile(
             &self.binding,
-            pool.head(),
+            pool.current_cursor(),
             pool.tail(),
             input.own_address.codec(),
             default_tx_power_dbm,
@@ -391,11 +398,13 @@ impl LegacyConnectableAdvertisingMemoryGraphPrepared {
     ///
     /// `raw_start` and `raw_end` must come from the chip scheduler's accepted
     /// controller-epoch window. This crate stores them but does not interpret
-    /// controller time or reserve a common timeline slot.
+    /// controller time or reserve a common timeline slot. `raw_sequence_lead`
+    /// is the same accepted reservation policy used for sequence authorization.
     pub fn prepare_event_fields(
         self,
         raw_start: u32,
         raw_end: u32,
+        raw_sequence_lead: u32,
     ) -> Result<
         LegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared,
         LegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure,
@@ -405,6 +414,7 @@ impl LegacyConnectableAdvertisingMemoryGraphPrepared {
             self.primary_channel,
             raw_start,
             raw_end,
+            raw_sequence_lead,
         ) {
             return Err(
                 LegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure {
@@ -424,7 +434,7 @@ impl LegacyConnectableAdvertisingMemoryGraphPrepared {
                 .as_ref()
                 .get_ref()
                 .graph
-                .retains_prepared_graph(&self.binding, self.pool.head(), self.pool.tail())
+                .retains_prepared_graph(&self.binding, self.pool.current_cursor(), self.pool.tail())
     }
 
     /// Remove every unpublished role image and recover both exact owners.
@@ -624,7 +634,12 @@ impl LegacyConnectableAdvertisingMemoryGraphPublicationPrepared {
     /// Validated receive header retained by this affine graph.
     #[doc(hidden)]
     pub const fn receive_head(&self) -> BluetoothControllerSramAddress {
-        self.prepared.bookkeeping.event.prepared.pool.head()
+        self.prepared
+            .bookkeeping
+            .event
+            .prepared
+            .pool
+            .current_cursor()
     }
 
     /// Exact event item retained for the later scheduler-head publication.
@@ -998,7 +1013,8 @@ impl LegacyConnectableAdvertisingMemoryGraphRunning {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegacyConnectableAdvertisingSchedulerItemCompletionStatus {
     Zero,
-    NonZero,
+    /// Exact opaque hardware value, retained only for diagnosis.
+    NonZero(u32),
 }
 
 /// One bounded observation of the hardware-owned response-capable graph.
@@ -1026,6 +1042,20 @@ impl LegacyConnectableAdvertisingMemoryGraphCompletionObserved {
 
     pub const fn status(&self) -> LegacyConnectableAdvertisingSchedulerItemCompletionStatus {
         self.status
+    }
+
+    /// Observe RX progress only with the matching post-unlink removal proof.
+    /// These independent volatile observations do not authorize PDU dispatch.
+    pub fn observe_receive_nodes_after_removal(
+        &self,
+        removal: &BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Option<[crate::LeRxNodeObservation; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT]> {
+        if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || removal.completed_head().address() != Some(self.scheduler_item_address())
+        {
+            return None;
+        }
+        Some(self.running.prepared.pool.observe_nodes())
     }
 
     /// Bind the exact post-unlink removal proof before reading or resetting SRAM.

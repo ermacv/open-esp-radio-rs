@@ -54,11 +54,11 @@ fn running(
     let graph_identity = owner.identity();
     let pool = pool(pool_base);
     let pool_identity = pool.identity();
-    let receive_head = pool.head();
+    let receive_head = pool.current_cursor();
     let published = owner
         .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel37), pool, 0)
         .expect("the disjoint response graph is supported")
-        .prepare_event_fields(6_000, 6_200)
+        .prepare_event_fields(6_000, 6_200, 214)
         .expect("the pristine one-item graph accepts event fields")
         .prepare_scheduler_bookkeeping()
         .prepare_empty_list_link()
@@ -141,7 +141,7 @@ fn event_fields_and_common_list_preparation_cancel_in_reverse() {
         .expect("the disjoint response graph is supported");
 
     let event = prepared
-        .prepare_event_fields(1_200, 1_400)
+        .prepare_event_fields(1_200, 1_400, 214)
         .expect("the pristine one-item graph accepts event fields");
     let scheduler_item = event.scheduler_item_address();
     let bookkeeping = event.prepare_scheduler_bookkeeping();
@@ -175,11 +175,11 @@ fn matching_rx_publication_surrenders_cpu_rollback_and_retains_identities() {
     let graph_identity = owner.identity();
     let pool = pool(0x2f00_6400);
     let pool_identity = pool.identity();
-    let receive_head = pool.head();
+    let receive_head = pool.current_cursor();
     let publication = owner
         .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel37), pool, -2)
         .expect("the disjoint response graph is supported")
-        .prepare_event_fields(3_000, 3_200)
+        .prepare_event_fields(3_000, 3_200, 214)
         .expect("the pristine one-item graph accepts event fields")
         .prepare_scheduler_bookkeeping()
         .prepare_empty_list_link()
@@ -213,7 +213,7 @@ fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
         _ => panic!("the in-flight sentinel must retain hardware ownership"),
     };
     running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(0x42),
     );
 
     let running = match running.observe_completion(finished_list(1)) {
@@ -237,7 +237,7 @@ fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
     assert_eq!(completed.scheduler_item_address(), scheduler_item);
     assert_eq!(
         completed.status(),
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(0x42)
     );
 }
 
@@ -245,6 +245,15 @@ fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
 fn matching_removal_extracts_then_rearms_both_cpu_owned_graphs() {
     let (running, graph_identity, pool_identity) = running(0x2f00_3400, 0x2f00_7400);
     let scheduler_item = running.scheduler_item_address();
+    assert!(
+        running
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .model_controller_can_request_radio()
+    );
     running.model_controller_completion(
         LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
     );
@@ -273,6 +282,16 @@ fn matching_removal_extracts_then_rearms_both_cpu_owned_graphs() {
         status,
         LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero
     );
+    let next = owner
+        .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel37), pool, 0)
+        .expect("reclaimed owners prepare another advertising event");
+    assert!(
+        next.storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .model_controller_can_request_radio()
+    );
 }
 
 #[test]
@@ -282,7 +301,7 @@ fn copied_receive_batch_is_admitted_to_role_dispatch_after_reclamation() {
     let received = [0x03, 6, 1, 2, 3, 4, 5, 6];
     running.model_controller_receive(0, &received, -31, 12_345);
     running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
     );
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
@@ -314,8 +333,54 @@ fn copied_receive_batch_is_admitted_to_role_dispatch_after_reclamation() {
     assert!(pool.is_initialized());
     assert_eq!(
         status,
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1)
     );
+}
+
+#[test]
+fn rx_progress_observation_requires_removal_and_preserves_a_completion_gap() {
+    let (running, _, _) = running(0x2f00_3500, 0x2f00_7500);
+    let address = running.scheduler_item_address();
+    running.model_controller_receive(1, &[0x43, 0], -31, 123);
+    running.model_controller_completion(
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
+    );
+    let LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(completed) =
+        running.observe_completion(finished_list(0))
+    else {
+        panic!("the modeled item is complete")
+    };
+    let wrong = removal_ready(
+        BluetoothSchedulerHardwareListIndex::ZERO,
+        BluetoothControllerSramAddress::new(address.address() + 4).unwrap(),
+    );
+    assert!(
+        completed
+            .observe_receive_nodes_after_removal(&wrong)
+            .is_none()
+    );
+    let removal = removal_ready(BluetoothSchedulerHardwareListIndex::ZERO, address);
+    let nodes = completed
+        .observe_receive_nodes_after_removal(&removal)
+        .unwrap();
+    assert!(!nodes[0].completed);
+    assert!(nodes[0].packet_retained);
+    assert!(!nodes[0].producer_updated);
+    assert!(!nodes[0].epoch_updated);
+    assert_eq!(nodes[0].header, None);
+    assert!(nodes[1].completed);
+    assert!(nodes[1].packet_retained);
+    assert!(nodes[1].producer_updated);
+    assert!(nodes[1].epoch_updated);
+    assert_eq!(nodes[1].header, Some(0x43));
+    let prepared = completed
+        .prepare_recycle_after_software_list_removal(removal)
+        .unwrap_or_else(|_| panic!("the exact removal authorizes extraction"));
+    let failure = match prepared.extract_received() {
+        Ok(_) => panic!("observing the nodes must not hide the completion gap"),
+        Err(failure) => failure,
+    };
+    assert_eq!(failure.error(), LeRxError::CompletionChainGap);
 }
 
 #[test]
@@ -357,7 +422,7 @@ fn removal_list_mismatch_retains_the_completed_graph_and_proof() {
     let (running, _, _) = running(0x2f00_3800, 0x2f00_7800);
     let scheduler_item = running.scheduler_item_address();
     running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
     );
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
@@ -388,7 +453,7 @@ fn removal_head_mismatch_retains_the_completed_graph_and_proof() {
     let (running, _, _) = running(0x2f00_3c00, 0x2f00_7c00);
     let scheduler_item = running.scheduler_item_address();
     running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
     );
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
@@ -422,11 +487,11 @@ fn selector_mismatch_retains_publication_and_all_cpu_rollback_authority() {
     let graph_identity = owner.identity();
     let pool = pool(0x2f00_6800);
     let pool_identity = pool.identity();
-    let receive_head = pool.head();
+    let receive_head = pool.current_cursor();
     let publication = owner
         .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel38), pool, 1)
         .expect("the disjoint response graph is supported")
-        .prepare_event_fields(4_000, 4_200)
+        .prepare_event_fields(4_000, 4_200, 214)
         .expect("the pristine one-item graph accepts event fields")
         .prepare_scheduler_bookkeeping()
         .prepare_empty_list_link()
@@ -467,7 +532,7 @@ fn receive_head_mismatch_retains_both_affine_owners() {
     let receive_pool = pool(0x2f00_6c00);
     let pool_identity = receive_pool.identity();
     let other_pool = pool(0x2f00_7400);
-    let other_head = other_pool.head();
+    let other_head = other_pool.current_cursor();
     let publication = owner
         .prepare_response_capable_event(
             input(LegacyAdvertisingPrimaryChannel::Channel39),
@@ -475,7 +540,7 @@ fn receive_head_mismatch_retains_both_affine_owners() {
             2,
         )
         .expect("the disjoint response graph is supported")
-        .prepare_event_fields(5_000, 5_200)
+        .prepare_event_fields(5_000, 5_200, 214)
         .expect("the pristine one-item graph accepts event fields")
         .prepare_scheduler_bookkeeping()
         .prepare_empty_list_link()
@@ -522,7 +587,7 @@ fn event_field_rejection_retains_both_affine_owners() {
         .graph
         .emulate_missing_scheduler_head();
 
-    let failure = match prepared.prepare_event_fields(2_000, 2_200) {
+    let failure = match prepared.prepare_event_fields(2_000, 2_200, 214) {
         Ok(_) => panic!("a graph without its private scheduler head must fail closed"),
         Err(failure) => failure,
     };
@@ -568,7 +633,7 @@ fn packet_fit_is_proved_without_interpreting_protocol_headers() {
 }
 
 #[test]
-fn missing_rx_consumer_link_blocks_lowering_and_cancel_recovers_both_owners() {
+fn private_rx_consumer_blocks_global_list_lowering_and_cancel_recovers_both_owners() {
     let owner = owner(0x2f00_1800);
     let graph_identity = owner.identity();
     let pool = pool(0x2f00_5800);
@@ -576,18 +641,48 @@ fn missing_rx_consumer_link_blocks_lowering_and_cancel_recovers_both_owners() {
     let prepared = owner
         .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel39), pool, 0)
         .expect("the complete response topology is initially ready");
+    assert!(prepared.is_ready_for_scheduler_lowering());
     prepared
         .storage
         .as_ref()
         .get_ref()
         .graph
-        .emulate_missing_rx_consumer_link();
+        .emulate_private_rx_consumer_link();
 
     assert!(!prepared.is_ready_for_scheduler_lowering());
     let (owner, pool) = prepared.cancel();
     assert_eq!(owner.identity(), graph_identity);
     assert_eq!(pool.identity(), pool_identity);
     assert!(pool.is_initialized());
+}
+
+#[test]
+fn scan_response_consumer_is_required_and_rebuilt_after_cancellation() {
+    let owner = owner(0x2f00_1800);
+    let graph_identity = owner.identity();
+    let pool = pool(0x2f00_5800);
+    let pool_identity = pool.identity();
+    let prepared = owner
+        .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel37), pool, 0)
+        .expect("the complete response topology is initially ready");
+    assert!(prepared.is_ready_for_scheduler_lowering());
+    prepared
+        .storage
+        .as_ref()
+        .get_ref()
+        .graph
+        .emulate_missing_scan_response_consumer_link();
+    assert_eq!(prepared.scan_response_pdu(), &SCAN_RESPONSE_PDU);
+    assert!(!prepared.is_ready_for_scheduler_lowering());
+
+    let (owner, pool) = prepared.cancel();
+    assert_eq!(owner.identity(), graph_identity);
+    assert_eq!(pool.identity(), pool_identity);
+    let next = owner
+        .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel38), pool, -4)
+        .expect("repreparation restores the hardware response consumer");
+    assert!(next.is_ready_for_scheduler_lowering());
+    assert_eq!(next.scan_response_pdu(), &SCAN_RESPONSE_PDU);
 }
 
 #[test]
@@ -613,4 +708,61 @@ fn overlapping_rx_pool_is_rejected_without_losing_either_owner() {
     assert_eq!(owner.identity(), graph_identity);
     assert_eq!(pool.identity(), pool_identity);
     assert!(pool.is_initialized());
+}
+
+#[test]
+fn sequence_wait_retains_the_accepted_lead_and_full_duration_after_publication() {
+    let (running, _, _) = running(0x2f00_1800, 0x2f00_5800);
+    let graph = &running.prepared.storage.as_ref().get_ref().graph;
+    // The requested 6000..6200 window carries a separately admitted 214-tick lead.
+    assert!(!graph.model_controller_elapsed(6_000));
+    assert!(!graph.model_controller_elapsed(6_214));
+    assert!(!graph.model_controller_elapsed(6_413));
+    assert!(graph.model_controller_elapsed(6_414));
+    assert!(graph.model_controller_elapsed(6_500));
+}
+
+#[test]
+fn event_consumes_the_same_receive_list_that_was_published() {
+    let (running, _, _) = running(0x2f00_1800, 0x2f00_5800);
+    let graph = &running.prepared.storage.as_ref().get_ref().graph;
+    let selected = graph
+        .model_controller_receive_list()
+        .expect("the event selects a global RX list");
+    assert_eq!(selected.selector(), running._rx_publication.selector());
+}
+
+#[test]
+fn both_transmit_nodes_preserve_wire_pdus_after_controller_address_insertion() {
+    let prepared = owner(0x2f00_4000)
+        .prepare_response_capable_event(
+            input(LegacyAdvertisingPrimaryChannel::Channel37),
+            pool(0x2f00_9000),
+            0,
+        )
+        .unwrap_or_else(|_| panic!("the bounded response graph fits"));
+    let transmitted = prepared
+        .storage
+        .as_ref()
+        .get_ref()
+        .graph
+        .model_transmitted_pdus(
+            prepared.adv_ind_length,
+            prepared.scan_response_length,
+            ADVERTISER,
+        );
+    assert_eq!(transmitted[0], ADV_IND_PDU);
+    assert_eq!(transmitted[1], SCAN_RESPONSE_PDU);
+}
+
+#[test]
+fn insertion_input_requires_space_for_the_advertiser_address() {
+    assert_eq!(
+        LegacyConnectableAdvIndPacketInput::try_from_encoded_extent(&[0, 2, 1, 2], 2),
+        Err(LegacyConnectableAdvertisingPduFitError::AdvertiserAddressMissing { payload_bytes: 2 })
+    );
+    assert_eq!(
+        LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(&[4, 0], 0),
+        Err(LegacyConnectableAdvertisingPduFitError::AdvertiserAddressMissing { payload_bytes: 0 })
+    );
 }

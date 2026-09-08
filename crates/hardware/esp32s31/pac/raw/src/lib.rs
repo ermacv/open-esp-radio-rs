@@ -63013,6 +63013,36 @@ pub mod field_or_modify {
                 .bit(reader.latch_request().bit() || (input & 0x00000001) != 0)
         });
     }
+
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[CONTROL_20]` while preserving the fresh register observation.
+    #[inline]
+    pub fn preserve_bluetooth_memory_list_1_initial_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.mmgmt_list_1_pointer_a().modify(|reader, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .control_20()
+                .bit(reader.control_20().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[CONTROL_20]` while preserving the fresh register observation.
+    #[inline]
+    pub fn preserve_bluetooth_memory_list_2_initial_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.mmgmt_list_2_pointer_a().modify(|reader, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .control_20()
+                .bit(reader.control_20().bit() || (input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
@@ -70842,6 +70872,32 @@ pub mod field_replace_modify {
                     .forced_digital_gain_1()
                     .bits((input & 0x000000ff) as u8)
             }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[CONTROL_20]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_1_initial_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.mmgmt_list_1_pointer_a().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.control_20().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[CONTROL_20]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_2_initial_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.mmgmt_list_2_pointer_a().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.control_20().bit((input & 0x00000001) != 0)
         });
     }
 }

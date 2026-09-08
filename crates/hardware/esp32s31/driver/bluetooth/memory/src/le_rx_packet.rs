@@ -183,6 +183,16 @@ enum LeRxPacketDisposition {
     Discarded,
 }
 
+/// Read-only descriptor/packet progress; this is not a dispatchable PDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeRxNodeObservation {
+    pub completed: bool,
+    pub packet_retained: bool,
+    pub producer_updated: bool,
+    pub epoch_updated: bool,
+    pub header: Option<u8>,
+}
+
 /// Malformed completed LE receive storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeRxError {
@@ -266,8 +276,32 @@ impl LeRxBufferHeaderStorage {
         }
     }
 
+    pub(crate) fn append_successor(&self, successor: ControllerSramLinkAddress) {
+        self.words[0].set((self.words[0].get() & !Self::LINK_MASK) | successor.compressed_image());
+    }
+
     pub(crate) fn completion_observed(&self) -> bool {
         self.words[3].get() & Self::COMPLETION_GATE != 0
+    }
+
+    /// Initial global RX cursor: an already completed header without a packet.
+    /// The controller obtains writable storage by following its successor.
+    pub(crate) fn install_completed_predecessor(&self, successor: ControllerSramLinkAddress) {
+        let image = [
+            successor.compressed_image(),
+            0,
+            0x8080_0000,
+            Self::COMPLETION_GATE,
+            0,
+            0,
+        ];
+        for (cell, word) in self.words.iter().zip(image) {
+            cell.set(word);
+        }
+    }
+
+    pub(crate) fn is_packetless(&self) -> bool {
+        self.words[1].get() & Self::LINK_MASK == 0
     }
 
     #[cfg(test)]
@@ -331,12 +365,19 @@ impl LeRxPacketStorage {
             .set(self.words[Self::EPOCH_WORD].get() | Self::EPOCH_REARM_SENTINEL);
     }
 
-    fn disposition(&self) -> Result<LeRxPacketDisposition, LeRxPacketError> {
+    fn disposition(&self, connection: bool) -> Result<LeRxPacketDisposition, LeRxPacketError> {
         let result = self.words[Self::RESULT_WORD].get();
         if result & Self::RESULT_REARM_SENTINEL == Self::RESULT_REARM_SENTINEL {
             return Err(LeRxPacketError::ProducerSentinelRetained);
         }
-        if result & Self::UPPER_DISPATCH_BLOCKING_FLAGS != 0 {
+        // Connection RX has a different acceptance gate from advertising.
+        // Current vendor conn_rx_process rejects result flags 0x17.
+        let blocking = if connection {
+            0x17
+        } else {
+            Self::UPPER_DISPATCH_BLOCKING_FLAGS
+        };
+        if result & blocking != 0 {
             return Ok(LeRxPacketDisposition::Discarded);
         }
         Ok(LeRxPacketDisposition::Dispatchable)
@@ -396,6 +437,24 @@ impl LeRxPacketStorage {
         self.words[offset / 4].set((word & !(0xff << shift)) | (u32::from(value) << shift));
     }
 
+    pub(crate) fn observe(
+        &self,
+        header: &LeRxBufferHeaderStorage,
+        packet: LeRxPacketAddress,
+    ) -> LeRxNodeObservation {
+        let producer_updated = self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
+            != Self::RESULT_REARM_SENTINEL;
+        let epoch_updated = self.words[Self::EPOCH_WORD].get() & Self::EPOCH_REARM_SENTINEL
+            != Self::EPOCH_REARM_SENTINEL;
+        LeRxNodeObservation {
+            completed: header.completion_observed(),
+            packet_retained: header.retains_packet(packet),
+            producer_updated,
+            epoch_updated,
+            header: (producer_updated && epoch_updated).then(|| self.read_byte(0x1c)),
+        }
+    }
+
     pub(crate) fn is_armed(&self) -> bool {
         self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
             == Self::RESULT_REARM_SENTINEL
@@ -422,6 +481,26 @@ impl LeRxNodeStorage {
 pub(crate) fn extract_completed_rx_batch<const CAPACITY: usize>(
     nodes: &[LeRxNodeStorage; CAPACITY],
 ) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
+    extract_completed_rx_batch_for_role(nodes, false)
+}
+
+pub(crate) fn extract_completed_connection_rx_batch<const CAPACITY: usize>(
+    nodes: &[LeRxNodeStorage; CAPACITY],
+) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
+    extract_completed_rx_batch_for_role(nodes, true)
+}
+
+fn extract_completed_rx_batch_for_role<const CAPACITY: usize>(
+    nodes: &[LeRxNodeStorage; CAPACITY],
+    connection: bool,
+) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
+    extract_completed_rx_nodes(nodes, connection)
+}
+
+pub(crate) fn extract_completed_rx_nodes<'a, const CAPACITY: usize>(
+    nodes: impl IntoIterator<Item = &'a LeRxNodeStorage>,
+    connection: bool,
+) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
     let mut batch = LeReceivedBatch::empty();
     let mut incomplete_observed = false;
     for node in nodes {
@@ -432,10 +511,35 @@ pub(crate) fn extract_completed_rx_batch<const CAPACITY: usize>(
         if incomplete_observed {
             return Err(LeRxError::CompletionChainGap);
         }
-        match node.packet.disposition()? {
+        match node.packet.disposition(connection)? {
             LeRxPacketDisposition::Dispatchable => batch.push(node.packet.copy_dispatchable_pdu()?),
             LeRxPacketDisposition::Discarded => batch.push_discarded(),
         }
     }
     Ok(batch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_rejections_do_not_dispatch_or_hide_a_later_control_request() {
+        let nodes = [LeRxNodeStorage::new(), LeRxNodeStorage::new()];
+        let feature_req = [3, 9, 8, 0, 0, 0, 0, 0, 0, 0, 0];
+        for node in &nodes {
+            node.packet.initialize();
+            node.packet.emulate_hardware_receive(&feature_req, -40, 123);
+            node.header.emulate_hardware_completion();
+        }
+        // Exercise each independently rejected controller outcome. These are
+        // packet-result stimuli, not MMIO or generated-layout assertions.
+        for rejected_result in [1, 2, 4, 16] {
+            nodes[0].packet.words[LeRxPacketStorage::RESULT_WORD].set(rejected_result);
+            let batch = extract_completed_connection_rx_batch(&nodes).unwrap();
+            assert_eq!(batch.discarded_count(), 1);
+            assert_eq!(batch.len(), 1);
+            assert_eq!(batch.packet(0).unwrap().as_bytes(), feature_req);
+        }
+    }
 }

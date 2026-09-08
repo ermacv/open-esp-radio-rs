@@ -32,6 +32,7 @@ mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
+mod legacy_advertising_tx_packet;
 mod non_scanning_rx_memory;
 mod passive_scanning_event_image;
 mod passive_scanning_memory;
@@ -131,7 +132,9 @@ pub use dtm_storage::{
     DtmSchedulerAllocationConfig, DtmSchedulerItemCompletionStatus, DtmTxPacketPrepareError,
 };
 
-pub use le_rx_packet::{LePacketCapturedTime, LeReceivedBatch, LeReceivedPdu, LeRxError};
+pub use le_rx_packet::{
+    LePacketCapturedTime, LeReceivedBatch, LeReceivedPdu, LeRxError, LeRxNodeObservation,
+};
 
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxPacketPrepareError,

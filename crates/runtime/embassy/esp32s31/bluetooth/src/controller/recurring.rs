@@ -56,6 +56,7 @@ use oer_esp32s31_bluetooth::{
         LegacyConnectableAdvertisingRecurringFailStopCause,
         LegacyConnectableAdvertisingRecurringHci, LegacyConnectableAdvertisingRecurringHciFailStop,
         LegacyConnectableAdvertisingRecurringHciRetry,
+        LegacyConnectableAdvertisingRecurringRetryCause,
         LegacyConnectableAdvertisingRecurringStopping, LegacyConnectableAdvertisingStopOrder,
     },
 };
@@ -243,6 +244,7 @@ macro_rules! impl_actor_drive_handler {
                     $order,
                 >,
             ) -> Self::Output {
+                let cause = retry_cause(retry.cause());
                 let mut actor = self.actor.borrow_mut();
                 store_recurring_state(
                     &mut actor,
@@ -252,7 +254,7 @@ macro_rules! impl_actor_drive_handler {
                     ),
                 );
                 Some(actor.retain_boundary(ControllerCommandBoundary::Retryable(
-                    ControllerRetry::LegacyConnectableAdvertisingRecurring,
+                    ControllerRetry::LegacyConnectableAdvertisingRecurring(cause),
                 )))
             }
 
@@ -264,6 +266,7 @@ macro_rules! impl_actor_drive_handler {
                     $order,
                 >,
             ) -> Self::Output {
+                let cause = retry_cause(retry.cause());
                 let mut actor = self.actor.borrow_mut();
                 store_recurring_state(
                     &mut actor,
@@ -273,7 +276,7 @@ macro_rules! impl_actor_drive_handler {
                     ),
                 );
                 Some(actor.retain_boundary(ControllerCommandBoundary::Retryable(
-                    ControllerRetry::LegacyConnectableAdvertisingRecurring,
+                    ControllerRetry::LegacyConnectableAdvertisingRecurring(cause),
                 )))
             }
 
@@ -285,6 +288,7 @@ macro_rules! impl_actor_drive_handler {
                     $order,
                 >,
             ) -> Self::Output {
+                let cause = retry_cause(retry.cause());
                 let mut actor = self.actor.borrow_mut();
                 store_recurring_state(
                     &mut actor,
@@ -294,7 +298,7 @@ macro_rules! impl_actor_drive_handler {
                     ),
                 );
                 Some(actor.retain_boundary(ControllerCommandBoundary::Retryable(
-                    ControllerRetry::LegacyConnectableAdvertisingRecurring,
+                    ControllerRetry::LegacyConnectableAdvertisingRecurring(cause),
                 )))
             }
 
@@ -306,6 +310,7 @@ macro_rules! impl_actor_drive_handler {
                     $order,
                 >,
             ) -> Self::Output {
+                let cause = retry_cause(retry.cause());
                 let mut actor = self.actor.borrow_mut();
                 store_recurring_state(
                     &mut actor,
@@ -315,14 +320,14 @@ macro_rules! impl_actor_drive_handler {
                     ),
                 );
                 Some(actor.retain_boundary(ControllerCommandBoundary::Retryable(
-                    ControllerRetry::LegacyConnectableAdvertisingRecurring,
+                    ControllerRetry::LegacyConnectableAdvertisingRecurring(cause),
                 )))
             }
 
             fn running(&self, running: $running) -> Self::Output {
                 let mut actor = self.actor.borrow_mut();
                 store_recurring_state(&mut actor, self.from, $running_state(running));
-                None
+                Some(ControllerCommandBoundary::LegacyConnectableAdvertisingActive)
             }
 
             fn fail_stop(
@@ -402,6 +407,13 @@ pub(super) fn begin_command<'runtime, 'epoch, 'packet, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage + 'runtime,
 {
+    actor.advertising_rejected_packets = actor
+        .advertising_rejected_packets
+        .and_then(|count| count.checked_add(u32::try_from(completed.rejected_packets()).ok()?));
+    if let Some(rejection) = completed.last_receive_rejection() {
+        actor.advertising_last_receive_rejection = Some(rejection);
+    }
+    actor.advertising_completion = Some(completed.scheduler_status());
     begin_legacy_connectable_advertising_recurring_command_ready_with(
         completed,
         delay,
@@ -418,6 +430,13 @@ pub(super) fn begin_response<'runtime, 'epoch, 'packet, S, const CAPACITY: usize
 where
     S: SchedulerRunInterruptStorage + 'runtime,
 {
+    actor.advertising_rejected_packets = actor
+        .advertising_rejected_packets
+        .and_then(|count| count.checked_add(u32::try_from(completed.rejected_packets()).ok()?));
+    if let Some(rejection) = completed.last_receive_rejection() {
+        actor.advertising_last_receive_rejection = Some(rejection);
+    }
+    actor.advertising_completion = Some(completed.scheduler_status());
     begin_legacy_connectable_advertising_recurring_response_pending_with(
         completed,
         delay,
@@ -1103,5 +1122,21 @@ where
             FailStopOwner::Response(failure) => failure.cause(),
             FailStopOwner::Stopping(failure) => failure.cause(),
         }
+    }
+}
+
+/// Preserve semantic retry details without requiring the storage error to be Copy.
+fn retry_cause<E>(
+    cause: &LegacyConnectableAdvertisingRecurringRetryCause<E>,
+) -> LegacyConnectableAdvertisingRecurringRetryCause<()> {
+    use LegacyConnectableAdvertisingRecurringRetryCause::*;
+    match cause {
+        TimingWindow => TimingWindow,
+        Timeline(error) => Timeline(*error),
+        Sequence(error) => Sequence(*error),
+        EventFields(error) => EventFields(*error),
+        EmptyList(error) => EmptyList(*error),
+        SchedulerHead(error) => SchedulerHead(*error),
+        SchedulerInterrupts(_) => SchedulerInterrupts(()),
     }
 }

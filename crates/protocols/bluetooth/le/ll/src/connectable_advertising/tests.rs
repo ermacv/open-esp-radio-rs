@@ -125,27 +125,23 @@ fn rejected_response_retains_the_exact_in_flight_event_for_a_later_packet() {
 }
 
 #[test]
-fn algorithm_two_rejection_keeps_the_submitted_event_in_flight() {
+fn initiator_chsel_one_falls_back_when_advertiser_did_not_offer_algorithm_two() {
     let in_flight = first_event(LeChannelSelectionAlgorithmTwoSupport::Unsupported)
         .prepare()
         .into_submitted();
     let identity = in_flight.identity();
-    let LegacyConnectableConnectionRequestAdmission::Rejected(rejected) =
+    let LegacyConnectableConnectionRequestAdmission::Accepted(accepted) =
         in_flight.admit_connection_request(&connection_request(ADVERTISER_BYTES, true))
     else {
-        panic!("algorithm two cannot be negotiated without advertised support");
+        panic!("the initiator may set ChSel even when the advertiser did not");
     };
+    assert_eq!(accepted.identity(), identity);
     assert_eq!(
-        rejected.error(),
-        LegacyConnectableConnectionRequestRejection::UnsupportedChannelSelectionAlgorithmTwo
+        accepted.request().channel_selection(),
+        LeChannelSelectionAlgorithm::AlgorithmTwo
     );
-    let retained = rejected.into_in_flight();
-    assert_eq!(retained.identity(), identity);
-    let configured = retained.complete_without_connection().disable();
-    assert_eq!(
-        configured.enable().unwrap().prepare().channels(),
-        PrimaryAdvertisingChannelMap::all()
-    );
+    let (_, _, connection) = accepted.into_parts();
+    assert_eq!(connection.prepare_event().channel().get(), 5);
 }
 
 #[test]
@@ -213,4 +209,48 @@ fn generation_and_event_exhaustion_return_lossless_connectable_owners() {
     let next_generation = exhausted.into_complete().disable().enable().unwrap();
     assert_eq!(next_generation.identity().generation().get(), 2);
     assert_eq!(next_generation.identity().event().get(), 0);
+}
+
+#[test]
+fn legacy_channel_selection_uses_both_advertising_and_initiating_bits() {
+    for (support, peer_two, expected) in [
+        (
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+            false,
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        ),
+        (
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+            true,
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        ),
+        (
+            LeChannelSelectionAlgorithmTwoSupport::Supported,
+            false,
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        ),
+        (
+            LeChannelSelectionAlgorithmTwoSupport::Supported,
+            true,
+            LeChannelSelectionAlgorithm::AlgorithmTwo,
+        ),
+    ] {
+        let pdu = connection_request(ADVERTISER_BYTES, peer_two);
+        let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
+        let LegacyConnectableConnectionRequestAdmission::Accepted(accepted) = first_event(support)
+            .prepare()
+            .into_submitted()
+            .admit_connection_request(&pdu)
+        else {
+            panic!("all four ChSel combinations are legal");
+        };
+        let (_, _, connection) = accepted.into_parts();
+        assert_eq!(connection.request(), request);
+        assert_eq!(connection.channel_selection(), expected);
+        let first = connection.prepare_event();
+        if expected == LeChannelSelectionAlgorithm::AlgorithmOne {
+            assert_eq!(first.channel().get(), 5);
+        }
+        assert_eq!(first.cancel().channel_selection(), expected);
+    }
 }

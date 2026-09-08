@@ -3,6 +3,36 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Diagnostic connection establishment probe; ending it requires a board reset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BluetoothPeripheralOperation {
+    StartAdvertising,
+    Snapshot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BluetoothPeripheralResult {
+    Started { address: [u8; 6] },
+    Snapshot,
+    HciRejected { command_stage: u8 },
+    Timeout,
+    LeaseExpired,
+}
+
+/// Publication counts are software observations, not successful peer exchanges.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothPeripheralEvidence {
+    pub operation: BluetoothPeripheralOperation,
+    pub result: BluetoothPeripheralResult,
+    pub advertising_runs: u32,
+    pub peripheral_runs: u32,
+    pub retries: u32,
+    pub terminal: bool,
+    pub saturated: bool,
+    pub detail_truncated: bool,
+    pub detail: heapless::String<128>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BluetoothDtmOperation {
     Reset,
@@ -52,6 +82,47 @@ impl BluetoothDtmEvidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peripheral_publication_and_terminal_evidence_survive_framing() {
+        for result in [
+            BluetoothPeripheralResult::Started {
+                address: [1, 2, 3, 4, 5, 6],
+            },
+            BluetoothPeripheralResult::Snapshot,
+            BluetoothPeripheralResult::HciRejected { command_stage: 4 },
+            BluetoothPeripheralResult::Timeout,
+            BluetoothPeripheralResult::LeaseExpired,
+        ] {
+            let expected = crate::Envelope::new(
+                7,
+                8,
+                0,
+                9,
+                crate::Event::BluetoothPeripheral(BluetoothPeripheralEvidence {
+                    operation: BluetoothPeripheralOperation::Snapshot,
+                    result,
+                    advertising_runs: u32::MAX,
+                    peripheral_runs: 2,
+                    retries: 3,
+                    terminal: true,
+                    saturated: true,
+                    detail_truncated: false,
+                    detail: "peripheral active: TimingPolicyUnavailable"
+                        .try_into()
+                        .unwrap(),
+                }),
+            );
+            let mut encoder = crate::FrameEncoder::new();
+            let mut decoder = crate::FrameDecoder::new();
+            let mut observed = None;
+            decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
+                observed = Some(frame.unwrap())
+            });
+            assert_eq!(observed, Some(expected));
+        }
+    }
+
     #[test]
     fn rx_deadline_diagnostics_survive_framed_transport() {
         let expected = crate::Envelope::new(

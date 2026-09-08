@@ -905,7 +905,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
-                    Command::BluetoothDtm(_) => {
+                    Command::BluetoothDtm(_) | Command::BluetoothPeripheral(_) => {
                         publish_event_reliably(
                             session_id,
                             request_id,

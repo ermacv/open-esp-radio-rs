@@ -1781,6 +1781,7 @@ dependencies = [
  "esp-hal",
  "heapless 0.9.3",
  "log",
+ "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-embassy",
  "oer-esp32s31-bluetooth-integration",

@@ -226,3 +226,24 @@ fn fenced_list_zero_observation_classifies_a_completed_event_once() {
     );
     assert!(owner.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
 }
+
+#[test]
+fn nonconnectable_reset_preserves_data_after_controller_address_insertion() {
+    let expected = [0x42, 9, 1, 2, 3, 4, 5, 0xc6, 2, 1, 6];
+    let reset = owner()
+        .prepare_packet(&expected)
+        .unwrap()
+        .reset_link_state(0)
+        .unwrap();
+    assert_eq!(
+        reset
+            .storage
+            .as_ref()
+            .get_ref()
+            .tx_packet
+            .model_transmitted_pdu(reset.packet_length, [1, 2, 3, 4, 5, 0xc6]),
+        expected
+    );
+    assert_eq!(reset.pdu(), expected);
+    assert!(reset.cancel().retains_reviewed_graph());
+}

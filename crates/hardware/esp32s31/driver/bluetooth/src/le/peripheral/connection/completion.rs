@@ -405,6 +405,38 @@ impl PeripheralConnectionCompletedEventRecurringRemainder {
 
 #[cfg(target_arch = "riscv32")]
 impl PeripheralConnectionCompletedEvent {
+    pub(crate) fn process_control(
+        &mut self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
+    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
+        let acknowledged = self.graph.reclaim_control_transmission();
+        #[cfg(feature = "dtm-diagnostics")]
+        super::super::diagnostics::record_received(&self.batch, acknowledged);
+        #[cfg(not(feature = "dtm-diagnostics"))]
+        let _ = acknowledged;
+        for index in 0..self.batch.len() {
+            control.receive(
+                self.batch
+                    .packet(index)
+                    .expect("bounded RX batch")
+                    .as_bytes(),
+                version,
+            )?;
+        }
+        if let Some(response) = control.pending_response()
+            && self
+                .graph
+                .enqueue_control_transmission(response.as_bytes())
+                .expect("portable control response fits the connection TX allocation")
+        {
+            control.response_enqueued();
+            #[cfg(feature = "dtm-diagnostics")]
+            super::super::diagnostics::record_enqueued();
+        }
+        Ok(())
+    }
+
     pub(crate) const fn link_layer_completion(&self) -> &LePeripheralConnectionEventCompleted {
         &self.event
     }

@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 91;
+pub const PROTOCOL_VERSION: u16 = 92;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -307,6 +307,8 @@ pub struct SessionReady {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FeatureCapabilities {
+    /// Bounded connectable advertising and peripheral execution observations.
+    pub bluetooth_peripheral: bool,
     pub bluetooth_dtm: bool,
     pub udp: bool,
     pub tcp: bool,
@@ -1051,6 +1053,7 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
+    BluetoothPeripheral(crate::BluetoothPeripheralOperation),
     BluetoothDtm(crate::BluetoothDtmOperation),
     GetCapabilities,
     /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
@@ -2192,6 +2195,7 @@ pub struct Finished {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
+    BluetoothPeripheral(crate::BluetoothPeripheralEvidence),
     BluetoothDtm(crate::BluetoothDtmEvidence),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.
     WifiAirtimePeer(crate::WifiAirtimePeerEvidence),

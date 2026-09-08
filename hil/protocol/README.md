@@ -1,6 +1,6 @@
-# HIL protocol v91
+# HIL protocol v92
 
-Host and firmware must both use version 91. Other versions are rejected
+Host and firmware must both use version 92. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
@@ -17,6 +17,22 @@ poll and cleanup windows. IRQs inside those windows remain included. These
 values do not measure CPU utilization. The host imposes a per-case response
 deadline; a target stalled inside synchronous hardware preparation may need
 reset. Feature discovery identifies images implementing this diagnostic.
+
+`BluetoothPeripheral::StartAdvertising` requests a bounded diagnostic
+`ADV_IND` on channel 37 through production HCI. `Snapshot` returns boot-lifetime
+advertising/peripheral RUN counts, retries and the first terminal reason.
+These are software publication observations; a peer observation is required
+to establish RF delivery. The start response includes the public address.
+HCI rejection stages are Reset (0), address read (1), parameters (2), data (3)
+and enable (4).
+
+The Bluetooth image advertises `bluetooth_peripheral` for this interface.
+One probe consumes the boot: DTM and another advertising start are rejected
+afterwards. Active LL Reset is not composed. The host ends the probe with a
+board reset; after 30 seconds the target reports lease expiry and resets the
+whole board. A USB failure during the probe also resets the board. Neither
+path reports logical HCI quiescence. The default connection timing policy
+still lacks a local clock bound, so recurrence stops at that explicit limit.
 
 Source types are authoritative. A frame is:
 

@@ -360,6 +360,14 @@ pub struct PeripheralConnectionSchedulerCompleted {
 
 #[cfg(target_arch = "riscv32")]
 impl PeripheralConnectionSchedulerCompleted {
+    pub(crate) fn process_control(
+        &mut self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
+    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
+        self.event.process_control(control, version)
+    }
+
     /// Portable completion record with the exactly-once advanced successor.
     pub const fn link_layer_completion(
         &self,
@@ -459,7 +467,11 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             }
         };
         let resolved_window = reservation.window();
-        match candidate.prepare_resolved_event_fields(resolved_window, default_tx_power) {
+        match candidate.prepare_resolved_event_fields(
+            resolved_window,
+            reservation.timing_policy().sequence_lead_raw_delta(),
+            default_tx_power,
+        ) {
             Ok(event) => Ok(PeripheralConnectionEventPrepared {
                 event: event.install_direction_finding_workspace(direction_finding_workspace),
                 reservation,

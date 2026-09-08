@@ -15,6 +15,7 @@ pub mod advertising;
 pub mod advertising_lifecycle;
 pub mod connectable_advertising;
 pub mod connection;
+pub mod control;
 pub mod scanning;
 
 pub use address::{LeDeviceAddress, LeDeviceAddressKind};

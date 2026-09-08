@@ -89,7 +89,73 @@ pub struct BluetoothHardwareRunner<
 
 fn classify_command<const SCHEDULER_CAPACITY: usize>(
     boundary: &CommandBoundary<'_, SCHEDULER_CAPACITY>,
+    advertising_completion: Option<
+        oer_esp32s31_bluetooth_memory::LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    >,
+    advertising_rejected_packets: Option<u32>,
+    advertising_last_receive_rejection: Option<(
+        u8,
+        oer_bluetooth_ll::connectable_advertising::LegacyConnectableConnectionRequestRejection,
+    )>,
 ) -> CommandBoundaryAction {
+    use crate::diagnostics::{BluetoothExecutionEvent as Observed, record};
+    match boundary {
+        ControllerCommandBoundary::LegacyConnectableAdvertisingActive => record(
+            Observed::ConnectableAdvertisingRun,
+            format_args!(
+                "advertising RUN; prev={:?}; rejected={:?}; last={:?}",
+                advertising_completion,
+                advertising_rejected_packets,
+                advertising_last_receive_rejection
+            ),
+        ),
+        ControllerCommandBoundary::PeripheralConnectionActive => {
+            record(Observed::PeripheralRun, format_args!("peripheral RUN"))
+        }
+        ControllerCommandBoundary::LegacyConnectableAdvertisingFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!("advertising first: {:?}", fault.cause()),
+        ),
+        ControllerCommandBoundary::LegacyConnectableAdvertisingRecurringFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!("advertising recurring: {:?}", fault.cause()),
+        ),
+        ControllerCommandBoundary::LegacyConnectableAdvertisingActiveFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!(
+                "adv {:?}; rx={:?}; nodes={:?}",
+                fault.cause(),
+                fault.receive_error(),
+                fault.receive_observations().map(|nodes| nodes.map(|n| (
+                    u8::from(n.completed),
+                    u8::from(n.packet_retained),
+                    u8::from(n.producer_updated),
+                    u8::from(n.epoch_updated),
+                    n.header
+                )))
+            ),
+        ),
+        ControllerCommandBoundary::LegacyConnectableAdvertisingPendingFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!("advertising pending: {:?}", fault.cause()),
+        ),
+        ControllerCommandBoundary::UnownedFinishedList(list) => record(
+            Observed::Terminal,
+            format_args!("unowned finished list: {:?}", list),
+        ),
+        ControllerCommandBoundary::PeripheralConnectionFirstFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!("peripheral first: {:?}", fault.cause()),
+        ),
+        ControllerCommandBoundary::PeripheralConnectionActiveFailStop(fault) => record(
+            Observed::Terminal,
+            format_args!("peripheral active: {:?}", fault.cause()),
+        ),
+        ControllerCommandBoundary::Retryable(retry) => {
+            record(Observed::Retry, format_args!("retry: {:?}", retry))
+        }
+        _ => {}
+    }
     let class = match boundary {
         ControllerCommandBoundary::IdleRestored(_) => {
             CommandBoundaryClass::IdleRestored
@@ -154,7 +220,11 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
             CommandBoundaryClass::UnownedFinishedList
         }
     };
-    reduce_command_boundary(class)
+    let action = reduce_command_boundary(class);
+    if matches!(action, CommandBoundaryAction::Quarantine) {
+        record(Observed::Terminal, format_args!("command quarantine"));
+    }
+    action
 }
 
 fn modem_step_requires_quarantine(step: &ModemDriveStep) -> bool {
@@ -182,7 +252,14 @@ fn modem_step_requires_quarantine(step: &ModemDriveStep) -> bool {
             }
         },
     };
-    modem_timer_requires_quarantine(class)
+    let quarantine = modem_timer_requires_quarantine(class);
+    if quarantine {
+        crate::diagnostics::record(
+            crate::diagnostics::BluetoothExecutionEvent::Terminal,
+            format_args!("modem timer quarantine: {:?}", class),
+        );
+    }
+    quarantine
 }
 
 #[expect(
@@ -333,6 +410,10 @@ impl<
                         yield_now().await;
                     }
                     RetryGateSelection::InterruptFault(fault) => {
+                        crate::diagnostics::record(
+                            crate::diagnostics::BluetoothExecutionEvent::Terminal,
+                            format_args!("interrupt: {:?}", fault),
+                        );
                         let routes = quarantine_routes(&mut self.interrupt);
                         retain_quarantine_forever(BluetoothHardwareQuarantine::<
                             SCHEDULER_CAPACITY,
@@ -390,7 +471,21 @@ impl<
             };
 
             match selection {
-                HardwareSelection::Command(boundary) => match classify_command(&boundary) {
+                HardwareSelection::Command(boundary) => match classify_command(
+                    &boundary,
+                    self.command
+                        .as_ref()
+                        .expect("live actor")
+                        .advertising_completion(),
+                    self.command
+                        .as_ref()
+                        .expect("live actor")
+                        .advertising_rejected_packets(),
+                    self.command
+                        .as_ref()
+                        .expect("live actor")
+                        .advertising_last_receive_rejection(),
+                ) {
                     CommandBoundaryAction::Continue => yield_now().await,
                     CommandBoundaryAction::GateRetry => {
                         self.schedule.arm_retry();
@@ -424,6 +519,10 @@ impl<
                     yield_now().await;
                 }
                 HardwareSelection::InterruptFault(fault) => {
+                    crate::diagnostics::record(
+                        crate::diagnostics::BluetoothExecutionEvent::Terminal,
+                        format_args!("interrupt fault: {:?}", fault),
+                    );
                     let routes = quarantine_routes(&mut self.interrupt);
                     retain_quarantine_forever(
                         BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::InterruptFault {

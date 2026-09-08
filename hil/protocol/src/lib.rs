@@ -11,6 +11,7 @@ mod framing;
 mod io;
 pub use bluetooth::{
     BluetoothDtmEvidence, BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
+    BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralResult,
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;

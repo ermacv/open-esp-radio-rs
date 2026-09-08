@@ -460,6 +460,8 @@ impl LeLegacyConnectionRequest {
         self.sleep_clock_accuracy
     }
 
+    /// Algorithm indicated by the initiator's ChSel bit, before negotiation
+    /// with the advertiser's ChSel bit.
     pub const fn channel_selection(self) -> LeChannelSelectionAlgorithm {
         self.channel_selection
     }
@@ -699,8 +701,21 @@ pub struct LePeripheralConnection {
 }
 
 impl LePeripheralConnection {
-    pub const fn from_request(request: LeLegacyConnectionRequest) -> Self {
-        let selector = match request.channel_selection {
+    /// Negotiate the legacy connection using both devices' ChSel fields.
+    /// `advertised_algorithm` describes the exact ADV_IND/ADV_DIRECT_IND sent.
+    /// Core Vol 6, Part B, 4.5.8 requires algorithm one if either bit was zero.
+    pub const fn from_request(
+        request: LeLegacyConnectionRequest,
+        advertised_algorithm: LeChannelSelectionAlgorithm,
+    ) -> Self {
+        let algorithm = match (advertised_algorithm, request.channel_selection) {
+            (
+                LeChannelSelectionAlgorithm::AlgorithmTwo,
+                LeChannelSelectionAlgorithm::AlgorithmTwo,
+            ) => LeChannelSelectionAlgorithm::AlgorithmTwo,
+            _ => LeChannelSelectionAlgorithm::AlgorithmOne,
+        };
+        let selector = match algorithm {
             LeChannelSelectionAlgorithm::AlgorithmOne => ConnectionChannelSelector::One {
                 channel_map: request.channel_map,
                 hop_increment: request.hop_increment,
@@ -721,6 +736,14 @@ impl LePeripheralConnection {
 
     pub const fn request(&self) -> LeLegacyConnectionRequest {
         self.request
+    }
+
+    /// Effective algorithm selected from the advertising/request exchange.
+    pub const fn channel_selection(&self) -> LeChannelSelectionAlgorithm {
+        match self.selector {
+            ConnectionChannelSelector::One { .. } => LeChannelSelectionAlgorithm::AlgorithmOne,
+            ConnectionChannelSelector::Two(_) => LeChannelSelectionAlgorithm::AlgorithmTwo,
+        }
     }
 
     pub const fn event_counter(&self) -> u16 {

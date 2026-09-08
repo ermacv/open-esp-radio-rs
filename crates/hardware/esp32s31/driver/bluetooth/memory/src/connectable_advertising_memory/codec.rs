@@ -4,13 +4,12 @@
 
 use crate::{
     NonScanningRxMemoryCpuOwned,
-    le_tx_packet::{
-        LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPreparedInput, LeTxPacketStorage,
-    },
+    le_tx_packet::{LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPreparedInput},
     legacy_advertising_event_image::{
         LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress,
         LegacyAdvertisingPrimaryChannel, LegacyAdvertisingSchedulerItemWords,
     },
+    legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     scheduler_context::SchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -44,6 +43,9 @@ const LINK_STATE_TX_TAIL: usize = 0x74 / 4;
 const LINK_STATE_RX_SWAP_RESERVE: usize = 0x78 / 4;
 const LINK_STATE_ALLOCATION_CONFIG: usize = 0x30 / 4;
 const LINK_STATE_ALLOCATION_CONFIG_IMAGE: u32 = 0x0000_1e00;
+const LINK_STATE_RX_LIST_CLASS: usize = 0x20 / 4;
+const LINK_STATE_RX_LIST_CLASS_MASK: u32 = 0x7000_0000;
+const NON_SCANNING_RX_LIST_CLASS: u32 = 2 << 28;
 const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
 
 const LINK_STATE_WORD_00: usize = 0;
@@ -68,14 +70,23 @@ const SCHEDULER_ITEM_LINK_STATE: usize = 0x08 / 4;
 const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
 const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
 const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
+const SCHEDULER_ITEM_SEQUENCE_START: usize = 0x0c / 4;
+const SCHEDULER_ITEM_SEQUENCE_DURATION: usize = 0x10 / 4;
 const SCHEDULER_ITEM_RAW_START: usize = 0x44 / 4;
 const SCHEDULER_ITEM_RAW_END: usize = 0x48 / 4;
 const SCHEDULER_ITEM_CONTROL: usize = 0x4c / 4;
 const SCHEDULER_ITEM_SOFTWARE_NEXT: usize = 0x50 / 4;
 const SCHEDULER_ITEM_COMPLETED_LINK: usize = 0x54 / 4;
 const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
-const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0010_0000;
+// Common scheduler allocation installs both bits before the advertising role.
+const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS: usize = 0x1c / 4;
+const SCHEDULER_ITEM_COEX_PRIORITIES: usize = 0x24 / 4;
+// Product-owned equal priorities for the dedicated, always-awake radio.
+const STANDALONE_COEX_PRIORITY: u32 = 15;
+// Complete common allocator applied to the standalone module default.
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_7fff;
 
 const LE_1M_FIXED_PACKET_MICROS: u32 = 80;
 const VENDOR_RESPONSE_CAPABLE_ITEM_TAIL_MICROS: u32 = 4;
@@ -174,8 +185,21 @@ impl LinkStateStorage {
         let mut words =
             self.reviewed_words()
                 .reset(binding.adv_ind_header, own_address, default_tx_power_dbm);
-        words.word_08 = (words.word_08 & !COMPRESSED_LINK_MASK) | rx_head.compressed_image();
+        // The common no-response projection clears this consumer. Advertising
+        // reset installs the primary TX header's successor for SCAN_RSP.
+        words.word_04 = (words.word_04 & !COMPRESSED_LINK_MASK)
+            | binding.scan_response_header.compressed_image();
+        // adv_alloc_rxbuf prepares an empty private RX link before reset.
+        // The later memory-manager broker selects the global RX class and
+        // updates software head/tail, without installing a private consumer.
+        words.word_08 &= !COMPRESSED_LINK_MASK;
         self.write_reviewed_words(words);
+        // r_ble_lll_mmgmt_update_global_rxlink selects the same non-scanning
+        // list that the publication transaction supplies through CurrentRx.
+        self.words[LINK_STATE_RX_LIST_CLASS].set(
+            (self.words[LINK_STATE_RX_LIST_CLASS].get() & !LINK_STATE_RX_LIST_CLASS_MASK)
+                | NON_SCANNING_RX_LIST_CLASS,
+        );
         self.words[LINK_STATE_RX_HEAD].set(rx_head.address());
         self.words[LINK_STATE_RX_TAIL].set(rx_tail.address());
         self.words[LINK_STATE_RX_SWAP_RESERVE].set(0);
@@ -189,8 +213,9 @@ impl LinkStateStorage {
     ) -> bool {
         self.words[LINK_STATE_SCHEDULER_HEAD].get()
             == binding.scheduler_item.controller_address().address()
-            && self.words[LINK_STATE_WORD_08].get() & COMPRESSED_LINK_MASK
-                == rx_head.compressed_image()
+            && self.words[LINK_STATE_WORD_04].get() & COMPRESSED_LINK_MASK
+                == binding.scan_response_header.compressed_image()
+            && self.words[LINK_STATE_WORD_08].get() & COMPRESSED_LINK_MASK == 0
             && self.words[LINK_STATE_RX_HEAD].get() == rx_head.address()
             && self.words[LINK_STATE_RX_TAIL].get() == rx_tail.address()
             && self.words[LINK_STATE_TX_HEAD].get()
@@ -200,9 +225,13 @@ impl LinkStateStorage {
     }
 
     #[cfg(test)]
-    fn emulate_missing_rx_consumer_link(&self) {
-        self.words[LINK_STATE_WORD_08]
-            .set(self.words[LINK_STATE_WORD_08].get() & !COMPRESSED_LINK_MASK);
+    fn emulate_private_rx_consumer_link(&self) {
+        let head = BluetoothControllerSramAddress::new(self.words[LINK_STATE_RX_HEAD].get())
+            .expect("the prepared software RX head is controller SRAM");
+        self.words[LINK_STATE_WORD_08].set(
+            (self.words[LINK_STATE_WORD_08].get() & !COMPRESSED_LINK_MASK)
+                | head.compressed_image(),
+        );
     }
 }
 
@@ -228,6 +257,14 @@ impl SchedulerItemStorage {
         }
         self.words[SCHEDULER_ITEM_HARDWARE_NEXT].set(SCHEDULER_ITEM_ALLOCATION_PREFIX);
         self.words[SCHEDULER_ITEM_CONTEXT].set(context.compressed_image());
+        self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
+        // Four five-bit lanes from the complete advertising PTI producer.
+        self.words[SCHEDULER_ITEM_COEX_PRIORITIES].set(
+            STANDALONE_COEX_PRIORITY
+                | (STANDALONE_COEX_PRIORITY << 5)
+                | (STANDALONE_COEX_PRIORITY << 10)
+                | (STANDALONE_COEX_PRIORITY << 15),
+        );
         self.words[SCHEDULER_ITEM_LINK_STATE]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
     }
@@ -266,7 +303,9 @@ impl SchedulerItemStorage {
         match self.words[SCHEDULER_ITEM_WORD_38].get() {
             u32::MAX => None,
             0 => Some(LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero),
-            _ => Some(LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero),
+            value => {
+                Some(LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(value))
+            }
         }
     }
 
@@ -277,7 +316,7 @@ impl SchedulerItemStorage {
     ) {
         self.words[SCHEDULER_ITEM_WORD_38].set(match status {
             LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero => 0,
-            LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero => 1,
+            LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(value) => value,
         });
     }
 
@@ -310,8 +349,8 @@ pub(super) struct LegacyConnectableAdvertisingGraphStorage {
     scheduler_item: SchedulerItemStorage,
     adv_ind_header: LeTxBufferHeaderStorage,
     scan_response_header: LeTxBufferHeaderStorage,
-    adv_ind_packet: LeTxPacketStorage<LEGACY_ADVERTISING_TX_PACKET_BYTES>,
-    scan_response_packet: LeTxPacketStorage<LEGACY_ADVERTISING_TX_PACKET_BYTES>,
+    adv_ind_packet: LegacyAdvertisingTxPacketStorage<LEGACY_ADVERTISING_TX_PACKET_BYTES>,
+    scan_response_packet: LegacyAdvertisingTxPacketStorage<LEGACY_ADVERTISING_TX_PACKET_BYTES>,
 }
 
 impl LegacyConnectableAdvertisingGraphStorage {
@@ -322,8 +361,8 @@ impl LegacyConnectableAdvertisingGraphStorage {
             scheduler_item: SchedulerItemStorage::new(),
             adv_ind_header: LeTxBufferHeaderStorage::new(),
             scan_response_header: LeTxBufferHeaderStorage::new(),
-            adv_ind_packet: LeTxPacketStorage::new(),
-            scan_response_packet: LeTxPacketStorage::new(),
+            adv_ind_packet: LegacyAdvertisingTxPacketStorage::new(),
+            scan_response_packet: LegacyAdvertisingTxPacketStorage::new(),
         }
     }
 
@@ -355,6 +394,9 @@ impl LegacyConnectableAdvertisingGraphStorage {
         let scan_response_length = self
             .scan_response_packet
             .prepare_validated_encoded_pdu(scan_response);
+        self.adv_ind_packet.lower_advertiser_address(adv_ind_length);
+        self.scan_response_packet
+            .lower_advertiser_address(scan_response_length);
         (adv_ind_length, scan_response_length)
     }
 
@@ -381,6 +423,7 @@ impl LegacyConnectableAdvertisingGraphStorage {
         primary_channel: LegacyAdvertisingPrimaryChannel,
         raw_start: u32,
         raw_end: u32,
+        raw_sequence_lead: u32,
     ) -> Result<(), LegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError> {
         if self.link_state.scheduler_head() != binding.scheduler_item.controller_address().address()
         {
@@ -402,6 +445,11 @@ impl LegacyConnectableAdvertisingGraphStorage {
             raw_end,
         );
         self.scheduler_item.write_reviewed_words(words);
+        // Common r_btdm_sched_calc_seq_time projection, after sequence admission.
+        self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_START]
+            .set(raw_start.wrapping_add(raw_sequence_lead));
+        self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_DURATION]
+            .set(raw_end.wrapping_sub(raw_start));
         self.link_state.detach_scheduler_item();
         Ok(())
     }
@@ -467,6 +515,46 @@ impl LegacyConnectableAdvertisingGraphStorage {
         self.scheduler_item.model_controller_completion(status);
     }
 
+    /// Model the sequencer's wait and duration using its encoded timing inputs.
+    #[cfg(test)]
+    pub(super) fn model_controller_elapsed(&self, now: u32) -> bool {
+        let start = self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_START].get();
+        let duration = self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_DURATION].get();
+        let elapsed = now.wrapping_sub(start) as i32;
+        elapsed >= 0 && elapsed as u32 >= duration
+    }
+
+    /// Model a dedicated-radio arbiter requiring a nonzero request in each phase.
+    #[cfg(test)]
+    pub(super) fn model_controller_can_request_radio(&self) -> bool {
+        let priorities = self.scheduler_item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get();
+        (0..4).all(|phase| (priorities >> (phase * 5)) & 31 != 0)
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_controller_receive_list(&self) -> Option<crate::RxMemoryListClass> {
+        match (self.link_state.words[LINK_STATE_RX_LIST_CLASS].get() >> 28) & 7 {
+            1 => Some(crate::RxMemoryListClass::Scanning),
+            2 => Some(crate::RxMemoryListClass::NonScanning),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_transmitted_pdus(
+        &self,
+        adv_length: AdvertisingTxPacketLength,
+        response_length: AdvertisingTxPacketLength,
+        advertiser: [u8; 6],
+    ) -> [std::vec::Vec<u8>; 2] {
+        [
+            self.adv_ind_packet
+                .model_transmitted_pdu(adv_length, advertiser),
+            self.scan_response_packet
+                .model_transmitted_pdu(response_length, advertiser),
+        ]
+    }
+
     pub(super) fn adv_ind_pdu(&self, length: AdvertisingTxPacketLength) -> &[u8] {
         self.adv_ind_packet.prepared_pdu(length)
     }
@@ -496,8 +584,14 @@ impl LegacyConnectableAdvertisingGraphStorage {
     }
 
     #[cfg(test)]
-    pub(super) fn emulate_missing_rx_consumer_link(&self) {
-        self.link_state.emulate_missing_rx_consumer_link();
+    pub(super) fn emulate_private_rx_consumer_link(&self) {
+        self.link_state.emulate_private_rx_consumer_link();
+    }
+
+    #[cfg(test)]
+    pub(super) fn emulate_missing_scan_response_consumer_link(&self) {
+        let word = &self.link_state.words[LINK_STATE_WORD_04];
+        word.set(word.get() & !COMPRESSED_LINK_MASK);
     }
 
     #[cfg(test)]

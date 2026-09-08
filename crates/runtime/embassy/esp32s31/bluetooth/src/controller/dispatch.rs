@@ -727,7 +727,7 @@ where
                                         active,
                                     ),
                                 );
-                                return ControllerCommandBoundary::LegacyConnectableAdvertisingActive;
+                                // RUN was reported when the running owner was installed.
                             }
                             LegacyConnectableAdvertisingResponsePublication::Pending(pending) => {
                                 self.store_retained_state(

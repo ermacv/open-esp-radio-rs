@@ -70,17 +70,23 @@ fn phase(packet_start_micros: u32) -> PeripheralConnectionRecurringPhase {
 }
 
 fn completed_event(request: LeLegacyConnectionRequest) -> LePeripheralConnectionEventCompleted {
-    LePeripheralConnection::from_request(request)
-        .prepare_event()
-        .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Observed)
+    LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    )
+    .prepare_event()
+    .into_submitted()
+    .complete(LePeripheralConnectionEventPeerActivity::Observed)
 }
 
 fn missed_first_event(request: LeLegacyConnectionRequest) -> LePeripheralConnectionEventCompleted {
-    LePeripheralConnection::from_request(request)
-        .prepare_event()
-        .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed)
+    LePeripheralConnection::from_request(
+        request,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    )
+    .prepare_event()
+    .into_submitted()
+    .complete(LePeripheralConnectionEventPeerActivity::Missed)
 }
 
 #[test]

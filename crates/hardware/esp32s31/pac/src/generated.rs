@@ -3156,6 +3156,22 @@ pub(crate) fn request_bluetooth_controller_time_latch(
     crate::svd::field_or_modify::request_bluetooth_controller_time_latch(registers);
 }
 
+/// Typed bridge for the reviewed `preserve_bluetooth_memory_list_1_initial_control` fixed field-OR transaction.
+#[inline]
+pub(crate) fn preserve_bluetooth_memory_list_1_initial_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_or_modify::preserve_bluetooth_memory_list_1_initial_control(registers);
+}
+
+/// Typed bridge for the reviewed `preserve_bluetooth_memory_list_2_initial_control` fixed field-OR transaction.
+#[inline]
+pub(crate) fn preserve_bluetooth_memory_list_2_initial_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_or_modify::preserve_bluetooth_memory_list_2_initial_control(registers);
+}
+
 /// Typed bridge for the reviewed `configure_bluetooth_cte_six_buffer_limit` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn configure_bluetooth_cte_six_buffer_limit(
@@ -7674,6 +7690,22 @@ pub(crate) fn configure_phy_forced_digital_gain_1(
     value: PhyDigitalGainImage,
 ) {
     crate::svd::field_replace_modify::configure_phy_forced_digital_gain_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_initial_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_1_initial_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_1_initial_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_2_initial_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_2_initial_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_2_initial_control(registers);
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

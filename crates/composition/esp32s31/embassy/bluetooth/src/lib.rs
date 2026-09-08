@@ -746,3 +746,6 @@ static PRODUCTION_LEGACY_CONNECTABLE_ADVERTISING_MEMORY:
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(any(test, target_arch = "riscv32"))]
+pub mod diagnostics;

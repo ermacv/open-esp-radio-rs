@@ -1,6 +1,9 @@
 //! Private SRAM layout and word codec for one peripheral connection graph.
 
-use core::{marker::PhantomPinned, pin::Pin};
+use crate::le_tx_packet::{
+    LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPrepareError, LeTxPacketStorage,
+};
+use core::{cell::Cell, marker::PhantomPinned, pin::Pin};
 
 use crate::{
     direction_finding_workspace::DirectionFindingWorkspaceLink,
@@ -20,7 +23,6 @@ use super::{
     BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
     PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
     PeripheralConnectionEventSpan, PeripheralConnectionIdentity, PeripheralConnectionIntervalTicks,
@@ -34,7 +36,7 @@ use vcell::VolatileCell;
 
 const LINK_STATE_WORDS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES / 4;
-const TX_SENTINEL_WORDS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES / 4;
+const CONTROL_TX_PACKET_BYTES: usize = crate::BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + 27;
 
 const LINK_STATE_SCHEDULER_HEAD: usize = 0x64 / 4;
 const LINK_STATE_RX_HEAD: usize = 0x68 / 4;
@@ -77,15 +79,24 @@ const SCHEDULER_ITEM_CONTEXT: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE: usize = 2;
 const SCHEDULER_ITEM_CLASS: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTEXT_STATE: usize = 1;
+const SCHEDULER_ITEM_SEQUENCE_START: usize = 0x0c / 4;
+const SCHEDULER_ITEM_SEQUENCE_DURATION: usize = 0x10 / 4;
 const SCHEDULER_ITEM_RATE_AND_POWER: usize = 0x14 / 4;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY: usize = 0x18 / 4;
+const SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES: usize = 0x24 / 4;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS: usize = 0x1c / 4;
 const SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION: usize = 0x2c / 4;
 const SCHEDULER_ITEM_CAPTURED_ANCHOR: usize = 0x34 / 4;
 const SCHEDULER_ITEM_STATUS: usize = 0x38 / 4;
 const SCHEDULER_ITEM_START: usize = 0x44 / 4;
 const SCHEDULER_ITEM_END: usize = 0x48 / 4;
 const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
-const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0010_0000;
+// Common allocation sets both bits; the connection role retains them.
+const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
+// Standalone module default after common allocation and connection-role masks.
+const SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS: u32 = 0xe7df_7fff;
+// Product policy for the dedicated radio, not the vendor coexistence default.
+const STANDALONE_RADIO_REQUEST_PRIORITY: u32 = 15;
 const SCHEDULER_ITEM_PERIPHERAL_PREFIX: u32 = 0x0020_0000;
 const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
 const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
@@ -95,11 +106,6 @@ const SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE: u32 = 0x000f_0000;
 const SCHEDULER_ITEM_RECEIVE_WAIT_LONG_MODE: u32 = 0x001f_0000;
 const SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE: u32 = 1;
 const SCHEDULER_ITEM_CAPTURE_AVAILABLE: u32 = 1 << 11;
-
-const TX_SENTINEL_STATE: usize = 0x0c / 4;
-const TX_SENTINEL_CLASS: usize = 0x10 / 4;
-const TX_SENTINEL_EMPTY_QUEUE: u32 = 0x8000_0000;
-const TX_SENTINEL_CONNECTION_CLASS: u32 = 2;
 
 #[repr(C, align(4))]
 struct PeripheralConnectionLinkStateStorage {
@@ -299,6 +305,9 @@ impl PeripheralConnectionSchedulerItemStorage {
         }
         let successor = successor.map_or(0, ControllerSramLinkAddress::compressed_image);
         self.words[SCHEDULER_ITEM_NEXT].set(SCHEDULER_ITEM_ALLOCATION_PREFIX | successor);
+        self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS);
+        self.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES]
+            .set(STANDALONE_RADIO_REQUEST_PRIORITY | (STANDALONE_RADIO_REQUEST_PRIORITY << 5));
         self.words[SCHEDULER_ITEM_CONTEXT].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE]
             .set(SCHEDULER_ITEM_PERIPHERAL_PREFIX | link_state.compressed_image());
@@ -327,6 +336,18 @@ impl PeripheralConnectionSchedulerItemStorage {
     fn restore_hardware_predecessor(&self, predecessor: ControllerSramLinkAddress) {
         self.words[SCHEDULER_ITEM_NEXT]
             .set(SCHEDULER_ITEM_ALLOCATION_PREFIX | predecessor.compressed_image());
+    }
+
+    // Current r_btdm_sched_calc_seq_time: the sequencer starts after the
+    // admitted lead and retains the complete software-window duration.
+    fn prepare_sequence_timing(
+        &self,
+        window: PeripheralConnectionSchedulerWindow,
+        raw_sequence_lead: u32,
+    ) {
+        self.words[SCHEDULER_ITEM_SEQUENCE_START]
+            .set(window.start().wrapping_add(raw_sequence_lead));
+        self.words[SCHEDULER_ITEM_SEQUENCE_DURATION].set(window.end().wrapping_sub(window.start()));
     }
 
     fn mark_in_flight(&self) {
@@ -461,32 +482,6 @@ impl PeripheralConnectionSchedulerItemStorage {
     }
 }
 
-#[repr(C, align(4))]
-struct PeripheralConnectionTxSentinelStorage {
-    words: [VolatileCell<u32>; TX_SENTINEL_WORDS],
-}
-
-impl PeripheralConnectionTxSentinelStorage {
-    const fn new() -> Self {
-        Self {
-            words: [const { VolatileCell::new(0) }; TX_SENTINEL_WORDS],
-        }
-    }
-
-    fn initialize_empty(&self) {
-        for word in &self.words {
-            word.set(0);
-        }
-        self.words[TX_SENTINEL_STATE].set(TX_SENTINEL_EMPTY_QUEUE);
-        self.words[TX_SENTINEL_CLASS].set(TX_SENTINEL_CONNECTION_CLASS);
-    }
-
-    fn is_empty_queue_sentinel(&self) -> bool {
-        self.words[TX_SENTINEL_STATE].get() == TX_SENTINEL_EMPTY_QUEUE
-            && self.words[TX_SENTINEL_CLASS].get() == TX_SENTINEL_CONNECTION_CLASS
-    }
-}
-
 /// Static storage for the allocation-time graph of one peripheral connection.
 #[pin_project]
 #[repr(C)]
@@ -495,7 +490,11 @@ pub struct PeripheralConnectionMemoryGraphStorage {
     scheduler_context: SchedulerContextStorage,
     scheduler_items: [PeripheralConnectionSchedulerItemStorage;
         BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT],
-    tx_sentinel: PeripheralConnectionTxSentinelStorage,
+    tx_sentinel: LeTxBufferHeaderStorage,
+    tx_successor: LeTxBufferHeaderStorage,
+    tx_packet: LeTxPacketStorage<CONTROL_TX_PACKET_BYTES>,
+    tx_current_second: Cell<bool>,
+    tx_pending: Cell<bool>,
     #[pin]
     _pin: PhantomPinned,
 }
@@ -528,6 +527,7 @@ pub(super) struct PeripheralConnectionFirstEventCodecInput {
     pub(super) receive_wait: PeripheralConnectionReceiveWait,
     pub(super) default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
     pub(super) priority: PeripheralConnectionSchedulerPriority,
+    pub(super) raw_sequence_lead: u32,
 }
 
 pub(super) struct PeripheralConnectionRecurringEventCodecInput {
@@ -536,6 +536,7 @@ pub(super) struct PeripheralConnectionRecurringEventCodecInput {
     pub(super) window: PeripheralConnectionSchedulerWindow,
     pub(super) receive_wait: PeripheralConnectionRecurringReceiveWait,
     pub(super) priority: PeripheralConnectionSchedulerPriority,
+    pub(super) raw_sequence_lead: u32,
 }
 
 impl PeripheralConnectionMemoryGraphBinding {
@@ -578,6 +579,23 @@ impl PeripheralConnectionMemoryGraphBinding {
         })
     }
 
+    fn tx_successor(&self) -> ControllerSramLinkAddress {
+        ControllerSramLinkAddress::new(
+            self.link_state.controller_address().address() - LINK_STATE_OFFSET
+                + core::mem::offset_of!(PeripheralConnectionMemoryGraphStorage, tx_successor)
+                    as u32,
+        )
+        .expect("the whole pinned graph extent was validated")
+    }
+
+    fn tx_packet(&self) -> LeTxPacketAddress<CONTROL_TX_PACKET_BYTES> {
+        LeTxPacketAddress::new(
+            self.link_state.controller_address().address() - LINK_STATE_OFFSET
+                + core::mem::offset_of!(PeripheralConnectionMemoryGraphStorage, tx_packet) as u32,
+        )
+        .expect("the whole pinned graph extent was validated")
+    }
+
     pub(super) const fn identity(&self) -> PeripheralConnectionMemoryGraphIdentity {
         self.identity
     }
@@ -595,7 +613,11 @@ impl PeripheralConnectionMemoryGraphStorage {
             scheduler_context: SchedulerContextStorage::new(),
             scheduler_items: [const { PeripheralConnectionSchedulerItemStorage::new() };
                 BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT],
-            tx_sentinel: PeripheralConnectionTxSentinelStorage::new(),
+            tx_sentinel: LeTxBufferHeaderStorage::new(),
+            tx_successor: LeTxBufferHeaderStorage::new(),
+            tx_packet: LeTxPacketStorage::new(),
+            tx_current_second: Cell::new(false),
+            tx_pending: Cell::new(false),
             _pin: PhantomPinned,
         }
     }
@@ -619,11 +641,33 @@ impl PeripheralConnectionMemoryGraphStorage {
         graph
             .link_state
             .initialize_allocation(binding.scheduler_items[1], binding.tx_sentinel);
-        graph.tx_sentinel.initialize_empty();
+        graph.tx_sentinel.initialize_empty_cursor();
+        graph.tx_successor.initialize_empty_cursor();
+        graph.tx_packet.clear();
+        graph.tx_current_second.set(false);
+        graph.tx_pending.set(false);
     }
 
     pub(super) fn has_empty_receive_queue(&self) -> bool {
         self.link_state.has_empty_receive_queue()
+    }
+
+    /// Model the sequencer's deadline using only its encoded hardware inputs.
+    #[cfg(test)]
+    pub(super) fn model_controller_sequence_elapsed(&self, now: u32) -> bool {
+        let item = &self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
+        let start = item.words[SCHEDULER_ITEM_SEQUENCE_START].get();
+        let duration = item.words[SCHEDULER_ITEM_SEQUENCE_DURATION].get();
+        let elapsed = now.wrapping_sub(start) as i32;
+        elapsed >= 0 && elapsed as u32 >= duration
+    }
+
+    /// Model the two peripheral arbitration requests consumed by the controller.
+    #[cfg(test)]
+    pub(super) fn model_controller_can_request_radio(&self) -> bool {
+        let item = &self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
+        let priorities = item.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES].get();
+        (0..2).all(|phase| (priorities >> (phase * 5)) & 31 != 0)
     }
 
     pub(super) fn has_empty_transmit_queue(
@@ -632,7 +676,108 @@ impl PeripheralConnectionMemoryGraphStorage {
     ) -> bool {
         self.link_state
             .retains_transmit_sentinel(binding.tx_sentinel)
-            && self.tx_sentinel.is_empty_queue_sentinel()
+            && self.tx_sentinel.is_empty_cursor()
+    }
+
+    /// Called only by the reclaimed live graph, never while a RUN owns SRAM.
+    pub(super) fn reclaim_control_tx(
+        &self,
+        binding: &PeripheralConnectionMemoryGraphBinding,
+    ) -> bool {
+        if !self.tx_pending.get() {
+            return false;
+        }
+        let (header, address) = if self.tx_current_second.get() {
+            (&self.tx_sentinel, binding.tx_sentinel)
+        } else {
+            (&self.tx_successor, binding.tx_successor())
+        };
+        if !header.transmission_completed() {
+            return false;
+        }
+        // The completed node remains the hardware current cursor. Only its
+        // packet allocation is released, matching get_txed_buffer's tail case.
+        header.release_completed_packet();
+        self.link_state.words[LINK_STATE_TX_HEAD].set(address.controller_address().address());
+        self.tx_current_second.set(!self.tx_current_second.get());
+        self.tx_pending.set(false);
+        true
+    }
+
+    pub(super) fn enqueue_control_tx(
+        self: Pin<&mut Self>,
+        binding: &PeripheralConnectionMemoryGraphBinding,
+        payload: &[u8],
+    ) -> Result<bool, LeTxPacketPrepareError> {
+        if self.tx_pending.get() {
+            return Ok(false);
+        }
+        let graph = self.project();
+        graph.tx_packet.prepare_pdu(3, payload)?;
+        let (current, next, next_address) = if graph.tx_current_second.get() {
+            (graph.tx_successor, graph.tx_sentinel, binding.tx_sentinel)
+        } else {
+            (
+                graph.tx_sentinel,
+                graph.tx_successor,
+                binding.tx_successor(),
+            )
+        };
+        next.initialize_bound_tx(binding.tx_packet());
+        next.mark_complete_control_packet();
+        current.link_successor(next_address);
+        graph.link_state.words[LINK_STATE_TX_TAIL].set(next_address.controller_address().address());
+        graph.tx_pending.set(true);
+        Ok(true)
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_transmit_control(
+        &self,
+        binding: &PeripheralConnectionMemoryGraphBinding,
+        acknowledged: bool,
+    ) -> Option<std::vec::Vec<u8>> {
+        // Walk the actual published current/successor links. The peer ACK,
+        // rather than an event completion, authorizes descriptor completion.
+        let current = self.link_state.words[LINK_STATE_TX_PATH].get() & SCHEDULER_ITEM_LINK_MASK;
+        let headers = [
+            (&self.tx_sentinel, binding.tx_sentinel),
+            (&self.tx_successor, binding.tx_successor()),
+        ];
+        let (cursor, _) = headers
+            .iter()
+            .find(|(_, address)| address.compressed_image() == current)?;
+        let next = cursor.snapshot()[0] & SCHEDULER_ITEM_LINK_MASK;
+        let (header, address) = headers
+            .iter()
+            .find(|(_, address)| address.compressed_image() == next)?;
+        if header.transmission_completed()
+            || header.packet_base_link() != Some(binding.tx_packet().base_link())
+        {
+            return None;
+        }
+        let pdu = self.tx_packet.model_pdu().to_vec();
+        if acknowledged {
+            header.model_complete_transmission();
+            let path = &self.link_state.words[LINK_STATE_TX_PATH];
+            path.set((path.get() & !SCHEDULER_ITEM_LINK_MASK) | address.compressed_image());
+        }
+        Some(pdu)
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_receive_current(&self) -> BluetoothControllerSramAddress {
+        let compressed = self.link_state.words[LINK_STATE_RX_PATH].get() & SCHEDULER_ITEM_LINK_MASK;
+        BluetoothControllerSramAddress::new(
+            BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW | (compressed << 2),
+        )
+        .unwrap()
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_advance_receive_current(&self, current: BluetoothControllerSramAddress) {
+        let path = &self.link_state.words[LINK_STATE_RX_PATH];
+        path.set((path.get() & !SCHEDULER_ITEM_LINK_MASK) | current.compressed_image());
     }
 
     pub(super) fn has_recovered_scheduler_pool(
@@ -695,6 +840,8 @@ impl PeripheralConnectionMemoryGraphStorage {
                 input.receive_wait,
                 input.priority,
             );
+        let item = &self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
+        item.prepare_sequence_timing(input.window, input.raw_sequence_lead);
     }
 
     pub(super) fn prepare_reviewed_recurring_event_fields(
@@ -710,6 +857,8 @@ impl PeripheralConnectionMemoryGraphStorage {
                 input.receive_wait,
                 input.priority,
             );
+        let item = &self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
+        item.prepare_sequence_timing(input.window, input.raw_sequence_lead);
     }
 
     pub(super) fn install_direction_finding_workspace(

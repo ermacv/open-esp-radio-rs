@@ -143,12 +143,39 @@ with an optional receive flag. The primary builder always allocates the first
 header and packet. Its response-capable branch allocates a second header and
 packet, encodes the second PDU as `SCAN_RSP`, links the primary header to that
 successor and installs the second header as TX tail. An empty scan-response
-data body still retains the second node. The reset body does not branch on
-response capability: it copies the graph RX head into the compressed RX
-consumer link and retains the full RX head/tail beside the two-node TX
-head/tail. Consequently a response-capable readiness predicate must validate
-both RX representations; checking only the full RX endpoints accepts an
-incomplete hardware graph.
+data body still retains the second node. The reset body copies the primary
+TX header's successor into the compressed scan-response consumer.
+
+The controller TX allocation is not a contiguous on-air advertising PDU.
+Current `50.o:r_sym_ble_6qbuM1ANzD8Y0VbSNKNu` passes packet `+0x12` as the
+data destination and stores the builder's returned on-air payload length at
+`+0x11`. Current `50.o:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn` copies only the
+advertising or scan-response data for the undirected path, while its returned
+length includes six additional address bytes. Hardware inserts `AdvA` from
+the selected address source. The open legacy TX codec therefore preserves
+the complete canonical PDU for CPU access, but omits `AdvA` from the controller
+data bytes and retains the on-air length. This applies to `ADV_NONCONN_IND`,
+`ADV_IND` and `SCAN_RSP`; the common DTM/data packet codec retains its complete
+payload representation. Directed advertising is outside this projection.
+
+The global RX path depends on the inputs and ordering of several producers.
+`50.o:r_sym_ble_8UzoZYkzYu9MXbM1vyWN` allocates the role before resetting its
+link state. Its allocator reaches `r_ble_lll_adv_alloc_rxbuf`, which calls
+`49.o:r_sym_ble_N2bQ5jI8Lnppq1TkXRdA` with argument one. That branch clears
+the software RX head, tail and reserve. Consequently advertising reset leaves
+the compressed private RX consumer empty. The later memory-manager broker
+selects global non-scanning class two and snapshots the global head/tail into
+the software endpoints; `61.o:r_sym_ble_D3G2s4EUhwQF8UMS2GBp` does not write
+the compressed private consumer. The response-capable readiness predicate
+therefore requires the scan-response consumer, the retained global RX
+endpoints and an absent private RX consumer.
+
+The fixed open pool publishes a completed packetless header as the initial
+global cursor, with two writable packet nodes after it. The extraction owner
+copies only packet-bearing nodes. The vendor keeps a global RX chain across
+events and returns processed buffers through `r_ble_lll_append_rx_buffer`.
+The fixed pool's hardware rotation and retirement are not qualified by its
+host model or by scheduler-item completion alone.
 
 The scheduler-window body adds the halfword at private configuration-table
 offset `+0x2c`, whose current and named tables both contain `4`, to the LE 1M
@@ -169,14 +196,42 @@ behavior and exactly one translated primary channel. The memory crate has no
 portable Link Layer dependency, does not retain that event and does not parse
 or revalidate Bluetooth wire semantics. It owns only the private two-header TX
 chain, the exact affine non-scanning RX pool, the common advertising reset
-projection, the compressed RX consumer link and the opaque scheduler duration.
+projection, global RX-list binding and the opaque scheduler duration.
 The joined memory owner remains non-publishable and losslessly returns only the
 graph and RX pool on cancellation or rejection. Scheduler admission, RX
 dispatch, accepted `CONNECT_IND` transfer and multi-channel buffering are
 separate later boundaries rather than implied capabilities of this memory
 profile.
 
+The complete common allocation and pre-publication producers also participate
+in this graph. Current `61.o:r_sym_ble_UCGCRefyBslibNM003px`
+(`ble_lll_mmgmt_alloc_scheduler_item`) sets both allocation bits in item
+`+0x00` and installs the module-default projection at `+0x1c`. Advertising's
+`50.o:r_sym_ble_K5YOgB5aAyEAMEega18V` writes four five-bit radio-request
+priorities at item `+0x24`. The standalone open profile supplies equal,
+nonzero priorities of 15; this is a product policy for the dedicated radio,
+not an identification of the vendor's default coexistence table.
+
+Current `61.o:r_sym_ble_lecwwE0KZNKhANvOphXa`
+(`ble_lll_mmgmt_update_global_rxlink`) selects non-scanning class two in
+link-state `+0x20`, matching selector two of the RX publication transaction.
+The reset body alone does not install this later memory-manager effect.
+The RX pointer publication also applies the separate common RX-list reset
+suffix described in [the RX-list contract](bluetooth-passive-scanning.md):
+clear the reviewed current-pointer control field, then preserve a fresh
+observation through the following write-back.
+
 ## Minimum production admission contract
+
+Legacy connection channel selection uses both transmitted ChSel fields, as
+specified by Core 5.4, Vol 6, Part B, sections 2.3.3.1 and 4.5.8. An initiator
+supporting algorithm two may send ChSel one to an advertiser that sent ChSel
+zero; the resulting connection uses algorithm one. The portable admission
+retains the decoded request and separately initializes the negotiated selector.
+Current `17.o:r_sym_ble_yGsYADDrqjYziP9c5GNW` likewise tests the local
+algorithm-two configuration before interpreting the legacy request bit. Its
+disabled branch initializes algorithm-one hopping and continues connection
+setup rather than rejecting the request.
 
 One advertising transmission may enter production only when current-artifact
 evidence closes the following connected edges:
@@ -218,3 +273,12 @@ timeline admission and a fresh sequence deadline precede the same publication
 and completion path. The controller actor owns live timing, delay selection
 and retention across async operations. Response-capable RX and accepted
 `CONNECT_IND` transfer have their own memory and LL contracts.
+
+The response-capable path applies the common
+[`r_btdm_sched_calc_seq_time` projection](bluetooth-direct-test-mode.md) after
+fresh sequence authorization: sequencer start is the accepted raw start plus
+the reservation's configured raw lead, and duration is the wrapping accepted
+end minus start. These hardware timing inputs are distinct from the scheduler
+window endpoints. The memory codec writes both before bookkeeping and RUN;
+rejection retains the unchanged CPU owner. Nonzero completion diagnostics retain
+the complete opaque item value.

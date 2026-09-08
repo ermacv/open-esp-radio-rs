@@ -2349,10 +2349,6 @@ pub enum DtmControllerInitialPreparationFailure<'runtime, S, const SCHEDULER_CAP
 /// Result of one bounded DTM controller-time phase observation.
 #[must_use = "retain Pending or consume the terminal Controller and DTM result"]
 #[cfg(target_arch = "riscv32")]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "no-alloc affine variants retain the complete in-flight or terminal DTM transaction"
-)]
 pub enum DtmControllerPreparationStep<'runtime, S, const SCHEDULER_CAPACITY: usize> {
     /// The preceding phase completed and published a fresh request. Observe it
     /// once immediately; only an observed busy request requires a delayed recheck.

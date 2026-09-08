@@ -51,6 +51,10 @@ pub struct EspHalRadioPeripheral {
 }
 
 impl EspHalRadioPeripheral {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "construction consumes every distinct esp-hal singleton needed for exclusive radio power ownership"
+    )]
     pub fn new(
         wifi: WIFI<'static>,
         modem_syscon: MODEM_SYSCON<'static>,

@@ -1169,6 +1169,10 @@ pub(crate) struct DtmRunningEvent<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 impl<Role> DtmRunningEvent<Role> {
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "a rejected stop join must return both the complete no-alloc running event and the unconsumed hardware proof"
+    )]
     pub(crate) fn observe_stopped(
         self,
         stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,

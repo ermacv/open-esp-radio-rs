@@ -49,6 +49,10 @@ pub enum EmbassyWifiStartKind {
 /// without moving hardware. `Start` carries a fully capability-checked,
 /// owner-independent service request which the concrete actor may now
 /// materialize by consuming its stopped owner.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the no-alloc dispatch transfers the complete validated service request to the stopped owner"
+)]
 pub enum EmbassyWifiStoppedDispatch {
     Handled,
     Start(WifiServiceRequest),
@@ -95,6 +99,10 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
 }
 
 /// Typed completion transported back to the application controller.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the statically allocated single-response mailbox retains the complete bounded scan report"
+)]
 pub enum EmbassyWifiSupervisorResponse<E> {
     Scan(Result<WifiScanReport, WifiScanFailure<WifiScanRequest, E>>),
     Station(WifiStartResult<StationRequest, E>),
@@ -225,6 +233,14 @@ impl<R, S> EmbassyWifiSupervisorPrepareFailure<R, S> {
     }
 }
 
+/// Controller and sole owner-holding actor prepared against the same resources.
+pub type EmbassyWifiSupervisorPrepared<'resources, M, R> = (
+    RadioController<
+        EmbassyWifiSupervisorPort<'resources, M, <R as EmbassyWifiRoleEpochRunner<M>>::Error>,
+    >,
+    EmbassyWifiSupervisorTask<'resources, M, R>,
+);
+
 /// Prepare the controller/actor pair as one operation.
 ///
 /// Failure cannot lose the role runner or stopped hardware frontier.
@@ -234,10 +250,7 @@ pub fn prepare_embassy_wifi_supervisor<'resources, M, R>(
     runner: R,
     stopped: R::Stopped,
 ) -> Result<
-    (
-        RadioController<EmbassyWifiSupervisorPort<'resources, M, R::Error>>,
-        EmbassyWifiSupervisorTask<'resources, M, R>,
-    ),
+    EmbassyWifiSupervisorPrepared<'resources, M, R>,
     EmbassyWifiSupervisorPrepareFailure<R, R::Stopped>,
 >
 where

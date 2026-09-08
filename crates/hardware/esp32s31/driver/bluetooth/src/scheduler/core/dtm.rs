@@ -1388,6 +1388,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 
     /// Form one recurring transmitter candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc staging rejection returns the complete active TX owner for retry"
+    )]
     pub(crate) fn stage_dtm_transmitter_recurring_item(
         &self,
         owner: DtmActiveTransmitterCpuOwned,
@@ -1420,6 +1424,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 
     /// Reserve the exact recurring TX window before sequence acquisition.
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc reservation rejection returns the unchanged active TX owner"
+    )]
     pub(crate) fn reserve_dtm_transmitter_recurring_item(
         &mut self,
         staged: DtmTransmitterRecurringStaged,
@@ -1466,6 +1474,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 
     /// Authorize recurring TX sequence time, then prepare and merge the graph.
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc preparation rollback returns the complete active TX owner after releasing its reservation"
+    )]
     pub(crate) fn finish_dtm_transmitter_recurring_item(
         &mut self,
         pre_sequence: DtmTransmitterRecurringPreSequence,

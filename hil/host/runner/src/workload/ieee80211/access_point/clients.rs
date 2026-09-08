@@ -74,6 +74,7 @@ pub(super) fn connect_clients(
     openwrt_client_fixed_ht_mcs: Option<u8>,
     openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
     context: &Context<'_>,
+    output: &std::path::Path,
 ) -> Result<ConnectedClients> {
     let openwrt_fixture = || -> Result<&crate::lab::config::OpenWrtConfig> {
         match &context.lab.station_fixture {
@@ -109,7 +110,35 @@ pub(super) fn connect_clients(
             if security == WifiAccessPointSecurity::Open {
                 return Err("open AP qualification requires the controlled OpenWrt client".into());
             }
-            let primary = match ControlledClient::connect(&context.lab.access_point) {
+            let connect = || -> Result<ControlledClient> {
+                let capture = match &context.lab.station_fixture {
+                    StationFixtureConfig::OpenWrt(config) if config.monitor_interface.is_some() => {
+                        Some(
+                            crate::fixture::openwrt_tx_monitor::OpenWrtDiscoveryCapture::start(
+                                config, output,
+                            )?,
+                        )
+                    }
+                    _ => None,
+                };
+                let result = ControlledClient::connect(
+                    &context.lab.access_point,
+                    &output.join("linux-client"),
+                );
+                let evidence = capture.map(|capture| capture.finish()).transpose();
+                match (result, evidence) {
+                    (Ok(client), Ok(_)) => Ok(client),
+                    (Err(error), Ok(_)) => Err(error),
+                    (Err(error), Err(capture)) => {
+                        Err(format!("{error}; discovery capture failed: {capture}").into())
+                    }
+                    (Ok(client), Err(error)) => {
+                        let restore = client.restore().err();
+                        Err(with_cleanup_errors(error, restore, None, None, None))
+                    }
+                }
+            };
+            let primary = match connect() {
                 Ok(primary) => primary,
                 Err(error) => {
                     let restore = secondary

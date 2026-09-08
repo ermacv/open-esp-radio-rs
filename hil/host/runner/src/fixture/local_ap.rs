@@ -2,7 +2,7 @@
 
 use super::{
     channel::Geometry,
-    hostapd_control::{Control, field},
+    wpa_control::{Control, field},
 };
 use crate::{
     Result,

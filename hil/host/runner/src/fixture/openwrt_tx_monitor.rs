@@ -44,21 +44,29 @@ impl RemoteMonitor {
     fn start_script(
         &self,
         config: &OpenWrtConfig,
-        station_mac: &str,
+        filter: &str,
+        immediate: bool,
         duration: Duration,
     ) -> String {
         let monitor = &self.interface;
         let directory = &self.directory;
         let remote = self.capture();
         let lifetime = duration.saturating_add(Duration::from_secs(120));
-        let program = format!("tcpdump -i {monitor} -n -s 128 -U -w {remote} \"wlan host $mac\"");
+        let mode = if immediate {
+            "--immediate-mode -s 512"
+        } else {
+            "-s 128"
+        };
+        let program = format!(
+            "tcpdump -i {monitor} -n {mode} -U -w {remote} {}",
+            capture_process::quote(filter)
+        );
         let controlled = capture_process::controlled(&program, "cleanup");
         let script = format!(
             "set -eu; \
              if iw dev {monitor} info >/dev/null 2>&1; then echo 'monitor interface already exists' >&2; exit 1; fi; \
              wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-             mac='{station_mac}'; \
-             test -n \"$wiphy\"; test -n \"$mac\"; \
+             test -n \"$wiphy\"; \
              umask 077; mkdir {directory}; \
              cleanup() {{ iw dev {monitor} del >/dev/null 2>&1 || true; }}; \
              trap cleanup EXIT; \
@@ -116,12 +124,9 @@ pub(crate) struct OpenWrtTxMonitorEvidence {
 }
 
 pub(crate) struct OpenWrtTxMonitorCapture {
-    config: OpenWrtConfig,
-    remote: RemoteMonitor,
+    capture: RemoteCapture,
     target: Ipv4Addr,
     port: u16,
-    output: PathBuf,
-    child: Option<capture_process::Capture>,
 }
 
 impl OpenWrtTxMonitorCapture {
@@ -132,21 +137,93 @@ impl OpenWrtTxMonitorCapture {
         duration: Duration,
         output: &Path,
     ) -> Result<Self> {
+        let station_mac = resolve_station_mac(config, target)?;
+        let capture = RemoteCapture::start(
+            config,
+            output.join("ap-tx-monitor.pcap"),
+            &format!("wlan host {station_mac}"),
+            false,
+            duration,
+        )?;
+        Ok(Self {
+            capture,
+            target,
+            port,
+        })
+    }
+
+    pub(crate) fn finish(mut self, expected_units: u64) -> Result<OpenWrtTxMonitorEvidence> {
+        let (captured_frames, kernel_dropped) = self.capture.finish_capture()?;
+        let mut evidence =
+            parse_capture(&self.capture.output, self.target, self.port, expected_units)
+                .map_err(crate::fixture::Error::context)?;
+        evidence.captured_frames = captured_frames;
+        evidence.kernel_dropped = kernel_dropped;
+        Ok(evidence)
+    }
+}
+
+/// Discovery capture includes broadcast probes, not just frames addressed to the AP.
+pub(crate) struct OpenWrtDiscoveryCapture(RemoteCapture);
+
+impl OpenWrtDiscoveryCapture {
+    pub(crate) fn start(config: &OpenWrtConfig, output: &Path) -> Result<Self> {
+        // Discovery may finish before libpcap's packet-block timeout. Immediate
+        // delivery preserves those frames without sleeping before capture Stop.
+        Ok(Self(RemoteCapture::start(
+            config,
+            output.join("discovery.pcap"),
+            "type mgt",
+            true,
+            Duration::from_secs(30),
+        )?))
+    }
+
+    pub(crate) fn finish(mut self) -> Result<()> {
+        let (captured, dropped) = self.0.finish_capture()?;
+        fs::write(
+            self.0.output.with_extension("json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "captured_frames": captured, "kernel_dropped": dropped,
+            }))?,
+        )?;
+        if captured == 0 {
+            return Err(crate::fixture::Error::new(
+                "discovery capture saw no management frames; evidence is incomplete",
+            )
+            .into());
+        }
+        Ok(())
+    }
+}
+
+struct RemoteCapture {
+    config: OpenWrtConfig,
+    remote: RemoteMonitor,
+    output: PathBuf,
+    child: Option<capture_process::Capture>,
+}
+
+impl RemoteCapture {
+    fn start(
+        config: &OpenWrtConfig,
+        output: PathBuf,
+        filter: &str,
+        immediate: bool,
+        duration: Duration,
+    ) -> Result<Self> {
         let monitor = config
             .monitor_interface
             .clone()
-            .ok_or("OpenWrt TX-monitor evidence requires `station_fixture.monitor_interface`")?;
-        let station_mac = resolve_station_mac(config, target)?;
+            .ok_or("OpenWrt capture requires station_fixture.monitor_interface")?;
         oer_process::check_cancelled()?;
         let remote = RemoteMonitor::new(monitor)?;
-        let script = remote.start_script(config, &station_mac, duration);
-        // Own remote recovery before spawn, readiness checks or cancellation.
+        let script = remote.start_script(config, filter, immediate, duration);
+        // Own cleanup before starting the remote process or waiting for readiness.
         let mut owner = Self {
             config: config.clone(),
             remote,
-            target,
-            port,
-            output: output.join("ap-tx-monitor.pcap"),
+            output,
             child: None,
         };
         owner.child = Some(capture_process::Capture::start(
@@ -157,7 +234,7 @@ impl OpenWrtTxMonitorCapture {
         Ok(owner)
     }
 
-    pub(crate) fn finish(mut self, expected_units: u64) -> Result<OpenWrtTxMonitorEvidence> {
+    fn finish_capture(&mut self) -> Result<(u64, u64)> {
         let child = self
             .child
             .take()
@@ -190,15 +267,11 @@ impl OpenWrtTxMonitorCapture {
             ))
             .into());
         }
-        let mut evidence = parse_capture(&self.output, self.target, self.port, expected_units)
-            .map_err(crate::fixture::Error::context)?;
-        evidence.captured_frames = captured_frames;
-        evidence.kernel_dropped = kernel_dropped;
-        Ok(evidence)
+        Ok((captured_frames, kernel_dropped))
     }
 }
 
-impl Drop for OpenWrtTxMonitorCapture {
+impl Drop for RemoteCapture {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
             drop(self.child.take());

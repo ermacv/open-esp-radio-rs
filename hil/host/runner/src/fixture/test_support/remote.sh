@@ -101,6 +101,7 @@ timeout() {
     eval "$3"
 }
 tcpdump() {
+    printf '%s\n' "$@" > "$OER_TEST_STATE/capture-arguments"
     trap 'exit 0' TERM
     printf 'tcpdump: listening on open-radio-mon, link-type IEEE802_11_RADIO\n' >&2
     touch "$OER_TEST_STATE/ready"

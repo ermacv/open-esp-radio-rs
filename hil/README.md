@@ -172,6 +172,31 @@ its bounded, credential-redacted tail in preparation errors before cleanup.
 Debug logging ends before the workload starts; cleanup removes the runtime log.
 The Linux helper owns only `wlan0`; cleanup returns it to managed mode.
 
+AP scenarios wait for the matching `WifiAccessPointStarted` event and validate
+the successful `Idle` to `AccessPoint` transition before starting either external
+client. Sending the start command is not readiness: the target completes the
+request after activating AP RX interrupts, publishing the first beacon and
+applying its network configuration. Initialization failures produce a start
+failure instead of an early success followed by a stop error.
+The controlled Linux client starts with its network disabled. The runner attaches
+through the group-accessible private supplicant control socket before enabling
+that network, then waits for events and `wpa_state=COMPLETED`. It does not poll
+status on a timer. The connection watchdog is 20 seconds. In each cycle's
+`linux-client/` directory, `helper.log` records setup failures, `control.jsonl`
+records timestamped events, status replies and scan results, and `connection.json`
+records the final state, last rejection/disconnect and outcome. Unknown states
+remain unknown rather than being classified as discovery failures. The transcript
+is bounded to 4096 records and records no credential-setting commands. Connection
+artifacts survive restoration of the managed interface. When the OpenWrt fixture
+has `monitor_interface` configured, AP scenarios capture management frames before
+enabling the Linux client and stop capture after connection succeeds or fails.
+The cycle owns `discovery.pcap` and capture counts in `discovery.json`. Capture
+readiness and stop are explicit events; immediate packet delivery preserves short
+connection captures. Empty captures and capture-socket drops report incomplete
+fixture evidence. The monitor is removed before traffic starts and on errors.
+Control transcripts include host Unix timestamps for comparison with pcap; clock
+offset between hosts must be checked before interpreting sub-millisecond timing.
+
 `cargo hil fixture install-host` first runs `cargo xtask build hostapd` without
 root, then installs the resulting binary, build provenance and helper through
 interactive sudo. The build uses the pinned hostapd release and reviewed

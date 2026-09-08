@@ -13,6 +13,7 @@ fn preparation_and_monitor_recover_from_partial_setup() {
         "monitor-error",
         "monitor-cancel",
         "monitor-drop",
+        "monitor-discovery-drop",
         "ap-ssh-error",
         "ap-command-error",
         "cleanup-success",
@@ -150,14 +151,35 @@ fn fixture_lifecycle_harness() {
         if case == "monitor-existing" {
             fs::write(root.join("monitor"), "external").unwrap();
         }
-        let result = super::openwrt_tx_monitor::OpenWrtTxMonitorCapture::start(
-            config,
-            "192.0.2.2".parse().unwrap(),
-            4323,
-            Duration::from_secs(3),
-            &root,
+        let result: crate::Result<Box<dyn std::any::Any>> = if case == "monitor-discovery-drop" {
+            super::openwrt_tx_monitor::OpenWrtDiscoveryCapture::start(config, &root)
+                .map(|owner| Box::new(owner) as Box<dyn std::any::Any>)
+        } else {
+            super::openwrt_tx_monitor::OpenWrtTxMonitorCapture::start(
+                config,
+                "192.0.2.2".parse().unwrap(),
+                4323,
+                Duration::from_secs(3),
+                &root,
+            )
+            .map(|owner| Box::new(owner) as Box<dyn std::any::Any>)
+        };
+        assert_eq!(
+            result.is_ok(),
+            matches!(case.as_str(), "monitor-drop" | "monitor-discovery-drop")
         );
-        assert_eq!(result.is_ok(), case == "monitor-drop");
+        if case == "monitor-discovery-drop" {
+            let arguments = fs::read_to_string(root.join("capture-arguments")).unwrap();
+            let arguments: Vec<_> = arguments.lines().collect();
+            assert!(
+                arguments.contains(&"--immediate-mode"),
+                "short capture must not wait for packet-block timeout"
+            );
+            assert!(
+                arguments.contains(&"type mgt"),
+                "broadcast discovery frames must reach capture"
+            );
+        }
         if case == "monitor-error" || case == "monitor-existing" {
             assert_eq!(
                 crate::execution::classify(&**result.as_ref().err().unwrap()).kind,

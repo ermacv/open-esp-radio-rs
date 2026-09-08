@@ -145,7 +145,8 @@ fn qualify(
     require_transition(started, WifiRole::Idle, WifiRole::StationAccessPoint)?;
 
     let (station_target, access_point_target) = wait_for_endpoints(capture, config.timeout)?;
-    let client = ControlledClient::connect(&context.lab.access_point)?;
+    let client =
+        ControlledClient::connect(&context.lab.access_point, &output.join("linux-client"))?;
     let readiness = probe_udp_rx_ready_via(
         capture,
         WifiNetworkInterface::Station,

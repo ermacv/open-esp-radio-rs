@@ -1,4 +1,4 @@
-//! Event-driven readiness on hostapd's control socket.
+//! Shared event-driven control transport for hostapd and wpa_supplicant.
 
 use crate::Result;
 use mio::{Events, Interest, Poll, Token, Waker, unix::SourceFd};
@@ -14,6 +14,13 @@ pub(crate) struct Control {
     poll: Poll,
     deadline: Instant,
     pending_event: bool,
+    scan_completed: bool,
+    trace: Option<std::fs::File>,
+    trace_records: usize,
+    started: Instant,
+    pub(crate) last_status: String,
+    pub(crate) last_event: String,
+    pub(crate) last_failure_event: Option<String>,
     _notification: oer_process::CancellationNotification,
     _directory: tempfile::TempDir,
 }
@@ -41,9 +48,55 @@ impl Control {
             poll,
             deadline: Instant::now() + Duration::from_secs(20),
             pending_event: false,
+            scan_completed: false,
+            trace: None,
+            trace_records: 0,
+            started: Instant::now(),
+            last_status: String::new(),
+            last_event: String::new(),
+            last_failure_event: None,
             _notification: notification,
             _directory: directory,
         })
+    }
+
+    pub(crate) fn record_to(&mut self, file: std::fs::File) {
+        self.trace = Some(file);
+    }
+
+    fn record(&mut self, kind: &str, message: &str) -> Result<()> {
+        use std::io::Write as _;
+        if let Some(file) = self.trace.as_mut() {
+            if self.trace_records == 4096 {
+                return Err("WPA control trace exceeded 4096 records before readiness".into());
+            }
+            self.trace_records += 1;
+            serde_json::to_writer(
+                &mut *file,
+                &serde_json::json!({
+                    "elapsed_micros": self.started.elapsed().as_micros() as u64,
+                    "unix_micros": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_micros() as u64,
+                    "kind": kind, "message": message,
+                }),
+            )?;
+            file.write_all(b"\n")?;
+            file.flush()?;
+        }
+        Ok(())
+    }
+
+    fn observe_event(&mut self, event: &str) -> Result<()> {
+        self.record("event", event)?;
+        self.last_event = event.trim().to_owned();
+        self.scan_completed |= event.contains("CTRL-EVENT-SCAN-RESULTS");
+        if event.contains("CTRL-EVENT-AUTH-REJECT")
+            || event.contains("CTRL-EVENT-ASSOC-REJECT")
+            || event.contains("CTRL-EVENT-SSID-TEMP-DISABLED")
+            || event.contains("CTRL-EVENT-DISCONNECTED")
+        {
+            self.last_failure_event = Some(self.last_event.clone());
+        }
+        require_running(event)
     }
 
     fn receive(&mut self) -> Result<String> {
@@ -51,14 +104,16 @@ impl Control {
             oer_process::check_cancelled()?;
             let remaining = self.deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err("hostapd did not become ready before its deadline".into());
+                return Err("WPA control readiness deadline expired".into());
             }
             let mut bytes = [0; 8192];
             match self.socket.recv(&mut bytes) {
                 Ok(length) if length < bytes.len() => {
                     return Ok(std::str::from_utf8(&bytes[..length])?.to_owned());
                 }
-                Ok(_) => return Err("hostapd response exceeded the control-message limit".into()),
+                Ok(_) => {
+                    return Err("WPA control response exceeded the control-message limit".into());
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(error.into()),
             }
@@ -77,9 +132,13 @@ impl Control {
         loop {
             let response = self.receive()?;
             if !response.starts_with('<') {
+                self.record(command, &response)?;
+                if command == "STATUS" {
+                    self.last_status = response.clone();
+                }
                 return Ok(response);
             }
-            require_running(&response)?;
+            self.observe_event(&response)?;
             self.pending_event = true;
         }
     }
@@ -99,7 +158,33 @@ impl Control {
                 continue;
             }
             let event = self.receive()?;
-            require_running(&event)?;
+            self.observe_event(&event)?;
+        }
+    }
+    /// The helper leaves network zero disabled until this subscription exists.
+    pub(crate) fn wait_connected(&mut self) -> Result<String> {
+        if self.request("ATTACH")?.trim() != "OK" {
+            return Err("wpa_supplicant rejected event subscription".into());
+        }
+        if self.request("ENABLE_NETWORK 0")?.trim() != "OK" {
+            return Err("wpa_supplicant rejected enabling the prepared network".into());
+        }
+        loop {
+            let status = self.request("STATUS")?;
+            let state = field(&status, "wpa_state").ok_or("supplicant status omitted wpa_state")?;
+            // Snapshot discovery on actual scan completion, never on a timer.
+            // This is bounded to the control-message limit; truncation is an error.
+            if std::mem::take(&mut self.scan_completed) {
+                self.request("SCAN_RESULTS")?;
+            }
+            if state == "COMPLETED" {
+                return Ok(status);
+            }
+            if std::mem::take(&mut self.pending_event) {
+                continue;
+            }
+            let event = self.receive()?;
+            self.observe_event(&event)?;
         }
     }
 }
@@ -154,7 +239,7 @@ fn wait_socket(path: &Path, timeout: Duration) -> Result<()> {
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err("hostapd did not create its control socket before its deadline".into());
+            return Err("WPA daemon did not create its control socket before its deadline".into());
         }
         poll.poll(&mut Events::with_capacity(2), Some(remaining))
             .or_else(|error| {
@@ -182,7 +267,7 @@ fn wait_socket(path: &Path, timeout: Duration) -> Result<()> {
 
 fn require_running(event: &str) -> Result<()> {
     if event.contains("AP-DISABLED") || event.contains("CTRL-EVENT-TERMINATING") {
-        return Err("hostapd disabled the AP before readiness".into());
+        return Err("WPA daemon stopped before readiness".into());
     }
     Ok(())
 }

@@ -3,6 +3,7 @@
 use oer_process::CommandExt as _;
 use std::{
     io::Write as _,
+    path::Path,
     process::{Command, Stdio},
 };
 
@@ -19,7 +20,9 @@ pub(crate) struct ControlledClient {
 }
 
 impl ControlledClient {
-    pub(crate) fn connect(config: &AccessPointConfig) -> Result<Self> {
+    pub(crate) fn connect(config: &AccessPointConfig, output: &Path) -> Result<Self> {
+        std::fs::create_dir_all(output)?;
+        let log = std::fs::File::create(output.join("helper.log"))?;
         let (ssid, passphrase) = config.credentials();
         let frequency_mhz = config.frequency_mhz();
         let mut input = Zeroizing::new(Vec::with_capacity(
@@ -37,6 +40,8 @@ impl ControlledClient {
         let owner = Self { restored: false };
         let mut child = Command::new("sudo")
             .args(["-n", crate::fixture::network_helper::PATH, "client"])
+            .stdout(Stdio::from(log.try_clone()?))
+            .stderr(Stdio::from(log))
             .stdin(Stdio::piped())
             .spawn_owned()?;
         child
@@ -45,15 +50,30 @@ impl ControlledClient {
             .ok_or("controlled-client helper has no stdin")?
             .write_all(&input)?;
         let status = child.wait_timeout(Some(std::time::Duration::from_secs(120)))?;
-        if status.code() == Some(crate::fixture::network_helper::ASSOCIATION_TIMEOUT) {
-            return Err("controlled client did not associate within 20 seconds".into());
-        }
         if !status.success() {
             return Err(crate::fixture::Error::new(format!(
                 "controlled-client helper failed with {status}"
             ))
             .into());
         }
+        let mut control =
+            super::wpa_control::Control::connect(Path::new("/run/open-radio-wpa-control/wlan0"))?;
+        control.record_to(std::fs::File::create(output.join("control.jsonl"))?);
+        let result = control.wait_connected();
+        let state = super::wpa_control::field(&control.last_status, "wpa_state");
+        let stage = connection_stage(state);
+        std::fs::write(
+            output.join("connection.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": 1, "connected": result.is_ok(), "last_state": state,
+                "last_observed_stage": stage, "last_event": control.last_event,
+                "last_failure_event": control.last_failure_event,
+                "error": result.as_ref().err().map(|error| error.to_string()),
+            }))?,
+        )?;
+        result.map_err(|error| -> Box<dyn std::error::Error + Send + Sync> {
+            format!("controlled client connection failed: {error}; last observed stage={stage}, wpa_state={state:?}, last_failure={:?}; diagnostics={}", control.last_failure_event, output.display()).into()
+        })?;
         Ok(owner)
     }
 
@@ -127,3 +147,14 @@ fn restore_managed() -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+fn connection_stage(state: Option<&str>) -> &'static str {
+    match state {
+        Some("SCANNING") => "discovery",
+        Some("AUTHENTICATING") => "authentication",
+        Some("ASSOCIATING" | "ASSOCIATED") => "association",
+        Some("4WAY_HANDSHAKE" | "GROUP_HANDSHAKE") => "key-negotiation",
+        Some("COMPLETED") => "connected",
+        _ => "unknown",
+    }
+}

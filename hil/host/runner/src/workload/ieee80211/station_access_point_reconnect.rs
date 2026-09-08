@@ -31,7 +31,7 @@ pub(crate) fn run(
     fs::create_dir_all(output)?;
     let mut upstream = context.ap()?;
     context.with_capture(output, |capture| {
-        qualify(capture, timeout, context, &mut upstream)
+        qualify(capture, timeout, context, &mut upstream, output)
     })?;
     eprintln!("wifi_sta_ap_reconnect=PASS");
     eprintln!("uart_log={}", output.join("uart.log").display());
@@ -43,6 +43,7 @@ fn qualify(
     timeout: Duration,
     context: &Context<'_>,
     upstream: &mut ControlledAp,
+    output: &Path,
 ) -> Result<()> {
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let capabilities = capture.prepare_station(context, timeout)?;
@@ -66,7 +67,10 @@ fn qualify(
 
     let first = start_pair(capture, timeout, context)?;
     let first_generation = expect_connected(capture, &mut lifecycle_cursor, timeout)?;
-    let first_client = ControlledClient::connect(&context.lab.access_point)?;
+    let first_client = ControlledClient::connect(
+        &context.lab.access_point,
+        &output.join("linux-client-first"),
+    )?;
     require_both_endpoints(capture, timeout)?;
 
     upstream.stop()?;
@@ -121,7 +125,10 @@ fn qualify(
         )
         .into());
     }
-    let second_client = ControlledClient::connect(&context.lab.access_point)?;
+    let second_client = ControlledClient::connect(
+        &context.lab.access_point,
+        &output.join("linux-client-second"),
+    )?;
     require_both_endpoints(capture, timeout)?;
 
     let second_stopped = capture

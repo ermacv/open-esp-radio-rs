@@ -23,6 +23,6 @@ mod capture_process;
 
 mod channel;
 
-mod hostapd_control;
 pub(crate) mod install;
 pub(crate) mod local_ap;
+mod wpa_control;

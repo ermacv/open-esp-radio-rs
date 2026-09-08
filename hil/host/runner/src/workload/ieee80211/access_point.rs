@@ -214,6 +214,8 @@ fn qualify(
             ));
         }
 
+        // Client setup enables external scanning. It is admitted only after
+        // the matching device start completion and validated role transition.
         let clients = match connect_clients(
             config.client,
             config.security,
@@ -221,6 +223,7 @@ fn qualify(
             config.openwrt_client_fixed_ht_mcs,
             config.openwrt_client_fixed_guard_interval,
             context,
+            &output.join(format!("cycle-{cycle:02}")),
         ) {
             Ok(clients) => clients,
             Err(error) => {

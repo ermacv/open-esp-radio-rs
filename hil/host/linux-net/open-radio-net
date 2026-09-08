@@ -15,7 +15,7 @@ MAC_STATE="$STATE_DIR/mac"
 WPA_PID="$STATE_DIR/wpa-supplicant.pid"
 WPA_CONFIG="$STATE_DIR/wpa-supplicant.conf"
 AP_CONFIG="$STATE_DIR/hostapd.conf"
-WPA_CTRL="$STATE_DIR/wpa-supplicant-control"
+WPA_CTRL=/run/open-radio-wpa-control
 
 usage() {
     echo "usage: open-radio-net {capabilities|identity|ap|client|monitor|monitor-1|monitor-6|monitor-11|observer|managed|stop|status|usb-reset|kernel-log}" >&2
@@ -214,33 +214,6 @@ start_monitor() {
     /usr/bin/iw dev mon0 set freq "$frequency" "$width"
 }
 
-# Status 10 means the prepared client exhausted its radio association wait.
-# Control/setup errors keep a different nonzero status for the host classifier.
-wait_client_association() {
-    attempts=0
-    maximum_attempts=200
-    while test "$attempts" -lt "$maximum_attempts"; do
-        status=$(/usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status)
-        if ! /usr/bin/printf '%s\n' "$status" | /usr/bin/grep -q '^wpa_state='; then
-            echo "open-radio-net: client status omitted wpa_state" >&2
-            return 1
-        fi
-        if /usr/bin/printf '%s\n' "$status" | /usr/bin/grep -Fxq 'wpa_state=COMPLETED'
-        then
-            break
-        fi
-        attempts=$((attempts + 1))
-        /bin/sleep 0.1
-    done
-    if test "$attempts" -eq "$maximum_attempts"; then
-        echo "open-radio-net: client did not associate within 20 seconds" >&2
-        /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status >&2 2>/dev/null || true
-        /usr/bin/iw dev wlan0 link >&2 2>/dev/null || true
-        stop_radio_services
-        return 10
-    fi
-}
-
 start_client() {
     IFS= read -r ssid
     IFS= read -r passphrase
@@ -259,7 +232,8 @@ start_client() {
     /bin/mkdir -p "$STATE_DIR"
     /bin/chmod 0700 "$STATE_DIR"
     /bin/rm -rf "$WPA_CTRL"
-    /bin/mkdir -m 0700 "$WPA_CTRL"
+    /bin/mkdir -m 0770 "$WPA_CTRL"
+    /bin/chgrp network "$WPA_CTRL"
 
     # Do not place the passphrase in argv: /proc would expose it to unrelated
     # local processes. Arch's wpa_passphrase requires a terminal even when its
@@ -273,7 +247,7 @@ start_client() {
         # /run/wpa_supplicant. A private control directory prevents a fixture
         # epoch from colliding with that daemon's wlan0 socket while keeping
         # the system network service alive for the Ethernet uplink.
-        /usr/bin/printf 'ctrl_interface=%s\n' "$WPA_CTRL"
+        /usr/bin/printf 'ctrl_interface=DIR=%s GROUP=network\n' "$WPA_CTRL"
         # The fixture owns exactly one managed STA. P2P creates a second wdev
         # and a second nl80211 lifecycle on the same Intel PHY; repeated AP
         # epochs then race that auxiliary interface during teardown. Keep the
@@ -282,27 +256,22 @@ start_client() {
         /usr/bin/printf 'p2p_disabled=1\n'
         /usr/bin/printf 'mac_addr=0\n'
         /usr/bin/printf 'preassoc_mac_addr=0\n'
-        /usr/bin/printf 'network={\n'
+        /usr/bin/printf 'network={\n    disabled=1\n'
         /usr/bin/printf '    ssid="%s"\n' "$escaped_ssid"
         /usr/bin/printf '    psk="%s"\n' "$escaped_passphrase"
         /usr/bin/printf '    key_mgmt=WPA-PSK\n'
         /usr/bin/printf '    proto=RSN\n'
         /usr/bin/printf '    pairwise=CCMP\n'
         # The target channel is part of the typed AP request. Restricting the
-        # controlled client to that exact frequency removes supplicant scan
-        # backoff from the fixture without weakening AP discovery: the client
+        # controlled client to that exact frequency avoids unrelated channels
+        # without weakening AP discovery: the client
         # must still receive a valid beacon or probe response before joining.
         /usr/bin/printf '    scan_freq=%s\n' "$frequency"
         /usr/bin/printf '}\n'
     } >"$WPA_CONFIG"
     /bin/chmod 0600 "$WPA_CONFIG"
     /usr/bin/wpa_supplicant -B -P "$WPA_PID" -i wlan0 -c "$WPA_CONFIG"
-    # Do not depend on the supplicant's background-scan backoff after a rapid
-    # reset-separated AP epoch. One explicit scan is still ordinary client
-    # behavior and cannot make an AP pass without emitting discoverable frames.
-    /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 scan >/dev/null
-
-    wait_client_association
+    # The Rust owner subscribes before ENABLE_NETWORK and waits on events.
     /usr/bin/iw dev wlan0 set power_save off
     /usr/bin/ip address add "$address" dev wlan0
 }
@@ -317,7 +286,7 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=10 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
+        /usr/bin/printf 'schema=11 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then

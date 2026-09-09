@@ -293,3 +293,6 @@ impl Manifest {
         self.entries.values()
     }
 }
+
+#[cfg(test)]
+mod tests;

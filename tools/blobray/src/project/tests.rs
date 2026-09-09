@@ -554,10 +554,14 @@ locator = "review"
                 id: "radio".to_owned(),
                 vendor: vec![
                     VerificationVendorSpec {
+                        artifact_sha256: None,
+                        companion_sha256: None,
                         source: "rom".parse().unwrap(),
                         selection: VerificationVendorSelection::Prefix("phy_".to_owned()),
                     },
                     VerificationVendorSpec {
+                        artifact_sha256: None,
+                        companion_sha256: None,
                         source: "archive".parse().unwrap(),
                         selection: VerificationVendorSelection::All,
                     },
@@ -777,6 +781,36 @@ symbols = ["uncovered_leaf"]
     let project = ProjectSpec::load(&manifest).unwrap();
     let suite = &project.verification.unwrap().suites[0];
     assert!(suite.evidence_baselines.is_empty());
+    let addon = directory.join("verification.toml");
+    let original = std::fs::read_to_string(&addon).unwrap();
+    let digest = "a".repeat(64);
+    std::fs::write(
+        &addon,
+        format!("{original}\nartifact-sha256 = \"{digest}\"\ncompanion-sha256 = \"{digest}\"\n"),
+    )
+    .unwrap();
+    let pinned = ProjectSpec::load(&manifest).unwrap().verification.unwrap();
+    assert_eq!(
+        pinned.suites[0].vendor[0].artifact_sha256.as_deref(),
+        Some(digest.as_str())
+    );
+    assert_eq!(
+        pinned.suites[0].vendor[0].companion_sha256.as_deref(),
+        Some(digest.as_str())
+    );
+    for invalid in ["not-a-digest", &"z".repeat(64)] {
+        std::fs::write(
+            &addon,
+            format!("{original}\nartifact-sha256 = \"{invalid}\"\n"),
+        )
+        .unwrap();
+        assert!(
+            ProjectSpec::load(&manifest)
+                .unwrap_err()
+                .to_string()
+                .contains("hexadecimal")
+        );
+    }
     std::fs::remove_dir_all(directory).unwrap();
 }
 

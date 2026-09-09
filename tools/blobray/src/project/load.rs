@@ -1326,7 +1326,7 @@ fn parse_verification_vendor(
             let entry_context = format!("{context}.vendor[{index}]");
             reject_unknown_keys(
                 table,
-                &["source", "all", "prefix", "symbols"],
+                &["source", "all", "prefix", "symbols", "artifact-sha256", "companion-sha256"],
                 &entry_context,
                 source,
             )?;
@@ -1381,7 +1381,20 @@ fn parse_verification_vendor(
                 }
                 VerificationVendorSelection::Symbols(symbols)
             };
-            Ok(VerificationVendorSpec { source: source_id, selection })
+            let digest = |key| -> Result<Option<String>> {
+                table.get(key).map(|item| {
+                    let value = item.as_str().ok_or_else(|| source.item(Some(item), format!("{entry_context}.{key} must be a SHA-256 string")))?;
+                    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                        return Err(source.item(Some(item), format!("{entry_context}.{key} must contain 64 hexadecimal digits")));
+                    }
+                    Ok(value.to_ascii_lowercase())
+                }).transpose()
+            };
+            Ok(VerificationVendorSpec {
+                source: source_id, selection,
+                artifact_sha256: digest("artifact-sha256")?,
+                companion_sha256: digest("companion-sha256")?,
+            })
         })
         .collect()
 }

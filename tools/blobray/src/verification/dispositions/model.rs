@@ -203,7 +203,13 @@ impl EntryBuilder {
             }
             let effect_contract = self
                 .effect_comparison
-                .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
+                .map(|comparison| {
+                    if self.effect_rules.is_empty() && self.compare_return == Some(true) {
+                        Ok(EffectPolicy::without_side_effects())
+                    } else {
+                        EffectPolicy::new(comparison, self.effect_rules)
+                    }
+                })
                 .transpose()?;
             let has_binding_fields = self.rust_probe.is_some()
                 || self.rust_binding.is_some()

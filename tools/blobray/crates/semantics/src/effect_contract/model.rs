@@ -500,6 +500,15 @@ pub struct EffectPolicy {
 }
 
 impl EffectPolicy {
+    /// No side effects are permitted. The caller must independently compare
+    /// return values; this policy alone says nothing about the computed result.
+    pub fn without_side_effects() -> Self {
+        Self {
+            comparison: EffectComparison::ExactEffectsV2,
+            rules: BTreeMap::new(),
+        }
+    }
+
     pub fn new(
         comparison: EffectComparison,
         rules: impl IntoIterator<Item = (EffectSelector, EffectDisposition)>,

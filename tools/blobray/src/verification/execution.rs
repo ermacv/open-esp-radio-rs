@@ -467,6 +467,11 @@ pub(crate) fn compare_execution_scenarios(
             "a disposition effect contract may affect concrete execution only when the profile selects observables-under-effect-contract"
         }));
     }
+    if !compare_return && effect_policy.is_some_and(|policy| policy.rules().next().is_none()) {
+        return Err(crate::Error::invalid(
+            "an empty effect contract requires return comparison",
+        ));
+    }
     if compare_return
         && scenarios.iter().any(|scenario| {
             !matches!(
@@ -948,6 +953,45 @@ pub(crate) fn compare_execution_scenarios(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_cannot_disable_return_comparison_for_an_empty_contract() {
+        let policy = effect_contract::EffectPolicy::without_side_effects();
+        let input = || ExecutionInput {
+            artifact: std::path::Path::new("must-not-be-opened.elf"),
+            companion: None,
+            symbol: "calculate",
+        };
+        let result = compare_execution_scenarios(
+            &MmioMap {
+                registers: vec![],
+                regions: vec![],
+            },
+            input(),
+            input(),
+            ExecutionComparisonPolicy {
+                compare_return: false,
+                case_execution: profiles::CaseExecution::Independent,
+                transaction_comparison:
+                    profiles::TransactionComparison::ObservablesUnderEffectContract,
+                effect_policy: Some(&policy),
+                call_equivalences: &[],
+                diagnostic_contracts: DiagnosticContractsReport {
+                    knowledge_provider: None,
+                    calls: vec![],
+                },
+                coverage_domain: &[],
+                vendor_setup: &[],
+            },
+            &[],
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("requires return comparison")
+        );
+    }
 
     #[test]
     fn unnamed_registers_are_enrichment_not_a_coverage_gap() {

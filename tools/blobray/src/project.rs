@@ -188,6 +188,8 @@ impl VerificationVendorSelection {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationVendorSpec {
+    pub(crate) artifact_sha256: Option<String>,
+    pub(crate) companion_sha256: Option<String>,
     pub(crate) source: SourceId,
     pub(crate) selection: VerificationVendorSelection,
 }

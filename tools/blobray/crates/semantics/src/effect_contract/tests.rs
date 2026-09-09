@@ -413,3 +413,22 @@ fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
         .is_err()
     );
 }
+
+#[test]
+fn return_only_policy_rejects_side_effects_even_when_both_sides_agree() {
+    let policy = EffectPolicy::without_side_effects();
+    assert_eq!(
+        compare_effects(&[], &[], &policy).unwrap().verdict,
+        EquivalenceVerdict::Match
+    );
+    for (vendor, rust) in [
+        (vec![read()], vec![read()]),
+        (vec![read()], vec![]),
+        (vec![], vec![read()]),
+    ] {
+        assert_ne!(
+            compare_effects(&vendor, &rust, &policy).unwrap().verdict,
+            EquivalenceVerdict::Match
+        );
+    }
+}

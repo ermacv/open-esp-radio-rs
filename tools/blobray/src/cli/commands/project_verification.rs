@@ -266,13 +266,15 @@ fn suite_arguments(
     );
     for vendor in &suite.vendor {
         let source = &vendor.source;
+        let artifact = required_input(
+            run_spec,
+            &InputRole::SourceArtifact(source.clone()),
+            &suite.id,
+        )?;
+        verify_digest(&artifact, vendor.artifact_sha256.as_deref())?;
         arguments.source_artifact.push(SourcePath {
             source: source.clone(),
-            path: required_input(
-                run_spec,
-                &InputRole::SourceArtifact(source.clone()),
-                &suite.id,
-            )?,
+            path: artifact,
         });
         arguments.source_inventory.extend(
             matching_inputs(run_spec, &InputRole::SourceInventory(source.clone()))
@@ -282,7 +284,15 @@ fn suite_arguments(
                     path,
                 }),
         );
-        if let Some(path) = optional_input(run_spec, &InputRole::SourceCompanion(source.clone())) {
+        let companion = optional_input(run_spec, &InputRole::SourceCompanion(source.clone()));
+        if vendor.companion_sha256.is_some() && companion.is_none() {
+            return Err(crate::Error::invalid(format!(
+                "suite {} requires the pinned companion for {source}",
+                suite.id
+            )));
+        }
+        if let Some(path) = companion {
+            verify_digest(&path, vendor.companion_sha256.as_deref())?;
             arguments.source_companion.push(SourcePath {
                 source: source.clone(),
                 path,
@@ -446,11 +456,86 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
     crate::cli::output::text(text);
 }
 
+fn verify_digest(path: &std::path::Path, expected: Option<&str>) -> Result<()> {
+    if let Some(expected) = expected {
+        let actual = crate::artifact_sha256(path)?;
+        if actual != expected {
+            return Err(crate::Error::invalid(format!(
+                "verification artifact {} has SHA-256 {actual}, expected {expected}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, time::SystemTime};
 
     use super::*;
+
+    #[test]
+    fn suite_rejects_wrong_archive_and_missing_or_changed_companion() {
+        let directory_path =
+            std::env::temp_dir().join(format!("blobray-pinned-suite-{}", std::process::id()));
+        fs::create_dir_all(&directory_path).unwrap();
+        let directory = directory_path.as_path();
+        let vendor = directory.join("vendor.a");
+        let companion = directory.join("rom.elf");
+        fs::write(&vendor, b"reviewed archive").unwrap();
+        fs::write(&companion, b"reviewed ROM").unwrap();
+        let run_path = directory.join("run.toml");
+        fs::write(&run_path, "schema = 1\n[[inputs]]\nrole = \"rust-artifact\"\npath = \"production.elf\"\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = \"vendor.a\"\n").unwrap();
+        let suite = VerificationSuiteSpec {
+            id: "pinned".into(),
+            vendor: vec![crate::project::VerificationVendorSpec {
+                source: "vendor".parse().unwrap(),
+                selection: VerificationVendorSelection::All,
+                artifact_sha256: Some(crate::artifact_sha256(&vendor).unwrap()),
+                companion_sha256: Some(crate::artifact_sha256(&companion).unwrap()),
+            }],
+            auxiliary_sources: vec![],
+            rust_artifact_role: InputRole::RustArtifact,
+            rust_companion_role: None,
+            rust_prefix: "production_".into(),
+            profiles: vec![],
+            dispositions: vec![],
+            evidence_baselines: vec![],
+            gate: ProjectVerificationGate::Completion,
+        };
+        let run = RunSpec::load(&run_path).unwrap();
+        assert!(
+            suite_arguments(&suite, &run)
+                .unwrap_err()
+                .to_string()
+                .contains("requires the pinned companion")
+        );
+        use std::io::Write as _;
+        writeln!(
+            fs::OpenOptions::new().append(true).open(&run_path).unwrap(),
+            "[[inputs]]\nrole = \"source-companion:vendor\"\npath = \"rom.elf\""
+        )
+        .unwrap();
+        let run = RunSpec::load(&run_path).unwrap();
+        assert!(suite_arguments(&suite, &run).is_ok());
+        fs::write(&companion, b"different ROM").unwrap();
+        assert!(
+            suite_arguments(&suite, &run)
+                .unwrap_err()
+                .to_string()
+                .contains("SHA-256")
+        );
+        fs::write(&companion, b"reviewed ROM").unwrap();
+        fs::write(&vendor, b"old archive").unwrap();
+        assert!(
+            suite_arguments(&suite, &run)
+                .unwrap_err()
+                .to_string()
+                .contains("SHA-256")
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn suite_input_projection_preserves_all_ordered_source_inventories() {

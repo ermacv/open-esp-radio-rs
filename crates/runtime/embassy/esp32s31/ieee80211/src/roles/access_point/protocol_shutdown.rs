@@ -134,9 +134,40 @@ where
     where
         H: ApRuntimeHardware + TxHardware + RxBlockAckHardware,
     {
+        #[cfg(feature = "diagnostics")]
+        let pending_kind = self.mac.pending_publication_kind();
+        #[cfg(feature = "diagnostics")]
+        let failures_before = self.mac.observation().tx_failures;
+        #[cfg(feature = "diagnostics")]
+        let probe_failure_before = self.mac.first_probe_failure();
         let (progress, action) = self
             .mac
             .service_tx(hardware, wake, Instant::now().as_micros())?;
+        #[cfg(feature = "diagnostics")]
+        if progress == WifiTxProgress::Complete {
+            let failures = self.mac.observation().tx_failures;
+            // One terminal record per AP epoch, never a per-poll/per-packet log.
+            // Preserve the publication kind before service consumes its owner.
+            if failures_before == Default::default() && failures != failures_before {
+                log::warn!(
+                    "open-radio: AP first TX failure kind={pending_kind:?} at_us={} failures={failures:?}",
+                    Instant::now().as_micros(),
+                );
+            }
+        }
+        #[cfg(feature = "diagnostics")]
+        if probe_failure_before.is_none()
+            && let Some(failure) = self.mac.first_probe_failure()
+        {
+            let report = failure.outcome.report();
+            log::warn!(
+                "AP_PROBE_FAIL ra={:02x?} sc={} start_us={} end_us={} status={:?} attempts={} rate={:?}",
+                failure.receiver, failure.sequence_control, failure.started_at_micros,
+                failure.completed_at_micros, report.status.result, report.status.attempts,
+                report.status.final_rate,
+            );
+            log::warn!("AP_PROBE_RETRIES {:?}", report.retries);
+        }
         if progress == WifiTxProgress::Complete {
             self.last_terminal_tx_succeeded = Some(
                 action != ApTxCompletionAction::PublicationFailed,

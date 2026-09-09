@@ -7,10 +7,12 @@
 //! software frequency control and forced digital gain, with explicit release
 //! on both success and failure. Coexistence grant arbitration belongs to the
 //! radio owner and is not implemented by this transition.
+//! Each completed calibration branch restores TX gain compensation before
+//! the next branch starts. If neither branch is due, no hardware action runs.
 
 use crate::tracking::parameters::PhyCalibrationTrackClass;
 
-const DEFAULT_CALIBRATION_TRACKING_THRESHOLD: u8 = 30;
+pub mod decision;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingParameters {
@@ -248,6 +250,7 @@ enum Step {
     CommonRecalibrateRxGain,
     CommonRestoreChannel,
     CommonEnableMac,
+    CommonRestoreTxGainCompensation,
     ClassDisableHardwareFrequency,
     ClassSoftwareFrequencySettle,
     ClassForceTxRxOff,
@@ -266,7 +269,9 @@ enum Step {
     Failed,
 }
 
-/// Finite exact-order parent for `phy_cal_param_track`.
+/// Finite parent for the reviewed baseline's class-oriented calibration graph.
+/// Temperature references are independently owned; this is not equivalence
+/// to newer vendor parents that calibrate both active classes in one call.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingTransition {
     request: PhyCalibrationTrackingRequest,
@@ -287,20 +292,14 @@ impl PhyCalibrationTrackingTransition {
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,
     ) -> Self {
-        let threshold = match parameters.threshold_override {
-            Some(value) => value,
-            None => DEFAULT_CALIBRATION_TRACKING_THRESHOLD,
-        };
-        let common_due = temperature_delta(
-            parameters.current_temperature,
-            parameters.common_reference_temperature,
-        ) >= threshold as u32;
-        let step = if common_due {
+        let decision = parameters.decision(request);
+        let threshold = decision.common.threshold;
+        let step = if decision.common.is_due() {
             Step::CommonClearPbus
-        } else if class_due(request, parameters, threshold) {
+        } else if decision.transmit.is_due() {
             Step::ClassDisableHardwareFrequency
         } else {
-            Step::RestoreTxGainCompensation
+            Step::Complete
         };
         Self {
             request,
@@ -365,7 +364,7 @@ impl PhyCalibrationTrackingTransition {
             Step::ClassEnableHardwareFrequency => {
                 PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true }
             }
-            Step::RestoreTxGainCompensation => {
+            Step::CommonRestoreTxGainCompensation | Step::RestoreTxGainCompensation => {
                 PhyCalibrationTrackingAction::RestoreTxGainCompensation
             }
             Step::Complete => PhyCalibrationTrackingAction::Complete(self.outcome()),
@@ -437,6 +436,12 @@ impl PhyCalibrationTrackingTransition {
                 }
             },
             (Step::CommonEnableMac, PhyCalibrationTrackingCompletion::MacBasebandEnabled) => {
+                Step::CommonRestoreTxGainCompensation
+            }
+            (
+                Step::CommonRestoreTxGainCompensation,
+                PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
+            ) => {
                 self.common_updated = true;
                 self.first_class_step()
             }
@@ -615,10 +620,10 @@ impl PhyCalibrationTrackingTransition {
     }
 
     const fn first_class_step(self) -> Step {
-        if class_due(self.request, self.parameters, self.threshold) {
+        if self.parameters.decision(self.request).transmit.is_due() {
             Step::ClassDisableHardwareFrequency
         } else {
-            Step::RestoreTxGainCompensation
+            Step::Complete
         }
     }
 
@@ -1130,24 +1135,6 @@ impl PhyCalibrationForceTxRxTransition {
             PhyCalibrationForceTxRxCompletion { enabled },
         ))
     }
-}
-
-const fn class_due(
-    request: PhyCalibrationTrackingRequest,
-    parameters: PhyCalibrationTrackingParameters,
-    threshold: u8,
-) -> bool {
-    let reference = match request.class {
-        PhyCalibrationTrackClass::Wifi => parameters.wifi_reference_temperature,
-        PhyCalibrationTrackClass::BluetoothIeee802154 => {
-            parameters.bluetooth_ieee802154_reference_temperature
-        }
-    };
-    temperature_delta(parameters.current_temperature, reference) >= threshold as u32
-}
-
-const fn temperature_delta(current: i16, reference: i16) -> u32 {
-    crate::calibration::math::absolute_temperature((reference as i32).wrapping_sub(current as i32))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

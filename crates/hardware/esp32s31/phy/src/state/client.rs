@@ -50,6 +50,13 @@ pub trait PhyPllTrackClock {
     fn now_micros(&mut self) -> u64;
 }
 
+/// Event-driven timer sharing the scheduler's monotonic microsecond epoch.
+/// Implementations park the task until the absolute deadline; they must not
+/// poll the clock in a busy loop. The owner rechecks time after the wake.
+pub trait PhyTrackingTimer: PhyPllTrackClock {
+    fn wait_until_micros(&mut self, deadline: u64) -> impl core::future::Future<Output = ()>;
+}
+
 /// One typed user of the shared PHY software client set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyModemClient {
@@ -116,6 +123,34 @@ impl PhyClientSnapshot {
 
     pub const fn period_micros(self) -> u64 {
         self.period_micros
+    }
+
+    /// Earliest absolute deadline for `evaluate_immediate_tracking`.
+    ///
+    /// The reviewed due predicate is strictly greater than the interval, so
+    /// the first due microsecond is `previous + period + 1`. Inactive classes
+    /// do not arm a timer. An unrepresentable deadline is an error, not an
+    /// immediately due timer or a silently disabled tracker.
+    pub fn next_tracking_deadline_micros(self) -> Result<Option<u64>, PhyTrackTimeError> {
+        let mut earliest = None;
+        for (active, class, previous) in [
+            (self.wifi, PhyPllTrackClass::Wifi, self.wifi_previous_micros),
+            (
+                self.bluetooth || self.ieee802154,
+                PhyPllTrackClass::BluetoothIeee802154,
+                self.bluetooth_ieee802154_previous_micros,
+            ),
+        ] {
+            if !active {
+                continue;
+            }
+            let deadline = previous
+                .checked_add(self.period_micros)
+                .and_then(|value| value.checked_add(1))
+                .ok_or(PhyTrackTimeError::DeadlineOverflow { class })?;
+            earliest = Some(earliest.map_or(deadline, |value: u64| value.min(deadline)));
+        }
+        Ok(earliest)
     }
 }
 
@@ -657,6 +692,9 @@ impl PhyTrackPoisoned {
 /// Fail-closed monotonic-clock validation error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTrackTimeError {
+    DeadlineOverflow {
+        class: PhyPllTrackClass,
+    },
     TimeReversed {
         class: PhyPllTrackClass,
         previous_micros: u64,

@@ -56,13 +56,19 @@ use super::*;
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 mod native;
+mod terminal;
 
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
     observations: std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>,
+    terminal: std::sync::Mutex<std::vec::Vec<MacAmpduTxStatus<TxPhyRate>>>,
 }
 
 impl AggregateTxObserver for RecordingAggregateTxObserver {
+    fn observe_station_terminal(&self, status: MacAmpduTxStatus<TxPhyRate>) {
+        self.terminal.lock().unwrap().push(status);
+    }
+
     fn now_micros(&self) -> u64 {
         0
     }
@@ -1685,6 +1691,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
     let mut tx = ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
@@ -1699,7 +1706,8 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_observer(&observer);
     tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
@@ -1726,6 +1734,8 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     );
     let work = tx.aggregate_work();
     let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(*observer.terminal.lock().unwrap(), [status]);
+    assert_eq!(tx.take_last_aggregate_status(), None);
     assert_eq!(work.publications, 1);
     assert_eq!(work.mpdus, 2);
     assert!(work.psdu_bytes > 0);
@@ -1762,6 +1772,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
     let mut tx = ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
@@ -1776,7 +1787,8 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_observer(&observer);
     tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
@@ -1809,6 +1821,8 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     );
     let work = tx.aggregate_work();
     let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(*observer.terminal.lock().unwrap(), [status]);
+    assert_eq!(tx.take_last_aggregate_status(), None);
     assert_eq!(work.publications, 2);
     assert_eq!(work.mpdus, 5);
     assert!(work.psdu_bytes > 0);
@@ -1945,6 +1959,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
     let mut tx = ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
@@ -1959,7 +1974,8 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_observer(&observer);
     tx.set_block_ack_window(5, Some(TEST_SLOTS as u16));
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
@@ -1983,6 +1999,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(tx.take_last_aggregate_status(), None);
+    assert!(observer.terminal.lock().unwrap().is_empty());
     assert_eq!(tx.peek_qos_sequence(5), Some(9));
     assert_eq!(tx.peek_qos_sequence(0), Some(7));
     assert_eq!(hardware.ht_publications, 2);
@@ -2012,6 +2029,8 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     let aggregate = tx
         .take_last_aggregate_status()
         .expect("ordinary retry completes the logical aggregate exchange");
+    assert_eq!(*observer.terminal.lock().unwrap(), [aggregate]);
+    assert_eq!(tx.take_last_aggregate_status(), None);
     assert_eq!(aggregate.result, MacAmpduTxResult::Delivered);
     assert_eq!(aggregate.original_subframes, 2);
     assert_eq!(aggregate.aggregate_attempts, 1);

@@ -11,9 +11,9 @@ transaction-comparison = "observables"
 name = "phy-tx-gain-compensation-restore"
 claim = "reviewed-domain-equivalence"
 precondition = "restore-enabled-with-two-complementary-mmio-images"
-vendor-source = "phy"
+vendor-source = "phy-current"
 vendor-symbol = "phy_txgain_comp_pacfg_new"
-rust-symbol = "open_phy_trace_restore_tx_gain_compensation"
+rust-symbol = "open_phy_calibration_trace_restore_tx_gain_compensation"
 compare-return = false
 mmio-image-cases = ["restore-a", "restore-b"]
 
@@ -34,9 +34,9 @@ mmio-initial = [{ address = 0x20100410, value = 0x5a6987c3 }]
 [[profiles]]
 name = "phy-forced-digital-gain"
 claim = "whole-function-equivalence"
-vendor-source = "phy"
+vendor-source = "phy-current"
 vendor-symbol = "phy_force_dig_gain"
-rust-symbol = "open_phy_trace_force_digital_gain"
+rust-symbol = "open_phy_calibration_trace_force_digital_gain"
 compare-return = false
 
 [[profiles.cases]]
@@ -57,9 +57,9 @@ mmio-initial = [{ address = 0x20100408, value = 0x96a55a69 }]
 [[profiles]]
 name = "phy-temperature-to-power"
 claim = "whole-function-equivalence"
-vendor-source = "phy"
+vendor-source = "phy-current"
 vendor-symbol = "phy_temp_to_power_new"
-rust-symbol = "open_phy_trace_temperature_to_power"
+rust-symbol = "open_phy_calibration_trace_temperature_to_power"
 compare-return = true
 
 [[profiles.cases]]
@@ -78,9 +78,9 @@ arguments = [0, 24, 1]
 [[profiles]]
 name = "phy-post-init-agc-preserves-ftm"
 claim = "whole-function-equivalence"
-vendor-source = "phy"
+vendor-source = "phy-current"
 vendor-symbol = "phy_reg_update_new"
-rust-symbol = "open_phy_trace_phy_reg_update_new"
+rust-symbol = "open_phy_calibration_trace_post_init_agc"
 compare-return = false
 
 [[profiles.cases]]

@@ -319,6 +319,27 @@ impl<H, R, X> SingleRoleServices<H, R, X, NoDatapathControl> {
 }
 
 impl<H, R, X, C> SingleRoleServices<H, R, X, C> {
+    /// Preserve hardware, TX and control even if the RX transition fails.
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
+    pub fn try_map_rx<T, E>(
+        self,
+        map: impl FnOnce(&mut H, R) -> Result<T, E>,
+    ) -> Result<SingleRoleServices<H, T, X, C>, SingleRoleServices<H, E, X, C>> {
+        let (mut hardware, rx, tx, control) = self.into_parts();
+        match map(&mut hardware, rx) {
+            Ok(rx) => Ok(SingleRoleServices::with_control(hardware, rx, tx, control)),
+            Err(rx) => Err(SingleRoleServices::with_control(hardware, rx, tx, control)),
+        }
+    }
+
+    /// Change only RX ownership while retaining hardware, TX and control.
+    /// The caller establishes TX-idle/MAC/IRQ boundaries before a DMA pause.
+    pub fn map_rx<T>(self, map: impl FnOnce(&mut H, R) -> T) -> SingleRoleServices<H, T, X, C> {
+        let (mut hardware, rx, tx, control) = self.into_parts();
+        let rx = map(&mut hardware, rx);
+        SingleRoleServices::with_control(hardware, rx, tx, control)
+    }
+
     pub const fn with_control(hardware: H, rx: R, tx: X, control: C) -> Self {
         Self {
             hardware,

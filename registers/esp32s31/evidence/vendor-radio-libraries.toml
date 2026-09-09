@@ -2,6 +2,10 @@
 schema = 1
 
 [[sources]]
+id = "BLOB_LIBCOEX_IEEE802154_HANDOFF"
+description = "libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o esp_coex_ieee802154_coex_break_notify tail-calls coexist_hw.o hal_ieee802154_coex_break_notify, whose complete body returns without effects. Complete esp_coex_ieee802154_extcoex_rx_stage and esp_coex_ieee802154_extcoex_tx_stage bodies also return without effects. The TXRX/ACK PTI wrappers separately map a client priority and call hal_set_IEEE802154_TXRX_pti / hal_set_IEEE802154_ACK_pti; force_rx_enable calls the force-RX and coex-delay setters. These named leaves establish no CPU-observed RF grant or release acknowledgement. No general absence of hardware coexistence is inferred."
+
+[[sources]]
 id = "BLOB_LIBCOEX_EXTERNAL_HAL"
 description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; no-call hal_enable_extern_coex and hal_disable_extern_coex leaves each perform four ordered fresh-read RMW edges over 0x2010f4d0, 0x2010f4d8, 0x2010f4a4 and 0x2010f4a0. These addresses are in the high MODEM_LPCON block, remain outside the radio-owned register model, and are not exposed by the current official ESP32-S31 PAC. The evidence records the vendor transaction without claiming local ownership; a future external-wired-COEX implementation needs an explicit platform-owned register model and proof boundary."
 

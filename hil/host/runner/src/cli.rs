@@ -177,6 +177,8 @@ mod tests;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum FixtureCommand {
+    /// Print the finite probe workload without touching any fixture.
+    ProbePlan,
     /// Execute a bounded DTM v2 command check and restore the Linux adapter.
     BluetoothCheck {
         #[arg(long, default_value = "hci0")]

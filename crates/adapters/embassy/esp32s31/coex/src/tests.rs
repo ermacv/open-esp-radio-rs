@@ -6,10 +6,14 @@ use oer_esp32s31_coex::{
 
 use super::*;
 
+mod recovery;
+
 #[derive(Default)]
 struct Hardware {
     enabled: u8,
     disabled: u8,
+    fail_enable_once: bool,
+    fail_disable_once: bool,
 }
 
 impl CoexTimerHardware for Hardware {
@@ -40,10 +44,16 @@ impl CoexTimerHardware for Hardware {
 
     fn enable(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
         self.enabled |= 1 << index.value();
+        if core::mem::take(&mut self.fail_enable_once) {
+            return Err(CoexError::Hardware);
+        }
         Ok(())
     }
 
     fn disable(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
+        if core::mem::take(&mut self.fail_disable_once) {
+            return Err(CoexError::Hardware);
+        }
         self.disabled |= 1 << index.value();
         self.enabled &= !(1 << index.value());
         Ok(())
@@ -91,6 +101,7 @@ fn single_owner_serializes_request_release_and_shutdown() {
                 Ok(CoexOutcome::Status(CoexStatus {
                     enabled: true,
                     active_timers: 0,
+                    uncertain_timers: 0,
                 }))
             );
             assert_eq!(
@@ -153,6 +164,7 @@ fn cancelled_commands_settle_before_publishing_the_next_command() {
             Poll::Ready(Ok(CoexOutcome::Status(CoexStatus {
                 enabled: false,
                 active_timers: 0,
+                uncertain_timers: 0,
             })))
         );
     }
@@ -203,6 +215,7 @@ fn a_new_epoch_discards_abandoned_commands_and_responses() {
             Poll::Ready(Ok(CoexOutcome::Status(CoexStatus {
                 enabled: false,
                 active_timers: 0,
+                uncertain_timers: 0,
             })))
         );
     }

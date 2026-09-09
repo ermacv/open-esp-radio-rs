@@ -217,8 +217,11 @@ fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
         Instant::now(),
         stop,
         poll,
-        output.path().join("test-reception.json"),
-        before,
+        ReceptionOutput {
+            path: output.path().join("test-reception.json"),
+            drops_before: before,
+        },
+        None,
     )
     .unwrap_err();
     assert_eq!(
@@ -229,4 +232,26 @@ fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
     assert_eq!(record["completion"], "host-overflow");
     assert!(record["host_kernel_drops"].as_u64().unwrap() > 0);
     assert!(record["received_unique_datagrams"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn pause_trigger_requires_measured_unique_datagrams() {
+    let output = tempfile::tempdir().unwrap();
+    let (socket, sender) = pair();
+    crate::transport::udp::configure_qualification_receive_buffer(&socket).unwrap();
+    let receiver = Receiver::start(
+        &socket,
+        Ipv4Addr::LOCALHOST,
+        Duration::from_secs(5),
+        output.path(),
+        "test",
+    )
+    .unwrap();
+    assert!(receiver.wait_started(Duration::ZERO).is_err());
+    for sequence in 0..256_u32 {
+        sender.send(&sequence.to_be_bytes()).unwrap();
+    }
+    assert!(receiver.wait_started(Duration::from_secs(2)).unwrap() >= 256);
+    let bursts = receiver.finish(Some(256)).unwrap();
+    assert_eq!(bursts[0].datagrams, 256);
 }

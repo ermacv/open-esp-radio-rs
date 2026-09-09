@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use oer_esp32s31_phy::PhyState;
+use oer_esp32s31_phy::RegisteredWifiPhy;
 
 use oer_esp32s31_wifi_mac::rx::RxDmaBufferAddresses;
 
@@ -53,7 +53,7 @@ impl<'storage, S, const COUNT: usize> StationDmaResources<'storage, S, COUNT> {
 pub trait StationRadioOwner {
     type Platform;
 
-    fn radio_mut(&mut self) -> (&mut PhyState, &mut Self::Platform);
+    fn radio_mut(&mut self) -> (&mut RegisteredWifiPhy, &mut Self::Platform);
 }
 
 /// Persistent physical-radio and interrupt authority owned by one station
@@ -93,7 +93,7 @@ impl<'role, O, I> StationRadioResources<'role, O, I> {
 }
 
 impl<O: StationRadioOwner, I> StationRadioResources<'_, O, I> {
-    pub fn parts_mut(&mut self) -> (&mut PhyState, &mut O::Platform, &mut I) {
+    pub fn parts_mut(&mut self) -> (&mut RegisteredWifiPhy, &mut O::Platform, &mut I) {
         let (phy, platform) = self.owner.radio_mut();
         (phy, platform, &mut self.interrupt)
     }

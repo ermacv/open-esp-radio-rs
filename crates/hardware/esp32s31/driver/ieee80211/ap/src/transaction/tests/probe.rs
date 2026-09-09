@@ -2,6 +2,20 @@ use super::*;
 
 #[test]
 fn discovery_owns_management_tx_without_creating_a_peer_or_association_completion() {
+    exercise_probe_completion(0);
+}
+
+#[test]
+fn probe_ack_timeout_retains_receiver_sequence_and_terminal_attempts() {
+    exercise_probe_completion(5);
+}
+
+#[test]
+fn probe_terminal_hardware_error_is_not_classified_as_a_missing_ack() {
+    exercise_probe_completion(3);
+}
+
+fn exercise_probe_completion(status: u8) {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
@@ -72,17 +86,88 @@ fn discovery_owns_management_tx_without_creating_a_peer_or_association_completio
         hardware.publications, 1,
         "hardware owner must not be overwritten"
     );
+    let sequence_control = u16::from_le_bytes([output[22], output[23]]);
+    let mut terminal = None;
+    for attempt in 0..32 {
+        hardware.completion = Some(MacTxCompletionObservation::new_model(status, 0));
+        let (progress, action) = mac
+            .service_tx(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                },
+                102 + attempt,
+            )
+            .unwrap();
+        if progress == oer_esp32s31_wifi::tx::WifiTxProgress::Complete {
+            terminal = Some(action);
+            break;
+        }
+        assert!(
+            mac.first_probe_failure().is_none(),
+            "retry is not a terminal failure"
+        );
+    }
+    if status == 0 {
+        assert_eq!(terminal, Some(ApTxCompletionAction::None));
+        assert!(mac.first_probe_failure().is_none());
+    } else {
+        assert_eq!(terminal, Some(ApTxCompletionAction::PublicationFailed));
+        let failure = mac.first_probe_failure().unwrap();
+        assert_eq!(failure.receiver, peer);
+        assert_eq!(failure.sequence_control, sequence_control);
+        assert_eq!(failure.started_at_micros, 100);
+        assert!(failure.completed_at_micros >= 102);
+        assert!(matches!(
+            failure.outcome,
+            OrdinaryTxOutcome::HardwareFailure(_)
+        ));
+        assert_eq!(
+            failure.outcome.report().status.attempts,
+            hardware.publications
+        );
+        assert_eq!(mac.observation().tx_failures.hardware_failures, 1);
+    }
+    assert_eq!(
+        hardware.publications, 1,
+        "discovery must not retain a retry series"
+    );
+    assert_eq!(
+        mac.observation().tx_failures.probe_ack_timeouts,
+        u8::from(status == 5)
+    );
+    // A new MAC must not mint discovery credit while the shared budget is empty.
+    for index in 0..100 {
+        request[10..16].copy_from_slice(&[2, 1, 0, 0, 0, index]);
+        assert_eq!(
+            mac.publish_management(
+                &mut hardware,
+                &request,
+                [0; 32],
+                0,
+                103 + u64::from(index),
+                &mut output
+            )
+            .unwrap(),
+            ApManagementOutcome::Ignored
+        );
+    }
+    assert_eq!(hardware.publications, 1);
+    assert!(matches!(
+        mac.publish_management(&mut hardware, &request, [0; 32], 0, 10_100, &mut output)
+            .unwrap(),
+        ApManagementOutcome::Response { .. }
+    ));
     hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
-    let (_, action) = mac
-        .service_tx(
-            &mut hardware,
-            WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
-            },
-            102,
-        )
-        .unwrap();
-    assert_eq!(action, ApTxCompletionAction::None);
+    mac.service_tx(
+        &mut hardware,
+        WifiTxWake::Interrupt {
+            events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+        },
+        10_102,
+    )
+    .unwrap();
+    let publications = hardware.publications;
     assert_eq!(mac.observation().association_responses_transmitted, 0);
     assert_eq!(mac.observation().authentication_responses_transmitted, 0);
     assert!(mac.engine().peer_status(peer).is_none());
@@ -92,6 +177,6 @@ fn discovery_owns_management_tx_without_creating_a_peer_or_association_completio
             .unwrap(),
         ApManagementOutcome::Ignored
     );
-    assert_eq!(hardware.publications, 1);
+    assert_eq!(hardware.publications, publications);
     assert!(mac.try_into_parts().is_ok());
 }

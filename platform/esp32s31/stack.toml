@@ -34,8 +34,8 @@ reported_frame_count = 30
 [[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "oer-wifi-sta-0.1.0/src/station.rs"]
-max_bytes = 19456
-reason = "station lifecycle future retains the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state"
+max_bytes = 19712
+reason = "station lifecycle future retains the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "::startup::start_esp32s31_radio"
@@ -70,8 +70,8 @@ reason = "atomic connected composition retains the validated plan and complete s
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-embassy-wifi-0.1.0/src/supervisor/mod.rs"]
-max_bytes = 17920
-reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack"
+max_bytes = 18176
+reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "::radio_resources::initialize_network"
@@ -88,8 +88,8 @@ reason = "role epoch future retains separate physical, station, AP and monitor r
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs", "oer-esp32s31-embassy-wifi-0.1.0/src/supervisor/access_point.rs"]
-max_bytes = 15360
-reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom"
+max_bytes = 16640
+reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "ProductionStationEnginePort<"
@@ -142,8 +142,8 @@ reason = "standalone scan retains the role-neutral owner, continuous live RX rin
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::StationTask<"
 source_ends_with = ["crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "oer-esp32s31-wifi-embassy-0.1.0/src/roles/station/lifecycle.rs"]
-max_bytes = 13312
-reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state"
+max_bytes = 13568
+reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"

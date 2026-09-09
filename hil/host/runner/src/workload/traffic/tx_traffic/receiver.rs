@@ -45,6 +45,7 @@ pub(crate) struct Receiver {
     stop: Arc<Mutex<Option<Stop>>>,
     wake: Arc<mio::Waker>,
     worker: Option<thread::JoinHandle<Result<Vec<Burst>>>>,
+    progress: std::sync::mpsc::Receiver<u64>,
 }
 
 impl Receiver {
@@ -65,6 +66,7 @@ impl Receiver {
         let worker_stop = Arc::clone(&stop);
         let deadline = deadline_after(maximum_wait);
         let drops_before = crate::transport::udp::kernel_drops(&socket)?;
+        let (progress_tx, progress) = std::sync::mpsc::sync_channel(1);
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
         let worker = thread::spawn(move || {
             let _ = ready_tx.send(());
@@ -74,8 +76,11 @@ impl Receiver {
                 deadline,
                 worker_stop,
                 poll,
-                output,
-                drops_before,
+                ReceptionOutput {
+                    path: output,
+                    drops_before,
+                },
+                Some(progress_tx),
             )
         });
         ready_rx
@@ -85,6 +90,14 @@ impl Receiver {
             stop,
             wake,
             worker: Some(worker),
+            progress,
+        })
+    }
+
+    /// Wait for measured traffic, never an assumed post-Start settling delay.
+    pub(crate) fn wait_started(&self, timeout: Duration) -> Result<u64> {
+        self.progress.recv_timeout(timeout).map_err(|error| {
+            format!("UDP did not reach 256 received datagrams before pause: {error}").into()
         })
     }
 
@@ -138,15 +151,24 @@ impl Drop for Receiver {
     }
 }
 
+struct ReceptionOutput {
+    path: PathBuf,
+    drops_before: Option<u32>,
+}
+
 fn collect(
     socket: UdpSocket,
     target: Ipv4Addr,
     session_deadline: Instant,
     stop: Arc<Mutex<Option<Stop>>>,
     mut poll: EventPoll,
-    output: PathBuf,
-    drops_before: Option<u32>,
+    output: ReceptionOutput,
+    mut progress: Option<std::sync::mpsc::SyncSender<u64>>,
 ) -> Result<Vec<Burst>> {
+    let ReceptionOutput {
+        path: output,
+        drops_before,
+    } = output;
     let mut packet = [0_u8; 2048];
     let mut active: Option<ActiveBurst> = None;
     let started = Instant::now();
@@ -190,6 +212,16 @@ fn collect(
                         break 'collect End::ReceiveError;
                     }
                 }
+            }
+        }
+        if progress.is_some() {
+            let received = active
+                .as_ref()
+                .map_or(0, |active| active.seen_sequences.len() as u64);
+            if received >= 256
+                && let Some(progress) = progress.take()
+            {
+                let _ = progress.send(received);
             }
         }
         let command = *stop

@@ -99,7 +99,12 @@ pub use runtime::{
 impl<P> StationRadioOwner for WifiRoleOwner<P> {
     type Platform = P;
 
-    fn radio_mut(&mut self) -> (&mut oer_esp32s31_phy::PhyState, &mut Self::Platform) {
+    fn radio_mut(
+        &mut self,
+    ) -> (
+        &mut oer_esp32s31_phy::RegisteredWifiPhy,
+        &mut Self::Platform,
+    ) {
         WifiRoleOwner::radio_mut(self)
     }
 }

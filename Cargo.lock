@@ -2594,6 +2594,7 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -2977,6 +2978,7 @@ dependencies = [
  "mio",
  "object 0.39.1",
  "oer-embassy-net-compat",
+ "oer-esp32s31-wifi-ap",
  "oer-firmware",
  "oer-ieee80211",
  "oer-process",

@@ -376,6 +376,7 @@ impl ApEngineObserver {
 /// supervisor can only acknowledge stop after consuming [`stop`](Self::stop).
 #[must_use = "an active AP engine must be consumed through stop before radio reuse"]
 pub struct ApEngine<'storage> {
+    next_probe_response_micros: u64,
     service: AccessPointService<'storage>,
     beacon: ApBeacon<'storage>,
     security: ApSecurity<'storage>,
@@ -451,6 +452,7 @@ impl<'storage> ApEngine<'storage> {
         // leaves an unowned hardware TSF epoch behind.
         reset_and_start_access_point_tsf(hardware);
         Ok(Self {
+            next_probe_response_micros: 0,
             service,
             beacon,
             security,

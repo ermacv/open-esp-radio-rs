@@ -188,12 +188,29 @@ records the final state, last rejection/disconnect and outcome. Unknown states
 remain unknown rather than being classified as discovery failures. The transcript
 is bounded to 4096 records and records no credential-setting commands. Connection
 artifacts survive restoration of the managed interface. When the OpenWrt fixture
-has `monitor_interface` configured, AP scenarios capture management frames before
-enabling the Linux client and stop capture after connection succeeds or fails.
-The cycle owns `discovery.pcap` and capture counts in `discovery.json`. Capture
+has `monitor_interface` configured, AP scenarios capture management and control
+frames before enabling the Linux client and retain capture through traffic and
+AP stop. A failed connection also finishes the capture before restoring clients.
+The cycle owns `management.pcap` and capture counts in `management.json`. Capture
 readiness and stop are explicit events; immediate packet delivery preserves short
 connection captures. Empty captures and capture-socket drops report incomplete
-fixture evidence. The monitor is removed before traffic starts and on errors.
+fixture evidence. The monitor is removed before client restoration and on errors.
+This on-router monitor is not an independent receiver: missing ACKs in its tap
+alone do not prove that no ACK was transmitted over the air.
+Diagnostic firmware retains the first failed probe response receiver, Sequence
+Control, publication/completion times, final rate and retry report in UART output.
+The record identifies a terminal failure; ordinary retry attempts do not create it.
+Probe responses use one hardware attempt and a global 10-ms admission interval.
+Excess requests are discarded without deferred response timers; changing sender
+MAC does not bypass the budget. Authentication, association, EAPOL and data retain
+their own retry policy. `tx_probe_ack_timeouts` is a subset of
+`tx_hardware_failures`, not a successful delivery count. The AP gate reconciles
+this named subset and unacknowledged disconnects against the total; unrelated
+failures, timeouts, collision limits and saturated totals still fail.
+This bounds software retry amplification, not RF contention or interference.
+Unlike [hostapd's no-ACK submission](https://chromium.googlesource.com/chromiumos/third_party/hostap/+/fb2d4c1a3971302455730191117b0e91ce9b8793/src/ap/beacon.c)
+for wildcard broadcast probes, this backend
+still waits for the ordinary hardware completion and records a missing ACK.
 Control transcripts include host Unix timestamps for comparison with pcap; clock
 offset between hosts must be checked before interpreting sub-millisecond timing.
 
@@ -222,3 +239,42 @@ patch also skips client coexistence/intolerance handling in this mode. HT20 and
 HE20 retain normal policy. The selected policy is recorded in fixture evidence.
 Either policy still fails preparation when actual channel geometry differs
 from the scenario: requested 40 MHz never silently becomes an accepted 20 MHz run.
+
+### Controlled probe-request load
+
+`diagnostic-ap-probe-load` combines a 12-second AP two-client UDP TX window
+with a finite Linux probe source. The primary offered rate is 130 Mbit/s;
+the secondary sends one 1472-byte datagram every 50 ms. The scenario requires
+at least 200 secondary datagrams and a maximum 250 ms interarrival gap.
+These are progress gates, not a throughput qualification.
+
+The runner prepares the source after client association and starts it only
+after the device acknowledges the UDP session. Offsets from that Start event
+are: one directed-SSID request at 1 s, 200 requests from one MAC at 3–3.995 s,
+and 200 requests from distinct locally administered MACs at 6–6.995 s.
+The source uses event/deadline waits, rejects pacing lateness above 4 ms,
+and stops on controller EOF or cancellation.
+
+`cargo hil fixture install-host` builds and installs the bounded Rust helper
+`open-radio-probe`. The helper accepts no command-line arguments or arbitrary
+frame input. It checks the controlled `wlan0` association SSID/channel, owns
+a temporary monitor interface on the same PHY, and removes it before reporting
+completion. It does not retune the associated interface. Monitor coexistence
+and injection support are requirements of this Linux adapter; creation or
+injection failure fails the scenario. Those capabilities still require an
+actual fixture run; host tests alone do not establish them.
+
+The runner automatically captures management traffic on OpenWrt and invokes
+tshark after capture shutdown. `probe-source.json` records submission,
+associated BSSID, pacing and errors; `probe-air.json` records observed request
+and response counts. All 401 source/sequence pairs must appear in the capture,
+with no reported kernel drops. Responses must come from the associated AP and
+cover both source modes. Retries, duplicate response sequences and more than
+105 responses in any one-second window fail the gate. The five-frame margin
+allows capture timing variation around the driver's 10 ms admission interval.
+Successful socket submission alone cannot satisfy these gates. OpenWrt is a
+separate observer device, but its capture still shares its client PHY.
+
+`cargo hil fixture probe-plan` prints the finite request schedule without
+loading lab configuration, opening interfaces or accessing the ESP. Installing
+the helper or executing the scenario is separate from this offline preview.

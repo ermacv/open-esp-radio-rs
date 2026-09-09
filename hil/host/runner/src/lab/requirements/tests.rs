@@ -45,6 +45,7 @@ fn system_and_ieee802154_diagnostics_do_not_need_a_network() {
 #[test]
 fn udp_evidence_and_optional_observer_have_distinct_owners() {
     let mut scenario = scenario(Workload::Udp {
+        station_pause: None,
         direction: Direction::Rx,
         duration_seconds: 1,
         rx_rate_bps: Some(1000),
@@ -64,6 +65,7 @@ fn udp_evidence_and_optional_observer_have_distinct_owners() {
 #[test]
 fn ap_clients_do_not_hide_the_initial_station_dependency() {
     let mut scenario = scenario(Workload::AccessPoint {
+        probe_load: false,
         cycles: 1,
         boots: 1,
         timeout_seconds: 30,
@@ -107,4 +109,30 @@ fn bluetooth_requires_its_adapter_without_a_network() {
         }
         .network()
     );
+}
+
+#[test]
+fn probe_load_requires_both_clients_and_air_observer() {
+    let mut scenario: Scenario = toml::from_str(include_str!(
+        "../../../../../scenarios/ieee80211/access-point/diagnostic-ap-probe-load.toml"
+    ))
+    .unwrap();
+    scenario.validate().unwrap();
+    let required = Requirements::for_scenario(&scenario);
+    assert!(required.probe_load && required.laptop_client && required.openwrt_client);
+    assert!(required.openwrt_tx_monitor);
+    scenario.criteria.minimum_concurrent_ap_clients = Some(1);
+    assert!(scenario.validate().is_err());
+    scenario.criteria.minimum_concurrent_ap_clients = Some(2);
+    if let Workload::AccessPoint {
+        traffic:
+            crate::scenario::AccessPointTraffic::UdpMultiClient {
+                duration_seconds, ..
+            },
+        ..
+    } = &mut scenario.workload
+    {
+        *duration_seconds = 6;
+    }
+    assert!(scenario.validate().is_err());
 }

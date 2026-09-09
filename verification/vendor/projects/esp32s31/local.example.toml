@@ -193,3 +193,12 @@ path = "/path/to/libbtdm_common.a"
 [[inputs]]
 role = "source-inventory:bredr"
 path = "/path/to/libbredr_app.a"
+
+# Current PHY calibration suite; exact archive and ROM hashes are checked by the suite.
+[[inputs]]
+role = "source-artifact:phy-current"
+path = "/path/to/current/libphy.a"
+
+[[inputs]]
+role = "source-companion:phy-current"
+path = "/path/to/esp32s31_rev0_rom.elf"

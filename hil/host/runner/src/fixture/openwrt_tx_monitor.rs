@@ -1,101 +1,17 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
-use super::capture_process;
+use super::openwrt_capture::{RemoteCapture, ssh};
 use oer_process::CommandExt as _;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
+    fs,
     net::Ipv4Addr,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
     time::Duration,
 };
 
 use crate::{Result, fixture::openwrt_fixture::resolve_station_mac, lab::config::OpenWrtConfig};
-
-const MAX_CAPTURE_BYTES: u64 = 64 * 1024 * 1024;
-
-struct RemoteMonitor {
-    interface: String,
-    directory: String,
-}
-
-impl RemoteMonitor {
-    fn new(interface: String) -> Result<Self> {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let epoch = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos();
-        Ok(Self {
-            interface,
-            directory: format!(
-                "/tmp/oer-tx-monitor-{}-{epoch}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ),
-        })
-    }
-
-    fn capture(&self) -> String {
-        format!("{}/capture.pcap", self.directory)
-    }
-
-    fn start_script(
-        &self,
-        config: &OpenWrtConfig,
-        filter: &str,
-        immediate: bool,
-        duration: Duration,
-    ) -> String {
-        let monitor = &self.interface;
-        let directory = &self.directory;
-        let remote = self.capture();
-        let lifetime = duration.saturating_add(Duration::from_secs(120));
-        let mode = if immediate {
-            "--immediate-mode -s 512"
-        } else {
-            "-s 128"
-        };
-        let program = format!(
-            "tcpdump -i {monitor} -n {mode} -U -w {remote} {}",
-            capture_process::quote(filter)
-        );
-        let controlled = capture_process::controlled(&program, "cleanup");
-        let script = format!(
-            "set -eu; \
-             if iw dev {monitor} info >/dev/null 2>&1; then echo 'monitor interface already exists' >&2; exit 1; fi; \
-             wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-             test -n \"$wiphy\"; \
-             umask 077; mkdir {directory}; \
-             cleanup() {{ iw dev {monitor} del >/dev/null 2>&1 || true; }}; \
-             trap cleanup EXIT; \
-             trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
-             iw phy \"$wiphy\" interface add {monitor} type monitor; \
-             ip link set {monitor} up; \
-             {controlled}",
-            wireless = config.wireless_interface,
-        );
-        format!(
-            "LC_ALL=C timeout -s TERM {} sh -c {}",
-            lifetime.as_secs(),
-            capture_process::quote(&script)
-        )
-    }
-
-    fn cleanup_script(&self) -> String {
-        // The private directory is acquired only after rejecting an existing
-        // interface. A failed preflight/spawn therefore cannot delete it.
-        format!(
-            "set -eu; if test -d {directory}; then \
-             if iw dev {monitor} info >/dev/null 2>&1; then iw dev {monitor} del; fi; \
-             rm -f {capture}; rmdir {directory}; fi",
-            directory = self.directory,
-            monitor = self.interface,
-            capture = self.capture(),
-        )
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct MacFrameKey {
@@ -138,7 +54,7 @@ impl OpenWrtTxMonitorCapture {
         output: &Path,
     ) -> Result<Self> {
         let station_mac = resolve_station_mac(config, target)?;
-        let capture = RemoteCapture::start(
+        let capture = RemoteCapture::start_monitor(
             config,
             output.join("ap-tx-monitor.pcap"),
             &format!("wlan host {station_mac}"),
@@ -154,35 +70,39 @@ impl OpenWrtTxMonitorCapture {
 
     pub(crate) fn finish(mut self, expected_units: u64) -> Result<OpenWrtTxMonitorEvidence> {
         let (captured_frames, kernel_dropped) = self.capture.finish_capture()?;
-        let mut evidence =
-            parse_capture(&self.capture.output, self.target, self.port, expected_units)
-                .map_err(crate::fixture::Error::context)?;
+        let mut evidence = parse_capture(
+            self.capture.output_path(),
+            self.target,
+            self.port,
+            expected_units,
+        )
+        .map_err(crate::fixture::Error::context)?;
         evidence.captured_frames = captured_frames;
         evidence.kernel_dropped = kernel_dropped;
         Ok(evidence)
     }
 }
 
-/// Discovery capture includes broadcast probes, not just frames addressed to the AP.
-pub(crate) struct OpenWrtDiscoveryCapture(RemoteCapture);
+/// AP-epoch capture includes broadcast probes and ACKs, not just addressed data.
+pub(crate) struct OpenWrtManagementCapture(RemoteCapture);
 
-impl OpenWrtDiscoveryCapture {
-    pub(crate) fn start(config: &OpenWrtConfig, output: &Path) -> Result<Self> {
+impl OpenWrtManagementCapture {
+    pub(crate) fn start(config: &OpenWrtConfig, output: &Path, duration: Duration) -> Result<Self> {
         // Discovery may finish before libpcap's packet-block timeout. Immediate
         // delivery preserves those frames without sleeping before capture Stop.
-        Ok(Self(RemoteCapture::start(
+        Ok(Self(RemoteCapture::start_monitor(
             config,
-            output.join("discovery.pcap"),
-            "type mgt",
+            output.join("management.pcap"),
+            "type mgt or type ctl",
             true,
-            Duration::from_secs(30),
+            duration,
         )?))
     }
 
     pub(crate) fn finish(mut self) -> Result<()> {
         let (captured, dropped) = self.0.finish_capture()?;
         fs::write(
-            self.0.output.with_extension("json"),
+            self.0.output_path().with_extension("json"),
             serde_json::to_vec_pretty(&serde_json::json!({
                 "captured_frames": captured, "kernel_dropped": dropped,
             }))?,
@@ -194,93 +114,6 @@ impl OpenWrtDiscoveryCapture {
             .into());
         }
         Ok(())
-    }
-}
-
-struct RemoteCapture {
-    config: OpenWrtConfig,
-    remote: RemoteMonitor,
-    output: PathBuf,
-    child: Option<capture_process::Capture>,
-}
-
-impl RemoteCapture {
-    fn start(
-        config: &OpenWrtConfig,
-        output: PathBuf,
-        filter: &str,
-        immediate: bool,
-        duration: Duration,
-    ) -> Result<Self> {
-        let monitor = config
-            .monitor_interface
-            .clone()
-            .ok_or("OpenWrt capture requires station_fixture.monitor_interface")?;
-        oer_process::check_cancelled()?;
-        let remote = RemoteMonitor::new(monitor)?;
-        let script = remote.start_script(config, filter, immediate, duration);
-        // Own cleanup before starting the remote process or waiting for readiness.
-        let mut owner = Self {
-            config: config.clone(),
-            remote,
-            output,
-            child: None,
-        };
-        owner.child = Some(capture_process::Capture::start(
-            &mut ssh(config, &script),
-            format!("tcpdump: listening on {},", owner.remote.interface),
-            duration.saturating_add(Duration::from_secs(120)),
-        )?);
-        Ok(owner)
-    }
-
-    fn finish_capture(&mut self) -> Result<(u64, u64)> {
-        let child = self
-            .child
-            .take()
-            .expect("TX-monitor capture owns its child");
-        let output = child.finish()?;
-        if !output.status.success() {
-            return Err(crate::fixture::Error::new(format!(
-                "OpenWrt TX-monitor capture failed with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            ))
-            .into());
-        }
-        let summary = String::from_utf8(output.stderr)?;
-        let captured_frames = summary_value(&summary, "packets captured")
-            .ok_or("OpenWrt TX-monitor capture omitted its packet count")?;
-        let kernel_dropped = summary_value(&summary, "packets dropped by kernel")
-            .ok_or("tcpdump omitted its drop count")?;
-        if kernel_dropped != 0 {
-            return Err(crate::fixture::Error::new(format!(
-                "OpenWrt TX-monitor capture dropped {kernel_dropped} packets in its capture socket"
-            ))
-            .into());
-        }
-        copy_remote(&self.config, &self.remote.capture(), &self.output)?;
-        let size = fs::metadata(&self.output)?.len();
-        if size == 0 || size > MAX_CAPTURE_BYTES {
-            return Err(crate::fixture::Error::new(format!(
-                "OpenWrt TX-monitor capture size is outside 1..={MAX_CAPTURE_BYTES} bytes: {size}"
-            ))
-            .into());
-        }
-        Ok((captured_frames, kernel_dropped))
-    }
-}
-
-impl Drop for RemoteCapture {
-    fn drop(&mut self) {
-        oer_process::cleanup(|| {
-            drop(self.child.take());
-            let cleanup = self.remote.cleanup_script();
-            crate::fixture::cleanup::command(
-                "remove OpenWrt monitor",
-                &mut ssh(&self.config, &cleanup),
-            );
-        });
     }
 }
 
@@ -487,35 +320,6 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
             Some(((high << 4) | low) as u8)
         })
         .collect()
-}
-
-fn copy_remote(config: &OpenWrtConfig, remote: &str, local: &Path) -> Result<()> {
-    let file = File::create(local)?;
-    let status = ssh(config, &format!("cat {remote}"))
-        .stdout(Stdio::from(file))
-        .supervised_status()?;
-    if !status.success() {
-        return Err(crate::fixture::Error::new(
-            "cannot copy OpenWrt TX-monitor capture to the run directory",
-        )
-        .into());
-    }
-    Ok(())
-}
-
-fn ssh(config: &OpenWrtConfig, script: &str) -> Command {
-    let mut command = Command::new("ssh");
-    command
-        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
-        .arg(&config.ssh_target)
-        .arg(script);
-    command
-}
-
-fn summary_value(summary: &str, suffix: &str) -> Option<u64> {
-    summary
-        .lines()
-        .find_map(|line| line.trim().strip_suffix(suffix)?.trim().parse::<u64>().ok())
 }
 
 #[cfg(test)]

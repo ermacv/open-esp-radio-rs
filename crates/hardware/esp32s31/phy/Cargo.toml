@@ -14,6 +14,7 @@ validation-probes = []
 registration-diagnostics = []
 
 [dependencies]
+pin-project-lite = "0.2.17"
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]

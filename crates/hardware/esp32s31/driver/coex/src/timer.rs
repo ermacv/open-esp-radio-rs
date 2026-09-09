@@ -1,5 +1,11 @@
 use crate::{CoexClient, CoexClockHardware, CoexError, CoexPti, CoexTimerIndex};
 
+/// Finite hardware transactions, not RF admission.
+///
+/// An error may follow a partial hardware write. The core must retain a
+/// cleanup obligation until `disable` succeeds. Successful `disable` reports
+/// completion of the backend's withdrawal transaction, not an observed RF
+/// grant revocation or whole-radio quiescence.
 pub trait CoexTimerHardware {
     fn configure_request(
         &mut self,

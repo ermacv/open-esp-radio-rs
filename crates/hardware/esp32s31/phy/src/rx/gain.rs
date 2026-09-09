@@ -800,11 +800,11 @@ impl PhyRxGainInitTransition {
     pub fn action(&self) -> PhyRxGainInitAction {
         match self.step {
             InitStep::PrepareDcControlRestore => PhyRxGainInitAction::PrepareDcControlRestore,
-            InitStep::Dc(transition) => PhyRxGainInitAction::Dc(transition.action()),
+            InitStep::Dc(ref transition) => PhyRxGainInitAction::Dc(transition.action()),
             InitStep::RestoreDcControl { .. } | InitStep::RestoreDcControlAfterFailure(_) => {
                 PhyRxGainInitAction::RestoreDcControl
             }
-            InitStep::Publish(transition) => PhyRxGainInitAction::Publish(transition.action()),
+            InitStep::Publish(ref transition) => PhyRxGainInitAction::Publish(transition.action()),
             InitStep::Limits => PhyRxGainInitAction::ConfigureLimits {
                 wifi_last_index: self.wifi_last_index,
             },
@@ -823,14 +823,17 @@ impl PhyRxGainInitTransition {
         &mut self,
         completion: PhyRxGainInitCompletion,
     ) -> Result<(), PhyRxGainInitTransitionError> {
-        match (self.step, completion) {
+        match (&mut self.step, completion) {
             (
                 InitStep::PrepareDcControlRestore,
                 PhyRxGainInitCompletion::DcControlRestorePrepared,
             ) => {
                 self.step = InitStep::Dc(PhyRxGainDcTransition::new(self.parameters.dc));
             }
-            (InitStep::Dc(mut transition), PhyRxGainInitCompletion::Dc(completion)) => {
+            (InitStep::Dc(transition), PhyRxGainInitCompletion::Dc(completion)) => {
+                // Keep DC's transactional rejection boundary independent of the
+                // in-place table publisher below.
+                let mut transition = *transition;
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion)?;
@@ -848,6 +851,7 @@ impl PhyRxGainInitTransition {
                 InitStep::RestoreDcControl { outcome },
                 PhyRxGainInitCompletion::DcControlRestored,
             ) => {
+                let outcome = *outcome;
                 self.dc_outcome = Some(outcome);
                 self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
                     self.memory_with_dc(outcome),
@@ -857,9 +861,11 @@ impl PhyRxGainInitTransition {
                 InitStep::RestoreDcControlAfterFailure(failure),
                 PhyRxGainInitCompletion::DcControlRestored,
             ) => {
-                self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(failure));
+                self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(*failure));
             }
-            (InitStep::Publish(mut transition), PhyRxGainInitCompletion::Publish(completion)) => {
+            (InitStep::Publish(transition), PhyRxGainInitCompletion::Publish(completion)) => {
+                // Only the publisher's small cursor changes per entry. Retain
+                // both generated tables in their existing storage.
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion)?;
@@ -872,7 +878,7 @@ impl PhyRxGainInitTransition {
                     PhyRxGainPublishAction::Failed(failure) => {
                         self.step = InitStep::Failed(PhyRxGainInitFailure::Publish(failure));
                     }
-                    _ => self.step = InitStep::Publish(transition),
+                    _ => {}
                 }
             }
             (InitStep::Limits, PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index })

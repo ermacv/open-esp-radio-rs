@@ -125,7 +125,7 @@ use oer_esp32s31_wifi_embassy::{
             try_restore_esp32s31_station_phase, tx_epoch::StaTxEpochExt,
         },
     },
-    time::phy::EmbassyPhyDelay,
+    time::phy::{EmbassyPhyClock, EmbassyPhyDelay},
 };
 
 use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -196,6 +196,7 @@ mod access_point;
 #[cfg(feature = "diagnostics")]
 mod access_point_observation;
 mod concurrent;
+mod maintenance;
 mod physical;
 mod role_transition;
 pub(crate) mod station;
@@ -564,6 +565,9 @@ enum ProductionStationReclaimFault<'security> {
 }
 
 enum ProductionWifiFault {
+    PhyMaintenance {
+        _failure: maintenance::Failure,
+    },
     PairedStationPhase {
         _owner: ProductionStationOwner<'static, 'static>,
         _runner: ProductionStationRunner<'static, 'static>,
@@ -836,6 +840,7 @@ pub async fn new(
     if let Some(maximum) = maximum_tx_power_quarter_dbm {
         wifi_start = wifi_start.with_maximum_tx_power_quarter_dbm(maximum);
     }
+    let mut phy_clock = EmbassyPhyClock;
     let ready = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyPhyDelay, _>(
         owned,
         RadioStartConfig::new(
@@ -844,6 +849,7 @@ pub async fn new(
         ),
         calibration_cache,
         NoopPhyTargetObserver,
+        &mut phy_clock,
     ))
     .map_err(|_| NewError::RadioStart)?;
     let station_interface = WifiConfig::station(WifiStationConfig::new(station_mac))
@@ -859,12 +865,18 @@ pub async fn new(
         calibration_cache,
     };
     diagnostics_event!(
-        "open-radio: cold PHY ready, full_calibration={}",
+        "open-radio: cold PHY ready, full_calibration={} initial_tracking={} tracking_inhibited={}",
         initialization
             .start
             .wifi
             .registration
-            .full_calibration_performed
+            .full_calibration_performed,
+        initialization.start.wifi.initial_tracking.is_some(),
+        initialization
+            .start
+            .wifi
+            .initial_tracking
+            .is_some_and(|outcome| outcome.tracking_inhibited)
     );
 
     let memory = match WIFI_MEMORY.claim(&SCAN_MEMORY) {

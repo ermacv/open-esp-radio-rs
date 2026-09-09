@@ -1,7 +1,8 @@
 //! Source-owned outer transition for ESP32-S31 periodic PHY tracking.
 //!
-//! Blobray resolves the complete pinned `phy_param_track_tot` body to 47
-//! instructions and eleven basic blocks. This module preserves that body's
+//! The reference is the reviewed archive with SHA-256
+//! `51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`.
+//! This module preserves that baseline `phy_param_track_tot` body's
 //! critical-section boundary, guards, child-call order, arguments and optional
 //! branches. Completing the pure transition alone does not claim that child
 //! hardware effects ran. The two TX-power actions lower into the complete source-owned transition in
@@ -16,7 +17,9 @@
 //! entry point consumes that owner into a poisoned epoch on any incomplete
 //! hardware path.
 //!
-//! The vendor function reads six bytes from a 508-byte `phy_param` image. The
+//! Later vendor archives use a different calibration-child ABI and order;
+//! current-leaf verification does not establish equivalence of this parent.
+//! The baseline function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
 //! projections are represented below as booleans and owned child inputs.
 
@@ -104,7 +107,8 @@ impl PhyParamTrackingPolicy {
     }
 }
 
-/// Calibration class passed as the second `phy_cal_param_track` argument.
+/// Calibration class in the reviewed baseline's two-argument child contract.
+/// This is not the ABI of newer vendor archives with two active-class flags.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackClass {
     Wifi,
@@ -218,6 +222,16 @@ pub struct PhyParamTrackingRfpllCompletion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingCalibrationCompletion {
     class: PhyCalibrationTrackClass,
+    common_updated: bool,
+    class_updated: bool,
+}
+
+/// Committed calibration branches, not merely invocation of their wrapper.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CalibrationProgress {
+    pub common: bool,
+    pub wifi: bool,
+    pub bluetooth_ieee802154: bool,
 }
 
 /// Observable outer-wrapper result. Child hardware postconditions are not
@@ -226,6 +240,7 @@ pub struct PhyParamTrackingCalibrationCompletion {
 pub struct PhyParamTrackingOutcome {
     pub clients: PhyParamTrackRequest,
     pub tracking_inhibited: bool,
+    pub calibration: CalibrationProgress,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -254,6 +269,7 @@ pub struct PhyParamTrackingTransition {
     request: PhyParamTrackRequest,
     policy: PhyParamTrackingPolicy,
     step: PhyParamTrackingStep,
+    calibration: CalibrationProgress,
 }
 
 impl PhyParamTrackingTransition {
@@ -262,6 +278,11 @@ impl PhyParamTrackingTransition {
             request,
             policy,
             step: PhyParamTrackingStep::EnterCritical,
+            calibration: CalibrationProgress {
+                common: false,
+                wifi: false,
+                bluetooth_ieee802154: false,
+            },
         }
     }
 
@@ -300,6 +321,7 @@ impl PhyParamTrackingTransition {
                 PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                     clients: self.request,
                     tracking_inhibited: self.policy.tracking_inhibited,
+                    calibration: self.calibration,
                 })
             }
         }
@@ -337,6 +359,8 @@ impl PhyParamTrackingTransition {
                 PhyParamTrackingStep::BluetoothIeee802154CalibrationTrack,
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
             ) if completion.class == PhyCalibrationTrackClass::BluetoothIeee802154 => {
+                self.calibration.common |= completion.common_updated;
+                self.calibration.bluetooth_ieee802154 |= completion.class_updated;
                 self.first_wifi_step()
             }
             (PhyParamTrackingStep::WifiI2cTrack, PhyParamTrackingCompletion::WifiI2cTracked) => {
@@ -356,6 +380,8 @@ impl PhyParamTrackingTransition {
                 PhyParamTrackingStep::WifiCalibrationTrack,
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
             ) if completion.class == PhyCalibrationTrackClass::Wifi => {
+                self.calibration.common |= completion.common_updated;
+                self.calibration.wifi |= completion.class_updated;
                 PhyParamTrackingStep::TemperatureRead
             }
             (
@@ -674,7 +700,11 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         };
         self.state.apply_calibration_tracking_outcome(outcome);
         Ok(PhyParamTrackingCompletion::CalibrationTracked(
-            PhyParamTrackingCalibrationCompletion { class },
+            PhyParamTrackingCalibrationCompletion {
+                class,
+                common_updated: outcome.common_updated,
+                class_updated: outcome.class_updated,
+            },
         ))
     }
 }

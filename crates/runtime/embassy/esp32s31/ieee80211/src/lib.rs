@@ -15,5 +15,5 @@ pub mod datapath;
 pub mod diagnostics;
 pub mod roles;
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod time;

@@ -391,3 +391,66 @@ The single-frame and batch scenarios compare the same image, placement and
 conditioning with different frame counts. The batch measures AXI-GDMA
 scatter/gather staging; it does not measure direct Wi-Fi DMA into PSRAM,
 scatter/gather within a Wi-Fi MPDU or an integrated native radio datapath.
+
+## Same-connection pause
+
+`cargo hil run diagnostic-station-pause --network patched-xarxa` requests one
+explicit MAC/RX/IRQ pause during a 12-second station UDP TX window. The host
+waits for at least 256 measured datagrams before sending `PauseStation`; it does
+not use a post-start sleep. The target returns `StationPauseCompleted` with the
+same request ID and an explicit success or failure stage. `RxBusy` is not a
+successful pause. The host retains `station-pause.json`, protocol records and
+ordinary delivery/link evidence. Reboot, disconnect or reassociation during
+the workload fails the test even if delivery recovers. This tests preservation
+of the connected runner and radio owners, including register withdrawal from
+the arena, checked PHY-access admission/release and publication back into the
+same arena. Reclaim, admission, release and republication have distinct failure
+results. It performs no calibration or shared-RF arbitration.
+
+With a managed OpenWrt fixture, these pause diagnostics automatically start
+wireless-ingress and host-facing-egress captures before the session Start.
+They stop after host delivery collection and retain both PCAPs and
+`openwrt-tx-delivery.json`. Existing AP interfaces are borrowed, not replaced
+by monitor interfaces. Capture uses immediate delivery, and tool readiness,
+process failure and kernel drops are checked. The host invokes `tshark` itself.
+Linux GRO can combine several UDP datagrams into one captured packet. The
+report therefore distinguishes packet counts from UDP payload units computed
+using the configured datagram size. Fragmented, undecodable or non-integral
+payloads are rejected; capture payload units below measured host delivery are
+inconsistent evidence. Equal totals do not establish packet identity or RF
+ACK status. The 128-byte snapshots retain headers and the first payload bytes,
+not complete contents of coalesced datagrams.
+
+`cargo hil run diagnostic-station-phy-tracking --network patched-xarxa` uses
+the same load and pause boundary with explicit due PHY tracking. The host
+requires an uninhibited executed tracking outcome and continued delivery in
+the same connection. `station-pause.json` distinguishes committed common and
+Wi-Fi calibration branches; a false flag means that branch was not performed,
+even if the tracking wrapper completed. No temperature threshold or scheduler
+timestamp is fabricated to force a branch. MAC stop is reestablished and the
+station receive-policy snapshot checked before the retained RX/IRQ resumes.
+This single request does not enable automatic periodic tracking or qualify
+temperature-triggered branches that were not selected during the run.
+
+Diagnostic pause results also carry named PHY timings: selected attempts,
+accepted completions, failures, total duration and maximum duration for outer
+tracking and calibration children. Durations include waits and nested work;
+they are not CPU load and parent/child totals must not be added. The host rejects
+invalid or incomplete timing in a resumed result. The wire bound is unchanged.
+DCODE, RX gain and TX DC/PWDET additionally report poll count, time inside polls
+and maximum poll duration. The difference from operation duration includes
+suspension and scheduling; poll intervals include interrupts and observer cost.
+These measurements do not separate hardware delay from executor latency.
+`timings: null` means no timing report was available, not zero hardware cost.
+Physical failures return their stage without a timing snapshot; diagnostics-off
+images have no PHY timing observer. See the
+[observation contract](../../../crates/hardware/esp32s31/phy/src/tracking/README.md#timing-observations).
+
+`cargo hil run diagnostic-station-phy-calibration --network patched-xarxa`
+selects `station_pause = "calibration"`. It requests one due pass with an explicit
+zero calibration threshold, retaining the actual sensor readings and scheduler
+time. Success requires both common and Wi-Fi calibration completion, restored
+station policy and continued UDP delivery without reconnecting. The ordinary
+`station_pause = "tracking"` leaves the registered temperature policy intact;
+`station_pause = "access"` checks the ownership round trip without tracking.
+The protocol carries this choice as one operation, not independent booleans.

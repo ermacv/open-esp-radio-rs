@@ -13,6 +13,10 @@ default-run = "open-esp-radio-hil-runner"
 name = "open-radio-bluetooth"
 path = "src/fixture/bluetooth/helper.rs"
 
+[[bin]]
+name = "open-radio-probe"
+path = "src/fixture/probe_load/helper.rs"
+
 [dependencies]
 bt-hci = "=0.10.1"
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
@@ -36,6 +40,7 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
 xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "0d41d8e80cb617d355cf6981b6ff76635c44cadc", default-features = false, features = ["std", "alloc", "medium-ethernet", "ipv4", "udp"] }
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }

@@ -45,6 +45,36 @@ impl<R, P> ConnectedStaRxParked<R, P> {
 }
 
 impl<R, P> ConnectedStaRxService<R, P> {
+    /// Retain protocol and progress with either the new DMA owner or its fault.
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
+    pub fn try_map_dma<T, E>(
+        self,
+        map: impl FnOnce(R) -> Result<T, E>,
+    ) -> Result<ConnectedStaRxService<T, P>, ConnectedStaRxService<E, P>> {
+        match map(self.dma) {
+            Ok(dma) => Ok(ConnectedStaRxService {
+                dma,
+                protocol: self.protocol,
+                serviced_frames: self.serviced_frames,
+            }),
+            Err(dma) => Err(ConnectedStaRxService {
+                dma,
+                protocol: self.protocol,
+                serviced_frames: self.serviced_frames,
+            }),
+        }
+    }
+
+    /// Change DMA state while retaining protocol queues, security/reorder
+    /// owners and the cumulative number of serviced frames.
+    pub fn map_dma<T>(self, map: impl FnOnce(R) -> T) -> ConnectedStaRxService<T, P> {
+        ConnectedStaRxService {
+            dma: map(self.dma),
+            protocol: self.protocol,
+            serviced_frames: self.serviced_frames,
+        }
+    }
+
     pub const fn new(dma: R, protocol: P) -> Self {
         Self {
             dma,

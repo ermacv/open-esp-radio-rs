@@ -1121,6 +1121,15 @@ fn maximum_radio_evidence_fits_and_round_trips() {
                 mac_irq_classified_entries: u32::MAX,
             }),
             tx: Some(TxRadioEvidence {
+                station_terminal: crate::StationTxTerminalEvidence {
+                    exchanges: u32::MAX,
+                    mpdus: u32::MAX,
+                    acknowledged: u32::MAX,
+                    unacknowledged: u32::MAX,
+                    ordinary_recovered: u32::MAX,
+                    ordinary_failed: u32::MAX,
+                    invalid_statuses: u32::MAX,
+                },
                 bandwidth_mhz: u16::MAX,
                 aggregate_rate_kbps: u32::MAX,
                 aggregates_prepared: u32::MAX,
@@ -1256,4 +1265,253 @@ fn evidence_digest_is_order_and_value_sensitive() {
         evidence_crc32c(&[first, second]),
         evidence_crc32c(&[second, first])
     );
+}
+
+#[test]
+fn station_pause_completion_preserves_request_identity_and_failure_stage() {
+    use crate::{StationPauseEvidence, StationPauseResult};
+    for result in [
+        StationPauseResult::Resumed,
+        StationPauseResult::Unavailable,
+        StationPauseResult::Busy,
+        StationPauseResult::Interrupted,
+        StationPauseResult::MacStop,
+        StationPauseResult::RxBusy,
+        StationPauseResult::RxPause,
+        StationPauseResult::IrqPause,
+        StationPauseResult::RxResume,
+        StationPauseResult::IrqResume,
+        StationPauseResult::RegisterReclaim,
+        StationPauseResult::PhyAdmission,
+        StationPauseResult::PhyRelease,
+        StationPauseResult::RegisterRepublish,
+        StationPauseResult::PhyTracking,
+        StationPauseResult::MacRestoration,
+        StationPauseResult::ReceivePolicyChanged,
+    ] {
+        let expected = Envelope::new(
+            17,
+            19,
+            0,
+            23,
+            Event::StationPauseCompleted(StationPauseEvidence {
+                timings: None,
+                tracking: None,
+                result,
+                elapsed_micros: 4096,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+            observed = Some(result.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
+}
+
+#[test]
+fn tracking_pause_request_and_committed_branches_round_trip() {
+    for operation in [
+        crate::StationPauseOperation::Access,
+        crate::StationPauseOperation::Tracking,
+        crate::StationPauseOperation::Calibration,
+    ] {
+        let expected = Envelope::new(1, 2, 0, 3, Command::PauseStation { operation });
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+            observed = Some(result.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
+    let expected = Envelope::new(
+        1,
+        2,
+        0,
+        3,
+        Event::StationPauseCompleted(crate::StationPauseEvidence {
+            timings: None,
+            result: crate::StationPauseResult::Resumed,
+            elapsed_micros: 1500,
+            tracking: Some(crate::StationPhyTrackingEvidence {
+                inhibited: false,
+                common_calibrated: true,
+                wifi_calibrated: false,
+                bluetooth_ieee802154_calibrated: false,
+            }),
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn maximum_phy_timing_evidence_fits_existing_frame_and_round_trips() {
+    let waits = crate::PhyWaitTiming {
+        count: u16::MAX,
+        requested_micros: u32::MAX,
+        elapsed_micros: u32::MAX,
+        maximum_lateness_micros: u32::MAX,
+    };
+
+    let timing = crate::PhyOperationTiming {
+        started: u16::MAX,
+        completed: u16::MAX,
+        failed: u16::MAX,
+        elapsed_micros: u32::MAX,
+        maximum_micros: u32::MAX,
+    };
+    let polls = crate::PhyPollTiming {
+        pending: u32::MAX,
+        suspended_micros: u32::MAX,
+        maximum_suspension_micros: u32::MAX,
+        polls: u32::MAX,
+        elapsed_micros: u32::MAX,
+        maximum_micros: u32::MAX,
+    };
+    let expected = Envelope::new(
+        1,
+        2,
+        0,
+        3,
+        Event::StationPauseCompleted(crate::StationPauseEvidence {
+            timings: Some(crate::PhyTimingEvidence {
+                dcode_waits: crate::PhyDcodeWaitEvidence {
+                    i2c: crate::PhyBusWaitEvidence {
+                        bus_busy: u16::MAX,
+                        timing: waits,
+                    },
+                    rfpll_i2c: crate::PhyBusWaitEvidence {
+                        bus_busy: u16::MAX,
+                        timing: waits,
+                    },
+                    rfpll_settle: waits,
+                    pll_locked: u16::MAX,
+                    pll_unlocked: u16::MAX,
+                },
+                invalid: true,
+                dcode_polls: polls,
+                rx_gain_polls: polls,
+                tx_dc_pwdet_polls: polls,
+                rfpll: timing,
+                wifi_power: timing,
+                bluetooth_ieee802154_power: timing,
+                wifi_i2c: timing,
+                wifi_calibration: timing,
+                bluetooth_ieee802154_calibration: timing,
+                temperature: timing,
+                pbus_clear: timing,
+                dcode: timing,
+                rx_gain: timing,
+                channel_restore: timing,
+                force_tx_rx: timing,
+                tx_dc_pwdet: timing,
+                tx_gain_publication: timing,
+                frequency_settle: timing,
+            }),
+            tracking: Some(crate::StationPhyTrackingEvidence {
+                inhibited: false,
+                common_calibrated: true,
+                wifi_calibrated: true,
+                bluetooth_ieee802154_calibrated: true,
+            }),
+            result: crate::StationPauseResult::PhyTracking,
+            elapsed_micros: u64::MAX,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn maximum_tx_wait_detail_fits_separate_frame_and_round_trips() {
+    let wait = crate::PhyWaitTiming {
+        count: u16::MAX,
+        requested_micros: u32::MAX,
+        elapsed_micros: u32::MAX,
+        maximum_lateness_micros: u32::MAX,
+    };
+    let expected = Envelope::new(
+        1,
+        2,
+        0,
+        3,
+        Event::StationPhyTxWaits(crate::PhyTxWaitEvidence {
+            pbus: crate::PhyBusWaitEvidence {
+                bus_busy: u16::MAX,
+                timing: wait,
+            },
+            search: wait,
+            tone: wait,
+            sar: wait,
+            root: wait,
+            sar_ready: u16::MAX,
+            sar_not_ready: u16::MAX,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn maximum_timer_window_fits_its_own_frame() {
+    let timing = crate::TimerPhaseTiming {
+        count: u32::MAX,
+        total_micros: u64::MAX,
+        maximum_micros: u32::MAX,
+    };
+    let expected = Envelope::new(
+        1,
+        2,
+        0,
+        3,
+        Event::StationTimerObserved(crate::TimerWindowEvidence {
+            elapsed_micros: u64::MAX,
+            invalid: true,
+            registrations: u32::MAX,
+            due_at_registration: u32::MAX,
+            due_at_program_start: u32::MAX,
+            due_at_program_return: u32::MAX,
+            irq_ack: timing,
+            programming: timing,
+            alarm_to_irq: timing,
+            deadline_lateness: timing,
+            irq_to_dispatch: timing,
+            dispatch: timing,
+            interrupts: u32::MAX,
+            replaced: u32::MAX,
+            stopped: u32::MAX,
+            unmatched_interrupts: u32::MAX,
+            unmatched_dispatches: u32::MAX,
+            coalesced_interrupts: u32::MAX,
+            early_interrupts: u32::MAX,
+            armed_at_end: true,
+            irq_pending_at_end: true,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
 }

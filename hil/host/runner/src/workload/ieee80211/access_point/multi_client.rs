@@ -184,6 +184,17 @@ pub(super) fn qualify_multi_client_udp(
             ));
         }
     }
+    let mut probe_source = if config.probe_load {
+        Some(crate::fixture::probe_load::Source::prepare(
+            &crate::fixture::probe_load::model::Config {
+                ssid: context.lab.access_point.credentials().0.to_owned(),
+                channel: context.lab.access_point.channel(),
+            },
+            output,
+        )?)
+    } else {
+        None
+    };
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
@@ -221,6 +232,9 @@ pub(super) fn qualify_multi_client_udp(
         link_requirements: SessionLinkRequirements::NONE,
     })?;
 
+    if let Some(source) = probe_source.as_mut() {
+        source.start()?;
+    }
     let mut sender_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
     if target_receives(direction) {
         for (index, flow) in flows.iter().enumerate() {
@@ -292,6 +306,11 @@ pub(super) fn qualify_multi_client_udp(
         }
     }
 
+    if let Some(source) = probe_source
+        && let Err(error) = source.finish()
+    {
+        host_errors.push(format!("probe source: {error}"));
+    }
     let observed = MultiClientObservation {
         direction,
         duration,

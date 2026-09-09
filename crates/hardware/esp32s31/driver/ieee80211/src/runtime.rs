@@ -7,7 +7,7 @@ use oer_esp32s31_hal::{
     types::MacInterruptEnableState,
 };
 
-use oer_esp32s31_phy::{PhyCalibrationCache, PhyState};
+use oer_esp32s31_phy::{PhyCalibrationCache, RegisteredWifiPhy};
 
 use oer_esp32s31_wifi_mac::sta_ap_registers::disable_all_role_receive_registers;
 
@@ -30,7 +30,7 @@ pub struct WifiStopped<P> {
     platform: P,
     registers: RadioRuntimeOwner,
     interrupt_setup: MacInterruptSetup,
-    phy: PhyState,
+    phy: RegisteredWifiPhy,
     start_report: WifiMacStartReport,
     transition_report: WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
@@ -49,9 +49,114 @@ impl<P> WifiStopped<P> {
         self.current_channel
     }
 
+    pub const fn phy_client_snapshot(&self) -> oer_esp32s31_phy::state::client::PhyClientSnapshot {
+        self.phy.client_snapshot()
+    }
+
     /// Borrow the role-neutral radio state for stopped-only operations.
     pub fn radio_mut(&mut self) -> (oer_esp32s31_hal::ieee80211::mac::WifiMacHal<'_>, &mut P) {
         (self.registers.wifi_mac_hal(), &mut self.platform)
+    }
+
+    /// Service an elapsed PHY deadline while DMA and IRQ ownership is stopped.
+    ///
+    /// This consumes the frontier across every await. Failure or cancellation
+    /// cannot return a usable stopped owner; reset is required. It does not
+    /// stop an active role, wait for a future deadline or restart the MAC.
+    pub async fn maintain_phy<
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        O: oer_esp32s31_phy::PhyTargetObserver,
+    >(
+        self,
+        clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
+        observer: O,
+    ) -> Result<
+        (
+            Self,
+            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+        ),
+        WifiMaintenanceFailure<P>,
+    > {
+        let Self {
+            mut platform,
+            registers,
+            interrupt_setup,
+            phy,
+            start_report,
+            transition_report,
+            current_channel,
+        } = self;
+        let access = match registers.try_into_phy_maintenance(interrupt_setup) {
+            Ok(access) => access,
+            Err(failure) => {
+                return Err(WifiMaintenanceFailure {
+                    error: WifiMaintenanceError::Admission(failure.error),
+                    _owner: MaintenanceOwner::Stopped {
+                        _owner: Self {
+                            platform,
+                            registers: failure.registers,
+                            interrupt_setup: failure.interrupts,
+                            phy,
+                            start_report,
+                            transition_report,
+                            current_channel,
+                        },
+                    },
+                });
+            }
+        };
+        let (phy, mut access, outcome) = match phy
+            .maintain::<_, D, _, _>(
+                &mut platform,
+                access,
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::Track,
+                clock,
+                observer,
+            )
+            .await
+        {
+            Ok(success) => success,
+            Err(failure) => {
+                return Err(WifiMaintenanceFailure {
+                    error: WifiMaintenanceError::Phy(failure.error()),
+                    _owner: MaintenanceOwner::FailedPhy {
+                        _platform: platform,
+                        _phy: failure,
+                    },
+                });
+            }
+        };
+        if outcome.is_some() {
+            // Tracking may restore baseband enables. Never resume RX or
+            // publish DMA here: the next role owns those transitions.
+            disable_all_role_receive_registers(&mut access.wifi_mac_hal());
+            access.wifi_mac_hal().request_channel_stop();
+        }
+        let (registers, interrupt_setup) = match access.try_release() {
+            Ok(parts) => parts,
+            Err(failure) => {
+                return Err(WifiMaintenanceFailure {
+                    error: WifiMaintenanceError::Restoration(failure.error),
+                    _owner: MaintenanceOwner::FailedRestoration {
+                        _platform: platform,
+                        _phy: phy,
+                        _access: failure,
+                    },
+                });
+            }
+        };
+        Ok((
+            Self {
+                platform,
+                registers,
+                interrupt_setup,
+                phy,
+                start_report,
+                transition_report,
+                current_channel,
+            },
+            outcome,
+        ))
     }
 
     /// Move the exact common ownership frontier into one role runtime.
@@ -91,14 +196,14 @@ pub struct WifiRuntimeParts<P> {
 /// route returns the exact [`MacInterruptSetup`].
 #[doc(hidden)]
 pub struct WifiRuntimeContext {
-    phy: PhyState,
+    phy: RegisteredWifiPhy,
     start_report: WifiMacStartReport,
     transition_report: WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
 }
 
 impl WifiRuntimeContext {
-    pub fn phy_mut(&mut self) -> &mut PhyState {
+    pub fn phy_mut(&mut self) -> &mut RegisteredWifiPhy {
         &mut self.phy
     }
 
@@ -142,6 +247,69 @@ pub struct WifiRoleOwner<P> {
 }
 
 impl<P> WifiRoleOwner<P> {
+    /// Service due PHY tracking while the outer role graph remains paused.
+    ///
+    /// Consumes the logical radio owner together with admitted physical access.
+    /// The caller retains paused RX/TX resources and the detached IRQ route;
+    /// neither failure nor cancellation returns a role which can be restarted.
+    /// Success still requires MAC restoration and checked access release before
+    /// arena publication, RX restoration or IRQ resume. In particular this does
+    /// not apply the stopped-role policy which disables both receive interfaces.
+    pub async fn maintain_phy<
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        O: oer_esp32s31_phy::PhyTargetObserver,
+        I: oer_esp32s31_hal::owner::maintenance::InterruptAuthority,
+    >(
+        self,
+        access: oer_esp32s31_hal::owner::maintenance::WifiAccess<I>,
+        request: oer_esp32s31_phy::WifiPhyMaintenanceRequest,
+        clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
+        observer: O,
+    ) -> Result<
+        (
+            Self,
+            oer_esp32s31_hal::owner::maintenance::WifiAccess<I>,
+            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+        ),
+        WifiRoleMaintenanceFailure<P, I>,
+    > {
+        let Self {
+            mut platform,
+            context:
+                WifiRuntimeContext {
+                    phy,
+                    start_report,
+                    transition_report,
+                    current_channel,
+                },
+        } = self;
+        match phy
+            .maintain::<_, D, _, _>(&mut platform, access, request, clock, observer)
+            .await
+        {
+            Ok((phy, access, outcome)) => Ok((
+                Self {
+                    platform,
+                    context: WifiRuntimeContext {
+                        phy,
+                        start_report,
+                        transition_report,
+                        current_channel,
+                    },
+                },
+                access,
+                outcome,
+            )),
+            Err(phy) => Err(WifiRoleMaintenanceFailure {
+                _platform: platform,
+                _start_report: start_report,
+                _transition_report: transition_report,
+                _current_channel: current_channel,
+                phy,
+            }),
+        }
+    }
+
     pub const fn start_report(&self) -> WifiMacStartReport {
         self.context.start_report
     }
@@ -150,7 +318,7 @@ impl<P> WifiRoleOwner<P> {
         self.context.transition_report
     }
 
-    pub fn radio_mut(&mut self) -> (&mut PhyState, &mut P) {
+    pub fn radio_mut(&mut self) -> (&mut RegisteredWifiPhy, &mut P) {
         (self.context.phy_mut(), &mut self.platform)
     }
 
@@ -189,6 +357,28 @@ impl<P> WifiRoleOwner<P> {
                 .into_stopped(self.platform, registers, interrupt_setup),
             resources,
         }
+    }
+}
+
+/// Logical role context and failed physical maintenance, retained until reset.
+/// No mutable PHY borrow, interrupt capability or role owner can be extracted.
+#[must_use = "failed role maintenance retains physical ownership until reset"]
+pub struct WifiRoleMaintenanceFailure<
+    P,
+    I: oer_esp32s31_hal::owner::maintenance::InterruptAuthority,
+> {
+    _platform: P,
+    _start_report: WifiMacStartReport,
+    _transition_report: WifiRuntimeTransitionReport,
+    _current_channel: WifiChannel,
+    phy: oer_esp32s31_phy::WifiPhyMaintenanceFailure<I>,
+}
+
+impl<P, I: oer_esp32s31_hal::owner::maintenance::InterruptAuthority>
+    WifiRoleMaintenanceFailure<P, I>
+{
+    pub const fn error(&self) -> oer_esp32s31_phy::WifiPhyMaintenanceError {
+        self.phy.error()
     }
 }
 
@@ -237,8 +427,8 @@ pub struct WifiRuntimeStart<P> {
 
 pub fn enter_esp32s31_wifi_runtime<P>(mut mac: WifiMacReady<P>) -> WifiRuntimeStart<P> {
     let cold_interrupt_mask = { mac.radio_mut().close_cold_interrupt_phase() };
-    let (radio, phy, calibration_cache, start_report) = mac.into_parts();
-    let (platform, mut registers, interrupt_setup) = radio.into_running().into_runtime_parts();
+    let (radio, calibration_cache, start_report) = mac.into_parts();
+    let (platform, mut registers, interrupt_setup, phy) = radio.into_wifi_runtime_parts();
     // Cold `wifi_set_rx_policy(0)` first publishes both interface addresses,
     // then disables their receive policies. Our cold address transaction is
     // already complete; finish that exact role-neutral suffix before exposing
@@ -266,5 +456,43 @@ pub fn enter_esp32s31_wifi_runtime<P>(mut mac: WifiMacReady<P>) -> WifiRuntimeSt
             current_channel,
         },
         calibration_cache,
+    }
+}
+
+/// Failure reason without exposing a reusable hardware owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiMaintenanceError {
+    Admission(oer_esp32s31_hal::owner::maintenance::Error),
+    Restoration(oer_esp32s31_hal::owner::maintenance::Error),
+    Phy(oer_esp32s31_phy::WifiPhyMaintenanceError),
+}
+
+#[allow(
+    clippy::large_enum_variant,
+    reason = "allocation-free failure retains the physical epoch"
+)]
+enum MaintenanceOwner<P> {
+    Stopped {
+        _owner: WifiStopped<P>,
+    },
+    FailedPhy {
+        _platform: P,
+        _phy: oer_esp32s31_phy::WifiPhyMaintenanceFailure,
+    },
+    FailedRestoration {
+        _platform: P,
+        _phy: RegisteredWifiPhy,
+        _access: oer_esp32s31_hal::owner::maintenance::ReleaseFailure,
+    },
+}
+
+#[must_use = "maintenance failure retains the physical radio and requires reset"]
+pub struct WifiMaintenanceFailure<P> {
+    _owner: MaintenanceOwner<P>,
+    error: WifiMaintenanceError,
+}
+impl<P> WifiMaintenanceFailure<P> {
+    pub const fn error(&self) -> WifiMaintenanceError {
+        self.error
     }
 }

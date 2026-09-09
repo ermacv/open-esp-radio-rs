@@ -205,6 +205,7 @@ pub(super) fn publish_access_point_observation(
         tx_ack_timeout_retries: mac.data_tx.ack_timeout_retries,
         tx_cts_timeout_retries: mac.data_tx.cts_timeout_retries,
         tx_collision_retries: mac.data_tx.collision_retries,
+        tx_probe_ack_timeouts: mac.tx_failures.probe_ack_timeouts,
         tx_hardware_failures: mac.tx_failures.hardware_failures,
         tx_hardware_timeouts: mac.tx_failures.hardware_timeouts,
         tx_collision_limits: mac.tx_failures.collision_limits,

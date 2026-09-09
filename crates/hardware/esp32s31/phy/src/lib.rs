@@ -27,6 +27,10 @@ pub mod tx;
 
 mod registered_bluetooth;
 mod registered_radio;
+mod registered_wifi;
+pub use registered_wifi::{RegisteredWifiPhy, WifiPhyMaintenanceRequest};
+#[cfg(target_arch = "riscv32")]
+pub use registered_wifi::{WifiPhyMaintenanceError, WifiPhyMaintenanceFailure};
 mod size_limits;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
@@ -87,5 +91,6 @@ pub use target_port::{
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
     run_target_ieee802154_phy_param_tracking, run_target_ieee802154_phy_register,
     run_target_phy_param_tracking, run_target_phy_register, select_phy_channel_with_hal,
-    switch_phy_channel_with_hal_and_mac_restart,
+    select_registered_wifi_channel, switch_phy_channel_with_hal_and_mac_restart,
+    switch_registered_wifi_channel,
 };

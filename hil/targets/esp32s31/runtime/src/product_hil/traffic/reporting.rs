@@ -56,6 +56,7 @@ pub(in crate::product_hil) fn aggregate_tx_evidence(
     let radio = RadioEvidence {
         rx: None,
         tx: Some(TxRadioEvidence {
+            station_terminal: aggregate.station_terminal,
             bandwidth_mhz: u16::try_from(aggregate.last_bandwidth_mhz).unwrap_or(u16::MAX),
             aggregate_rate_kbps: aggregate.last_nominal_rate_kbps,
             aggregates_prepared: aggregate.aggregates_prepared,

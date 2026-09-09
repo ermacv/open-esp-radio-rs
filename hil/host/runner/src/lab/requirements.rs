@@ -19,6 +19,8 @@ pub(crate) struct Requirements {
     pub(crate) openwrt_client: bool,
     pub(crate) openwrt_tx_monitor: bool,
     pub(crate) laptop_air_monitor: bool,
+    #[serde(default)]
+    pub(crate) probe_load: bool,
 }
 
 impl Requirements {
@@ -38,7 +40,10 @@ impl Requirements {
                 required.station_udp_rx_capture = *direction != Direction::Tx;
                 required.station_udp_tx_capture = *direction != Direction::Rx;
             }
-            Workload::AccessPoint { client, .. } => {
+            Workload::AccessPoint {
+                client, probe_load, ..
+            } => {
+                required.probe_load = *probe_load;
                 required.laptop_client = *client == AccessPointClient::Laptop;
                 required.openwrt_client = *client == AccessPointClient::OpenWrt
                     || scenario.criteria.minimum_concurrent_ap_clients.unwrap_or(1) >= 2;
@@ -63,7 +68,8 @@ impl Requirements {
                 | Workload::StationApAbsence { .. }
                 | Workload::StationAccessPointReconnect { .. }
         );
-        required.openwrt_tx_monitor = scenario.evidence.openwrt_tx_monitor_rx;
+        required.openwrt_tx_monitor =
+            scenario.evidence.openwrt_tx_monitor_rx || required.probe_load;
         required.laptop_air_monitor = scenario.evidence.independent_laptop_air_monitor;
         required
     }
@@ -81,6 +87,7 @@ impl Requirements {
             required.openwrt_client |= next.openwrt_client;
             required.openwrt_tx_monitor |= next.openwrt_tx_monitor;
             required.laptop_air_monitor |= next.laptop_air_monitor;
+            required.probe_load |= next.probe_load;
         }
         required
     }

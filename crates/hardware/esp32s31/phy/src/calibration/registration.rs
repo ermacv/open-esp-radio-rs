@@ -2,8 +2,9 @@
 //!
 //! The pinned archive parent is 486 bytes. Persistence remains outside the
 //! radio driver: callers may provide and retrieve a typed calibration cache,
-//! while this transition owns validation, recovery and fallback to full
-//! calibration. All retained radio work is represented by owned state plus
+//! while this transition owns validation and full calibration. Hardware cache
+//! replay is not implemented: supplying a cache still selects full calibration.
+//! All retained radio work is represented by owned state plus
 //! one externally completed MMIO, PHY-I2C, timer or observation edge.
 
 pub const PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT: u16 = 1_000;
@@ -284,11 +285,6 @@ impl RegisteredPhyState {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_state_mut(&mut self) -> &mut crate::state::PhyState {
         &mut self.state
-    }
-
-    /// Consume the proof at a crate-controlled legacy downgrade boundary.
-    pub(crate) fn into_ordinary_state(self) -> crate::state::PhyState {
-        self.state
     }
 
     /// Build an internal wrapper fixture without adding a production mint path.

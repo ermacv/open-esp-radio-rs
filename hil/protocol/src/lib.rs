@@ -15,6 +15,11 @@ pub use bluetooth::{
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;
+mod phy;
+pub use phy::{
+    PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyTimingEvidence,
+    PhyTxWaitEvidence, PhyWaitTiming,
+};
 mod memory_benchmark;
 mod message;
 mod wifi_airtime;
@@ -53,7 +58,8 @@ pub use message::{
     SessionLinkRequirements, SessionReady, SessionState, StackUsage, StackWatermark,
     StartupArtifactChunk, StartupArtifactChunkError, StartupArtifactDisposition,
     StartupArtifactStatus, StateChange, StationAttemptFailureReason, StationDisconnectReason,
-    StationEpochEvidence, StationFailureStage, StationLifecycleEvent, TimebaseProbeEvidence,
+    StationEpochEvidence, StationFailureStage, StationLifecycleEvent, StationPauseEvidence,
+    StationPauseOperation, StationPauseResult, StationPhyTrackingEvidence, TimebaseProbeEvidence,
     TimebaseProbeRequest, Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
     WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
     WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
@@ -68,3 +74,8 @@ pub use message::{
     WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};
+
+pub use message::StationTxTerminalEvidence;
+
+mod timer;
+pub use timer::{TimerPhaseTiming, TimerWindowEvidence};

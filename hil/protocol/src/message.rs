@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 92;
+pub const PROTOCOL_VERSION: u16 = 107;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -328,6 +328,8 @@ pub struct FeatureCapabilities {
     /// This image can stop one healthy connected STA epoch at a safe runner
     /// boundary and use the returned owners to exercise reassociation.
     pub station_epoch_control: bool,
+    /// Explicit same-connection MAC/RX/IRQ pause without recalibration.
+    pub station_pause: bool,
     /// This image exposes explicit role-neutral Wi-Fi lifecycle commands.
     pub wifi_role_control: bool,
     /// This image can materialize and stop the bounded WPA2-Personal access
@@ -1112,6 +1114,58 @@ pub enum Command {
     /// Explicitly discard a terminal result and return to idle ownership.
     Recover,
     AcknowledgeResult,
+    /// Pause/resume the connected station, including during an active session.
+    PauseStation {
+        operation: StationPauseOperation,
+    },
+}
+
+/// Work performed while the connected station retains its paused epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StationPauseOperation {
+    Access,
+    Tracking,
+    Calibration,
+}
+
+/// Outcome of a correlated physical pause round trip. Busy is not success.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationPauseResult {
+    Resumed,
+    Unavailable,
+    Busy,
+    Interrupted,
+    MacStop,
+    RxBusy,
+    RxPause,
+    IrqPause,
+    RxResume,
+    IrqResume,
+    RegisterReclaim,
+    PhyAdmission,
+    PhyRelease,
+    RegisterRepublish,
+    PhyTracking,
+    MacRestoration,
+    ReceivePolicyChanged,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationPhyTrackingEvidence {
+    pub inhibited: bool,
+    pub common_calibrated: bool,
+    pub wifi_calibrated: bool,
+    pub bluetooth_ieee802154_calibrated: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationPauseEvidence {
+    /// None when timing observers are unavailable or no physical report returned.
+    pub timings: Option<crate::PhyTimingEvidence>,
+    pub tracking: Option<StationPhyTrackingEvidence>,
+    pub result: StationPauseResult,
+    pub elapsed_micros: u64,
 }
 
 impl WireBody for Command {
@@ -1664,6 +1718,8 @@ pub struct WifiAccessPointEvidence {
     pub tx_ack_timeout_retries: u32,
     pub tx_cts_timeout_retries: u32,
     pub tx_collision_retries: u32,
+    /// Subset of tx_hardware_failures: one-attempt probe responses without ACK.
+    pub tx_probe_ack_timeouts: u8,
     pub tx_hardware_failures: u8,
     pub tx_hardware_timeouts: u8,
     pub tx_collision_limits: u8,
@@ -1970,6 +2026,9 @@ pub struct RxRadioEvidence {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TxRadioEvidence {
+    /// Station-only terminal receipts within the snapshot interval. These do
+    /// not include live or quarantined exchanges, nor prove UDP host delivery.
+    pub station_terminal: StationTxTerminalEvidence,
     pub bandwidth_mhz: u16,
     pub aggregate_rate_kbps: u32,
     pub aggregates_prepared: u32,
@@ -2261,6 +2320,9 @@ pub enum Event {
     Failed(FailureCode),
     StartupArtifactReady(StartupArtifactStatus),
     StartupArtifact(StartupArtifactChunk),
+    StationPauseCompleted(StationPauseEvidence),
+    StationPhyTxWaits(crate::PhyTxWaitEvidence),
+    StationTimerObserved(crate::TimerWindowEvidence),
 }
 
 impl WireBody for Event {
@@ -2269,3 +2331,17 @@ impl WireBody for Event {
 
 #[cfg(test)]
 mod tests;
+
+/// Logical station A-MPDU results after all aggregate and detached retries.
+/// An unacknowledged MPDU may still have arrived when its ACK was lost.
+/// Snapshots are not a drain barrier and exclude unfinished exchanges.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationTxTerminalEvidence {
+    pub exchanges: u32,
+    pub mpdus: u32,
+    pub acknowledged: u32,
+    pub unacknowledged: u32,
+    pub ordinary_recovered: u32,
+    pub ordinary_failed: u32,
+    pub invalid_statuses: u32,
+}

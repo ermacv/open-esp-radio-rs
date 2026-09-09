@@ -1,0 +1,85 @@
+schema = 3
+default-disposition = "not-yet-ported"
+default-protocol = "shared"
+
+[[functions]]
+source = "phy-current"
+symbol = "phy_txgain_comp_pacfg_new"
+disposition = "bounded-feature"
+protocol = "shared"
+rust-component = "oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_phy_calibration_trace_restore_tx_gain_compensation"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+compare-return = false
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100410 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20100410 }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "phy-current"
+symbol = "phy_force_dig_gain"
+disposition = "direct"
+protocol = "shared"
+rust-component = "oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_phy_calibration_trace_force_digital_gain"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+compare-return = false
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100408 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20100408 }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "phy-current"
+symbol = "phy_temp_to_power_new"
+disposition = "direct"
+protocol = "shared"
+rust-component = "oer_esp32s31_phy::tracking::parameters::temperature_to_tracking_power"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_phy_calibration_trace_temperature_to_power"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+compare-return = true
+
+[[functions]]
+source = "phy-current"
+symbol = "phy_reg_update_new"
+disposition = "direct"
+protocol = "shared"
+rust-component = "oer_esp32s31_hal::phy::agc::update_post_initialization"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_phy_calibration_trace_post_init_agc"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+compare-return = false
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010705c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010705c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20107104 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20107104 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201078c8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201078c8 }
+disposition = { kind = "required" }

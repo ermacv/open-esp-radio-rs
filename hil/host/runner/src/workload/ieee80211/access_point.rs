@@ -68,6 +68,7 @@ const TCP_PORT: u16 = 4_325;
 
 #[derive(Clone)]
 pub(crate) struct Config {
+    pub(crate) probe_load: bool,
     pub(crate) cycles: u8,
     pub(crate) boots: u8,
     pub(crate) timeout: Duration,
@@ -217,11 +218,8 @@ fn qualify(
         // Client setup enables external scanning. It is admitted only after
         // the matching device start completion and validated role transition.
         let clients = match connect_clients(
-            config.client,
-            config.security,
+            config,
             minimum_clients,
-            config.openwrt_client_fixed_ht_mcs,
-            config.openwrt_client_fixed_guard_interval,
             context,
             &output.join(format!("cycle-{cycle:02}")),
         ) {
@@ -295,6 +293,19 @@ fn qualify(
         // disassociation/deauthentication teardown.
         let stop_result = stop_access_point(capture, config.timeout, started.generation, context);
         let client_restore = restore_clients(clients);
+        let mut progress = progress::CycleProgress::new(cycle);
+        progress.record("client_restore", &client_restore);
+        let probe_air = if config.probe_load {
+            crate::fixture::probe_load::verify_air(&air_output)
+        } else {
+            Ok(())
+        };
+        progress.record("probe_air", &probe_air);
+        let client_restore = match (client_restore, probe_air) {
+            (Ok(()), result) => result,
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(air)) => Err(format!("{error}; probe air evidence: {air}").into()),
+        };
         let stop_stack_result = if stop_result.is_ok() {
             report_stack(capture, config.timeout, "ap-stopped")
         } else {
@@ -306,7 +317,6 @@ fn qualify(
             Ok(())
         };
 
-        let mut progress = progress::CycleProgress::new(cycle);
         progress.record("traffic", &data_result);
         progress.record("primary_client_link", &primary_link_result);
         progress.record("secondary_client_link", &secondary_link_result);
@@ -322,7 +332,6 @@ fn qualify(
                 .as_ref()
                 .map(|stopped| config.require_driver_observation.then_some(stopped)),
         );
-        progress.record("client_restore", &client_restore);
         progress.record("stop_stack", &stop_stack_result);
         progress.record("station_restart", &restart_result);
         progress.save(&air_output)?;
@@ -552,8 +561,11 @@ fn validate_access_point_observation(
             // conditional on their ACKs. Our owner waits for each terminal
             // DMA outcome, but an unacknowledged disconnect is expected once
             // the client has already left. No other terminal TX failure is
-            // accepted by this gate.
-            || u32::from(stopped.tx_hardware_failures) != unacknowledged_disconnects
+            // accepted by this gate except explicitly counted one-shot probe
+            // ACK misses. Discovery is best-effort; timeout/collision and
+            // unclassified failures remain fatal. Saturated totals are unknown.
+            || !tx_failures_reconciled(stopped.tx_hardware_failures,
+                stopped.tx_probe_ack_timeouts, unacknowledged_disconnects)
             || stopped.tx_hardware_timeouts != 0
             || stopped.tx_collision_limits != 0
             || stopped.control_frames_dropped_while_busy != 0
@@ -566,6 +578,10 @@ fn validate_access_point_observation(
         );
     }
     Ok(())
+}
+
+fn tx_failures_reconciled(total: u8, probe_ack_timeouts: u8, disconnects: u32) -> bool {
+    total != u8::MAX && u32::from(total) == u32::from(probe_ack_timeouts) + disconnects
 }
 
 fn validate_rx_hardware_health(

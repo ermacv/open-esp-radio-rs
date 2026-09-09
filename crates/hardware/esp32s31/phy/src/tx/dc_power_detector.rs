@@ -720,7 +720,7 @@ impl PhyTxDcPwdetTransition {
                 2,
                 TX_BB_GAIN[self.row as usize],
             )),
-            RootStep::Search(transition) => PhyTxDcPwdetAction::Search(transition.action()),
+            RootStep::Search(ref transition) => PhyTxDcPwdetAction::Search(transition.action()),
             RootStep::CleanupDco { index, .. } => PhyTxDcPwdetAction::ForcePbus(default_dco(index)),
             RootStep::ToneOff(_) => PhyTxDcPwdetAction::ConfigureTone {
                 enabled: false,
@@ -857,7 +857,7 @@ impl PhyTxDcPwdetTransition {
         &mut self,
         completion: PhyTxDcPwdetCompletion,
     ) -> Result<(), PhyTxDcPwdetTransitionError> {
-        match (self.step, completion) {
+        match (&mut self.step, completion) {
             (RootStep::Prepare, PhyTxDcPwdetCompletion::RegistersPrepared) => {
                 self.step = RootStep::ClockOn;
             }
@@ -896,27 +896,22 @@ impl PhyTxDcPwdetTransition {
                     value,
                 },
             ) => self.step = RootStep::BluetoothForcePath { value },
-            (RootStep::Search(mut transition), PhyTxDcPwdetCompletion::Search(completion)) => {
+            (RootStep::Search(transition), PhyTxDcPwdetCompletion::Search(completion)) => {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyTxDcPwdetTransitionError::WrongCompletion)?;
                 if let Some(failure) = transition.failure() {
                     self.fail(PhyTxDcPwdetFailure::Search(failure));
-                } else {
-                    match transition.action() {
-                        PhyTxDcPwdetSearchAction::Complete(outcome) => {
-                            self.dco[self.row as usize] = outcome.dco;
-                            self.total_measurements = self
-                                .total_measurements
-                                .wrapping_add(u16::from(outcome.measurements));
-                            self.row += 1;
-                            if self.row == 3 {
-                                self.cleanup(RootTerminal::Complete);
-                            } else {
-                                self.step = RootStep::ForceTxPath;
-                            }
-                        }
-                        _ => self.step = RootStep::Search(transition),
+                } else if let PhyTxDcPwdetSearchAction::Complete(outcome) = transition.action() {
+                    self.dco[self.row as usize] = outcome.dco;
+                    self.total_measurements = self
+                        .total_measurements
+                        .wrapping_add(u16::from(outcome.measurements));
+                    self.row += 1;
+                    if self.row == 3 {
+                        self.cleanup(RootTerminal::Complete);
+                    } else {
+                        self.step = RootStep::ForceTxPath;
                     }
                 }
             }
@@ -927,47 +922,47 @@ impl PhyTxDcPwdetTransition {
                     selector: 0x80,
                     attenuation: 0x78,
                 },
-            ) => self.step = RootStep::WorkMode(terminal),
+            ) => self.step = RootStep::WorkMode(*terminal),
             (
                 RootStep::WorkMode(terminal),
                 PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
                     settle_required: false,
                 },
-            ) => self.step = RootStep::ClockOff(terminal),
+            ) => self.step = RootStep::ClockOff(*terminal),
             (
                 RootStep::WorkMode(terminal),
                 PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
                     settle_required: true,
                 },
-            ) => self.step = RootStep::WorkModeDelay(terminal),
+            ) => self.step = RootStep::WorkModeDelay(*terminal),
             (
                 RootStep::WorkModeDelay(terminal),
                 PhyTxDcPwdetCompletion::DelayElapsed {
                     phase: PhyTxDcPwdetDelayPhase::WorkMode,
                     micros: 1,
                 },
-            ) => self.step = RootStep::WorkModePulse(terminal),
+            ) => self.step = RootStep::WorkModePulse(*terminal),
             (
                 RootStep::WorkModePulse(terminal),
                 PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured,
-            ) => self.step = RootStep::WorkModePulseDelay(terminal),
+            ) => self.step = RootStep::WorkModePulseDelay(*terminal),
             (
                 RootStep::WorkModePulseDelay(terminal),
                 PhyTxDcPwdetCompletion::DelayElapsed {
                     phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
                     micros: 2,
                 },
-            ) => self.step = RootStep::WorkModePulseClear(terminal),
+            ) => self.step = RootStep::WorkModePulseClear(*terminal),
             (
                 RootStep::WorkModePulseClear(terminal),
                 PhyTxDcPwdetCompletion::PbusWorkModePulseCleared,
-            ) => self.step = RootStep::ClockOff(terminal),
+            ) => self.step = RootStep::ClockOff(*terminal),
             (
                 RootStep::ClockOff(terminal),
                 PhyTxDcPwdetCompletion::TxClockConfigured { enabled: false },
-            ) => self.step = RootStep::Restore(terminal),
+            ) => self.step = RootStep::Restore(*terminal),
             (RootStep::Restore(terminal), PhyTxDcPwdetCompletion::RegistersRestored) => {
-                self.step = match terminal {
+                self.step = match *terminal {
                     RootTerminal::Complete => RootStep::Complete,
                     RootTerminal::Failed(failure) => RootStep::Failed(failure),
                 };

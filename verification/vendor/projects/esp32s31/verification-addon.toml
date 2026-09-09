@@ -380,3 +380,18 @@ match-floor = 1
 [[suites.vendor]]
 source = "archive"
 symbols = ["phy_get_i2c_hostid_new"]
+
+# Current archive calibration leaves are independent of the original rev0 inventory.
+[[suites]]
+id = "phy-calibration-leaves"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_phy_calibration_trace_"
+profiles = ["profiles/phy-calibration-leaves.toml"]
+dispositions = ["dispositions/phy-calibration-leaves.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "phy-current"
+artifact-sha256 = "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580"
+companion-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+symbols = ["phy_txgain_comp_pacfg_new", "phy_force_dig_gain", "phy_temp_to_power_new", "phy_reg_update_new"]

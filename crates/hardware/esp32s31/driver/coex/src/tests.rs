@@ -2,6 +2,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::*;
 
+mod failure;
+
 type OperationTrace = Rc<RefCell<std::vec::Vec<&'static str>>>;
 
 #[derive(Default)]

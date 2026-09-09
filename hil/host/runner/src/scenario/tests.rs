@@ -946,3 +946,50 @@ fn bluetooth_dtm_is_bounded_and_requires_its_own_image() {
         assert!(scenario.validate().is_err());
     }
 }
+
+#[test]
+fn pause_round_trip_is_explicit_and_rejects_unsupported_direction_or_short_window() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog.get("diagnostic-station-pause").unwrap().clone();
+    assert!(scenario.validate().is_ok());
+    if let Workload::Udp { direction, .. } = &mut scenario.workload {
+        *direction = Direction::Rx;
+    }
+    assert!(scenario.validate().is_err());
+    if let Workload::Udp {
+        direction,
+        duration_seconds,
+        ..
+    } = &mut scenario.workload
+    {
+        *direction = Direction::Tx;
+        *duration_seconds = 8;
+    }
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn calibration_scenario_selects_explicit_work_and_rejects_receive_only() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-phy-calibration")
+        .unwrap()
+        .clone();
+    assert!(scenario.validate().is_ok());
+    let Workload::Udp {
+        station_pause,
+        direction,
+        ..
+    } = &mut scenario.workload
+    else {
+        panic!("UDP")
+    };
+    assert_eq!(
+        *station_pause,
+        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+    );
+    *direction = Direction::Rx;
+    assert!(scenario.validate().is_err());
+}

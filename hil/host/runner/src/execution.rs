@@ -137,6 +137,7 @@ fn execute_workload_inner(
             rx_rate_bps,
             tx_rate_bps,
             payload_bytes,
+            station_pause,
         } => {
             let duration = Duration::from_secs(u64::from(*duration_seconds));
             let payload = usize::from(*payload_bytes);
@@ -193,6 +194,7 @@ fn execute_workload_inner(
                         }
                     };
                     let config = traffic::tx_traffic::Config {
+                        station_pause: *station_pause,
                         duration,
                         payload,
                         bandwidth_mhz,
@@ -407,6 +409,7 @@ fn execute_workload_inner(
             )
         }
         Workload::AccessPoint {
+            probe_load,
             cycles,
             boots,
             timeout_seconds,
@@ -415,6 +418,7 @@ fn execute_workload_inner(
             traffic,
         } => crate::workload::ieee80211::access_point::run(
             crate::workload::ieee80211::access_point::Config {
+                probe_load: *probe_load,
                 cycles: *cycles,
                 boots: *boots,
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),

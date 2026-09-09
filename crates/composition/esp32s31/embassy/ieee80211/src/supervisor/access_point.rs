@@ -241,7 +241,12 @@ impl ProductionWifiEpochRunner {
             board,
             station_address,
         } = station;
-        let power = materialized.owner.radio_mut().0.tx_target_power_profile();
+        let power = materialized
+            .owner
+            .radio_mut()
+            .0
+            .state()
+            .tx_target_power_profile();
         let tx_epoch = self.initialize_tx_epoch(tx, power);
         let ring = match rx_ring {
             Some(ring) => ring,

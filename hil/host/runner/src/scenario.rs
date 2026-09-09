@@ -175,6 +175,8 @@ pub enum Workload {
     },
     Udp {
         direction: Direction,
+        #[serde(default)]
+        station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
         duration_seconds: u16,
         rx_rate_bps: Option<u64>,
         tx_rate_bps: Option<u64>,
@@ -218,6 +220,8 @@ pub enum Workload {
         snapshot_length: u16,
     },
     AccessPoint {
+        #[serde(default)]
+        probe_load: bool,
         cycles: u8,
         boots: u8,
         timeout_seconds: u16,

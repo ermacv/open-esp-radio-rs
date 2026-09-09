@@ -67,6 +67,19 @@ use oer_esp32s31_hal::owner::SharedPhyAccess;
 /// hardware timer without storing an executor object in the radio owner.
 pub trait PhyAsyncDelay {
     fn after_micros(micros: u64) -> impl Future<Output = ()>;
+
+    /// Optional measurement against the timer's own deadline. Unsupported
+    /// backends say so explicitly; they still execute their original delay.
+    fn after_micros_observed(
+        micros: u64,
+        enabled: bool,
+        mut observe: impl FnMut(crate::executor::wait::Event),
+    ) -> impl Future<Output = ()> {
+        if enabled {
+            observe(crate::executor::wait::Event::Unsupported);
+        }
+        Self::after_micros(micros)
+    }
 }
 
 /// Failure while completing a finite target PHY hardware operation.
@@ -122,22 +135,25 @@ pub async fn complete_final_i2c<D: PhyAsyncDelay>(
 
 macro_rules! define_i2c_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
-        pub async fn $function<D: PhyAsyncDelay>(
+        pub async fn $function<F: Future<Output = ()>>(
             mut binding: $binding,
             registers: &mut impl SharedPhyAccess,
+            mut delay: impl FnMut(crate::executor::wait::Kind, u64) -> F,
         ) -> Result<$completion, PhyTargetPortError> {
             for _ in 0..HARDWARE_EDGE_LIMIT {
                 match binding.action() {
                     PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
                         match binding.start_target(registers) {
                             Ok(()) => {}
-                            Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                            Err(PhyColdI2cError::BusyAtStart) => {
+                                delay(crate::executor::wait::Kind::BusBusy, 1).await
+                            }
                             Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
                         }
                     }
                     PhyColdI2cAction::AwaitReadCompletionEdge { .. }
                     | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        D::after_micros(1).await;
+                        delay(crate::executor::wait::Kind::Completion, 1).await;
                         match binding
                             .observe_target_edge(registers)
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -200,9 +216,10 @@ macro_rules! define_pbus_executor {
 // polling bound or turn the recovered fallback path into an executor error.
 macro_rules! define_timeout_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
-        pub async fn $function<D: PhyAsyncDelay>(
+        pub async fn $function<F: Future<Output = ()>>(
             mut binding: $binding,
             registers: &mut impl SharedPhyAccess,
+            mut delay: impl FnMut(crate::executor::wait::Kind, u64) -> F,
         ) -> Result<$completion, PhyTargetPortError> {
             let mut started = false;
             for _ in 0..HARDWARE_EDGE_LIMIT {
@@ -210,14 +227,14 @@ macro_rules! define_timeout_pbus_executor {
                     started = true;
                     break;
                 }
-                D::after_micros(1).await;
+                delay(crate::executor::wait::Kind::BusBusy, 1).await;
             }
             if !started {
                 return Ok(binding.into_timeout_completion());
             }
 
             for _ in 0..HARDWARE_EDGE_LIMIT {
-                D::after_micros(1).await;
+                delay(crate::executor::wait::Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?

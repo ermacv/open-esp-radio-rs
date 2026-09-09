@@ -1237,6 +1237,7 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "pin-project-lite",
 ]
 
 [[package]]

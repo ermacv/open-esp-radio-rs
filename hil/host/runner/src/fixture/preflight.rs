@@ -16,6 +16,14 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         return Err(super::Error::new(failure.message).into());
     }
     let required = Requirements::for_scenario(scenario);
+    if required.probe_load {
+        if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
+            return Err(
+                super::Error::new("probe load requires cargo hil fixture install-host").into(),
+            );
+        }
+        crate::image::require_program(std::ffi::OsStr::new("tshark"))?;
+    }
     if required.station_network {
         super::cleanup::require_healthy()?;
     }
@@ -29,6 +37,15 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 // Both directions consume remote counters and command-line capture tools.
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     super::openwrt_fixture::doctor_tools(config)?;
+                }
+                if matches!(
+                    scenario.workload,
+                    crate::scenario::Workload::Udp {
+                        station_pause: Some(_),
+                        ..
+                    }
+                ) {
+                    crate::image::require_program(std::ffi::OsStr::new("tshark"))?;
                 }
             }
             StationFixtureConfig::LocalLinux(config) => {

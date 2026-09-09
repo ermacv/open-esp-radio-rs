@@ -3,8 +3,8 @@ use core::{
     task::Waker,
 };
 
+use crate::timer_queue::WakeQueue;
 use embassy_time_driver::Driver;
-use embassy_time_queue_utils::Queue;
 use esp_hal::{
     Blocking,
     interrupt::{InterruptHandler, Priority},
@@ -18,36 +18,43 @@ pub type Timer = OneShotTimer<'static, Blocking>;
 
 struct State {
     timer: Option<Timer>,
-    queue: Queue,
-    next_wakeup: u64,
+    queue: WakeQueue,
     current_alarm: u64,
+    #[cfg(feature = "timer-observation")]
+    observation: crate::timer_observation::Recorder,
 }
 
 impl State {
     const fn new() -> Self {
         Self {
             timer: None,
-            queue: Queue::new(),
-            next_wakeup: u64::MAX,
+            queue: WakeQueue::new(),
             current_alarm: u64::MAX,
+            #[cfg(feature = "timer-observation")]
+            observation: crate::timer_observation::Recorder::new(),
         }
     }
 
     fn arm_next_wakeup(&mut self, now: u64) {
-        if self.next_wakeup == self.current_alarm {
+        let next_deadline = self.queue.next_deadline();
+        if next_deadline == self.current_alarm {
             return;
         }
         let timer = self
             .timer
             .as_mut()
             .expect("oer_esp32s31_embassy_runtime::init must run first");
-        self.current_alarm = self.next_wakeup;
-        if self.next_wakeup == u64::MAX {
+        self.current_alarm = next_deadline;
+        if next_deadline == u64::MAX {
             timer.stop();
+            #[cfg(feature = "timer-observation")]
+            self.observation.stop();
             return;
         }
 
-        let mut timeout = Duration::from_micros(self.next_wakeup.saturating_sub(now).max(1));
+        let mut timeout = Duration::from_micros(next_deadline.saturating_sub(now).max(1));
+        #[cfg(feature = "timer-observation")]
+        let program_start = self.observation.enabled().then(crate::time_driver::now);
         loop {
             match timer.schedule(timeout) {
                 Ok(()) => break,
@@ -56,6 +63,11 @@ impl State {
                 }
                 Err(error) => panic!("failed to schedule Embassy timer: {error:?}"),
             }
+        }
+        #[cfg(feature = "timer-observation")]
+        if let Some(start) = program_start {
+            self.observation
+                .arm(next_deadline, start, crate::time_driver::now());
         }
     }
 }
@@ -80,7 +92,7 @@ impl EmbassyTimeDriver {
     }
 
     #[inline(always)]
-    fn acknowledge_interrupt(&self) {
+    fn acknowledge_interrupt(&self, #[cfg(feature = "timer-observation")] entered: u64) {
         self.state.with(|state| {
             let timer = state
                 .timer
@@ -88,13 +100,19 @@ impl EmbassyTimeDriver {
                 .expect("Embassy timer interrupt fired before initialization");
             timer.clear_interrupt();
             state.current_alarm = u64::MAX;
+            #[cfg(feature = "timer-observation")]
+            state.observation.interrupt(entered, now());
         });
     }
 
     fn dispatch_expired(&self) {
         self.state.with(|state| {
             let now = now();
-            state.next_wakeup = state.queue.next_expiration(now);
+            state.queue.dispatch_expired(now);
+            #[cfg(feature = "timer-observation")]
+            if state.observation.enabled() {
+                state.observation.dispatch(now, crate::time_driver::now());
+            }
             state.arm_next_wakeup(now);
         });
     }
@@ -134,9 +152,12 @@ impl Driver for EmbassyTimeDriver {
 
     fn schedule_wake(&self, at: u64, waker: &Waker) {
         self.state.with(|state| {
-            if state.queue.schedule_wake(at, waker) {
-                state.next_wakeup = state.next_wakeup.min(at);
-                state.arm_next_wakeup(now());
+            #[cfg(feature = "timer-observation")]
+            if state.observation.enabled() {
+                state.observation.registration(at, now());
+            }
+            if let Some(now) = state.queue.schedule_wake(at, waker, now) {
+                state.arm_next_wakeup(now);
             }
         });
     }
@@ -150,7 +171,10 @@ pub(crate) fn dispatch_pending() {
 
 #[esp_hal::ram]
 extern "C" fn timer_interrupt() {
-    ESP32S31_EMBASSY_TIME_DRIVER.acknowledge_interrupt();
+    ESP32S31_EMBASSY_TIME_DRIVER.acknowledge_interrupt(
+        #[cfg(feature = "timer-observation")]
+        now(),
+    );
     ESP32S31_EMBASSY_TIMER_FIRED.store(true, Ordering::Release);
     crate::executor::mark_work::<0>();
 }
@@ -175,4 +199,17 @@ pub fn init(mut timer: Timer) {
 #[inline]
 fn now() -> u64 {
     Instant::now().duration_since_epoch().as_micros()
+}
+
+#[cfg(feature = "timer-observation")]
+pub(crate) fn begin_observation() -> bool {
+    ESP32S31_EMBASSY_TIME_DRIVER
+        .state
+        .with(|state| state.timer.is_some() && state.observation.begin(now()))
+}
+#[cfg(feature = "timer-observation")]
+pub(crate) fn finish_observation() -> crate::timer_observation::Report {
+    ESP32S31_EMBASSY_TIME_DRIVER
+        .state
+        .with(|state| state.observation.finish(now()))
 }

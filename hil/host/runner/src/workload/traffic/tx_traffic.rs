@@ -2,6 +2,7 @@
 
 mod progress;
 mod receiver;
+mod terminal;
 pub(crate) use receiver::Receiver;
 
 use crate::execution::context::Context;
@@ -23,8 +24,8 @@ use crate::{
     fixture::{
         local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
         openwrt_fixture::{
-            ChannelUtilization, OpenWrtStationLinkEvidence, require_idle_channel_utilization,
-            station_link,
+            ChannelUtilization, OpenWrtStationLinkEvidence, OpenWrtTxCapture,
+            require_idle_channel_utilization, station_link,
         },
         station_fixture::require_ht40_mcs7,
     },
@@ -50,6 +51,7 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
+    pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
     pub(crate) device: Ipv4Addr,
     pub(crate) port: u16,
     pub(crate) duration: Duration,
@@ -210,6 +212,14 @@ pub(crate) fn run(
                 return capture.finish_with(Err(error));
             }
         };
+    if options.station_pause.is_some()
+        && !capture
+            .request_capabilities(DEVICE_READY_TIMEOUT)?
+            .features
+            .station_pause
+    {
+        return capture.finish_with(Err("image does not support station pause".into()));
+    }
     options.device = discovered_address.address;
     let host_route =
         match BenchmarkIpv4Route::discover(options.device, &context.lab.station_fixture) {
@@ -265,6 +275,21 @@ pub(crate) fn run(
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
 
+    // PHY pause diagnostics observe delivery on both sides of the managed AP.
+    // Ordinary ceiling runs keep their existing observation cost.
+    let openwrt_delivery = match (&context.lab.station_fixture, options.station_pause) {
+        (StationFixtureConfig::OpenWrt(config), Some(_)) => Some(OpenWrtTxCapture::start(
+            config,
+            options.device,
+            host_address,
+            (DEVICE_SOURCE_PORT, options.port),
+            options.payload,
+            options.duration,
+            output,
+        )?),
+        _ => None,
+    };
+
     let timeout = options.duration.saturating_add(Duration::from_secs(5));
     let receiver = Receiver::start(
         &socket,
@@ -273,6 +298,7 @@ pub(crate) fn run(
         output,
         "station",
     )?;
+    let station_cursor = capture.station_lifecycle_cursor();
     let session = match capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -301,6 +327,32 @@ pub(crate) fn run(
             return capture.finish_with(Err(error));
         }
     };
+    let pause = if let Some(operation) = options.station_pause {
+        let result = receiver
+            .wait_started(Duration::from_secs(3))
+            .and_then(|before| {
+                let (evidence, tx_waits, timer) =
+                    capture.station_pause_round_trip(operation, Duration::from_secs(2))?;
+                fs::write(
+                    output.join("station-pause.json"),
+                    serde_json::to_vec_pretty(&serde_json::json!({
+                        "received_datagrams_before_request": before,
+                        "evidence": evidence,
+                        "tx_waits": tx_waits,
+                        "timer": timer,
+                    }))?,
+                )?;
+                validate_pause(operation, evidence)?;
+                validate_tx_waits(evidence.timings, tx_waits)?;
+                if !timer.is_some_and(|timer| timer.is_valid()) {
+                    return Err("missing or inconsistent platform timer evidence".into());
+                }
+                Ok(())
+            });
+        Some(result)
+    } else {
+        None
+    };
     let structured = capture.wait_for_session(session, timeout);
     let bursts = receiver.finish(
         structured
@@ -308,11 +360,31 @@ pub(crate) fn run(
             .ok()
             .map(|evidence| evidence.transport.tx_units),
     );
+    if let Some(delivery) = openwrt_delivery {
+        let host_unique = bursts.as_ref().ok().map(|bursts| {
+            bursts
+                .iter()
+                .map(|burst| burst.datagrams - burst.duplicates)
+                .sum()
+        });
+        delivery.finish(output, host_unique)?;
+    }
+    if let Some(Err(error)) = pause {
+        return capture.finish_with(Err(error));
+    }
     let structured = match structured {
         Ok(evidence) => evidence,
         Err(error) => return capture.finish_with(Err(error)),
     };
     let bursts = bursts?;
+    if let Some(tx) = structured
+        .radio
+        .as_ref()
+        .and_then(|radio| radio.tx.as_ref())
+    {
+        terminal::retain(output, tx.station_terminal)?;
+    }
+
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
     }
@@ -326,6 +398,9 @@ pub(crate) fn run(
     if let Some(evidence) = local_ingress.as_ref() {
         write_local_ingress_evidence(output, evidence)?;
     }
+    let continuity = options
+        .station_pause
+        .map(|_| capture.require_station_unchanged_since(station_cursor));
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
     let delivery = progress::DeliveryProgress::new(structured.transport.tx_units, &bursts, &log);
@@ -335,6 +410,9 @@ pub(crate) fn run(
     )?;
     if delivery.host_received_datagrams == 0 {
         return Err(delivery.no_delivery_message().into());
+    }
+    if let Some(result) = continuity {
+        result?;
     }
     if let Some(result) = beacon_loss {
         result?;
@@ -589,6 +667,16 @@ pub(crate) fn run(
             task_polls: task_polls_from_log(&log),
         },
     )?;
+    if output.join("openwrt-tx-delivery.json").exists() {
+        use std::io::Write as _;
+        let mut report = fs::OpenOptions::new()
+            .append(true)
+            .open(output.join("report.md"))?;
+        writeln!(
+            report,
+            "\nOpenWrt forwarding evidence: [capture and UDP payload units](openwrt-tx-delivery.json). GRO can combine multiple datagrams into one captured packet. Payload units describe data volume, not per-packet identity or RF acknowledgements."
+        )?;
+    }
     eprintln!(
         "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
          device_floor_kbps={} bursts={} missing={missing} reordered={reordered} duplicates={duplicates} \
@@ -665,6 +753,7 @@ fn require_performance_link(
 impl Default for Config {
     fn default() -> Self {
         Self {
+            station_pause: None,
             device: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             duration: DEFAULT_DURATION,
@@ -1047,6 +1136,12 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
         .saturating_add(report.ampdu.timeout)
         .saturating_add(report.ampdu.collision);
     let evidence = report.structured;
+    let terminal_report = evidence
+        .radio
+        .as_ref()
+        .and_then(|radio| radio.tx.as_ref())
+        .map(|tx| terminal::markdown(tx.station_terminal))
+        .unwrap_or_default();
     let structured_report = format!(
         "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
                  - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n",
@@ -1089,7 +1184,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Device/host: `{}` / `{}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
-             {structured_report}\
+             {structured_report}{terminal_report}\
              - Host receive floor: `{:.3} Mbit/s`\n\
              - Host UDP `SO_RCVBUF` read-back: `{}` bytes\n\
              - Host maximum packet interarrival: `{maximum_interarrival_us}` us before sequence `{sequence_after_maximum_interarrival:?}`\n\
@@ -1184,3 +1279,48 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+fn validate_pause(
+    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
+) -> Result<()> {
+    if evidence.result != open_esp_radio_hil_protocol::StationPauseResult::Resumed {
+        return Err(format!("station pause failed: {:?}", evidence.result).into());
+    }
+    if evidence
+        .timings
+        .is_some_and(|timings| !timings.is_complete())
+    {
+        return Err("PHY timing evidence is invalid, failed or incomplete".into());
+    }
+    if operation != open_esp_radio_hil_protocol::StationPauseOperation::Access
+        && !evidence
+            .tracking
+            .is_some_and(|tracking| !tracking.inhibited)
+    {
+        return Err("requested PHY tracking did not execute uninhibited due work".into());
+    }
+    if operation == open_esp_radio_hil_protocol::StationPauseOperation::Calibration
+        && !evidence
+            .tracking
+            .is_some_and(|tracking| tracking.common_calibrated && tracking.wifi_calibrated)
+    {
+        return Err("requested common/Wi-Fi calibration did not complete".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "tx_traffic/pause_tests.rs"]
+mod pause_tests;
+
+fn validate_tx_waits(
+    timings: Option<open_esp_radio_hil_protocol::PhyTimingEvidence>,
+    waits: Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
+) -> Result<()> {
+    match (timings, waits) {
+        (Some(timing), Some(waits)) if waits.fits(timing.tx_dc_pwdet) => Ok(()),
+        (None, None) => Ok(()),
+        _ => Err("missing or inconsistent TX calibration wait evidence".into()),
+    }
+}

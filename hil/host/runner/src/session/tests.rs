@@ -45,6 +45,7 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 udp_multi_flow: false,
                 startup_artifact: true,
                 station_epoch_control: true,
+                station_pause: true,
                 wifi_role_control: true,
                 wifi_access_point: true,
                 simultaneous_station_access_point: true,
@@ -393,4 +394,40 @@ fn tx_radio_requires_exact_balance_including_interval_boundary_owners() {
     assert!(check(0, 1, 0).is_ok()); // Completion belongs to preceding interval.
     assert!(check(2, 0, 0).is_err()); // Lost completion remains an error.
     assert!(check(1, 0, 1).is_err()); // Inventing an owner is also an error.
+}
+
+#[test]
+fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
+    use super::protocol::station_unchanged_since_in;
+    let connected = |sequence, generation| {
+        Envelope::new(
+            7,
+            sequence,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Connected { generation }),
+        )
+    };
+    let mut events = vec![hello(7, 0), connected(1, 3)];
+    let cursor = events.len();
+    events.push(Envelope::new(7, 2, 1, 0, Event::Accepted));
+    assert!(station_unchanged_since_in(&events, cursor).is_ok());
+    events.push(connected(3, 4));
+    assert!(station_unchanged_since_in(&events, cursor).is_err());
+    events.pop();
+    events.push(hello(8, 0));
+    assert!(station_unchanged_since_in(&events, cursor).is_err());
+    events.pop();
+    events.push(Envelope::new(
+        7,
+        3,
+        0,
+        0,
+        Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+            generation: 3,
+            reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+        }),
+    ));
+    assert!(station_unchanged_since_in(&events, cursor).is_err());
+    assert!(station_unchanged_since_in(&events, events.len() + 1).is_err());
 }

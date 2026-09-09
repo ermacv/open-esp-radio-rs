@@ -4,6 +4,7 @@
 //! ownership. The production adapter publishes value-only events; this module
 //! selects the histogram, atomics and interval snapshot used by qualification.
 
+mod terminal;
 mod work;
 pub use work::AggregateTxWorkSnapshot;
 use work::WorkCounters;
@@ -330,6 +331,7 @@ impl PreparedTxSchedulerTimingCounters {
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    terminal: terminal::Counters,
     pub secondary_socket: crate::tx_progress::Counters,
     secondary_claim: crate::tx_progress::Counters,
     pub tx_retention: crate::tx_retention::TxRetentionCounters,
@@ -435,6 +437,7 @@ impl AggregateTxCounters {
 
     pub const fn with_clock(now_micros: fn() -> u64) -> Self {
         Self {
+            terminal: terminal::Counters::new(),
             tx_retention: crate::tx_retention::TxRetentionCounters::new(),
             #[cfg(feature = "tx-wait-probe")]
             wait_trace: crate::tx_wait::Trace::new(),
@@ -562,6 +565,7 @@ impl AggregateTxCounters {
     pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
         let now = (self.now_micros)() as u32;
         AggregateTxCounterSnapshot {
+            station_terminal: self.terminal.snapshot(),
             secondary_socket: self.secondary_socket.snapshot(now),
             secondary_claim: self.secondary_claim.snapshot(now),
             ap_udp_claimed: self.ap_udp_claimed.load(Ordering::Relaxed),
@@ -975,6 +979,13 @@ impl AggregateTxCounters {
 }
 
 impl AggregateTxObserver for AggregateTxCounters {
+    fn observe_station_terminal(
+        &self,
+        status: oer_wifi_softmac::MacAmpduTxStatus<oer_esp32s31_wifi_mac::tx::TxPhyRate>,
+    ) {
+        self.terminal.record(status);
+    }
+
     #[cfg(feature = "tx-wait-probe")]
     fn observe_wait_probe(
         &self,
@@ -1248,6 +1259,7 @@ impl PreparedTxSchedulerTimingSnapshot {
 /// remain exact monotonic observations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
+    pub station_terminal: open_esp_radio_hil_protocol::StationTxTerminalEvidence,
     pub secondary_socket: crate::tx_progress::Snapshot,
     pub secondary_claim: crate::tx_progress::Snapshot,
     pub ap_udp_claimed: u32,
@@ -1358,6 +1370,7 @@ pub struct AggregateTxCounterSnapshot {
 impl AggregateTxCounterSnapshot {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
+            station_terminal: terminal::delta(self.station_terminal, earlier.station_terminal),
             ap_udp_claimed: self.ap_udp_claimed.wrapping_sub(earlier.ap_udp_claimed),
             ap_udp_claim_backward: self
                 .ap_udp_claim_backward

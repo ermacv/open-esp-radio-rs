@@ -12,6 +12,10 @@ use crate::{
 
 use super::*;
 
+mod interrupt_checkpoint;
+pub mod maintenance;
+pub use interrupt_checkpoint::MacInterruptCheckpoint;
+
 /// Powered-lifecycle PHY capability.
 ///
 /// The PAC owner remains private to HAL. PHY code can pass this value only to

@@ -538,3 +538,62 @@ vendor = { source = "ble-controller", symbol = "r_sym_ble_3472b6bNiQdnWkYo6Ggv",
 disposition = "verified"
 requirement = "ble-phy-register-init-reviewed-domain"
 rationale = "The fingerprint pins the exact two-case stateful profile, explicit esp_ble_register_bb_funcs setup, linked environment/list/provider inputs and every required ordered MMIO effect. It does not claim setup execution outside the profile, controller readiness, interrupt activation, HCI operation or teardown."
+
+[[surfaces]]
+id = "phy-current-gain-restore"
+description = "Production gain-restore preserves the finite calibration-leaf profile; full calibration and hardware timing are outside this boundary."
+kind = "bounded-property"
+[[surfaces.requirements]]
+id = "phy-current-gain-restore-profile"
+description = "All declared input cases and ordered MMIO observations must match the pinned archive."
+suite = "phy-calibration-leaves"
+source = "phy-current"
+symbol = "phy_txgain_comp_pacfg_new"
+claim = "reviewed-domain-equivalence"
+
+
+[[surfaces.effects]]
+id = "phy-current-gain-restore-ordered-mmio"
+vendor = { source = "phy-current", symbol = "phy_txgain_comp_pacfg_new", fingerprint = "sha256:84b85bd5948d026bfbdaafc521bc3f82514c08650381a87cb71798085cf32a3b" }
+disposition = "verified"
+requirement = "phy-current-gain-restore-profile"
+rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples (kind, width, address, value). It describes only the declared finite input images; suite evidence binds the compiled production probe."
+
+[[surfaces]]
+id = "phy-current-forced-gain"
+description = "Production forced-gain preserves the finite calibration-leaf profile; full calibration and hardware timing are outside this boundary."
+kind = "selected-functions"
+[[surfaces.requirements]]
+id = "phy-current-forced-gain-profile"
+description = "All declared input cases and ordered MMIO observations must match the pinned archive."
+suite = "phy-calibration-leaves"
+source = "phy-current"
+symbol = "phy_force_dig_gain"
+claim = "whole-function-equivalence"
+
+
+[[surfaces.effects]]
+id = "phy-current-forced-gain-ordered-mmio"
+vendor = { source = "phy-current", symbol = "phy_force_dig_gain", fingerprint = "sha256:073f2b80409f26c1ca3475513a47e38fb55e3eb6becc73ab2d1bb23f0c8406e1" }
+disposition = "verified"
+requirement = "phy-current-forced-gain-profile"
+rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples (kind, width, address, value). It describes only the declared finite input images; suite evidence binds the compiled production probe."
+
+[[surfaces]]
+id = "phy-current-post-init-agc"
+description = "Production post-init-agc preserves the finite calibration-leaf profile; full calibration and hardware timing are outside this boundary."
+kind = "selected-functions"
+[[surfaces.requirements]]
+id = "phy-current-post-init-agc-profile"
+description = "All declared input cases and ordered MMIO observations must match the pinned archive."
+suite = "phy-calibration-leaves"
+source = "phy-current"
+symbol = "phy_reg_update_new"
+claim = "whole-function-equivalence"
+
+[[surfaces.effects]]
+id = "phy-current-post-init-agc-ordered-mmio"
+vendor = { source = "phy-current", symbol = "phy_reg_update_new", fingerprint = "sha256:5161ec704cd8f8487268a11ad785b1d6a58d92f9687727531aec7491a5bbba4f" }
+disposition = "verified"
+requirement = "phy-current-post-init-agc-profile"
+rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples (kind, width, address, value). It describes only the declared finite input images; suite evidence binds the compiled production probe."

@@ -50,11 +50,11 @@ where
     // `Option` is not lifecycle state: `setup` remains the active/inactive
     // discriminator. It only lets `Drop` retain an accidentally-live route
     // without running `R::drop` while hardware can still observe it.
-    route: Option<R>,
-    setup: Option<R::Setup>,
-    mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-    power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
-    rx_moderated: bool,
+    pub(super) route: Option<R>,
+    pub(super) setup: Option<R::Setup>,
+    pub(super) mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
+    pub(super) power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+    pub(super) rx_moderated: bool,
 }
 
 impl<'runtime, R, M> InterruptEpoch<'runtime, R, M>
@@ -62,6 +62,14 @@ where
     R: MacInterruptRoute,
     M: RawMutex,
 {
+    pub(super) fn restore_pause_work(&self, pending: MacInterruptEpochDrain) {
+        self.mac_runtime.restore_pending(pending.mac);
+        if pending.power_events != MacPowerInterruptObservation::default() {
+            self.power_runtime.publish(pending.power_events);
+        }
+        self.mac_runtime.notify_rx_handoff();
+    }
+
     pub const fn new(
         route: R,
         setup: R::Setup,

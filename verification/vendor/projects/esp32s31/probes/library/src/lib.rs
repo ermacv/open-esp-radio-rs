@@ -1240,7 +1240,7 @@ pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut 
 /// Current vendor TX-gain restore boundary, compiled from production HAL/PAC.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_restore_tx_gain_compensation(
+pub extern "C" fn open_phy_calibration_trace_restore_tx_gain_compensation(
     _enabled: u32,
     registers: &mut RadioPhyRegisters,
 ) {
@@ -1249,7 +1249,7 @@ pub extern "C" fn open_phy_trace_restore_tx_gain_compensation(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_force_digital_gain(
+pub extern "C" fn open_phy_calibration_trace_force_digital_gain(
     enabled: u32,
     gain_0: u32,
     gain_1: u32,
@@ -1265,7 +1265,7 @@ pub extern "C" fn open_phy_trace_force_digital_gain(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_temperature_to_power(
+pub extern "C" fn open_phy_calibration_trace_temperature_to_power(
     current: u32,
     reference: u32,
     bluetooth: u32,
@@ -1282,6 +1282,12 @@ pub extern "C" fn open_phy_trace_temperature_to_power(
             class,
         ),
     )
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_calibration_trace_post_init_agc(registers: &mut RadioPhyRegisters) {
+    oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
 }
 
 #[unsafe(no_mangle)]
@@ -1768,9 +1774,10 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_phy_trace_phy_set_rx_comp_new as *const ());
     core::hint::black_box(open_phy_trace_phy_bb_txpwr_track as *const ());
     core::hint::black_box(open_phy_trace_phy_reg_update_new as *const ());
-    core::hint::black_box(open_phy_trace_restore_tx_gain_compensation as *const ());
-    core::hint::black_box(open_phy_trace_force_digital_gain as *const ());
-    core::hint::black_box(open_phy_trace_temperature_to_power as *const ());
+    core::hint::black_box(open_phy_calibration_trace_restore_tx_gain_compensation as *const ());
+    core::hint::black_box(open_phy_calibration_trace_force_digital_gain as *const ());
+    core::hint::black_box(open_phy_calibration_trace_temperature_to_power as *const ());
+    core::hint::black_box(open_phy_calibration_trace_post_init_agc as *const ());
     core::hint::black_box(open_phy_trace_phy_dc_mem_clr as *const ());
     core::hint::black_box(open_phy_trace_phy_set_ftm_en as *const ());
     core::hint::black_box(open_phy_trace_phy_stop_tx_tone_new as *const ());

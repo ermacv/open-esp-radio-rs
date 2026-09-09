@@ -2,25 +2,28 @@
 
 #![forbid(unsafe_code)]
 
-use core::cell::RefCell;
+use core::{cell::RefCell, marker::PhantomData};
+
+mod storage;
 
 use crate::EspHalRadioPeripheral;
 
 use critical_section::Mutex;
 
-use esp_hal::interrupt::InterruptHandler;
+use esp_hal::{interrupt::InterruptHandler, system::Cpu};
 
 use oer_esp32s31_hal::{
     ieee80211::arena::{RadioAccess, RadioOwnerArenaError},
     owner::{
-        ConnectedStaInterruptPrepared, MacInterruptRegisters, MacInterruptSetup,
-        MacPowerInterruptRegisters, RadioRuntimeOwner,
+        ConnectedStaInterruptPrepared, MacInterruptCheckpoint, MacInterruptRegisters,
+        MacInterruptSetup, MacPowerInterruptRegisters, RadioRuntimeOwner,
     },
     types::{MacInterruptMask, MacPowerInterruptObservation, MacPowerWakeCause},
 };
 
 use oer_esp32s31_wifi_mac::irq::{
-    IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
+    IrqSink, MacInterruptPauseRoute, MacInterruptRoute, PowerIrqSink, handle_mac_irq,
+    handle_power_irq,
 };
 
 static MAC_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacInterruptRegisters>>> =
@@ -33,6 +36,9 @@ pub enum EspHalMacInterruptRouteError {
     AlreadyActive,
     AlreadyQuiesced,
     StorageInvariant,
+    Paused,
+    NotPaused,
+    WrongCore,
 }
 
 /// Task-side result when the active ISR slot cannot lend its unique WDEVPWR
@@ -72,7 +78,17 @@ pub struct EspHalPowerInterruptServiceReport {
 pub struct EspHalMacInterruptRoute {
     mac_handler: InterruptHandler,
     power_handler: InterruptHandler,
-    active: bool,
+    phase: Phase,
+    // Bind, detach and resume belong to the same executor/core. Runtime core
+    // checks also reject misuse through a separately obtained platform token.
+    _same_core: PhantomData<*mut ()>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Phase {
+    Inactive,
+    Active(Cpu),
+    Paused(Cpu),
 }
 
 impl EspHalMacInterruptRoute {
@@ -80,8 +96,46 @@ impl EspHalMacInterruptRoute {
         Self {
             mac_handler,
             power_handler,
-            active: false,
+            phase: Phase::Inactive,
+            _same_core: PhantomData,
         }
+    }
+
+    fn detach(
+        &mut self,
+        platform: &EspHalRadioPeripheral,
+    ) -> Result<(MacInterruptRegisters, MacPowerInterruptRegisters), EspHalMacInterruptRouteError>
+    {
+        match self.phase {
+            Phase::Active(core) if core != Cpu::current() => {
+                return Err(EspHalMacInterruptRouteError::WrongCore);
+            }
+            Phase::Active(_) => {}
+            Phase::Paused(_) => return Err(EspHalMacInterruptRouteError::Paused),
+            Phase::Inactive => return Err(EspHalMacInterruptRouteError::AlreadyQuiesced),
+        }
+        critical_section::with(|cs| {
+            let mut mac = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            let mut power = POWER_INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            // Validate storage before changing routing. Once disabled on the
+            // binding core, no handler can retain a borrow of either owner.
+            storage::detach_pair(&mut mac, &mut power, || platform.disable_interrupts())
+                .ok_or(EspHalMacInterruptRouteError::StorageInvariant)
+        })
+    }
+
+    fn install(
+        &mut self,
+        platform: &EspHalRadioPeripheral,
+        mac: MacInterruptRegisters,
+        power: MacPowerInterruptRegisters,
+    ) {
+        critical_section::with(|cs| {
+            *MAC_INTERRUPT_REGISTERS.borrow_ref_mut(cs) = Some(mac);
+            *POWER_INTERRUPT_REGISTERS.borrow_ref_mut(cs) = Some(power);
+            self.phase = Phase::Active(Cpu::current());
+            platform.bind_interrupts(self.mac_handler, self.power_handler);
+        });
     }
 
     fn storage_is_empty(&self) -> bool {
@@ -171,45 +225,66 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
         setup: Self::Setup,
         event_mask: MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
-        if self.active {
-            return Err((EspHalMacInterruptRouteError::AlreadyActive, setup));
+        match self.phase {
+            Phase::Active(_) => return Err((EspHalMacInterruptRouteError::AlreadyActive, setup)),
+            Phase::Paused(_) => return Err((EspHalMacInterruptRouteError::Paused, setup)),
+            Phase::Inactive => {}
         }
         if !self.storage_is_empty() {
             return Err((EspHalMacInterruptRouteError::StorageInvariant, setup));
         }
         let (mac, power) = setup.activate(event_mask);
-        critical_section::with(|critical_section| {
-            *MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section) = Some(mac);
-            *POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section) = Some(power);
-        });
-        platform.bind_interrupts(self.mac_handler, self.power_handler);
-        self.active = true;
+        self.install(platform, mac, power);
         Ok(())
     }
 
     fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
-        if !self.active {
-            return Err(EspHalMacInterruptRouteError::AlreadyQuiesced);
-        }
-        // The handlers are bound on this task's core. Once both CPU routes are
-        // disabled, an earlier same-core handler has returned and no new one
-        // can begin while the PAC values are recovered.
-        platform.disable_interrupts();
-        let (mac, power) = critical_section::with(|critical_section| {
-            let mut mac = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
-            let mut power = POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
-            match (mac.take(), power.take()) {
-                (Some(mac), Some(power)) => Ok((mac, power)),
-                (mac_value, power_value) => {
-                    *mac = mac_value;
-                    *power = power_value;
-                    Err(EspHalMacInterruptRouteError::StorageInvariant)
-                }
-            }
-        })?;
+        let (mac, power) = self.detach(platform)?;
         let setup = mac.deactivate(power);
-        self.active = false;
+        self.phase = Phase::Inactive;
         Ok(setup)
+    }
+}
+
+impl MacInterruptPauseRoute for EspHalMacInterruptRoute {
+    type Paused = MacInterruptCheckpoint;
+
+    fn pause(&mut self, platform: &Self::Platform) -> Result<Self::Paused, Self::Error> {
+        let (mac, power) = self.detach(platform)?;
+        self.phase = Phase::Paused(Cpu::current());
+        // No peripheral write: preserve source moderation, WDEVPWR policy and
+        // latched events, including arrivals after the CPU route is detached.
+        Ok(mac.checkpoint(power))
+    }
+
+    fn resume(
+        &mut self,
+        platform: &Self::Platform,
+        paused: Self::Paused,
+    ) -> Result<(), (Self::Error, Self::Paused)> {
+        match self.phase {
+            Phase::Paused(core) if core != Cpu::current() => {
+                return Err((EspHalMacInterruptRouteError::WrongCore, paused));
+            }
+            Phase::Paused(_) => {}
+            _ => return Err((EspHalMacInterruptRouteError::NotPaused, paused)),
+        }
+        if !self.storage_is_empty() {
+            return Err((EspHalMacInterruptRouteError::StorageInvariant, paused));
+        }
+        // Restore stable storage before exposing the level routes. A latched
+        // enabled event retriggers the normal bounded handler. A moderated RX
+        // source stays masked until the consumer drains its descriptor frontier.
+        let (mac, power) = paused.into_registers();
+        self.install(platform, mac, power);
+        Ok(())
+    }
+
+    fn finish_pause(&mut self, paused: Self::Paused) -> Self::Setup {
+        assert!(matches!(self.phase, Phase::Paused(_)));
+        let setup = paused.deactivate();
+        self.phase = Phase::Inactive;
+        setup
     }
 }
 

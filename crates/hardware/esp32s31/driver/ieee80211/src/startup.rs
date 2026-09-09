@@ -23,6 +23,7 @@ use crate::{
 
 use oer_esp32s31_hal::owner::Radio;
 
+use oer_esp32s31_phy::state::client::PhyPllTrackClock;
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyCalibrationCache, PhyTargetObserver};
 
 /// Inputs for the one common PHY/MAC transition.
@@ -68,15 +69,17 @@ pub async fn start_esp32s31_radio<P, D, O>(
     config: RadioStartConfig,
     calibration_cache: Option<PhyCalibrationCache>,
     observer: O,
+    clock: &mut impl PhyPllTrackClock,
 ) -> Result<RadioReady<P>, RadioStartFailure<P>>
 where
     P: WifiMacPlatform,
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let wifi = start_esp32s31_wifi::<P, D, O>(radio, config.wifi, calibration_cache, observer)
-        .await
-        .map_err(RadioStartFailure::Wifi)?;
+    let wifi =
+        start_esp32s31_wifi::<P, D, O>(radio, config.wifi, calibration_cache, observer, clock)
+            .await
+            .map_err(RadioStartFailure::Wifi)?;
     let mac = start_esp32s31_wifi_mac(wifi, config.mac).map_err(RadioStartFailure::Mac)?;
     let runtime = enter_esp32s31_wifi_runtime(mac);
     Ok(RadioReady {

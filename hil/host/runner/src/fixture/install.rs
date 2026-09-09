@@ -16,6 +16,20 @@ pub(crate) fn run(root: &Path) -> Result<()> {
                 .args(["xtask", "build", "hostapd"]),
         )?;
 
+        oer_process::run(
+            Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+                .current_dir(root)
+                .args([
+                    "build",
+                    "--locked",
+                    "-p",
+                    "open-esp-radio-hil-runner",
+                    "--bin",
+                    "open-radio-probe",
+                    "--target-dir",
+                    "target/hil/fixture-build",
+                ]),
+        )?;
         // This is a terminal handoff, not a supervised background workload.
         // exec preserves the foreground process group and standard streams so
         // sudo owns password echo, input and job control. No HIL owners have

@@ -7,12 +7,17 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CoexStatus {
     pub enabled: bool,
+    /// Successfully programmed requests retained by software, not RF grants.
     pub active_timers: u8,
+    /// Timers touched by a failed operation whose effects are not confirmed.
+    /// These must be disabled before another request can be programmed.
+    pub uncertain_timers: u8,
 }
 
 pub struct CoexCore {
     enabled: bool,
     active: [Option<CoexRequest>; COEX_TIMER_COUNT],
+    uncertain_timers: u8,
     pti: CoexPtiTable,
     durations: CoexEventDurations,
 }
@@ -22,6 +27,7 @@ impl CoexCore {
         Self {
             enabled: false,
             active: [None; COEX_TIMER_COUNT],
+            uncertain_timers: 0,
             pti,
             durations: CoexEventDurations::reviewed_vendor(),
         }
@@ -33,9 +39,10 @@ impl CoexCore {
 
     pub fn disable<H: CoexTimerHardware>(&mut self, hardware: &mut H) -> Result<(), CoexError> {
         for index in CoexTimerIndex::ALL {
-            if self.active[usize::from(index.value())].is_some() {
-                hardware.disable(index)?;
-                self.active[usize::from(index.value())] = None;
+            if self.active[usize::from(index.value())].is_some()
+                || self.uncertain_timers & timer_bit(index) != 0
+            {
+                self.disable_timer(hardware, index)?;
             }
         }
         self.enabled = false;
@@ -75,7 +82,14 @@ impl CoexCore {
         if !self.enabled {
             return Err(CoexError::Disabled);
         }
+        if self.uncertain_timers != 0 {
+            return Err(CoexError::RecoveryRequired);
+        }
         let index = request.event.timer_index().ok_or(CoexError::InvalidEvent)?;
+        // Any fallible backend call may have written hardware before failing.
+        // Record the cleanup obligation before the first such call, including
+        // clock failures after configuration and failed publication itself.
+        self.uncertain_timers |= timer_bit(index);
         program_timer(
             hardware,
             clock,
@@ -87,6 +101,7 @@ impl CoexCore {
         )?;
         hardware.enable(index)?;
         self.active[usize::from(index.value())] = Some(CoexRequest { client, request });
+        self.uncertain_timers &= !timer_bit(index);
         Ok(index)
     }
 
@@ -96,9 +111,20 @@ impl CoexCore {
         event: CoexEventId,
     ) -> Result<CoexTimerIndex, CoexError> {
         let index = event.timer_index().ok_or(CoexError::InvalidEvent)?;
+        self.disable_timer(hardware, index)?;
+        Ok(index)
+    }
+
+    fn disable_timer<H: CoexTimerHardware>(
+        &mut self,
+        hardware: &mut H,
+        index: CoexTimerIndex,
+    ) -> Result<(), CoexError> {
+        self.uncertain_timers |= timer_bit(index);
         hardware.disable(index)?;
         self.active[usize::from(index.value())] = None;
-        Ok(index)
+        self.uncertain_timers &= !timer_bit(index);
+        Ok(())
     }
 
     pub fn status(&self) -> CoexStatus {
@@ -111,6 +137,7 @@ impl CoexCore {
         CoexStatus {
             enabled: self.enabled,
             active_timers,
+            uncertain_timers: self.uncertain_timers,
         }
     }
 
@@ -125,4 +152,8 @@ impl CoexCore {
     pub const fn event_duration(&self, event: CoexEventId) -> Option<u32> {
         self.durations.duration(event)
     }
+}
+
+const fn timer_bit(index: CoexTimerIndex) -> u8 {
+    1 << index.value()
 }

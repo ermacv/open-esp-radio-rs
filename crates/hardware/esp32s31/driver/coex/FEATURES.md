@@ -40,7 +40,7 @@ below determine how much of that hardware the open driver can use.
 | Physical timer set/enable/disable | PARTIAL | The [HAL bridge](../../hal/src/coex.rs) implements hardware access only under `validation-probes`; no production hardware owner composes it with the protocol runtimes. |
 | Timer force/unforce | PARTIAL | Trait/PAC operations and validation entry points exist without a production force lifetime or arbitration policy. |
 | Core request semantics | PARTIAL | [Core](src/core.rs) checks enabled state, maps the event, programs/enables its timer and records the request. This does not own RF grant notification, deadline/cancellation or a complete radio exchange. |
-| Core release/disable/status | PARTIAL | Mapped timer disable and local active-state bookkeeping exist. Software status is not arbiter grant/readback state; disabling tracked timers is not whole-radio shutdown. |
+| Core release/disable/status | PARTIAL | Mapped timer disable and local active-state bookkeeping exist. `uncertain_timers` retains failed programming/publication/withdrawal transactions, including writes followed by errors. New requests return `RecoveryRequired` until release/disable retires the uncertain entries. Software status is not arbiter grant/readback state; disabling tracked timers is not whole-radio shutdown. |
 
 The [PTI comparison profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core.toml)
 and [timer-map profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml)
@@ -86,6 +86,23 @@ also have their own ownership boundary. Neither surface is a fourth time slice.
 | Three-protocol coexistence | ABSENT | Shared register/core infrastructure does not compose concurrent protocol owners. |
 | Coexistence power management | ABSENT | No shared sleep/wake, retention, request-deadline or radio-release lifecycle exists. |
 | GPIO coexistence diagnostics | ABSENT | No production board-pin and arbitration-observation interface exists. |
+
+The reviewed `libcoexist.a` SHA-256
+`9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8`
+does not provide an RF-release acknowledgement through its IEEE 802.15.4
+break/stage callbacks. `esp_coex_ieee802154_coex_break_notify` delegates to
+`hal_ieee802154_coex_break_notify`, whose complete body returns without effects;
+`esp_coex_ieee802154_extcoex_rx_stage` and `esp_coex_ieee802154_extcoex_tx_stage`
+also return without effects. This is artifact-specific evidence, not absence
+of hardware coexistence. PTI setters and force-RX/delay setters are separate
+hardware-writing operations. Their completion does not certify an RF grant.
+
+Timer `force`/`unforce` are not save/restore operations: the reviewed PAC
+clears the timer tick image on force and replaces it with the vendor constant
+on unforce. A generic guard which merely calls unforce cannot promise to
+restore a previous duration or create a non-preemptible maintenance interval.
+See the [reviewed source boundaries](../../../../../registers/esp32s31/evidence/vendor-radio-libraries.toml)
+and [timer PAC](../../pac/src/modem/coex.rs).
 
 ## External coexistence
 

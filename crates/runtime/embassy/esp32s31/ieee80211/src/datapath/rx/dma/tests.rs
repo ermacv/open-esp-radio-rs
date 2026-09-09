@@ -902,6 +902,12 @@ fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
     assert_eq!(pool.network_slots(), 0);
     assert_eq!(service.protocol().queue_len(), 0);
     assert_eq!(service.serviced_frames(), 1);
+    service = service.map_dma(Some).map_dma(Option::unwrap);
+    assert_eq!(
+        service.serviced_frames(),
+        1,
+        "a DMA state transition retains connected progress"
+    );
     assert_eq!(admission.0.load(Ordering::Relaxed), 1);
     assert_eq!(service.dma().ring().recycle_start(), 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
@@ -1928,6 +1934,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
         .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
+mod pause;
 mod transaction;
 
 #[cfg(feature = "owned-network")]

@@ -257,7 +257,6 @@ where
         &mut self,
         interface: NetworkInterfaceId,
         admitted: usize,
-        tx_batch_states: &mut [TxBatchState; 2],
     ) -> Result<(), B::Error> {
         #[cfg(feature = "tx-phase-telemetry")]
         if let Some(completed) = self.prepared_tx_completion.take() {
@@ -282,7 +281,7 @@ where
             Core0PerformanceSample::read(),
         );
         let slot = self.tx_batch_state_slot(interface);
-        tx_batch_states[slot].note_started(admitted);
+        self.tx_batch_states[slot].note_started(admitted);
         self.prepared_tx_interface = self.services.has_prepared_tx().then_some(interface);
         if progress == WifiTxProgress::Pending {
             self.begin_active_tx(interface, DatapathTxOrigin::Network);
@@ -573,13 +572,13 @@ where
         Ok(())
     }
 
-    /// Finish an already-live physical TX while rolling back a failed role.
+    /// Finish an already-live TX before yielding or stopping the scheduler.
     ///
-    /// A protocol/DMA service error may be reported while `drive_active_tx`
-    /// still retains the affine TX owner. A subsequent stop transaction must
-    /// not attempt to activate another role first. RX remains masked and is
-    /// stopped by the outer rollback after this terminal TX edge.
-    pub(super) async fn drive_active_tx_for_stop(&mut self) -> Result<(), B::Error> {
+    /// A prior service error may retain the affine TX owner. Drain its normal
+    /// IRQ/deadline path without admitting another transaction or RX work.
+    /// This does not change RX DMA or interrupt ownership: the caller must
+    /// separately quiesce those resources before hardware maintenance.
+    pub(super) async fn drain_active_tx(&mut self) -> Result<(), B::Error> {
         let mut progress = WifiTxProgress::Pending;
         while progress == WifiTxProgress::Pending {
             match select(self.irq.wait_tx(), self.services.wait_tx_deadline()).await {

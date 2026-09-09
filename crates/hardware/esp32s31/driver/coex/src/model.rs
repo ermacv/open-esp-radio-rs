@@ -26,6 +26,8 @@ pub enum CoexError {
     InvalidTimer,
     UnsupportedClock,
     Disabled,
+    /// A failed timer mutation must be retired through release/disable first.
+    RecoveryRequired,
     Hardware,
 }
 
@@ -169,11 +171,11 @@ pub enum CoexClient {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CoexClientRequest {
     pub event: CoexEventId,
-    /// Delay before the request must be granted. The vendor timer stores this
-    /// converted value in the secondary target word.
+    /// Source latency parameter converted into the secondary timer target.
+    /// Programming this value does not establish a guaranteed RF grant time.
     pub latency: u32,
-    /// Requested ownership duration. The vendor timer stores this converted
-    /// value in the primary configuration word.
+    /// Source duration parameter converted into the primary timer target.
+    /// This is not proof of a granted or non-preemptible RF interval.
     pub duration: u32,
 }
 

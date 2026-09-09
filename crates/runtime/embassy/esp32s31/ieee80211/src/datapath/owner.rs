@@ -1,5 +1,114 @@
 use super::*;
 
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
+    /// Run a fallible owner transition, retaining the entire runner on either
+    /// branch. The error service owns any partially transitioned resources.
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
+    pub fn try_map_services<T, E>(
+        self,
+        map: impl FnOnce(B) -> Result<T, E>,
+    ) -> Result<DatapathRunner<'irq, M, N, T, R>, DatapathRunner<'irq, M, N, E, R>> {
+        // Destructure once. Building an intermediate Runner<()> and moving it
+        // twice inflates target stack frames for large affine service graphs.
+        let Self {
+            services,
+            irq,
+            network,
+            interfaces,
+            network_rx,
+            active_tx_interface,
+            active_tx_origin,
+            prepared_tx_interface,
+            #[cfg(feature = "tx-phase-telemetry")]
+            prepared_tx_completion,
+            control_ready_latched,
+            rx_progress,
+            recycled_rx_probe_deadline,
+            recycled_rx_probe_coalescing_level,
+            rx_frame_deficit,
+            pair_tx_served_frames,
+            tx_batch_states,
+        } = self;
+        match map(services) {
+            Ok(services) => Ok(DatapathRunner {
+                services,
+                irq,
+                network,
+                interfaces,
+                network_rx,
+                active_tx_interface,
+                active_tx_origin,
+                prepared_tx_interface,
+                #[cfg(feature = "tx-phase-telemetry")]
+                prepared_tx_completion,
+                control_ready_latched,
+                rx_progress,
+                recycled_rx_probe_deadline,
+                recycled_rx_probe_coalescing_level,
+                rx_frame_deficit,
+                pair_tx_served_frames,
+                tx_batch_states,
+            }),
+            Err(services) => Err(DatapathRunner {
+                services,
+                irq,
+                network,
+                interfaces,
+                network_rx,
+                active_tx_interface,
+                active_tx_origin,
+                prepared_tx_interface,
+                #[cfg(feature = "tx-phase-telemetry")]
+                prepared_tx_completion,
+                control_ready_latched,
+                rx_progress,
+                recycled_rx_probe_deadline,
+                recycled_rx_probe_coalescing_level,
+                rx_frame_deficit,
+                pair_tx_served_frames,
+                tx_batch_states,
+            }),
+        }
+    }
+
+    pub const fn services(&self) -> &B {
+        &self.services
+    }
+
+    pub fn services_mut(&mut self) -> &mut B {
+        &mut self.services
+    }
+
+    /// Transfer a service owner across a lifecycle boundary without rebuilding
+    /// the runner. Preserve prepared-frame identity, deadlines, RX progress and
+    /// fairness accounting. A service state without `DatapathServices` cannot
+    /// run until its original live state has been restored.
+    ///
+    /// This transfers ownership only. The caller must establish the scheduler
+    /// and hardware boundaries required by the service transition itself.
+    pub fn map_services<T>(self, map: impl FnOnce(B) -> T) -> DatapathRunner<'irq, M, N, T, R> {
+        DatapathRunner {
+            irq: self.irq,
+            network: self.network,
+            interfaces: self.interfaces,
+            network_rx: self.network_rx,
+            services: map(self.services),
+            active_tx_interface: self.active_tx_interface,
+            active_tx_origin: self.active_tx_origin,
+            prepared_tx_interface: self.prepared_tx_interface,
+            #[cfg(feature = "tx-phase-telemetry")]
+            prepared_tx_completion: self.prepared_tx_completion,
+            control_ready_latched: self.control_ready_latched,
+            rx_progress: self.rx_progress,
+            recycled_rx_probe_deadline: self.recycled_rx_probe_deadline,
+            recycled_rx_probe_coalescing_level: self.recycled_rx_probe_coalescing_level,
+            rx_frame_deficit: self.rx_frame_deficit,
+            pair_tx_served_frames: self.pair_tx_served_frames,
+            tx_batch_states: self.tx_batch_states,
+        }
+    }
+}
+
 fn select_pair_tx_slot(pending: [bool; 2], served: [u64; 2]) -> Option<usize> {
     match pending {
         [true, true] => Some(usize::from(served[0] > served[1])),
@@ -65,15 +174,8 @@ where
             recycled_rx_probe_coalescing_level: 0,
             rx_frame_deficit: 0,
             pair_tx_served_frames: [0; 2],
+            tx_batch_states: [TxBatchState::new(); 2],
         }
-    }
-
-    pub const fn services(&self) -> &B {
-        &self.services
-    }
-
-    pub fn services_mut(&mut self) -> &mut B {
-        &mut self.services
     }
 
     pub(super) fn begin_active_tx(

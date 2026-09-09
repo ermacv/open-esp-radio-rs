@@ -10,6 +10,7 @@ description = "ESP32-S31 qualification observers for open-esp-radio HIL"
 tx-wait-probe = []
 
 [dependencies]
+oer-wifi-softmac = { path = "../../../../crates/protocols/ieee80211/softmac" }
 oer-ieee80211 = { path = "../../../../crates/protocols/ieee80211/mac" }
 oer-esp32s31-wifi-mac = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/mac" }
 oer-esp32s31-wifi-embassy = { path = "../../../../crates/runtime/embassy/esp32s31/ieee80211", default-features = false }

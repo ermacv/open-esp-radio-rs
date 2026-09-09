@@ -4,6 +4,28 @@ use super::*;
 
 impl Scenario {
     pub(crate) fn validate(&self) -> Result<()> {
+        if matches!(
+            self.workload,
+            Workload::AccessPoint {
+                probe_load: true,
+                ..
+            }
+        ) && (!matches!(
+            self.workload,
+            Workload::AccessPoint {
+                client: AccessPointClient::Laptop,
+                traffic: AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    duration_seconds: 12,
+                    ..
+                },
+                ..
+            }
+        ) || self.image != ImageClass::DiagnosticTaskPoll
+            || self.criteria.minimum_concurrent_ap_clients.unwrap_or(0) != 2)
+        {
+            return Err("probe load requires diagnostic-task-poll, laptop plus OpenWrt peers, and 12-second multi-client UDP TX".into());
+        }
         if self.ap_scheduler != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
             && (!matches!(self.workload, Workload::AccessPoint { .. })
                 || !self.link.as_ref().is_some_and(|link| {
@@ -521,9 +543,17 @@ impl Scenario {
                 rx_rate_bps,
                 tx_rate_bps,
                 payload_bytes,
+                station_pause,
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
+                if station_pause.is_some()
+                    && (*direction != Direction::Tx || *duration_seconds < 12)
+                {
+                    return Err(
+                        "station_pause requires station UDP TX and at least 12 seconds".into(),
+                    );
+                }
                 if matches!(
                     self.image,
                     ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
@@ -613,6 +643,7 @@ impl Scenario {
                 client,
                 security,
                 traffic,
+                ..
             } => {
                 bounded(*cycles, 1, 8, self, "cycles")?;
                 bounded(*boots, 1, 20, self, "boots")?;

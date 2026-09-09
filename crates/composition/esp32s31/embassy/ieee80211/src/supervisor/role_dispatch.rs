@@ -42,7 +42,7 @@ impl ProductionWifiEpochRunner {
         let mut materialized = materialize_production_wifi(wifi, physical);
         let (dma, rx_ring, tx, aggregate_tx) = materialized.resources.into_parts();
         let (phy, platform) = materialized.owner.radio_mut();
-        let tx_epoch = self.initialize_tx_epoch(tx, phy.tx_target_power_profile());
+        let tx_epoch = self.initialize_tx_epoch(tx, phy.state().tx_target_power_profile());
         activate_promiscuous_receive(&mut materialized.registers);
         let receive = match rx_ring {
             Some(ring) => ring.into_scan(dma.storage()),
@@ -320,6 +320,15 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         generation: oer_radio::wifi::RadioSubsystemGeneration,
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
+            let stopped = match await_stack_boundary!(maintenance::maintain(stopped)) {
+                Ok(stopped) => stopped,
+                Err(failure) => {
+                    diagnostics_event!("open-radio: PHY maintenance failed: {}", failure.reason());
+                    return EmbassyWifiRoleEpochOutcome::Faulted(
+                        ProductionWifiFault::PhyMaintenance { _failure: failure },
+                    );
+                }
+            };
             match service {
                 WifiServiceRequest::StandaloneScan { request, .. } => {
                     await_stack_boundary!(

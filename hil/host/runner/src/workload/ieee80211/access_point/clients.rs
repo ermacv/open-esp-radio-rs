@@ -13,13 +13,15 @@ use crate::{
         controlled_openwrt_client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
     },
     lab::config::StationFixtureConfig,
-    scenario::{AccessPointClient, HtGuardIntervalExpectation},
+    scenario::AccessPointClient,
 };
 
 pub(super) enum ConnectedClients {
     Laptop {
         primary: ControlledClient,
         secondary: Option<ControlledOpenWrtClient>,
+        management_capture:
+            Option<Box<crate::fixture::openwrt_tx_monitor::OpenWrtManagementCapture>>,
     },
     OpenWrt {
         primary: ControlledOpenWrtClient,
@@ -68,14 +70,16 @@ impl ConnectedClients {
 }
 
 pub(super) fn connect_clients(
-    client: AccessPointClient,
-    security: WifiAccessPointSecurity,
+    config: &super::Config,
     minimum_clients: u8,
-    openwrt_client_fixed_ht_mcs: Option<u8>,
-    openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
     context: &Context<'_>,
     output: &std::path::Path,
 ) -> Result<ConnectedClients> {
+    let client = config.client;
+    let security = config.security;
+    let openwrt_client_fixed_ht_mcs = config.openwrt_client_fixed_ht_mcs;
+    let openwrt_client_fixed_guard_interval = config.openwrt_client_fixed_guard_interval;
+    let timeout = config.timeout;
     let openwrt_fixture = || -> Result<&crate::lab::config::OpenWrtConfig> {
         match &context.lab.station_fixture {
             StationFixtureConfig::OpenWrt(fixture) => Ok(fixture),
@@ -110,14 +114,14 @@ pub(super) fn connect_clients(
             if security == WifiAccessPointSecurity::Open {
                 return Err("open AP qualification requires the controlled OpenWrt client".into());
             }
-            let connect = || -> Result<ControlledClient> {
+            let connect = || -> Result<_> {
                 let capture = match &context.lab.station_fixture {
                     StationFixtureConfig::OpenWrt(config) if config.monitor_interface.is_some() => {
-                        Some(
-                            crate::fixture::openwrt_tx_monitor::OpenWrtDiscoveryCapture::start(
-                                config, output,
+                        Some(Box::new(
+                            crate::fixture::openwrt_tx_monitor::OpenWrtManagementCapture::start(
+                                config, output, timeout,
                             )?,
-                        )
+                        ))
                     }
                     _ => None,
                 };
@@ -125,20 +129,15 @@ pub(super) fn connect_clients(
                     &context.lab.access_point,
                     &output.join("linux-client"),
                 );
-                let evidence = capture.map(|capture| capture.finish()).transpose();
-                match (result, evidence) {
-                    (Ok(client), Ok(_)) => Ok(client),
-                    (Err(error), Ok(_)) => Err(error),
-                    (Err(error), Err(capture)) => {
-                        Err(format!("{error}; discovery capture failed: {capture}").into())
-                    }
-                    (Ok(client), Err(error)) => {
-                        let restore = client.restore().err();
-                        Err(with_cleanup_errors(error, restore, None, None, None))
+                match result {
+                    Ok(primary) => Ok((primary, capture)),
+                    Err(error) => {
+                        let evidence = capture.map(|capture| capture.finish()).transpose().err();
+                        Err(with_cleanup_errors(error, evidence, None, None, None))
                     }
                 }
             };
-            let primary = match connect() {
+            let (primary, management_capture) = match connect() {
                 Ok(primary) => primary,
                 Err(error) => {
                     let restore = secondary
@@ -148,7 +147,11 @@ pub(super) fn connect_clients(
                     return Err(with_cleanup_errors(error, restore, None, None, None));
                 }
             };
-            Ok(ConnectedClients::Laptop { primary, secondary })
+            Ok(ConnectedClients::Laptop {
+                primary,
+                secondary,
+                management_capture,
+            })
         }
     }
 }
@@ -156,10 +159,17 @@ pub(super) fn connect_clients(
 pub(super) fn restore_clients(clients: ConnectedClients) -> Result<()> {
     match clients {
         ConnectedClients::OpenWrt { primary } => primary.restore(),
-        ConnectedClients::Laptop { primary, secondary } => {
+        ConnectedClients::Laptop {
+            primary,
+            secondary,
+            management_capture,
+        } => {
+            let capture = management_capture
+                .map(|capture| capture.finish())
+                .transpose();
             let secondary = secondary.map(ControlledOpenWrtClient::restore).transpose();
             let primary = primary.restore();
-            match (primary, secondary) {
+            let restore = match (primary, secondary) {
                 (Ok(()), Ok(_)) => Ok(()),
                 (Err(primary), Ok(_)) => Err(primary),
                 (Ok(()), Err(secondary)) => Err(secondary),
@@ -167,6 +177,13 @@ pub(super) fn restore_clients(clients: ConnectedClients) -> Result<()> {
                     "primary client restore failed: {primary}; secondary client restore failed: {secondary}",
                 )
                 .into()),
+            };
+            match (restore, capture) {
+                (Ok(()), Ok(_)) => Ok(()),
+                (Err(error), Ok(_)) | (Ok(()), Err(error)) => Err(error),
+                (Err(error), Err(capture)) => {
+                    Err(format!("{error}; management capture failed: {capture}").into())
+                }
             }
         }
     }

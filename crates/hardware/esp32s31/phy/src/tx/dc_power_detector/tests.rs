@@ -413,3 +413,130 @@ fn wifi_calibration_forces_tx_path_per_row_and_cleans_it_up() {
     }
     assert_eq!(path_values, [0, 0x1ef, 0x1ef, 0x1e7, 0]);
 }
+
+fn search_completion(action: PhyTxDcPwdetSearchAction) -> PhyTxDcPwdetSearchCompletion {
+    match action {
+        PhyTxDcPwdetSearchAction::ForcePbus(transaction) => {
+            PhyTxDcPwdetSearchCompletion::PbusCompleted(transaction)
+        }
+        PhyTxDcPwdetSearchAction::DelayMicros {
+            identity,
+            component,
+            measurement,
+            micros,
+        } => PhyTxDcPwdetSearchCompletion::DelayElapsed {
+            identity,
+            component,
+            measurement,
+            micros,
+        },
+        PhyTxDcPwdetSearchAction::ToneSar(action) => {
+            PhyTxDcPwdetSearchCompletion::ToneSar(tone_sar_completion(action, 100))
+        }
+        action => panic!("unexpected nested search action: {action:?}"),
+    }
+}
+
+fn search_root(identity: u8) -> PhyTxDcPwdetTransition {
+    let mut root = PhyTxDcPwdetTransition::new(PhyTxDcPwdetParameters {
+        dco: [[1, 2, 0x100, 0x100]; 3],
+        clear_tone_after_ready: false,
+    });
+    root.step = RootStep::Search(PhyTxDcPwdetSearchTransition::new(
+        PhyTxDcPwdetSearchRequest {
+            identity,
+            initial: [1, 2, 0x100, 0x100],
+            clear_tone_after_ready: false,
+        },
+    ));
+    root
+}
+
+#[test]
+fn nested_search_rejects_wrong_completions_without_changing_parent() {
+    let mut root = search_root(0);
+    let mut steps = 0;
+    while let PhyTxDcPwdetAction::Search(action) = root.action() {
+        let before = root;
+        assert_eq!(
+            root.advance(PhyTxDcPwdetCompletion::Search(
+                PhyTxDcPwdetSearchCompletion::DelayElapsed {
+                    identity: 0,
+                    component: 0,
+                    measurement: 0,
+                    micros: 0,
+                }
+            )),
+            Err(PhyTxDcPwdetTransitionError::WrongCompletion)
+        );
+        assert_eq!(root, before);
+        // Exercise rejection inside ToneSar too, after borrowing the child.
+        assert_eq!(
+            root.advance(PhyTxDcPwdetCompletion::Search(
+                PhyTxDcPwdetSearchCompletion::ToneSar(PhyToneSarCompletion::SarRead {
+                    measurement: 0,
+                    sample: u8::MAX,
+                    value: 0,
+                })
+            )),
+            Err(PhyTxDcPwdetTransitionError::WrongCompletion)
+        );
+        assert_eq!(root, before);
+        root.advance(PhyTxDcPwdetCompletion::Search(search_completion(action)))
+            .unwrap();
+        steps += 1;
+        assert!(steps < 10_000);
+    }
+    assert_eq!(root.row, 1);
+    assert_eq!(root.dco[0][..2], [1, 2]);
+    assert!(root.total_measurements > 0);
+    assert!(matches!(root.action(), PhyTxDcPwdetAction::ForcePbus(_)));
+}
+
+#[test]
+fn nested_search_failure_enters_root_cleanup() {
+    let mut root = search_root(0);
+    let PhyTxDcPwdetAction::Search(PhyTxDcPwdetSearchAction::ForcePbus(transaction)) =
+        root.action()
+    else {
+        panic!("first DCO transaction")
+    };
+    root.advance(PhyTxDcPwdetCompletion::Search(
+        PhyTxDcPwdetSearchCompletion::PbusTimedOut(transaction),
+    ))
+    .unwrap();
+    assert!(matches!(
+        root.step,
+        RootStep::CleanupDco {
+            terminal: RootTerminal::Failed(_),
+            ..
+        }
+    ));
+    assert_eq!(root.row, 0);
+    assert_eq!(root.total_measurements, 0);
+}
+
+/// Host state-machine cost, with deterministic SAR completions and no MMIO.
+#[test]
+#[ignore = "manual release-mode CPU benchmark of the nested production TX search"]
+fn benchmark_nested_tx_search() {
+    for sample in 0..3 {
+        let start = std::time::Instant::now();
+        let mut steps = 0;
+        for iteration in 0..2000 {
+            let mut root = search_root(core::hint::black_box(iteration as u8));
+            while let PhyTxDcPwdetAction::Search(action) = core::hint::black_box(&root).action() {
+                let completion = PhyTxDcPwdetCompletion::Search(search_completion(action));
+                core::hint::black_box(&mut root)
+                    .advance(core::hint::black_box(completion))
+                    .unwrap();
+                steps += 1;
+            }
+            core::hint::black_box(root);
+        }
+        std::println!(
+            "sample={sample} iterations=2000 steps={steps} elapsed_ns={}",
+            start.elapsed().as_nanos()
+        );
+    }
+}

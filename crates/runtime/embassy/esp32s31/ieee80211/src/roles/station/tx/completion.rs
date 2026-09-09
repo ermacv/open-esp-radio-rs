@@ -63,13 +63,21 @@ where
                         MacAmpduTxResult::Incomplete
                     };
                     aggregate.ordinary_retry = Some(ordinary);
-                    self.last_aggregate_status = Some(aggregate);
+                    self.record_terminal_status(aggregate);
                 }
                 Ok(progress)
             }
             ConnectedTxActive::AbortSettling(active) => self.service_abort_settle(hardware, active),
             ConnectedTxActive::Aggregate(active) => self.service_aggregate(hardware, wake, active),
         }
+    }
+
+    fn record_terminal_status(&mut self, status: MacAmpduTxStatus<TxPhyRate>) {
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe_station_terminal(status);
+        }
+        self.last_aggregate_status = Some(status);
     }
 
     fn service_abort_settle<H: HtAmpduHardware>(
@@ -89,7 +97,7 @@ where
         self.cookie = None;
         self.ordinary
             .reset_terminal_exchange(active.traffic.queue());
-        self.last_aggregate_status = Some(MacAmpduTxStatus {
+        self.record_terminal_status(MacAmpduTxStatus {
             result: MacAmpduTxResult::HardwareTimeout,
             original_subframes: u16::from(active.original_subframes),
             aggregate_attempts: active.retry.aggregate_attempts(),
@@ -243,7 +251,7 @@ where
 
             self.release_completed()?;
             let acknowledged = active.retry.acknowledged();
-            self.last_aggregate_status = Some(MacAmpduTxStatus {
+            self.record_terminal_status(MacAmpduTxStatus {
                 result: if acknowledged == active.original_subframes {
                     MacAmpduTxResult::Delivered
                 } else {
@@ -314,7 +322,7 @@ where
             self.cookie = None;
             self.ordinary
                 .reset_terminal_exchange(active.traffic.queue());
-            self.last_aggregate_status = Some(MacAmpduTxStatus {
+            self.record_terminal_status(MacAmpduTxStatus {
                 result: MacAmpduTxResult::CollisionLimit,
                 original_subframes: u16::from(active.original_subframes),
                 aggregate_attempts: active.retry.aggregate_attempts(),

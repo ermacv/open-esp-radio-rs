@@ -200,8 +200,9 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     ///
     /// Descriptor and transaction owners remain the durable source of truth;
     /// this only prevents one epoch's already-acknowledged wake from being
-    /// interpreted as work in a later connected epoch. The caller must first
-    /// mask the peripheral and CPU interrupt routes.
+    /// interpreted as work in a later connected epoch. During same-epoch
+    /// suspension the caller detaches CPU routes and retains this result for
+    /// replay; peripheral masks and latched hardware causes remain intact.
     pub fn drain_pending(&self) -> EmbassyMacIrqDrain {
         let rx = self.rx.try_take().is_some();
         let rx_capacity = self.rx_capacity.try_take().is_some();
@@ -211,6 +212,22 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             rx,
             rx_capacity,
             tx_events,
+        }
+    }
+
+    /// Merge same-epoch work retained across a route pause with newer arrivals.
+    /// This is executor replay, so it must not count as another hardware IRQ.
+    pub(super) fn restore_pending(&self, drained: EmbassyMacIrqDrain) {
+        if drained.rx {
+            self.notify_rx_handoff();
+        }
+        if drained.rx_capacity {
+            self.notify_rx_capacity();
+        }
+        if drained.tx_events != 0 {
+            self.tx_pending
+                .fetch_or(drained.tx_events, Ordering::Release);
+            self.tx.signal(());
         }
     }
 

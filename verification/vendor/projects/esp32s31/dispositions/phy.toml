@@ -175,9 +175,11 @@ rust-component = "oer_esp32s31_phy::tracking::power::PhyTxPowerTrackingTransitio
 [[functions]]
 source = "rom"
 symbol = "phy_temp_to_power"
-disposition = "direct"
+# Tracking uses the current archive's Wi-Fi temperature policy. The ROM
+# primitive is not a direct-equivalence target for that production arithmetic.
+disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "oer_esp32s31_phy::tracking::parameters::temperature_to_tracking_power"
+rust-component = "oer_esp32s31_phy::tracking::power::PhyTxPowerTrackingTransition"
 
 [[functions]]
 source = "rom"

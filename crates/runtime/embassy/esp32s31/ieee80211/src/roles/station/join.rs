@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver};
+use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, RegisteredWifiPhy};
 
 use oer_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
@@ -112,7 +112,7 @@ pub struct StationJoinResources<
     const DMA_STORAGE_SIZE: usize,
 > {
     pub hardware: &'hardware mut H,
-    pub phy: &'state mut PhyState,
+    pub phy: &'state mut RegisteredWifiPhy,
     pub platform: &'state mut P,
     pub phy_observer: PO,
     pub receive: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,

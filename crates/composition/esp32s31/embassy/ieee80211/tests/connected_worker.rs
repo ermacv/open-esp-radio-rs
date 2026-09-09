@@ -66,3 +66,57 @@ fn late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker() {
     }
     assert_eq!(owner.get(), 32);
 }
+
+#[test]
+fn cancelled_completion_wait_can_observe_the_same_returned_owner_again() {
+    use std::{future::Future, task::Context};
+    let exchange = Exchange::new();
+    let owner = Rc::new(Cell::new(7));
+    exchange.submit(owner.clone()).unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    let returned = {
+        let mut next = std::pin::pin!(exchange.next());
+        let Poll::Ready(owner) = next.as_mut().poll(&mut cx) else {
+            panic!("queued owner")
+        };
+        owner
+    };
+    exchange.finish(returned);
+    {
+        let mut wait = std::pin::pin!(exchange.wait_completed());
+        assert!(wait.as_mut().poll(&mut cx).is_ready());
+        // Cancel the outer operation before it consumes the returned owner.
+    }
+    let mut wait = std::pin::pin!(exchange.wait_completed());
+    assert!(wait.as_mut().poll(&mut cx).is_ready());
+    let returned = exchange.take_return();
+    assert!(Rc::ptr_eq(&returned, &owner));
+    assert_eq!(Rc::strong_count(&owner), 2);
+    exchange.submit(returned).unwrap();
+    let mut wait = std::pin::pin!(exchange.wait_completed());
+    assert!(
+        wait.as_mut().poll(&mut cx).is_pending(),
+        "old completion cannot finish a new job"
+    );
+}
+
+#[test]
+fn premature_take_return_does_not_discard_a_queued_owner() {
+    use std::{
+        future::Future,
+        panic::{AssertUnwindSafe, catch_unwind},
+        task::Context,
+    };
+    let exchange = Exchange::<_, Rc<Cell<u32>>>::new();
+    let owner = Rc::new(Cell::new(11));
+    exchange.submit(owner.clone()).unwrap();
+    assert!(catch_unwind(AssertUnwindSafe(|| exchange.take_return())).is_err());
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut next = std::pin::pin!(exchange.next());
+    let Poll::Ready(queued) = next.as_mut().poll(&mut cx) else {
+        panic!("the queued owner must survive misuse of take_return")
+    };
+    assert!(Rc::ptr_eq(&queued, &owner));
+    exchange.finish(queued);
+    assert!(Rc::ptr_eq(&exchange.take_return(), &owner));
+}

@@ -14,7 +14,7 @@ use crate::roles::scan::{
     rx::ScanFrameObserver,
 };
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
+use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy};
 
 use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
@@ -185,7 +185,7 @@ pub struct StationScanResources<
     const RECORDS: usize,
     const TX_BUFFER_SIZE: usize,
 > {
-    pub phy: &'radio mut PhyState,
+    pub phy: &'radio mut RegisteredWifiPhy,
     pub platform: &'radio mut P,
     pub phy_observer: Q,
     pub phy_delay: D,

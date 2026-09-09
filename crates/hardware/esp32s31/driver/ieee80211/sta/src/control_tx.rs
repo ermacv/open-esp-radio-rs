@@ -280,6 +280,11 @@ where
         result
     }
 
+    /// Whether the retained ordinary TX owner has no in-flight or quarantined work.
+    pub fn is_idle(&self) -> bool {
+        self.ordinary.queue_state() == oer_wifi_softmac::contract::MacTxQueueState::Ready
+    }
+
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         self.ordinary.wait_deadline()
     }

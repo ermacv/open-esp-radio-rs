@@ -1,4 +1,10 @@
 use super::*;
+use oer_wifi_embassy::await_stack_boundary;
+
+enum BoundaryExit<E> {
+    Boundary,
+    Role(E),
+}
 
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::{
@@ -17,6 +23,30 @@ where
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
+    /// Run with independent, coalesced pause and sticky stop requests.
+    /// Active TX drains through its ordinary IRQ/deadline path before the
+    /// highest-priority request is acted on. Stop received while paused stays
+    /// latched and prevents new TX admission on the next invocation.
+    pub async fn run_controlled<C: RawMutex>(
+        &mut self,
+        control: &execution::Control<C>,
+    ) -> Result<execution::Exit<B::Exit>, B::Error> {
+        match await_stack_boundary!(self.run_until_pause(control.wait_boundary()))? {
+            DatapathPauseExit::Role(exit) => Ok(execution::Exit::Role(exit)),
+            DatapathPauseExit::Paused => {
+                control.acknowledge_pause();
+                if control.stop_requested() {
+                    match await_stack_boundary!(self.run_until(ready(())))? {
+                        DatapathRunnerExit::Stopped => Ok(execution::Exit::Stopped),
+                        DatapathRunnerExit::Role(exit) => Ok(execution::Exit::Role(exit)),
+                    }
+                } else {
+                    Ok(execution::Exit::Paused)
+                }
+            }
+        }
+    }
+
     /// Run the production radio event loop until role policy reaches its
     /// terminal edge.
     pub async fn run(&mut self) -> Result<DatapathRunnerExit<B::Exit>, B::Error> {
@@ -39,11 +69,47 @@ where
     where
         S: Future<Output = ()>,
     {
+        match await_stack_boundary!(self.run_until_boundary::<true, _>(stop))? {
+            BoundaryExit::Boundary => Ok(DatapathRunnerExit::Stopped),
+            BoundaryExit::Role(exit) => Ok(DatapathRunnerExit::Role(exit)),
+        }
+    }
+
+    /// Yield at a TX-idle boundary without disconnecting the role.
+    ///
+    /// A pending TX finishes through its normal IRQ/deadline path. Prepared
+    /// software frames, protocol state, RX owners and link state remain in
+    /// this runner; call a run method again to resume. No shutdown service is
+    /// invoked. Errors retain the same transaction owners for recovery.
+    ///
+    /// This is only a scheduler boundary, not a hardware-quiescence proof.
+    /// The caller must separately stop RX DMA and quiesce interrupts before
+    /// accessing shared PHY hardware. Dropping the future does not prove even
+    /// TX idle: only the `Paused` result does.
+    pub async fn run_until_pause<S>(
+        &mut self,
+        pause: S,
+    ) -> Result<DatapathPauseExit<B::Exit>, B::Error>
+    where
+        S: Future<Output = ()>,
+    {
+        match await_stack_boundary!(self.run_until_boundary::<false, _>(pause))? {
+            BoundaryExit::Boundary => Ok(DatapathPauseExit::Paused),
+            BoundaryExit::Role(exit) => Ok(DatapathPauseExit::Role(exit)),
+        }
+    }
+
+    async fn run_until_boundary<const STOP: bool, S>(
+        &mut self,
+        stop: S,
+    ) -> Result<BoundaryExit<B::Exit>, B::Error>
+    where
+        S: Future<Output = ()>,
+    {
         let mut stop = core::pin::pin!(stop);
         let mut stopping = false;
         #[cfg(feature = "diagnostics")]
         let mut stop_iterations = 0_u8;
-        let mut tx_batch_states = [TxBatchState::new(); 2];
         loop {
             #[cfg(feature = "task-poll-telemetry")]
             let mut core0_scheduler_cycles = Core0RxSchedulerCycleProfile::begin();
@@ -59,7 +125,8 @@ where
                 stopping = true;
                 #[cfg(feature = "diagnostics")]
                 log::info!(
-                    "open-radio: DATAPATH stop observed active_tx={} prepared_tx={}",
+                    "open-radio: DATAPATH {} observed active_tx={} prepared_tx={}",
+                    if STOP { "stop" } else { "pause" },
                     self.active_tx_interface.is_some(),
                     self.prepared_tx_interface.is_some(),
                 );
@@ -76,7 +143,7 @@ where
                 {
                     if stop_iterations < 16 {
                         log::info!(
-                            "open-radio: DATAPATH stop turn={} active_tx={} prepared_tx={} control_before_stop={}",
+                            "open-radio: DATAPATH boundary turn={} active_tx={} prepared_tx={} control_before_stop={}",
                             stop_iterations,
                             self.active_tx_interface.is_some(),
                             self.prepared_tx_interface.is_some(),
@@ -90,8 +157,11 @@ where
                 // before asking either paired role to acquire physical TX
                 // for shutdown control.
                 if self.active_tx_interface.is_some() {
-                    self.drive_active_tx_for_stop().await?;
+                    self.drain_active_tx().await?;
                     continue;
+                }
+                if !STOP {
+                    return Ok(BoundaryExit::Boundary);
                 }
                 self.cancel_prepared_network_tx()?;
                 self.prepared_tx_interface = None;
@@ -112,7 +182,7 @@ where
                         }
                         DatapathControlProgress::Exit(exit) => {
                             self.set_scope_link_state(oer_network::LinkState::Down);
-                            return Ok(DatapathRunnerExit::Role(exit));
+                            return Ok(BoundaryExit::Role(exit));
                         }
                         DatapathControlProgress::Idle => {}
                     }
@@ -129,7 +199,7 @@ where
                     }
                     DatapathStopProgress::Stopped => {
                         self.set_scope_link_state(oer_network::LinkState::Down);
-                        return Ok(DatapathRunnerExit::Stopped);
+                        return Ok(BoundaryExit::Boundary);
                     }
                 }
             }
@@ -195,7 +265,7 @@ where
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
                         self.set_scope_link_state(oer_network::LinkState::Down);
-                        return Ok(DatapathRunnerExit::Role(exit));
+                        return Ok(BoundaryExit::Role(exit));
                     }
                     DatapathControlProgress::Idle => {}
                 }
@@ -207,8 +277,7 @@ where
             // collection-deadline calculation here creates an avoidable air
             // gap on every saturated BA transaction.
             if let Some((interface, admitted)) = self.prepared_network_tx_candidate()? {
-                self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
-                    .await?;
+                self.start_prepared_network_tx(interface, admitted).await?;
                 continue;
             }
             #[cfg(feature = "task-poll-telemetry")]
@@ -221,15 +290,15 @@ where
             match self.interfaces {
                 DatapathInterfaceScope::Single(interface) => {
                     if !self.network_tx_pending_for(interface) {
-                        tx_batch_states[0].note_idle(now);
+                        self.tx_batch_states[0].note_idle(now);
                     }
                 }
                 DatapathInterfaceScope::Pair { first, second } => {
                     if !self.network_tx_pending_for(first) {
-                        tx_batch_states[0].note_idle(now);
+                        self.tx_batch_states[0].note_idle(now);
                     }
                     if !self.network_tx_pending_for(second) {
-                        tx_batch_states[1].note_idle(now);
+                        self.tx_batch_states[1].note_idle(now);
                     }
                 }
             }
@@ -298,8 +367,11 @@ where
                     .prepared_tx_frame_count()
                     .saturating_add(self.network.tx_queue_len(interface));
                 let slot = self.tx_batch_state_slot(interface);
-                wait_for_batch_until =
-                    tx_batch_states[slot].collection_deadline(preferred, available, Instant::now());
+                wait_for_batch_until = self.tx_batch_states[slot].collection_deadline(
+                    preferred,
+                    available,
+                    Instant::now(),
+                );
 
                 if wait_for_batch_until.is_none() {
                     // A partial standby arena and newly queued frames form
@@ -330,12 +402,7 @@ where
                         drop(network_tx);
                         if self.services.prepared_tx_start_ready() {
                             let admitted = self.services.prepared_tx_frame_count().max(1);
-                            self.start_prepared_network_tx(
-                                interface,
-                                admitted,
-                                &mut tx_batch_states,
-                            )
-                            .await?;
+                            self.start_prepared_network_tx(interface, admitted).await?;
                             continue;
                         }
                     }
@@ -361,7 +428,7 @@ where
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);
                     let slot = self.tx_batch_state_slot(interface);
-                    tx_batch_states[slot].note_started(admitted);
+                    self.tx_batch_states[slot].note_started(admitted);
                     if progress == WifiTxProgress::Pending {
                         self.begin_active_tx(interface, DatapathTxOrigin::Network);
                         self.drive_active_tx(true).await?;
@@ -423,12 +490,8 @@ where
                             else {
                                 break;
                             };
-                            self.start_prepared_network_tx(
-                                prepared_interface,
-                                prepared_frames,
-                                &mut tx_batch_states,
-                            )
-                            .await?;
+                            self.start_prepared_network_tx(prepared_interface, prepared_frames)
+                                .await?;
                         }
                     }
                     continue;
@@ -512,3 +575,6 @@ where
         }
     }
 }
+
+#[cfg(all(test, feature = "owned-network"))]
+mod tests;

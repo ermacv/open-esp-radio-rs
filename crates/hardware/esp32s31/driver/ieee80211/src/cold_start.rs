@@ -1,21 +1,27 @@
 //! Reusable role-neutral cold PHY/Wi-Fi composition for ESP32-S31.
 //!
 //! This boundary owns the production ordering shared by standalone firmware
-//! and HIL: power, finite PHY registration, Wi-Fi RX enable and initial
+//! and HIL: power, finite PHY registration, Wi-Fi client acquisition and
+//! initial tracking, Wi-Fi RX enable and initial
 //! channel selection. Board token construction, persistent calibration
 //! storage and diagnostics remain caller policy.
 
 use crate::channel::lower_wifi_channel;
 
-use oer_esp32s31_hal::owner::{PowerUpFailure, Radio, state::Powered};
+use oer_esp32s31_hal::owner::{PowerUpFailure, Radio};
 
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome, PhyState,
+    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
     PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError, PhyTxTargetPowerProfile,
-    TargetPhyRegisterAttempt, TargetPhyRegisterFailure, run_target_phy_register,
-    select_phy_channel_with_hal,
+    RegisteredPhyClientAcquireFailure, RegisteredPhyRadio, TargetPhyParamTrackingFailure,
+    TargetPhyRegisterAttempt, TargetPhyRegisterFailure, run_target_phy_param_tracking,
+    run_target_phy_register,
 };
 
+use oer_esp32s31_phy::{
+    state::client::{PhyModemClient, PhyPllTrackClock},
+    tracking::parameters::PhyParamTrackingOutcome,
+};
 use oer_ieee80211::channel::WifiChannel;
 
 /// Application-selected inputs for one cold radio start.
@@ -50,12 +56,13 @@ pub struct WifiColdStartReport {
     pub registration: PhyRegisterOutcome,
     pub port_counters: PhyTargetPortCounters,
     pub initial_channel: WifiChannel,
+    /// None when the acquisition timestamp did not require tracking.
+    pub initial_tracking: Option<PhyParamTrackingOutcome>,
 }
 
 /// Complete owner set returned at the cold-MAC boundary.
 pub struct WifiColdStart<P> {
-    radio: Radio<P, Powered>,
-    phy: PhyState,
+    radio: RegisteredPhyRadio<P>,
     tx_power: PhyTxTargetPowerProfile,
     calibration_cache: Option<PhyCalibrationCache>,
     report: WifiColdStartReport,
@@ -73,15 +80,13 @@ impl<P> WifiColdStart<P> {
     pub fn into_parts(
         self,
     ) -> (
-        Radio<P, Powered>,
-        PhyState,
+        RegisteredPhyRadio<P>,
         PhyTxTargetPowerProfile,
         Option<PhyCalibrationCache>,
         WifiColdStartReport,
     ) {
         (
             self.radio,
-            self.phy,
             self.tx_power,
             self.calibration_cache,
             self.report,
@@ -97,9 +102,10 @@ impl<P> WifiColdStart<P> {
 pub enum WifiColdStartFailure<P> {
     Power(PowerUpFailure<P>),
     Registration(TargetPhyRegisterFailure<P>),
+    ClientAcquire(RegisteredPhyClientAcquireFailure<P>),
+    InitialTracking(TargetPhyParamTrackingFailure<P>),
     InitialChannel {
-        radio: Radio<P, Powered>,
-        phy: PhyState,
+        radio: RegisteredPhyRadio<P>,
         calibration_cache: Option<PhyCalibrationCache>,
         report: WifiColdStartReport,
         error: PhyTargetPortError,
@@ -119,6 +125,7 @@ pub async fn start_esp32s31_wifi<P, D, O>(
     config: WifiColdStartConfig,
     calibration_cache: Option<PhyCalibrationCache>,
     observer: O,
+    clock: &mut impl PhyPllTrackClock,
 ) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
 where
     D: PhyAsyncDelay,
@@ -133,48 +140,55 @@ where
     let target_registration = run_target_phy_register::<_, D, _>(attempt, observer.clone())
         .await
         .map_err(WifiColdStartFailure::Registration)?;
-    // This legacy Wi-Fi owner still stores `PhyState` directly. The downgrade
-    // is performed inside the PHY crate, so safe callers cannot separate a
-    // target proof from its radio and splice hardware epochs. The following
-    // ownership iteration will retain an opaque coupled owner instead.
-    let (mut powered, mut phy, calibration_cache, registration, port_counters) =
-        target_registration.into_ordinary_parts();
+    let (powered, calibration_cache, registration, port_counters) =
+        target_registration.into_registered_parts();
+    let acquired = powered
+        .acquire_client(PhyModemClient::Wifi, clock)
+        .map_err(WifiColdStartFailure::ClientAcquire)?;
+    let (mut powered, initial_tracking) = match acquired.into_owner() {
+        Ok(powered) => (powered, None),
+        Err(pending) => {
+            let success = run_target_phy_param_tracking::<_, D, _>(
+                pending.begin_tracking(),
+                observer.clone(),
+            )
+            .await
+            .map_err(WifiColdStartFailure::InitialTracking)?;
+            let (powered, outcome) = success.into_parts();
+            (powered, Some(outcome))
+        }
+    };
     let report = WifiColdStartReport {
         registration,
         port_counters,
+        initial_tracking,
         initial_channel: config.initial_channel,
     };
 
-    powered.enable_wifi_rx();
-    let mut channel_hal = powered.channel_hal();
     let mut channel_observer = observer;
     let initial_channel = lower_wifi_channel(config.initial_channel);
-    if let Err(error) = select_phy_channel_with_hal::<D, _, _>(
-        &mut phy,
-        initial_channel.channel_or_frequency,
-        initial_channel.cbw,
-        &mut channel_hal,
-        &mut channel_observer,
-    )
-    .await
+    if let Err(error) = powered
+        .initialize_wifi_channel::<D, _>(
+            initial_channel.channel_or_frequency,
+            initial_channel.cbw,
+            &mut channel_observer,
+        )
+        .await
     {
-        drop(channel_hal);
         return Err(WifiColdStartFailure::InitialChannel {
             radio: powered,
-            phy,
             calibration_cache,
             report,
             error,
         });
     }
-    drop(channel_hal);
 
-    let tx_power = phy
+    let tx_power = powered
+        .state()
         .tx_target_power_profile()
         .with_maximum_quarter_dbm(config.maximum_tx_power_quarter_dbm);
     Ok(WifiColdStart {
         radio: powered,
-        phy,
         tx_power,
         calibration_cache,
         report,

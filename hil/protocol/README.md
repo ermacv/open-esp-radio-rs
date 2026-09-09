@@ -1,6 +1,6 @@
-# HIL protocol v92
+# HIL protocol v93
 
-Host and firmware must both use version 92. Other versions are rejected
+Host and firmware must both use version 93. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
@@ -158,3 +158,71 @@ or consume retained results. Stack queries can return `InvalidState` while
 initialization is pending or session ownership prevents a safe snapshot. A
 status observation preserves this unavailability and cumulative link counters
 instead of applying a new workload's acceptance criteria to previous activity.
+
+Station `TxRadioEvidence.station_terminal` reports logical aggregate receipts
+only after BlockAck retries and any detached ordinary retry have terminated.
+`acknowledged + unacknowledged == mpdus` uses wrapping interval counters;
+invalid normalized statuses are counted separately and invalidate evidence.
+These counters exclude live and quarantined exchanges. A missing ACK does not
+prove that the peer failed to receive an MPDU. They are neither UDP sequence
+accounting nor a radio-drain barrier. The host retains them independently in
+`station-tx-terminal.json`; aggregate publication/completion counters retain
+their earlier per-publication meanings.
+
+PHY child poll evidence distinguishes `pending`, `suspended_micros` and
+`maximum_suspension_micros` from time spent inside polls. A suspension starts
+when a child returns Pending and ends at its next poll entry. No wake timestamp
+or hardware-readiness timestamp is implied. Successful timing requires one
+Ready poll per completed child and disjoint poll/gap totals fitting inside
+its enclosing operation. Cancellation leaves an incomplete operation; gaps
+between independent invocations are excluded.
+
+`PhyTimingEvidence.dcode_waits` separates direct runtime Dcode I2C waits,
+nested RFPLL I2C waits and explicit RFPLL settling/lock delays. Each timing
+counts completed waits with requested/elapsed totals and maximum per-wait
+lateness. Each I2C group's `bus_busy` is a subset of `timing.count`; other waits
+precede completion reads. PLL locked/unlocked counts reuse existing analog lock-status reads in Dcode,
+without extra MMIO reads or a timestamp of physical lock acquisition.
+Unsupported measurement, overflow, unmatched events and cancellation invalidate
+complete timing. All three wait totals must fit together inside Dcode time.
+They overlap the enclosing operation/poll/gap measurements and must not be
+added to them. This evidence does not cover all PHY waits.
+
+### TX calibration wait detail
+
+`StationPhyTxWaits` precedes the correlated `StationPauseCompleted` when PHY
+operation timings are available. Both events use the pause request ID and the
+reliable event stream; no per-sample events are emitted. The separate detail
+keeps the existing 480-byte body limit, including worst-case integer encoding.
+The runner retrieves already received detail after completion and rejects
+missing detail or sequential wait totals exceeding the TX operation interval.
+An access-only pause has zero TX wait and SAR counts. With no timing observer,
+neither detailed nor aggregate timing evidence is present.
+
+PBus, search settling, tone arming, SAR triggering and root setup/cleanup retain
+counts, requested/elapsed microseconds and maximum lateness. `sar_ready` and
+`sar_not_ready` count existing status reads, not the time of physical readiness.
+The driver timing-invalid flag covers unsupported, unmatched and overflowing
+observations. Timer lateness includes dispatch, polling and resumption; it is
+not pure executor latency. These intervals overlap operation/poll accounting
+and must not be added to it. `station-pause.json` stores the correlated detail
+under `tx_waits`; the raw stream remains in `protocol.jsonl`.
+
+### Platform timer window
+
+`StationTimerObserved` includes due-deadline counts at registration and alarm
+programming boundaries, plus IRQ acknowledgment timing. These refer to all users
+of the shared platform timer, not exclusively PHY tasks. The event is separate from the PHY-specific wait detail. With
+`driver-observation`, HIL opens one exclusive shared-timer observation window
+around the station pause request and emits its report before the correlated
+`StationPauseCompleted`. The runtime feature is absent from ordinary performance
+images. The host retains the report under `timer` in `station-pause.json`,
+requires its presence for a measured pause and validates alarm/IRQ/dispatch
+count reconciliation. Duplicate, unrelated or late records cannot satisfy the
+request. The existing frame-size bound applies to this event independently.
+
+The [platform timer contract](../../crates/adapters/embassy/esp32s31/runtime/src/timer_observation/README.md)
+defines timestamp boundaries, partial windows and observer overhead. These are
+shared-timer measurements; they do not attribute every IRQ to PHY or measure
+wake-to-PHY-poll latency. A control pause may contain legitimate timer work from
+other tasks even when PHY wait counters are zero.

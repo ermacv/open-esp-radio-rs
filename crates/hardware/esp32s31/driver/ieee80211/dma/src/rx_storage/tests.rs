@@ -4,6 +4,8 @@ use self::std::boxed::Box;
 use super::*;
 use crate::rx_dma::RxDmaBinding;
 
+mod pause;
+
 #[derive(Default)]
 struct MockRxDma {
     walker: bool,
@@ -12,6 +14,9 @@ struct MockRxDma {
     next_descriptor_low: u32,
     fail_disable: bool,
     ambiguous_enable: bool,
+    reload: bool,
+    disable_calls: usize,
+    publications: usize,
 }
 
 impl RxDma for MockRxDma {
@@ -47,7 +52,7 @@ impl RxDma for MockRxDma {
     }
 
     fn reload_pending(&mut self) -> bool {
-        false
+        self.reload
     }
 
     fn try_with_reload_settled<R>(
@@ -60,6 +65,7 @@ impl RxDma for MockRxDma {
     fn configure_descriptor_window(&mut self, _: &RxDmaBinding<'_>) {}
 
     fn write_descriptor_base(&mut self, _: &RxDmaBinding<'_>, address: u32) {
+        self.publications += 1;
         self.descriptor_base = address;
     }
 
@@ -67,7 +73,9 @@ impl RxDma for MockRxDma {
         self.walker = true;
     }
 
-    fn request_reload(&mut self, _: &RxDmaBinding<'_>) {}
+    fn request_reload(&mut self, _: &RxDmaBinding<'_>) {
+        self.publications += 1;
+    }
 
     fn try_with_walker_enabled<R>(
         &mut self,
@@ -82,6 +90,7 @@ impl RxDma for MockRxDma {
         &mut self,
         stopped: impl for<'confirmation> FnOnce(crate::rx_dma::RxDmaWalkerStopped<'confirmation>) -> R,
     ) -> Option<R> {
+        self.disable_calls += 1;
         if self.fail_disable {
             return None;
         }

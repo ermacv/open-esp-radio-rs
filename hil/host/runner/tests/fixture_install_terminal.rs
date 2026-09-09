@@ -96,7 +96,7 @@ fn installer_keeps_terminal_control_hides_input_and_preserves_exit_status() {
     let directory = tempfile::tempdir().unwrap();
     let sudo = directory.path().join("sudo");
     let cargo = directory.path().join("cargo");
-    fs::write(&cargo, "#!/bin/sh\ntest \"$*\" = 'xtask build hostapd'\n").unwrap();
+    fs::write(&cargo, "#!/bin/sh\ncase \"$*\" in 'xtask build hostapd'|'build --locked -p open-esp-radio-hil-runner --bin open-radio-probe --target-dir target/hil/fixture-build') exit 0;; *) exit 98;; esac\n").unwrap();
     fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         &sudo,

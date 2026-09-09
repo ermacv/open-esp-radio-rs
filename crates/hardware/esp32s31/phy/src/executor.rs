@@ -5,6 +5,9 @@
 //! [`PhyRegisterPort`].  The state machine can therefore be used with Embassy,
 //! a custom interrupt executor, or a test harness without importing an RTOS.
 
+pub mod wait;
+
+use crate::tracking::observation::{Event, Operation};
 use core::future::Future;
 
 use crate::calibration::registration::{
@@ -43,6 +46,8 @@ pub trait PhyRegisterPort {
 pub trait PhyCalibrationTrackingPort {
     type Error;
 
+    fn observe(&mut self, _operation: Operation, _event: Event) {}
+
     fn complete<'port, 'state>(
         &'port mut self,
         transition: &'port mut crate::tracking::parameters::PhyParamTrackingCalibrationTransition<
@@ -59,6 +64,8 @@ pub trait PhyCalibrationTrackingPort {
 /// Async completion boundary for one complete outer periodic-tracking child.
 pub trait PhyParamTrackingPort {
     type Error;
+
+    fn observe(&mut self, _operation: Operation, _event: Event) {}
 
     fn complete<'port>(
         &'port mut self,
@@ -167,14 +174,28 @@ pub async fn run_phy_calibration_tracking<P: PhyCalibrationTrackingPort>(
             crate::tracking::calibration::PhyCalibrationTrackingAction::Failed(failure) => {
                 return Err(PhyCalibrationTrackingRunError::Radio(failure));
             }
-            _ => {
-                let completion = port
-                    .complete(transition)
-                    .await
-                    .map_err(PhyCalibrationTrackingRunError::Port)?;
-                transition
-                    .advance(completion)
-                    .map_err(PhyCalibrationTrackingRunError::Transition)?;
+            action => {
+                let operation = Operation::calibration(action);
+                if let Some(operation) = operation {
+                    port.observe(operation, Event::Started);
+                }
+                let result = match port.complete(transition).await {
+                    Ok(completion) => transition
+                        .advance(completion)
+                        .map_err(PhyCalibrationTrackingRunError::Transition),
+                    Err(error) => Err(PhyCalibrationTrackingRunError::Port(error)),
+                };
+                if let Some(operation) = operation {
+                    port.observe(
+                        operation,
+                        if result.is_ok() {
+                            Event::Completed
+                        } else {
+                            Event::Failed
+                        },
+                    );
+                }
+                result?;
             }
         }
     }
@@ -201,19 +222,35 @@ pub async fn run_phy_param_tracking<P: PhyParamTrackingPort>(
             crate::tracking::parameters::PhyParamTrackingAction::Complete(outcome) => {
                 return Ok(outcome);
             }
-            _ => {
-                let completion = port
-                    .complete(pending, state)
-                    .await
-                    .map_err(PhyParamTrackingRunError::Port)?;
-                pending
-                    .advance(completion)
-                    .map_err(PhyParamTrackingRunError::Transition)?;
+            action => {
+                let operation = Operation::parameter(action);
+                if let Some(operation) = operation {
+                    port.observe(operation, Event::Started);
+                }
+                let result = match port.complete(pending, state).await {
+                    Ok(completion) => pending
+                        .advance(completion)
+                        .map_err(PhyParamTrackingRunError::Transition),
+                    Err(error) => Err(PhyParamTrackingRunError::Port(error)),
+                };
+                if let Some(operation) = operation {
+                    port.observe(
+                        operation,
+                        if result.is_ok() {
+                            Event::Completed
+                        } else {
+                            Event::Failed
+                        },
+                    );
+                }
+                result?;
             }
         }
     }
     Err(PhyParamTrackingRunError::ParentEdgeLimit)
 }
 
+#[cfg(test)]
+mod observation_tests;
 #[cfg(test)]
 mod tests;

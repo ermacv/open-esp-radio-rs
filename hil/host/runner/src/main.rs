@@ -101,6 +101,14 @@ fn run() -> Result<()> {
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
         CliCommand::Fixture {
+            command: cli::FixtureCommand::ProbePlan,
+        } => {
+            let plan: Vec<_> = (0..fixture::probe_load::model::REQUESTS)
+                .filter_map(fixture::probe_load::model::request)
+                .collect();
+            emit_json(&plan, true)
+        }
+        CliCommand::Fixture {
             command: cli::FixtureCommand::BluetoothCheck { adapter },
         } => fixture::bluetooth::check(&root, adapter),
         CliCommand::Archive { command } => archive::run(&root, command),

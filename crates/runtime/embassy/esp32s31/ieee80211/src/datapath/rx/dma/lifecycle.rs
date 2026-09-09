@@ -324,6 +324,7 @@ impl<
         DMA_STORAGE_SIZE,
     > {
         StagedRxProducer {
+            ring_lifetime: PhantomData,
             ring,
             storage: self.storage,
             pool: self.pool,
@@ -415,6 +416,7 @@ impl<
             .await;
         match ring.try_start(hardware) {
             Ok(ring) => Ok(StagedRxProducer {
+                ring_lifetime: PhantomData,
                 ring,
                 storage,
                 pool,
@@ -478,6 +480,7 @@ impl<
         frames: StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Self {
         Self {
+            ring_lifetime: PhantomData,
             ring,
             storage,
             pool,
@@ -510,6 +513,7 @@ impl<
         addresses: oer_ieee80211::vif::StaApRxAddresses,
     ) -> Self {
         Self {
+            ring_lifetime: PhantomData,
             ring,
             storage,
             pool,
@@ -553,6 +557,7 @@ impl<
         P,
     > {
         StagedRxProducer {
+            ring_lifetime: PhantomData,
             ring: self.ring,
             storage: self.storage,
             pool: self.pool,
@@ -661,6 +666,7 @@ impl<
             return Err((self, RxRingError::Busy));
         }
         let Self {
+            ring_lifetime: _,
             ring,
             storage,
             pool,
@@ -738,6 +744,7 @@ impl<
             return Err((self, RxRingError::Busy));
         }
         let Self {
+            ring_lifetime: _,
             ring,
             storage,
             pool,
@@ -762,6 +769,7 @@ impl<
             }),
             Err((ring, error)) => Err((
                 Self {
+                    ring_lifetime: PhantomData,
                     ring,
                     storage,
                     pool,

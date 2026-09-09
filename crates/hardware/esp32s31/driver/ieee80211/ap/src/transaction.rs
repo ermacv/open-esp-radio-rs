@@ -40,7 +40,11 @@ enum PendingPublication {
         dtim_group_frames: u16,
     },
     Authentication,
-    ProbeResponse,
+    ProbeResponse {
+        receiver: [u8; 6],
+        sequence_control: u16,
+        started_at_micros: u64,
+    },
     Association {
         peer: [u8; 6],
         begin_wpa2: bool,
@@ -79,7 +83,7 @@ impl PendingPublication {
     const fn kind(self) -> ApPendingPublicationKind {
         match self {
             Self::Beacon { .. } => ApPendingPublicationKind::Beacon,
-            Self::ProbeResponse => ApPendingPublicationKind::ProbeResponse,
+            Self::ProbeResponse { .. } => ApPendingPublicationKind::ProbeResponse,
             Self::Authentication => ApPendingPublicationKind::Authentication,
             Self::Association { .. } => ApPendingPublicationKind::Association,
             Self::Eapol { .. } => ApPendingPublicationKind::Eapol,
@@ -172,15 +176,27 @@ impl ApDataTxObservation {
 
 /// Compact semantic classification of terminal AP TX failures.
 ///
-/// Each counter saturates independently. Four bytes replace the former
-/// undifferentiated `u32`, so retaining evidence does not enlarge the live AP
-/// owner or its executor future.
+/// Each counter saturates independently. Discovery ACK misses remain a named
+/// subset of the total, rather than being discarded or reported as success.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ApTxFailureObservation {
     pub hardware_failures: u8,
     pub hardware_timeouts: u8,
     pub collision_limits: u8,
     pub last_hardware_status: u8,
+    /// Subset of hardware_failures: one-shot discovery responses without ACK.
+    pub probe_ack_timeouts: u8,
+}
+
+/// First failed discovery response in this AP epoch. No packet payload is retained.
+#[cfg(any(feature = "diagnostics", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProbeFailure {
+    pub receiver: [u8; 6],
+    pub sequence_control: u16,
+    pub started_at_micros: u64,
+    pub completed_at_micros: u64,
+    pub outcome: OrdinaryTxOutcome,
 }
 
 /// Diagnostic state owned by the optional AP MAC observer.
@@ -191,6 +207,7 @@ pub struct ApTxFailureObservation {
 #[derive(Default)]
 struct ApMacObserver {
     observation: ApMacObservation,
+    first_probe_failure: Option<ProbeFailure>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -379,6 +396,11 @@ where
         self.observer.observation
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
+    pub fn first_probe_failure(&self) -> Option<ProbeFailure> {
+        self.observer.first_probe_failure
+    }
+
     pub fn pending_publication_kind(&self) -> Option<ApPendingPublicationKind> {
         self.pending.map(PendingPublication::kind)
     }
@@ -457,12 +479,21 @@ where
         let peer = scratch[4..10]
             .try_into()
             .expect("AP response encoder always writes receiver address");
+        let class = if scratch[0] == 0x50 {
+            ApTxClass::ProbeResponse
+        } else {
+            ApTxClass::Management
+        };
         self.transmit
-            .start_encoded(hardware, ApTxClass::Management, &scratch[..len])?;
+            .start_encoded(hardware, class, &scratch[..len])?;
         self.pending = Some(if begin_wpa2 {
             PendingPublication::Association { peer, begin_wpa2 }
         } else if scratch[0] == 0x50 {
-            PendingPublication::ProbeResponse
+            PendingPublication::ProbeResponse {
+                receiver: peer,
+                sequence_control: u16::from_le_bytes([scratch[22], scratch[23]]),
+                started_at_micros: now_micros,
+            }
         } else if scratch[0] == 0xb0 {
             PendingPublication::Authentication
         } else {
@@ -841,8 +872,38 @@ where
         }
         if !matches!(outcome, OrdinaryTxOutcome::Success(_)) {
             #[cfg(any(feature = "diagnostics", test))]
+            if let PendingPublication::ProbeResponse {
+                receiver,
+                sequence_control,
+                started_at_micros,
+            } = pending
+            {
+                self.observer
+                    .first_probe_failure
+                    .get_or_insert(ProbeFailure {
+                        receiver,
+                        sequence_control,
+                        started_at_micros,
+                        completed_at_micros: now_micros,
+                        outcome,
+                    });
+            }
+            #[cfg(any(feature = "diagnostics", test))]
             match outcome {
                 OrdinaryTxOutcome::HardwareFailure(report) => {
+                    if matches!(pending, PendingPublication::ProbeResponse { .. })
+                        && report.completion.is_some_and(|completion| {
+                            completion.disposition()
+                                == oer_esp32s31_wifi_mac::tx::TxCompletionDisposition::AckTimeout
+                        })
+                    {
+                        self.observer.observation.tx_failures.probe_ack_timeouts = self
+                            .observer
+                            .observation
+                            .tx_failures
+                            .probe_ack_timeouts
+                            .saturating_add(1);
+                    }
                     self.observer.observation.tx_failures.hardware_failures = self
                         .observer
                         .observation
@@ -916,7 +977,7 @@ where
                     }
                 }
             }
-            PendingPublication::ProbeResponse => ApTxCompletionAction::None,
+            PendingPublication::ProbeResponse { .. } => ApTxCompletionAction::None,
             PendingPublication::Authentication => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {

@@ -220,7 +220,7 @@ fn bluetooth_class_uses_its_own_reference_and_skips_common_when_below_threshold(
 }
 
 #[test]
-fn override_below_delta_skips_all_calibration_but_never_skips_final_restore() {
+fn below_threshold_completes_without_hardware_operations() {
     let actions = run(
         PhyCalibrationTrackingRequest {
             class: PhyCalibrationTrackClass::Wifi,
@@ -232,9 +232,8 @@ fn override_below_delta_skips_all_calibration_but_never_skips_final_restore() {
     );
     assert_eq!(
         actions,
-        [
-            PhyCalibrationTrackingAction::RestoreTxGainCompensation,
-            PhyCalibrationTrackingAction::Complete(PhyCalibrationTrackingOutcome {
+        [PhyCalibrationTrackingAction::Complete(
+            PhyCalibrationTrackingOutcome {
                 class: PhyCalibrationTrackClass::Wifi,
                 threshold: 31,
                 common_reference_temperature: 20,
@@ -246,9 +245,65 @@ fn override_below_delta_skips_all_calibration_but_never_skips_final_restore() {
                 rx_gain: None,
                 channel: None,
                 tx_dc_pwdet: None,
-            }),
-        ]
+            }
+        ),]
     );
+}
+
+#[test]
+fn common_calibration_restores_gain_before_admitting_the_class_branch() {
+    for class in [
+        PhyCalibrationTrackClass::Wifi,
+        PhyCalibrationTrackClass::BluetoothIeee802154,
+    ] {
+        for class_due in [false, true] {
+            let reference = if class_due { 20 } else { 50 };
+            let actions = run(
+                PhyCalibrationTrackingRequest { class },
+                PhyCalibrationTrackingParameters {
+                    wifi_reference_temperature: reference,
+                    bluetooth_ieee802154_reference_temperature: reference,
+                    ..PARAMETERS
+                },
+            );
+            let restored_channel = actions
+                .iter()
+                .position(|action| {
+                    matches!(
+                        action,
+                        PhyCalibrationTrackingAction::RestoreChipChannel { .. }
+                    )
+                })
+                .unwrap();
+            assert_eq!(
+                actions[restored_channel + 1],
+                PhyCalibrationTrackingAction::EnableMacBaseband
+            );
+            assert_eq!(
+                actions[restored_channel + 2],
+                PhyCalibrationTrackingAction::RestoreTxGainCompensation
+            );
+            if class_due {
+                assert_eq!(
+                    actions[restored_channel + 3],
+                    PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
+                );
+            } else {
+                assert!(matches!(
+                    actions[restored_channel + 3],
+                    PhyCalibrationTrackingAction::Complete(_)
+                ));
+            }
+            assert_eq!(
+                actions
+                    .iter()
+                    .filter(|action| **action
+                        == PhyCalibrationTrackingAction::RestoreTxGainCompensation)
+                    .count(),
+                if class_due { 2 } else { 1 }
+            );
+        }
+    }
 }
 
 #[test]
@@ -561,6 +616,13 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
         .unwrap();
     assert_eq!(
         transition.action(),
+        PhyCalibrationTrackingAction::RestoreTxGainCompensation
+    );
+    transition
+        .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
+        .unwrap();
+    assert_eq!(
+        transition.action(),
         PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
     );
 
@@ -574,6 +636,51 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
         }
         transition.advance(completion(action)).unwrap();
     }
+}
+
+#[test]
+fn restored_temperature_can_remove_tx_demand_without_committing_tx_reference() {
+    let mut transition = PhyCalibrationTrackingTransition::new(
+        PhyCalibrationTrackingRequest {
+            class: PhyCalibrationTrackClass::Wifi,
+        },
+        PARAMETERS,
+    );
+    for action in [
+        PhyCalibrationTrackingAction::ClearPbus,
+        PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::RecalibrateRxGain,
+    ] {
+        transition.advance(completion(action)).unwrap();
+    }
+    transition
+        .advance(PhyCalibrationTrackingCompletion::ChipChannelRestored(
+            PhyCalibrationChannelCompletion {
+                result: Ok(channel_outcome(11, 1, 21)),
+            },
+        ))
+        .unwrap();
+    transition
+        .advance(PhyCalibrationTrackingCompletion::MacBasebandEnabled)
+        .unwrap();
+    transition
+        .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
+        .unwrap();
+    let PhyCalibrationTrackingAction::Complete(outcome) = transition.action() else {
+        panic!("TX demand must be reevaluated after channel restoration");
+    };
+    assert!(outcome.common_updated);
+    assert!(!outcome.class_updated);
+    assert_eq!(outcome.common_reference_temperature, 21);
+    assert_eq!(
+        outcome.wifi_reference_temperature,
+        PARAMETERS.wifi_reference_temperature
+    );
+    assert_eq!(
+        outcome.bluetooth_ieee802154_reference_temperature,
+        PARAMETERS.bluetooth_ieee802154_reference_temperature
+    );
+    assert!(outcome.tx_dc_pwdet.is_none());
 }
 
 #[test]
@@ -861,4 +968,115 @@ fn class_pbus_timeout_restores_force_frequency_and_gain_before_failure() {
         transition.advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored),
         Err(PhyCalibrationTrackingTransitionError::AlreadyComplete)
     );
+}
+
+#[test]
+fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
+    use crate::tracking::calibration::{
+        PhyCalibrationDcodeCompletion, PhyCalibrationPbusClearCompletion,
+        PhyCalibrationRxGainCompletion, PhyCalibrationTrackingAction as Action,
+        PhyCalibrationTrackingCompletion as Completion, PhyCalibrationTrackingFailure,
+    };
+    use crate::tracking::parameters::{
+        PhyParamTrackRequest, PhyParamTrackingCompletion, PhyParamTrackingPolicy,
+        PhyParamTrackingTransition, PhyTrackingDiagnostics,
+    };
+
+    let policy = PhyParamTrackingPolicy {
+        rfpll_cap_tracking_enabled: false,
+        tracking_inhibited: false,
+        rfpll_cap_tracking_threshold: None,
+        calibration_tracking_threshold: None,
+        diagnostics: PhyTrackingDiagnostics::Enabled,
+        bluetooth_ieee802154_power_tracking_enabled: true,
+        calibration_tracking_enabled: true,
+        relaxed_power_tracking_threshold: false,
+    };
+    let mut parent =
+        PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), policy);
+    parent
+        .advance(PhyParamTrackingCompletion::EnteredCritical)
+        .unwrap();
+    parent
+        .advance(PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled: true })
+        .unwrap();
+    let parent_action = parent.action();
+    let mut state = crate::PhyState::new(crate::PhyConfig::production());
+    state.apply_temperature_outcome(crate::analog::temperature::PhyTemperatureOutcome {
+        temperature: 50,
+        sensor_index: 2,
+        next_dac: 15,
+    });
+    let before = state.calibration_tracking_parameters(None);
+    let mut child = parent.begin_calibration_tracking(&mut state).unwrap();
+    assert_eq!(child.action(), Action::ClearPbus);
+    child
+        .advance(Completion::PbusClearCompleted(
+            PhyCalibrationPbusClearCompletion {
+                outcome: crate::analog::pbus::PhyPbusClearOutcome::Cleared,
+            },
+        ))
+        .unwrap();
+    child
+        .advance(Completion::DcodeCompleted(PhyCalibrationDcodeCompletion {
+            result: Ok(crate::analog::dcode::PhyDcodeOutcome { codes: [7; 8] }),
+        }))
+        .unwrap();
+    let failure = crate::rx::gain::PhyRxGainInitFailure::Publish(
+        crate::rx::gain::PhyRxGainPublishFailure::PbusTimedOut {
+            bank: crate::calibration::baseband::PhyRxGainBank::Wifi,
+            transaction: crate::analog::pbus::PhyPbusForceTest::new(4, 1, 0),
+        },
+    );
+    child
+        .advance(Completion::RxGainRecalibrated(
+            PhyCalibrationRxGainCompletion {
+                result: Err(failure),
+            },
+        ))
+        .unwrap();
+
+    // Cleanup is still pending; the partially completed common branch cannot commit.
+    let mut child = child.commit().unwrap_err();
+    assert_eq!(child.action(), Action::RestoreTxGainCompensation);
+    assert_eq!(child.state().calibration_tracking_parameters(None), before);
+    child
+        .advance(Completion::TxGainCompensationRestored)
+        .unwrap();
+    // Completing cleanup is not a successful calibration proof either.
+    let child = child.commit().unwrap_err();
+    assert_eq!(
+        child.action(),
+        Action::Failed(PhyCalibrationTrackingFailure::RxGain(failure))
+    );
+    assert_eq!(child.state().calibration_tracking_parameters(None), before);
+    assert_eq!(parent.action(), parent_action);
+}
+
+#[test]
+fn zero_threshold_runs_both_branches_without_changing_temperature() {
+    let actions = run(
+        PhyCalibrationTrackingRequest {
+            class: PhyCalibrationTrackClass::Wifi,
+        },
+        PhyCalibrationTrackingParameters {
+            current_temperature: 50,
+            common_reference_temperature: 50,
+            wifi_reference_temperature: 50,
+            bluetooth_ieee802154_reference_temperature: 50,
+            threshold_override: Some(0),
+            ..PARAMETERS
+        },
+    );
+    let PhyCalibrationTrackingAction::Complete(outcome) = actions[actions.len() - 1] else {
+        panic!("missing terminal outcome")
+    };
+    assert!(outcome.common_updated);
+    assert!(outcome.class_updated);
+    assert_eq!(outcome.common_reference_temperature, 50);
+    assert_eq!(outcome.wifi_reference_temperature, 50);
+    assert!(outcome.dcode.is_some());
+    assert!(outcome.rx_gain.is_some());
+    assert!(outcome.channel.is_some());
+    assert!(outcome.tx_dc_pwdet.is_some());
 }

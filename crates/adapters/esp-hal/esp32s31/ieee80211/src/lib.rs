@@ -95,10 +95,10 @@ impl EspHalRadioPeripheral {
 
     /// Disable both Wi-Fi CPU interrupt routes on their binding core.
     ///
-    /// This closes only the platform routing edge. The caller must then mask
-    /// and acknowledge the peripheral banks before moving their PAC owners
-    /// back into task-side setup. Binding and teardown are intentionally kept
-    /// on the same core by the station lifecycle owner.
+    /// This closes only the platform routing edge. The caller may retain both
+    /// ISR capabilities unchanged for same-epoch resume, or mask/acknowledge
+    /// their banks for terminal teardown. It does not establish MAC/DMA or RF
+    /// quiescence. Binding and detachment must occur on the same core.
     pub fn disable_interrupts(&self) {
         let cpu = Cpu::current();
         interrupt::disable(cpu, Interrupt::WIFI_MAC);

@@ -720,3 +720,62 @@ fn time_reversal_rejects_periodic_callback_and_restores_exact_owner() {
     );
     assert_eq!(failure.owner().snapshot(), before);
 }
+
+#[test]
+fn tracking_deadline_matches_strict_due_boundary_for_every_client_set() {
+    for mask in 0..=VALID_CLIENT_BITS {
+        let owner = state_for_mask(mask, 0);
+        let deadline = owner.snapshot().next_tracking_deadline_micros().unwrap();
+        if mask == 0 {
+            assert_eq!(deadline, None);
+            continue;
+        }
+        let deadline = deadline.unwrap();
+        assert_eq!(deadline, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1);
+        let early = owner.evaluate_immediate_at(deadline - 1).unwrap();
+        assert!(early.request().is_none());
+        let owner = early
+            .into_owner()
+            .unwrap_or_else(|_| panic!("early wake retained a request"));
+        let due = owner.evaluate_immediate_at(deadline).unwrap();
+        assert!(due.request().is_some());
+    }
+}
+
+#[test]
+fn tracking_deadline_excludes_released_classes_and_detects_overflow() {
+    let mut owner = state_for_mask(VALID_CLIENT_BITS, 0);
+    owner.wifi_previous_micros = 100;
+    owner.bluetooth_ieee802154_previous_micros = 200;
+    assert_eq!(
+        owner.snapshot().next_tracking_deadline_micros(),
+        Ok(Some(1_000_101))
+    );
+    let owner = owner.release(PhyModemClient::Wifi).unwrap().into_owner();
+    assert_eq!(
+        owner.snapshot().next_tracking_deadline_micros(),
+        Ok(Some(1_000_201))
+    );
+    let mut owner = owner
+        .release(PhyModemClient::Bluetooth)
+        .unwrap()
+        .into_owner();
+    assert_eq!(
+        owner.snapshot().next_tracking_deadline_micros(),
+        Ok(Some(1_000_201))
+    );
+    owner.bluetooth_ieee802154_previous_micros = u64::MAX;
+    assert_eq!(
+        owner.snapshot().next_tracking_deadline_micros(),
+        Err(PhyTrackTimeError::DeadlineOverflow {
+            class: PhyPllTrackClass::BluetoothIeee802154
+        })
+    );
+    let owner = owner
+        .release(PhyModemClient::Ieee802154)
+        .unwrap()
+        .into_owner();
+    assert_eq!(owner.snapshot().next_tracking_deadline_micros(), Ok(None));
+}
+
+mod schedule;

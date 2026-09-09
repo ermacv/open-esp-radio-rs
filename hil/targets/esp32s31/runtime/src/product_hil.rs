@@ -3,6 +3,9 @@
 //! This module is deliberately an application of the public driver API. PAC,
 //! DMA, ISR and station internals stay in `oer-esp32s31-embassy-wifi`.
 
+mod phy;
+use phy::phy_timing_evidence;
+
 use core::{
     num::NonZeroU16,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -88,9 +91,10 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_role_failure, complete_wifi_role_transition,
-    complete_wifi_scan, publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
-    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
+    complete_station_epoch_cycle, complete_station_pause, complete_wifi_role_failure,
+    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
+    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
+    receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 use oer_esp32s31_soc::L1CachePerformanceCounters;
@@ -307,6 +311,7 @@ static AP_DATA_TX_MAXIMUM_ACK_SNR_DB: AtomicU32 = AtomicU32::new(0);
 static AP_TX_ACK_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_CTS_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_COLLISION_RETRIES: AtomicU32 = AtomicU32::new(0);
+static AP_TX_PROBE_ACK_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_TX_FAILURES: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_UNAUTHORIZED: AtomicU32 = AtomicU32::new(0);
@@ -491,6 +496,10 @@ fn observe_access_point(observation: AccessPointObservation) {
     AP_TX_ACK_TIMEOUT_RETRIES.store(observation.tx_ack_timeout_retries, Ordering::Release);
     AP_TX_CTS_TIMEOUT_RETRIES.store(observation.tx_cts_timeout_retries, Ordering::Release);
     AP_TX_COLLISION_RETRIES.store(observation.tx_collision_retries, Ordering::Release);
+    AP_TX_PROBE_ACK_TIMEOUTS.store(
+        u32::from(observation.tx_probe_ack_timeouts),
+        Ordering::Release,
+    );
     AP_TX_FAILURES.store(
         u32::from(observation.tx_hardware_failures)
             | (u32::from(observation.tx_hardware_timeouts) << 8)
@@ -686,6 +695,7 @@ fn access_point_evidence(
         tx_ack_timeout_retries: AP_TX_ACK_TIMEOUT_RETRIES.load(Ordering::Acquire),
         tx_cts_timeout_retries: AP_TX_CTS_TIMEOUT_RETRIES.load(Ordering::Acquire),
         tx_collision_retries: AP_TX_COLLISION_RETRIES.load(Ordering::Acquire),
+        tx_probe_ack_timeouts: AP_TX_PROBE_ACK_TIMEOUTS.load(Ordering::Acquire) as u8,
         tx_hardware_failures: tx_failures as u8,
         tx_hardware_timeouts: (tx_failures >> 8) as u8,
         tx_collision_limits: (tx_failures >> 16) as u8,
@@ -1683,6 +1693,28 @@ pub async fn run(
         radio_runner_task(spawner, runner)
             .expect("production radio runner task must allocate once"),
     );
+    // Report the production outcome after hardware initialization, never from
+    // inside a timing-sensitive calibration transition.
+    crate::console::runtime_log_reliably(format_args!(
+        "hil-phy: initial_tracking={} wifi={} bluetooth_ieee802154={} inhibited={}",
+        initialization.start.wifi.initial_tracking.is_some(),
+        initialization
+            .start
+            .wifi
+            .initial_tracking
+            .is_some_and(|outcome| outcome.clients.wifi()),
+        initialization
+            .start
+            .wifi
+            .initial_tracking
+            .is_some_and(|outcome| outcome.clients.bluetooth_ieee802154()),
+        initialization
+            .start
+            .wifi
+            .initial_tracking
+            .is_some_and(|outcome| outcome.tracking_inhibited),
+    ))
+    .await;
     #[cfg(feature = "driver-observation")]
     phy_diagnostics::log(initialization.start.wifi.registration.rf_calibration).await;
     if let Some(cache) = initialization.calibration_cache {
@@ -2047,6 +2079,77 @@ async fn wifi_role_task(
                 }
             }
             ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
+                WifiControlRequest::Pause {
+                    request_id,
+                    operation,
+                } => {
+                    use oer_esp32s31_embassy_wifi::{PauseError, PauseOperation};
+                    use open_esp_radio_hil_protocol::{StationPauseEvidence, StationPauseResult};
+                    #[cfg(feature = "driver-observation")]
+                    let timer_window = oer_esp32s31_embassy_runtime::timer_observation::Window::begin();
+                    let mut tx_waits = None;
+                    let evidence = match await_stack_boundary!(
+                        oer_esp32s31_embassy_wifi::station_pause_round_trip(match operation {
+                            open_esp_radio_hil_protocol::StationPauseOperation::Access =>
+                                PauseOperation::Access,
+                            open_esp_radio_hil_protocol::StationPauseOperation::Tracking =>
+                                PauseOperation::Tracking,
+                            open_esp_radio_hil_protocol::StationPauseOperation::Calibration =>
+                                PauseOperation::Calibration,
+                        })
+                    ) {
+                        Ok(report) => {
+                            tx_waits = report.timings.map(|value| phy::tx_wait_evidence(value.tx_waits));
+                            StationPauseEvidence {
+                            timings: report.timings.map(phy_timing_evidence),
+                            tracking: report.tracking.map(|outcome| {
+                                open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
+                                    inhibited: outcome.tracking_inhibited,
+                                    common_calibrated: outcome.calibration.common,
+                                    wifi_calibrated: outcome.calibration.wifi,
+                                    bluetooth_ieee802154_calibrated: outcome
+                                        .calibration
+                                        .bluetooth_ieee802154,
+                                }
+                            }),
+                            result: StationPauseResult::Resumed,
+                            elapsed_micros: report.elapsed_micros,
+                        }},
+                        Err(error) => StationPauseEvidence {
+                            timings: None,
+                            tracking: None,
+                            result: match error {
+                                PauseError::Unavailable => StationPauseResult::Unavailable,
+                                PauseError::Busy => StationPauseResult::Busy,
+                                PauseError::Interrupted => StationPauseResult::Interrupted,
+                                PauseError::MacStop => StationPauseResult::MacStop,
+                                PauseError::RxBusy => StationPauseResult::RxBusy,
+                                PauseError::RxPause => StationPauseResult::RxPause,
+                                PauseError::IrqPause => StationPauseResult::IrqPause,
+                                PauseError::RxResume => StationPauseResult::RxResume,
+                                PauseError::IrqResume => StationPauseResult::IrqResume,
+                                PauseError::RegisterReclaim => StationPauseResult::RegisterReclaim,
+                                PauseError::PhyAdmission => StationPauseResult::PhyAdmission,
+                                PauseError::PhyRelease => StationPauseResult::PhyRelease,
+                                PauseError::RegisterRepublish => {
+                                    StationPauseResult::RegisterRepublish
+                                }
+                                PauseError::PhyTracking => StationPauseResult::PhyTracking,
+                                PauseError::MacRestoration => StationPauseResult::MacRestoration,
+                                PauseError::ReceivePolicyChanged => {
+                                    StationPauseResult::ReceivePolicyChanged
+                                }
+                            },
+                            elapsed_micros: 0,
+                        },
+                    };
+                    #[cfg(feature = "driver-observation")]
+                    let timer = timer_window.map(|window| phy::timer_evidence(window.finish()));
+                    #[cfg(not(feature = "driver-observation"))]
+                    let timer = None;
+                    complete_station_pause(request_id, evidence, tx_waits, timer).await;
+                    ProductWifiRole::Station(station)
+                }
                 WifiControlRequest::Cycle { request_id } => {
                     let idle = await_stack_boundary!(station.stop()).unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")

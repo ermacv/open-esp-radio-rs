@@ -157,6 +157,15 @@ pub trait AggregateTxObserver: Sync {
 
     fn observe(&self, observation: AggregateTxObservation);
 
+    /// Final station aggregate result, including any detached ordinary retry.
+    /// Emitted once after safe terminal release, never for an intermediate BA.
+    /// Reset-required/quarantined owners have no terminal receipt.
+    fn observe_station_terminal(
+        &self,
+        _status: oer_wifi_softmac::MacAmpduTxStatus<oer_esp32s31_wifi_mac::tx::TxPhyRate>,
+    ) {
+    }
+
     /// Read-only queue evidence from the explicitly intrusive `tx-wait-probe`
     /// feature. Unlike attaching an observer, enabling that feature adds
     /// observation deadlines. The normal hardware timeout remains unchanged.

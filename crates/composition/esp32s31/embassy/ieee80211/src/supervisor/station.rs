@@ -105,12 +105,13 @@ use oer_wifi_embassy::{await_stack_boundary, station_network::RunningStationNetw
 use static_cell::{ConstStaticCell, StaticCell};
 
 mod execution;
+mod pause;
+mod pause_request;
+pub use pause_request::{PauseError, PauseOperation, PauseReport, station_pause_round_trip};
 
 pub(crate) use execution::ConnectedDatapathMailbox;
 
 pub(super) use execution::initialize_connected_datapath_mailbox;
-
-use execution::wait_connected_datapath_completion;
 
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::{ConnectedRxObservation, ConnectedRxObserver};
@@ -163,7 +164,9 @@ type ConnectedRxProtocolStoppedOwner = ConnectedProtocolStopped<
     RX_STAGE_SLOT_COUNT,
     RX_REORDER_BACKING_SLOT_COUNT,
 >;
-type ConnectedLiveRx = StagedRxProducer<
+type ConnectedLiveRx =
+    ConnectedRx<oer_esp32s31_wifi_dma::rx_ring::RxRingLive<'static, RX_DESCRIPTOR_COUNT>>;
+type ConnectedRx<R> = StagedRxProducer<
     'static,
     'static,
     'static,
@@ -175,6 +178,8 @@ type ConnectedLiveRx = StagedRxProducer<
     RX_STAGE_SLOT_COUNT,
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
+    oer_esp32s31_wifi_embassy::datapath::rx::dma::FullRxStageAdmission,
+    R,
 >;
 type ConnectedRxService = ConnectedStaRxService<ConnectedLiveRx, ConnectedRxProtocol>;
 type ConnectedParkedRxService =
@@ -381,11 +386,11 @@ type ConnectedLiveTx = ConnectedTx<
     TX_AMPDU_BUFFER_SIZE,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
-type ConnectedDriverServices = ConnectionServices<
+type ConnectedDriverServices<R = ConnectedLiveRx, H = ConnectedHardware> = ConnectionServices<
     'static,
     CriticalSectionRawMutex,
-    ConnectedHardware,
-    ConnectedLiveRx,
+    H,
+    R,
     ConnectedRxProtocol,
     ConnectedLiveTx,
     CONTROL_QUEUE_DEPTH,
@@ -396,13 +401,8 @@ type ConnectedDatapathError = <ConnectedDriverServices as DatapathServices<
     ConnectedSoftwareTxFrame,
     ConnectedPhysicalTxFrame,
 >>::Error;
-type ConnectedDatapathRunner = DatapathRunner<
-    'static,
-    CriticalSectionRawMutex,
-    NetworkRunner,
-    ConnectedDriverServices,
-    NetworkRxPublisher,
->;
+type ConnectedDatapathRunner<B = ConnectedDriverServices> =
+    DatapathRunner<'static, CriticalSectionRawMutex, NetworkRunner, B, NetworkRxPublisher>;
 
 type ConnectedServicesMapper = fn(ConnectedDriverServices) -> ConnectedDriverServices;
 type ConnectedProtocolAssemblyResources = ConnectedStaRxProtocolResources<
@@ -976,6 +976,24 @@ pub(crate) enum ConnectedStationReplaySetupFailure {
 /// Non-reusable connected owner retained at the exact failed transition.
 /// No variant exposes the ordinary disconnected owner required for retry.
 pub enum ConnectedStationFault<'state, 'security> {
+    Pause {
+        _failure: &'static pause::Failure,
+        _role: Option<oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>>,
+        _dma: oer_esp32s31_wifi_embassy::roles::station::StationDmaResources<
+            'static,
+            RxStorage,
+            RX_DESCRIPTOR_COUNT,
+        >,
+        _tx_storage: &'state mut TxStorage,
+        _scan_table: &'state mut oer_ieee80211::scan::ScanTable,
+        _interface: oer_wifi_softmac::interface::BoundVirtualInterface,
+        _sta_ap_rx_batch: &'static mut [u8],
+        _initial_connected: Option<InitialConnectedStaticResources>,
+        _access_point_airtime: Option<&'static mut super::AccessPointAirtimeResources>,
+        #[cfg(feature = "diagnostics")]
+        _diagnostics: Option<crate::DiagnosticObservers>,
+        _material: StaAttemptSecurityMaterial,
+    },
     InvalidConnectedPolicy {
         _resources: ConnectedStationResources<'state, 'security>,
         _error: ConnectedStaConfigError,
@@ -1283,7 +1301,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         security,
     } = started.into_parts();
     let runtime = runtime.into_parts();
-    let (mut role, interrupt_epoch) = runtime.radio.into_parts();
+    let (role, interrupt_epoch) = runtime.radio.into_parts();
     let (dma, tx_storage, scan_table, frame, ethernet) = runtime.storage.into_parts();
     let mut board = runtime.board;
 
@@ -1408,7 +1426,6 @@ pub(crate) async fn run_connected<'state, 'security>(
         diagnostics,
     } = board;
     let (sequences, mut material) = security.into_parts();
-    let (_phy, platform) = role.radio_mut();
     let ConnectedEpochStarted {
         hardware,
         rx,
@@ -1759,18 +1776,38 @@ pub(crate) async fn run_connected<'state, 'security>(
         );
     }
 
-    connected_datapath.start(radio_runner);
-    let requested_command = await_stack_boundary!(wait_connected_datapath_completion(
+    let mut radio_runner = Some(radio_runner);
+    let mut role = Some(role);
+    let (interrupt_epoch, result, requested_command) = match await_stack_boundary!(execution::run(
         connected_datapath,
         station_control,
-    ));
-    let returned = connected_datapath.take_return();
-    let raw_exit = complete_esp32s31_connected_datapath_exit(
-        station_control,
-        returned.result,
-        requested_command,
-    );
-    let radio_runner = returned.runner;
+        interrupt_epoch,
+        &mut role,
+        &mut radio_runner,
+    )) {
+        Ok(returned) => returned,
+        Err(failure) => {
+            return ConnectedStationRunExit::Faulted(ConnectedStationFault::Pause {
+                _failure: failure,
+                _role: role,
+                _dma: dma,
+                _tx_storage: tx_storage,
+                _scan_table: scan_table,
+                _interface: interface,
+                _sta_ap_rx_batch: sta_ap_rx_batch,
+                _initial_connected: initial_connected,
+                _access_point_airtime: access_point_airtime,
+                #[cfg(feature = "diagnostics")]
+                _diagnostics: diagnostics,
+                _material: material,
+            });
+        }
+    };
+    let mut role = role.expect("successful execution retains logical PHY owner");
+    let (_, platform) = role.radio_mut();
+    let radio_runner = radio_runner.expect("terminal execution returns its live owner");
+    let raw_exit =
+        complete_esp32s31_connected_datapath_exit(station_control, result, requested_command);
     let mut stopped = match await_stack_boundary!(quiesce_completed_esp32s31_connected_epoch::<
         _,
         _,

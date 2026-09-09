@@ -1,0 +1,91 @@
+//! Diagnostic storage is outside the nested PHY future and borrowed per event.
+use oer_esp32s31_phy::{PhyTargetObserver, tracking::observation::Report};
+
+#[derive(Default)]
+pub(super) struct Storage {
+    #[cfg(feature = "diagnostics")]
+    recorder: core::cell::RefCell<oer_esp32s31_phy::tracking::observation::Recorder>,
+}
+
+impl Storage {
+    // Initialize before entering the hardware call chain; do not reserve this
+    // temporary recorder in the enclosing async poll frame during calibration.
+    #[inline(never)]
+    pub fn reset(&self) {
+        #[cfg(feature = "diagnostics")]
+        {
+            *self.recorder.borrow_mut() = Default::default();
+        }
+    }
+
+    pub fn report(&self) -> Option<Report> {
+        #[cfg(feature = "diagnostics")]
+        {
+            Some(self.recorder.borrow().report())
+        }
+        #[cfg(not(feature = "diagnostics"))]
+        {
+            None
+        }
+    }
+
+    pub fn observer(&self) -> impl PhyTargetObserver + '_ {
+        #[cfg(feature = "diagnostics")]
+        {
+            Observer(&self.recorder)
+        }
+        #[cfg(not(feature = "diagnostics"))]
+        {
+            oer_esp32s31_phy::NoopPhyTargetObserver
+        }
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+struct Observer<'a>(&'a core::cell::RefCell<oer_esp32s31_phy::tracking::observation::Recorder>);
+
+#[cfg(feature = "diagnostics")]
+impl PhyTargetObserver for Observer<'_> {
+    const OBSERVE_DELAYS: bool = true;
+    #[inline(never)]
+    fn tx_wait(
+        &mut self,
+        scope: oer_esp32s31_phy::executor::wait::tx::Scope,
+        kind: oer_esp32s31_phy::executor::wait::Kind,
+        event: oer_esp32s31_phy::executor::wait::Event,
+    ) {
+        self.0.borrow_mut().observe_tx_wait(scope, kind, event);
+    }
+
+    #[inline(never)]
+    fn tx_sar_ready(&mut self, ready: bool) {
+        self.0.borrow_mut().observe_tx_sar_ready(ready);
+    }
+
+    #[inline(never)]
+    fn dcode_wait(
+        &mut self,
+        scope: oer_esp32s31_phy::executor::wait::Scope,
+        kind: oer_esp32s31_phy::executor::wait::Kind,
+        event: oer_esp32s31_phy::executor::wait::Event,
+    ) {
+        self.0.borrow_mut().observe_dcode_wait(scope, kind, event);
+    }
+
+    #[inline(never)]
+    fn dcode_pll_lock(&mut self, locked: bool) {
+        self.0.borrow_mut().observe_dcode_pll_lock(locked);
+    }
+
+    // Keep diagnostic clock/accounting locals out of the large PHY poll frame.
+    #[inline(never)]
+    fn tracking_operation(
+        &mut self,
+        operation: oer_esp32s31_phy::tracking::observation::Operation,
+        event: oer_esp32s31_phy::tracking::observation::Event,
+    ) {
+        self.0
+            .borrow_mut()
+            .observe(operation, event, embassy_time::Instant::now().as_micros());
+    }
+}

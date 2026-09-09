@@ -216,6 +216,8 @@ pub use status::{
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::station::{DiagnosticRxStatistics, DiagnosticSnapshot, DiagnosticTxVector};
 #[cfg(target_arch = "riscv32")]
+pub use supervisor::station::{PauseError, PauseOperation, PauseReport, station_pause_round_trip};
+#[cfg(target_arch = "riscv32")]
 pub use supervisor::{RadioRunners, RadioSystem, SystemRunner, new};
 #[cfg(target_arch = "riscv32")]
 #[cfg(not(feature = "upstream-network"))]
@@ -482,6 +484,8 @@ pub struct AccessPointObservation {
     pub tx_ack_timeout_retries: u32,
     pub tx_cts_timeout_retries: u32,
     pub tx_collision_retries: u32,
+    /// Subset of tx_hardware_failures: one-attempt probe responses without ACK.
+    pub tx_probe_ack_timeouts: u8,
     pub tx_hardware_failures: u8,
     pub tx_hardware_timeouts: u8,
     pub tx_collision_limits: u8,

@@ -932,9 +932,26 @@ pub struct RfpllCapTrackingParameters {
     pub current_temperature: i16,
     pub reference_temperature: i16,
     /// Exact replacement for the `phy_param[0x1b0].bit0` selection of
-    /// `phy_param[0x1b1]`; `None` selects the ROM default of five degrees.
+    /// `phy_param[0x1b1]`; `None` selects the reviewed ROM default of five sensor units.
     pub threshold_override: Option<u8>,
     pub current_channel: u16,
+}
+
+impl RfpllCapTrackingParameters {
+    /// Threshold in the retained PHY sensor domain, not a Celsius guarantee.
+    pub const fn threshold(self) -> u8 {
+        match self.threshold_override {
+            Some(value) => value,
+            None => 5,
+        }
+    }
+
+    /// Read-only condition shared by inspection and the hardware transition.
+    pub const fn is_due(self) -> bool {
+        let delta =
+            (self.current_temperature as i32).wrapping_sub(self.reference_temperature as i32);
+        crate::calibration::math::absolute_temperature(delta) >= self.threshold() as u32
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -988,13 +1005,8 @@ pub struct RfpllCapTrackingTransition {
 
 impl RfpllCapTrackingTransition {
     pub const fn new(parameters: RfpllCapTrackingParameters) -> Self {
-        let threshold = match parameters.threshold_override {
-            Some(value) => value,
-            None => 5,
-        };
-        let delta = (parameters.current_temperature as i32)
-            .wrapping_sub(parameters.reference_temperature as i32);
-        let update = crate::calibration::math::absolute_temperature(delta) >= threshold as u32;
+        let threshold = parameters.threshold();
+        let update = parameters.is_due();
         let step = if update {
             RfpllCapTrackingStep::DisableHardwareFrequency
         } else {

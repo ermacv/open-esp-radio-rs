@@ -1485,6 +1485,7 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -1818,6 +1819,7 @@ dependencies = [
  "oer-esp32s31-wifi-embassy",
  "oer-esp32s31-wifi-mac",
  "oer-ieee80211",
+ "oer-wifi-softmac",
  "open-esp-radio-hil-protocol",
 ]
 

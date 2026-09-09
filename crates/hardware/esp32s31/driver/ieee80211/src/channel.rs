@@ -4,8 +4,8 @@
 use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
-    switch_phy_channel_with_hal_and_mac_restart,
+    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy,
+    switch_registered_wifi_channel,
 };
 
 use oer_ieee80211::channel::{WifiChannel, WifiChannelWidth};
@@ -38,7 +38,7 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> PhyChannel {
 /// stopped and therefore owns no asynchronous access to these registers.
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
-    state: &mut PhyState,
+    state: &mut RegisteredWifiPhy,
     channel: WifiChannel,
     platform: &mut P,
     radio: &mut RadioRuntimeOwner,
@@ -46,7 +46,7 @@ pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObser
 ) -> Result<(), PhyTargetPortError> {
     let channel = lower_wifi_channel(channel);
     let mut hardware = radio.channel_hal(platform);
-    switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+    switch_registered_wifi_channel::<D, _, _>(
         state,
         channel.channel_or_frequency,
         channel.cbw,

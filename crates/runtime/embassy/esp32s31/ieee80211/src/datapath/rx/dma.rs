@@ -222,7 +222,11 @@ impl<
     }
 }
 
-/// Complete production RX owner for one running descriptor-ring epoch.
+/// Complete production RX owner for one descriptor-ring epoch.
+///
+/// The default ring state is live. Pause and resume consume this owner and
+/// change only `R`; storage, leases, admission and progress remain intact.
+/// RX service is available only on the live specialization.
 pub struct StagedRxProducer<
     'storage,
     'pool,
@@ -236,8 +240,10 @@ pub struct StagedRxProducer<
     const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
     P = FullRxStageAdmission,
+    R = RxRingLive<'storage, COUNT>,
 > {
-    ring: RxRingLive<'storage, COUNT>,
+    ring: R,
+    ring_lifetime: PhantomData<&'storage ()>,
     storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
@@ -337,6 +343,7 @@ pub struct PreparedRx<
 
 mod epoch;
 mod lifecycle;
+mod pause;
 mod service;
 
 pub use epoch::StagedRxEpoch;

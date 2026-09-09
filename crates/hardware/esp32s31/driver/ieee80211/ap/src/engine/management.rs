@@ -54,6 +54,12 @@ impl<'storage> ApEngine<'storage> {
                 if !oer_ieee80211::ap::probe::matches_ssid(self.beacon.advertisement(), ssid) {
                     return Ok(ApManagementOutcome::Ignored);
                 }
+                // Global admission budget: changing the sender MAC cannot create
+                // additional TX credit. Discard excess requests; never queue them
+                // or arm a timer to transmit stale discovery responses later.
+                if now_micros < self.next_probe_response_micros {
+                    return Ok(ApManagementOutcome::Ignored);
+                }
                 let sequence = self.service.next_management_sequence();
                 let len = oer_ieee80211::ap::probe::write_response(
                     self.beacon.advertisement(),
@@ -63,6 +69,7 @@ impl<'storage> ApEngine<'storage> {
                     output,
                 )
                 .map_err(ApEngineError::Probe)?;
+                self.next_probe_response_micros = now_micros.saturating_add(10_000);
                 Ok(ApManagementOutcome::Response {
                     len,
                     begin_wpa2: false,

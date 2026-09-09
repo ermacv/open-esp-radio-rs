@@ -24,8 +24,14 @@ if test ! -x "$hostapd_source" || test ! -s "$hostapd_provenance"; then
     exit 1
 fi
 
+if test ! -x "$repo_root/target/hil/fixture-build/debug/open-radio-probe"; then
+    echo "missing probe helper build: run cargo hil fixture install-host" >&2
+    exit 1
+fi
+
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -d -o root -g root -m 0755 /usr/local/sbin
+install -o root -g root -m 0755 "$repo_root/target/hil/fixture-build/debug/open-radio-probe" /usr/local/libexec/open-radio-probe
 install -o root -g root -m 0755 "$hostapd_source" "$hostapd_installed"
 install -o root -g root -m 0644 "$hostapd_provenance" /usr/local/libexec/open-radio-hostapd.json
 install -o root -g root -m 0755 "$script_dir/open-radio-net" /usr/local/sbin/open-radio-net
@@ -34,6 +40,7 @@ rm -f /etc/open-radio/hostapd-ht40.conf /etc/open-radio/hostapd-he20.conf
 
 sudoers=/etc/sudoers.d/open-radio-net
 {
+    echo "$operator ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-probe \"\""
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net ap"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net capabilities"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net identity"

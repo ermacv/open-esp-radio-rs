@@ -41,6 +41,7 @@ open-radio-hil = [
     "dep:serde",
 ]
 driver-observation = [
+    "oer-esp32s31-embassy-runtime/timer-observation",
     "oer-esp32s31-embassy-wifi/diagnostics",
     "oer-esp32s31-phy/registration-diagnostics",
 ]

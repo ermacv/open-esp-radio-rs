@@ -30,6 +30,9 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-phy",
+    // Safe structural pin projection for the observed child future; this is
+    // a Rust macro library, with no allocator, native build or radio ABI.
+    "pin-project-lite",
     "vcell",
 ];
 

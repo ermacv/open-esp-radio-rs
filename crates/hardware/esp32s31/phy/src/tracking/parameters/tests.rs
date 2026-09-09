@@ -26,6 +26,8 @@ fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {
         PhyParamTrackingAction::CalibrationTrack { class, .. } => {
             PhyParamTrackingCompletion::CalibrationTracked(PhyParamTrackingCalibrationCompletion {
                 class,
+                common_updated: false,
+                class_updated: false,
             })
         }
         PhyParamTrackingAction::WifiI2cTrack => PhyParamTrackingCompletion::WifiI2cTracked,
@@ -77,6 +79,7 @@ fn ieee802154_only_preserves_exact_child_order() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(false, true),
                 tracking_inhibited: false,
+                calibration: CalibrationProgress::default(),
             }),
         ]
     );
@@ -113,6 +116,7 @@ fn both_classes_run_bluetooth_before_wifi_and_temperature_last() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(true, true),
                 tracking_inhibited: false,
+                calibration: CalibrationProgress::default(),
             }),
         ]
     );
@@ -130,6 +134,7 @@ fn guard_exits_critical_section_without_running_children() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(true, true),
                 tracking_inhibited: true,
+                calibration: CalibrationProgress::default(),
             }),
         ]
     );
@@ -155,6 +160,7 @@ fn disabled_optional_branches_are_absent() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(false, true),
                 tracking_inhibited: false,
+                calibration: CalibrationProgress::default(),
             }),
         ]
     );
@@ -253,7 +259,7 @@ fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
 }
 
 #[test]
-fn calibration_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
+fn skipped_calibration_commits_without_hardware_or_reference_changes() {
     let policy = PhyParamTrackingPolicy {
         rfpll_cap_tracking_enabled: false,
         calibration_tracking_threshold: Some(31),
@@ -289,28 +295,11 @@ fn calibration_child_routes_threshold_and_mints_parent_proof_only_after_commit()
 
     let child = transition.begin_calibration_tracking(&mut state).unwrap();
     assert_eq!(child.parent_action(), transition.action());
-    assert_eq!(
-        child.action(),
-        crate::tracking::calibration::PhyCalibrationTrackingAction::RestoreTxGainCompensation
-    );
-    let mut child = child.commit().unwrap_err();
-    let binding = child.lower_external().unwrap();
     assert!(matches!(
-        binding,
-        crate::tracking::calibration::PhyCalibrationTrackingExternalBinding::Register(_)
+        child.action(),
+        crate::tracking::calibration::PhyCalibrationTrackingAction::Complete(_)
     ));
-    assert_eq!(
-        child
-            .state()
-            .calibration_tracking_parameters(None)
-            .common_reference_temperature,
-        20
-    );
-    child
-        .advance(
-            crate::tracking::calibration::PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
-        )
-        .unwrap();
+    assert!(child.lower_external().is_err());
     let completion = child.commit().unwrap();
 
     let committed = state.calibration_tracking_parameters(None);
@@ -318,6 +307,63 @@ fn calibration_child_routes_threshold_and_mints_parent_proof_only_after_commit()
     assert_eq!(committed.bluetooth_ieee802154_reference_temperature, 20);
     transition.advance(completion).unwrap();
     assert_eq!(transition.action(), PhyParamTrackingAction::TemperatureRead);
+    transition
+        .advance(PhyParamTrackingCompletion::TemperatureRead)
+        .unwrap();
+    transition
+        .advance(PhyParamTrackingCompletion::ExitedCritical)
+        .unwrap();
+    let PhyParamTrackingAction::Complete(outcome) = transition.action() else {
+        panic!("complete")
+    };
+    assert_eq!(outcome.calibration, CalibrationProgress::default());
+}
+
+#[test]
+fn calibration_progress_counts_only_accepted_completed_branches() {
+    let mut transition =
+        PhyParamTrackingTransition::new(PhyParamTrackRequest::new(true, true), POLICY);
+    while !matches!(transition.action(), PhyParamTrackingAction::Complete(_)) {
+        let action = transition.action();
+        let completed = if let PhyParamTrackingAction::CalibrationTrack { class, .. } = action {
+            let wrong_class = if class == PhyCalibrationTrackClass::Wifi {
+                PhyCalibrationTrackClass::BluetoothIeee802154
+            } else {
+                PhyCalibrationTrackClass::Wifi
+            };
+            let before = transition;
+            assert_eq!(
+                transition.advance(PhyParamTrackingCompletion::CalibrationTracked(
+                    PhyParamTrackingCalibrationCompletion {
+                        class: wrong_class,
+                        common_updated: true,
+                        class_updated: true
+                    }
+                )),
+                Err(PhyParamTrackingTransitionError::WrongCompletion)
+            );
+            assert_eq!(transition, before);
+            PhyParamTrackingCompletion::CalibrationTracked(PhyParamTrackingCalibrationCompletion {
+                class,
+                common_updated: class == PhyCalibrationTrackClass::BluetoothIeee802154,
+                class_updated: class == PhyCalibrationTrackClass::Wifi,
+            })
+        } else {
+            completion(action)
+        };
+        transition.advance(completed).unwrap();
+    }
+    let PhyParamTrackingAction::Complete(outcome) = transition.action() else {
+        panic!("complete")
+    };
+    assert_eq!(
+        outcome.calibration,
+        CalibrationProgress {
+            common: true,
+            wifi: true,
+            bluetooth_ieee802154: false
+        }
+    );
 }
 
 #[test]

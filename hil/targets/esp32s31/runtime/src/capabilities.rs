@@ -28,6 +28,7 @@ pub const fn hil_capabilities() -> Capabilities {
             udp_multi_flow: !cfg!(feature = "memory-benchmark"),
             startup_artifact: !cfg!(feature = "memory-benchmark"),
             station_epoch_control: !cfg!(feature = "memory-benchmark"),
+            station_pause: !cfg!(feature = "memory-benchmark"),
             wifi_role_control: !cfg!(feature = "memory-benchmark"),
             wifi_access_point: !cfg!(feature = "memory-benchmark"),
             simultaneous_station_access_point: !cfg!(feature = "memory-benchmark"),

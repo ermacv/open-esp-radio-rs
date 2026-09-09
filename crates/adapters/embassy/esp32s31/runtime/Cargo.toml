@@ -9,6 +9,7 @@ description = "Scheduler-free Embassy executor and time driver for ESP32-S31 app
 
 [features]
 default = []
+timer-observation = ["esp32s31"]
 esp32s31 = [
     "dep:embassy-executor",
     "dep:embassy-time-driver",
@@ -29,6 +30,10 @@ portable-atomic = { version = "1.11", default-features = false, optional = true 
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }
+
+[dev-dependencies]
+embassy-executor = { version = "0.10.0", default-features = false }
+embassy-time-queue-utils = "0.3"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

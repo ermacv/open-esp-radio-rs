@@ -47,6 +47,8 @@ pub enum ApTxClass {
     Beacon,
     /// Authentication, association or deauthentication response.
     Management,
+    /// Best-effort discovery response: one attempt, never a retained retry series.
+    ProbeResponse,
     /// Unprotected EAPOL exchange during the four-way handshake.
     Eapol,
     /// Pairwise protected Ethernet data after the controlled port opens.
@@ -59,7 +61,7 @@ pub enum ApTxClass {
 impl ApTxClass {
     fn publication_limit(self, rate: LegacyRate) -> u8 {
         match self {
-            Self::Beacon | Self::GroupData => 1,
+            Self::Beacon | Self::GroupData | Self::ProbeResponse => 1,
             Self::Management | Self::Eapol | Self::Data => rate
                 .vendor_retry_publication_limit()
                 .expect("every AP legacy rate has a recovered Dot11G schedule"),
@@ -71,7 +73,9 @@ impl ApTxClass {
         // deliberately kept on the same bounded pre-data path until the
         // controlled port opens.
         match self {
-            Self::Beacon | Self::Management | Self::Eapol => LegacyTxQueue::Voice,
+            Self::Beacon | Self::Management | Self::ProbeResponse | Self::Eapol => {
+                LegacyTxQueue::Voice
+            }
             Self::Data | Self::GroupData => LegacyTxQueue::BestEffort,
         }
     }
@@ -84,7 +88,9 @@ impl ApTxClass {
             // 1 Mbit/s path, but do not serialize ordinary data at that rate.
             Self::Data => LegacyRate::Ofdm24M,
             Self::GroupData => LegacyRate::Dsss1MLong,
-            Self::Beacon | Self::Management | Self::Eapol => LegacyRate::Dsss1MLong,
+            Self::Beacon | Self::Management | Self::ProbeResponse | Self::Eapol => {
+                LegacyRate::Dsss1MLong
+            }
         }
     }
 }

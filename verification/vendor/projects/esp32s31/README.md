@@ -88,6 +88,31 @@ using its unresolved interface observations and capability links. A missing or
 stale projection produces explicitly partial prioritization with no live
 fallback; rerun the limited `project analyze` command above.
 
+## Current PHY calibration gate
+
+The `phy-calibration-leaves` suite compares four production-bound leaves against
+the pinned esp-phy-lib archive. Its vendor entry authenticates both the archive
+and rev0 ROM by SHA-256 before execution. Keep the original `archive` binding
+for the existing investigation; the new suite uses `phy-current`.
+
+Bind `source-artifact:phy-current` to the archive and
+`source-companion:phy-current` to the ROM in the ignored run spec. The
+`rust-artifact` role must point to a fresh production probe ELF.
+
+```console
+target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/projects/esp32s31/local.toml \
+  project verify --suite phy-calibration-leaves
+```
+
+This completion gate requires every selected function to match. Its finite
+profiles cover TX-gain restore, forced digital gain, temperature-to-power and
+post-init AGC; they do not qualify complete calibration, coexistence or hardware
+timing. Temperature tracking follows the archive policy, including divisor eight
+for a positive Wi-Fi temperature delta; the ROM primitive uses divisor five and
+is not a direct-equivalence target for this computation. A selected-suite run writes its own generated report without replacing
+the complete project's evidence index.
+
 ## Contract ownership
 
 | Input | Responsibility |

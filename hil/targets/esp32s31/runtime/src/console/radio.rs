@@ -285,3 +285,19 @@ pub async fn complete_session(
         })
         .await;
 }
+
+/// Correlated result of the same-connection physical pause request.
+pub async fn complete_station_pause(
+    request_id: u32,
+    evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
+    tx_waits: Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
+    timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
+) {
+    if let Some(waits) = tx_waits {
+        publish_event_reliably(0, request_id, Event::StationPhyTxWaits(waits)).await;
+    }
+    if let Some(timer) = timer {
+        publish_event_reliably(0, request_id, Event::StationTimerObserved(timer)).await;
+    }
+    publish_event_reliably(0, request_id, Event::StationPauseCompleted(evidence)).await;
+}

@@ -1,3 +1,5 @@
+mod pause;
+
 use super::*;
 use crate::execution::context::Context;
 
@@ -624,6 +626,43 @@ impl SerialCapture {
         )
     }
 
+    pub(crate) fn station_pause_round_trip(
+        &self,
+        operation: open_esp_radio_hil_protocol::StationPauseOperation,
+        timeout: Duration,
+    ) -> Result<(
+        open_esp_radio_hil_protocol::StationPauseEvidence,
+        Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
+        Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
+    )> {
+        let handle =
+            self.request_wifi_command(Command::PauseStation { operation }, "station pause")?;
+        let event = self
+            .wait_for_wifi_event(handle, timeout, |message| {
+                matches!(message.body, Event::StationPauseCompleted(_))
+            })?
+            .ok_or("station pause completion deadline expired")?;
+        let Event::StationPauseCompleted(evidence) = event.body else {
+            unreachable!()
+        };
+        // All detail is already retained when completion arrives. Inspect only
+        // this request's prefix; never add a second wait or execution delay.
+        let state = self
+            .protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let waits = pause::tx_waits(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
+        let timer = pause::timer(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
+        Ok((evidence, waits, timer))
+    }
+
     pub(crate) fn request_station_epoch_cycle(&self) -> Result<StationEpochHandle> {
         let first_event = self.protocol_event_count();
         let response = self.send_command(0, Command::CycleStationEpoch, PROTOCOL_READY_TIMEOUT)?;
@@ -1164,6 +1203,17 @@ impl SerialCapture {
         beacon_loss_count_in(&state.messages)
     }
 
+    /// A pause must preserve the existing association, including when a
+    /// reconnect happens quickly enough for the throughput floor to pass.
+    pub(crate) fn require_station_unchanged_since(&self, first_event: usize) -> Result<()> {
+        let state = self
+            .protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        station_unchanged_since_in(&state.messages, first_event)
+    }
+
     pub(crate) fn require_no_beacon_loss(&self) -> Result<()> {
         let count = self.beacon_loss_count();
         if count == 0 {
@@ -1329,6 +1379,25 @@ pub(super) fn validate_target_link_health(health: LinkHealth) -> Result<()> {
             "target reported unhealthy serialized console transport: {health:?}"
         ))
         .into());
+    }
+    Ok(())
+}
+
+pub(super) fn station_unchanged_since_in(
+    messages: &[Envelope<Event>],
+    first_event: usize,
+) -> Result<()> {
+    let subsequent = messages
+        .get(first_event..)
+        .ok_or("station lifecycle cursor exceeds captured events")?;
+    for message in subsequent {
+        match &message.body {
+            Event::Hello(_) => return Err("device rebooted during station pause workload".into()),
+            Event::StationLifecycle(event) => {
+                return Err(format!("station changed during pause workload: {event:?}").into());
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

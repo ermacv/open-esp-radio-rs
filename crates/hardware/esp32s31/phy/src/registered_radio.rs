@@ -37,7 +37,7 @@ pub use ieee802154::{
 
 /// Unique powered-radio owner carrying proof of target PHY registration.
 ///
-/// The radio and proof have private fields and no public decomposer. This
+/// The powered radio and raw registration proof cannot be extracted separately. This
 /// prevents safe callers from pairing proof issued for one hardware epoch with
 /// a different powered radio. Public APIs may inspect the calibrated state,
 /// while crate-controlled role transitions move this owner without weakening
@@ -97,12 +97,83 @@ pub struct RegisteredPhyRadio<P> {
 }
 
 impl<P> RegisteredPhyRadio<P> {
+    /// Lend only cold MAC operations while retaining registration authority.
+    #[cfg(target_arch = "riscv32")]
+    pub fn cold_mac_parts(
+        &mut self,
+    ) -> (&mut P, oer_esp32s31_hal::ieee80211::mac::WifiMacColdHal<'_>) {
+        self.radio.cold_mac_parts()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn close_cold_interrupt_phase(
+        &mut self,
+    ) -> oer_esp32s31_hal::types::MacInterruptEnableState {
+        self.radio.close_cold_interrupt_phase()
+    }
+
+    /// Transfer the registered PHY and scheduler to the Wi-Fi runtime context
+    /// together with its matching physical and interrupt owners.
+    #[cfg(target_arch = "riscv32")]
+    pub fn into_wifi_runtime_parts(
+        self,
+    ) -> (
+        P,
+        oer_esp32s31_hal::owner::RadioRuntimeOwner,
+        oer_esp32s31_hal::owner::MacInterruptSetup,
+        crate::RegisteredWifiPhy,
+    ) {
+        let (platform, registers, interrupt) = self.radio.into_running().into_runtime_parts();
+        (
+            platform,
+            registers,
+            interrupt,
+            crate::RegisteredWifiPhy {
+                registered: self.phy,
+                clients: self.clients,
+            },
+        )
+    }
+
+    /// Select the cold Wi-Fi channel without releasing the registration owner.
+    #[cfg(target_arch = "riscv32")]
+    pub async fn initialize_wifi_channel<D: crate::PhyAsyncDelay, O: crate::PhyTargetObserver>(
+        &mut self,
+        channel: u16,
+        cbw: u8,
+        observer: &mut O,
+    ) -> Result<(), crate::PhyTargetPortError> {
+        self.radio.enable_wifi_rx();
+        let mut hardware = self.radio.channel_hal();
+        crate::select_phy_channel_with_hal::<D, _, _>(
+            self.phy.target_state_mut(),
+            channel,
+            cbw,
+            &mut hardware,
+            observer,
+        )
+        .await
+    }
     /// Inspect the calibrated state without weakening its hardware association.
     pub const fn state(&self) -> &PhyState {
         self.phy.state()
     }
 
     /// Inspect the source-owned client set without exposing its raw mask.
+    /// Inspect registered-policy conditions without sampling temperature, advancing
+    /// deadlines or acquiring RF. Values describe retained state, not a job plan.
+    pub fn inspect_tracking(
+        &self,
+        now_micros: u64,
+    ) -> Result<crate::tracking::inspection::Inspection, crate::state::client::PhyTrackTimeError>
+    {
+        crate::tracking::inspection::Inspection::registered(
+            &self.phy,
+            self.client_snapshot(),
+            now_micros,
+        )
+    }
+
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
         self.clients.snapshot()
     }
@@ -192,13 +263,60 @@ impl<P> RegisteredPhyRadio<P> {
         }
     }
 
-    /// Atomically discard proof at a crate-controlled legacy boundary.
+    /// Recheck the deadline after a timer or other event wakes the radio owner.
+    /// Unlike a dedicated periodic callback, an early wake must not issue
+    /// hardware work. Callers can arm an absolute timer using the client
+    /// snapshot's `next_tracking_deadline_micros` and must obtain exclusive
+    /// hardware access before committing to this consuming evaluation. Use
+    /// `tracking_schedule_at` for read-only admission decisions.
     #[allow(
-        dead_code,
-        reason = "the legacy caller is target-only while this owner is also host-checked"
+        clippy::result_large_err,
+        reason = "the allocation-free failure retains the complete hardware epoch"
     )]
-    pub(crate) fn into_ordinary_parts(self) -> (Radio<P, Powered>, PhyState) {
-        (self.radio, self.phy.into_ordinary_state())
+    pub fn evaluate_due_tracking(
+        self,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<RegisteredPhyTrackEvaluation<P>, RegisteredPhyTrackEvaluationFailure<P>> {
+        let Self {
+            radio,
+            phy,
+            clients,
+        } = self;
+        match clients.evaluate_immediate_tracking(clock) {
+            Ok(evaluation) => Ok(RegisteredPhyTrackEvaluation {
+                radio,
+                phy,
+                evaluation,
+            }),
+            Err(failure) => Err(RegisteredPhyTrackEvaluationFailure {
+                radio,
+                phy,
+                failure,
+            }),
+        }
+    }
+
+    /// Wait for demand without transferring the physical owner to a timer.
+    ///
+    /// Cancellation and timer errors leave the registered owner unchanged.
+    /// The returned observation is not a hardware grant: obtain the required
+    /// physical exclusion and recheck the current clients before invoking the
+    /// consuming execution transition. No timestamp is refreshed here.
+    pub async fn wait_for_tracking_demand(
+        &self,
+        timer: &mut impl crate::state::client::PhyTrackingTimer,
+    ) -> Result<Option<crate::tracking::schedule::Demand>, PhyTrackTimeError> {
+        use crate::tracking::schedule::Schedule;
+        loop {
+            match self
+                .client_snapshot()
+                .tracking_schedule_at(timer.now_micros())?
+            {
+                Schedule::Inactive => return Ok(None),
+                Schedule::Due(demand) => return Ok(Some(demand)),
+                Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
+            }
+        }
     }
 }
 
@@ -237,10 +355,6 @@ impl<P> TargetRegisteredPhyEpoch<P> {
             phy: self.phy,
             clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
         }
-    }
-
-    pub(crate) fn into_ordinary_parts(self) -> (Radio<P, Powered>, PhyState) {
-        (self.radio, self.phy.into_ordinary_state())
     }
 }
 

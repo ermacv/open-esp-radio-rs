@@ -59,10 +59,18 @@ impl<T, R> Exchange<T, R> {
     }
 
     pub async fn wait_completed(&self) {
-        self.completed.wait().await;
+        // Returned ownership is durable; the signal is only its notification.
+        // A cancelled outer wait may already have consumed that notification.
+        while !matches!(*self.state.borrow(), State::Returned(_)) {
+            self.completed.wait().await;
+        }
     }
 
     pub fn take_return(&self) -> R {
+        assert!(
+            matches!(*self.state.borrow(), State::Returned(_)),
+            "completion must publish the returned owner first"
+        );
         let State::Returned(result) =
             core::mem::replace(&mut *self.state.borrow_mut(), State::Idle)
         else {

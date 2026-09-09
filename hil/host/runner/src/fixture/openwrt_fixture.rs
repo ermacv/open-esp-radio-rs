@@ -10,6 +10,9 @@ use crate::{
     scenario::{HtGuardIntervalExpectation, PhyExpectation},
 };
 
+mod tx;
+pub(crate) use tx::OpenWrtTxCapture;
+
 const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

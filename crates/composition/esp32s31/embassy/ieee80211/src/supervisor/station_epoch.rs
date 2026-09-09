@@ -935,7 +935,8 @@ impl ProductionWifiEpochRunner {
                 } = materialized.resources;
                 let mut registers = materialized.registers;
                 let (phy, _) = materialized.owner.radio_mut();
-                let tx_storage = self.initialize_tx_epoch(tx, phy.tx_target_power_profile());
+                let tx_storage =
+                    self.initialize_tx_epoch(tx, phy.state().tx_target_power_profile());
                 let scan_rx = match rx_ring {
                     Some(ring) => ring.into_scan(dma.storage()),
                     None => match ScanRx::prepare_initial(

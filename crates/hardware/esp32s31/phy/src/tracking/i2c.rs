@@ -51,6 +51,17 @@ pub struct PhyWifiI2cTrackingParameters {
     pub previous_band: PhyWifiI2cTrackingBand,
 }
 
+impl PhyWifiI2cTrackingParameters {
+    pub const fn target_band(self) -> PhyWifiI2cTrackingBand {
+        PhyWifiI2cTrackingBand::for_temperature(self.current_temperature)
+    }
+
+    /// A changed band requires both writes before committing the new band.
+    pub fn update_required(self) -> bool {
+        self.previous_band != self.target_band()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyWifiI2cTrackingOutcome {
     pub band: PhyWifiI2cTrackingBand,
@@ -86,8 +97,8 @@ pub struct PhyWifiI2cTrackingTransition {
 
 impl PhyWifiI2cTrackingTransition {
     pub fn new(parameters: PhyWifiI2cTrackingParameters) -> Self {
-        let target_band = PhyWifiI2cTrackingBand::for_temperature(parameters.current_temperature);
-        let changed = target_band != parameters.previous_band;
+        let target_band = parameters.target_band();
+        let changed = parameters.update_required();
         Self {
             target_band,
             changed,

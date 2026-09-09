@@ -9,6 +9,7 @@ pub(crate) mod local_air_monitor;
 pub(crate) mod local_linux_fixture;
 pub(crate) mod network_helper;
 pub(crate) mod openwrt_ap;
+mod openwrt_capture;
 pub(crate) mod openwrt_fixture;
 pub(crate) mod openwrt_tx_monitor;
 pub(crate) mod station_fixture;
@@ -26,3 +27,5 @@ mod channel;
 pub(crate) mod install;
 pub(crate) mod local_ap;
 mod wpa_control;
+
+pub(crate) mod probe_load;

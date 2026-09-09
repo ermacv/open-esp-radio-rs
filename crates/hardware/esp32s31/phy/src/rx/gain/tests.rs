@@ -169,3 +169,138 @@ fn work_mode_pulse_uses_the_vendor_two_microsecond_delay() {
         Err(PhyRxGainPublishTransitionError::WrongCompletion)
     );
 }
+
+fn publish_root(parameters: PhyRxGainInitParameters) -> (PhyRxGainInitOutcome, usize) {
+    let mut root = PhyRxGainInitTransition::new(parameters);
+    let mut steps = 0;
+    loop {
+        let action = core::hint::black_box(&root).action();
+        let completion = match action {
+            PhyRxGainInitAction::Publish(action) => {
+                PhyRxGainInitCompletion::Publish(complete(action))
+            }
+            PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
+                PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index }
+            }
+            PhyRxGainInitAction::EnableIqCorrection => PhyRxGainInitCompletion::IqCorrectionEnabled,
+            PhyRxGainInitAction::Complete(outcome) => return (outcome, steps),
+            other => panic!("unexpected publish-only action: {other:?}"),
+        };
+        core::hint::black_box(&mut root)
+            .advance(core::hint::black_box(completion))
+            .unwrap();
+        steps += 1;
+    }
+}
+
+#[test]
+fn root_publishes_both_banks_and_retains_state_on_rejected_completion() {
+    let mut parameters = init_parameters();
+    parameters.dc_calibrated = true;
+    let mut root = PhyRxGainInitTransition::new(parameters);
+    loop {
+        let action = root.action();
+        let PhyRxGainInitAction::Publish(action) = action else {
+            break;
+        };
+        let before = root;
+        assert_eq!(
+            root.advance(PhyRxGainInitCompletion::Publish(
+                PhyRxGainPublishCompletion::DelayElapsed {
+                    phase: PhyRxGainDelayPhase::PbusWorkMode {
+                        bank: PhyRxGainBank::Wifi
+                    },
+                    micros: 0,
+                }
+            )),
+            Err(PhyRxGainInitTransitionError::WrongCompletion)
+        );
+        assert_eq!(root, before);
+        if let PhyRxGainPublishAction::ProgramEntry { bank, entry } = action {
+            let wrong_bank = match bank {
+                PhyRxGainBank::Wifi => PhyRxGainBank::Shared,
+                PhyRxGainBank::Shared => PhyRxGainBank::Wifi,
+            };
+            assert_eq!(
+                root.advance(PhyRxGainInitCompletion::Publish(
+                    PhyRxGainPublishCompletion::EntryProgrammed {
+                        bank: wrong_bank,
+                        entry
+                    }
+                )),
+                Err(PhyRxGainInitTransitionError::WrongCompletion)
+            );
+            assert_eq!(root, before);
+        }
+
+        root.advance(PhyRxGainInitCompletion::Publish(complete(action)))
+            .unwrap();
+    }
+    assert!(matches!(
+        root.action(),
+        PhyRxGainInitAction::ConfigureLimits { .. }
+    ));
+    let (outcome, _) = publish_root(parameters);
+    assert!(outcome.generated_tables);
+    assert_eq!(
+        (outcome.wifi_last_index, outcome.shared_last_index),
+        (71, 75)
+    );
+}
+
+/// Host CPU cost only: no MMIO, waits or radio-quality claim.
+#[test]
+#[ignore = "manual release-mode CPU benchmark of the production publisher"]
+fn benchmark_rx_gain_publication() {
+    for sample in 0..3 {
+        let start = std::time::Instant::now();
+        let mut steps = 0;
+        for iteration in 0..20_000 {
+            let mut parameters = init_parameters();
+            parameters.dc_calibrated = true;
+            parameters.memory.parameter_002 ^= iteration as u8;
+            let (outcome, count) = publish_root(core::hint::black_box(parameters));
+            core::hint::black_box(outcome);
+            steps += count;
+        }
+        std::println!(
+            "sample={sample} iterations=20000 steps={steps} elapsed_ns={}",
+            start.elapsed().as_nanos()
+        );
+    }
+}
+
+#[test]
+fn root_preserves_publish_failure_through_cleanup() {
+    let mut parameters = init_parameters();
+    parameters.dc_calibrated = true;
+    let mut root = PhyRxGainInitTransition::new(parameters);
+    let PhyRxGainInitAction::Publish(action) = root.action() else {
+        panic!("publisher")
+    };
+    root.advance(PhyRxGainInitCompletion::Publish(complete(action)))
+        .unwrap();
+    let PhyRxGainInitAction::Publish(PhyRxGainPublishAction::ForcePbus { bank, transaction }) =
+        root.action()
+    else {
+        panic!("PBus transaction")
+    };
+    root.advance(PhyRxGainInitCompletion::Publish(
+        PhyRxGainPublishCompletion::PbusTimedOut { bank, transaction },
+    ))
+    .unwrap();
+    assert_eq!(
+        root.action(),
+        PhyRxGainInitAction::Publish(PhyRxGainPublishAction::ConfigurePbusWorkMode { bank })
+    );
+    root.advance(PhyRxGainInitCompletion::Publish(complete(
+        PhyRxGainPublishAction::ConfigurePbusWorkMode { bank },
+    )))
+    .unwrap();
+    assert_eq!(
+        root.action(),
+        PhyRxGainInitAction::Failed(PhyRxGainInitFailure::Publish(
+            PhyRxGainPublishFailure::PbusTimedOut { bank, transaction }
+        ))
+    );
+}

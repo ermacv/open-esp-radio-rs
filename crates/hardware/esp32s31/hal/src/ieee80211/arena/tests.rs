@@ -47,15 +47,27 @@ fn reclaimed_owner_republishes_only_through_its_exact_arena_binding() {
     let published = arena
         .publish(owner)
         .unwrap_or_else(|_| panic!("an empty arena must accept the runtime owner"));
+    let access = published.access();
     let reclaimed = published
         .try_reclaim_with_republish()
         .unwrap_or_else(|_| panic!("a quiescent lease must retain its arena binding"));
     assert_eq!(arena.state(), RadioOwnerArenaState::Empty);
+    assert!(
+        matches!(
+            access.try_wifi_mac_hal(),
+            Err(RadioOwnerArenaError::MissingOwner)
+        ),
+        "previous child handles must be revoked throughout maintenance"
+    );
 
     let published = reclaimed
         .try_republish()
         .unwrap_or_else(|_| panic!("the exact empty arena must accept republication"));
     assert_eq!(arena.state(), RadioOwnerArenaState::Published);
+    let mac = access
+        .try_wifi_mac_hal()
+        .expect("the exact arena restores existing child handles");
+    drop(mac);
     let _registers = published
         .try_reclaim()
         .unwrap_or_else(|_| panic!("the republished owner must remain reclaimable"));

@@ -5,17 +5,17 @@ use core::marker::PhantomData;
 use oer_esp32s31_hal::{ieee80211::arena::RadioAccess, owner::RadioRuntimeOwner};
 
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError, select_phy_channel_with_hal,
-    switch_phy_channel_with_hal_and_mac_restart,
+    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy,
+    select_registered_wifi_channel, switch_registered_wifi_channel,
 };
 
 /// Persistent PHY authority used by either an initial scan or a reconnect scan.
 ///
-/// `PhyState` is the typed PHY state created by registration;
+/// `RegisteredWifiPhy` is the typed PHY state created by registration;
 /// despite its historical name, the same unique value carries mutable channel
 /// state for the complete powered-radio lifetime.
 pub struct ScanPhy<'state, P, O, D> {
-    state: &'state mut PhyState,
+    state: &'state mut RegisteredWifiPhy,
     platform: &'state mut P,
     observer: O,
     _delay: PhantomData<fn() -> D>,
@@ -26,7 +26,11 @@ where
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
-    pub const fn new(state: &'state mut PhyState, platform: &'state mut P, observer: O) -> Self {
+    pub const fn new(
+        state: &'state mut RegisteredWifiPhy,
+        platform: &'state mut P,
+        observer: O,
+    ) -> Self {
         Self {
             state,
             platform,
@@ -43,7 +47,7 @@ where
         radio: &mut RadioRuntimeOwner,
     ) -> Result<(), PhyTargetPortError> {
         let mut hardware = radio.channel_hal(self.platform);
-        select_phy_channel_with_hal::<D, _, _>(
+        select_registered_wifi_channel::<D, _, _>(
             self.state,
             channel_or_frequency,
             cbw,
@@ -61,7 +65,7 @@ where
         radio: &mut RadioRuntimeOwner,
     ) -> Result<(), PhyTargetPortError> {
         let mut hardware = radio.channel_hal(self.platform);
-        switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+        switch_registered_wifi_channel::<D, _, _>(
             self.state,
             channel_or_frequency,
             cbw,
@@ -82,7 +86,7 @@ where
         let mut channel = access
             .try_channel_hal(self.platform)
             .map_err(|_| PhyTargetPortError::HardwareCapabilityUnavailable)?;
-        switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+        switch_registered_wifi_channel::<D, _, _>(
             self.state,
             channel_or_frequency,
             cbw,
@@ -94,7 +98,7 @@ where
 
     /// Return the exact persistent state, platform and observer owners after
     /// the scan transaction has stopped RX and selected its candidate.
-    pub fn into_parts(self) -> (&'state mut PhyState, &'state mut P, O) {
+    pub fn into_parts(self) -> (&'state mut RegisteredWifiPhy, &'state mut P, O) {
         (self.state, self.platform, self.observer)
     }
 }

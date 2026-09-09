@@ -632,3 +632,12 @@ fn performance_cycle_omits_unavailable_driver_observation() {
     );
     assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
 }
+
+#[test]
+fn discovery_ack_misses_cannot_hide_other_or_saturated_tx_failures() {
+    assert!(tx_failures_reconciled(0, 0, 0));
+    assert!(tx_failures_reconciled(3, 2, 1));
+    assert!(!tx_failures_reconciled(4, 2, 1));
+    assert!(!tx_failures_reconciled(1, 2, 0));
+    assert!(!tx_failures_reconciled(255, 255, 0));
+}

@@ -34,6 +34,36 @@ pub trait MacInterruptRoute {
     fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
 }
 
+/// Additional route contract for resuming the same logical radio epoch.
+///
+/// Ordinary `quiesce`/`activate` may clear hardware status and masks. A pause
+/// implementation must instead retain pending hardware causes and power-wake
+/// policy, publishing acknowledged causes through the existing sinks. Resume
+/// must also preserve events arriving while paused and restore that policy.
+/// Failure retains the same authority obligations as `MacInterruptRoute`.
+///
+/// There is deliberately no blanket implementation. The S31 esp-hal route's
+/// cold activation/deactivation clears both banks, so it cannot implement this
+/// contract by delegating to those terminal transitions.
+pub trait MacInterruptPauseRoute: MacInterruptRoute {
+    /// Retained same-epoch capabilities, distinct from cold setup. Dropping
+    /// this value must not leave a CPU handler accessing freed storage.
+    type Paused;
+
+    fn pause(&mut self, platform: &Self::Platform) -> Result<Self::Paused, Self::Error>;
+
+    /// Restore the retained policy; this is not a new role-mask selection.
+    fn resume(
+        &mut self,
+        platform: &Self::Platform,
+        paused: Self::Paused,
+    ) -> Result<(), (Self::Error, Self::Paused)>;
+
+    /// Abandon same-epoch work and perform terminal peripheral cleanup while
+    /// both CPU routes remain detached. No route may be re-enabled here.
+    fn finish_pause(&mut self, paused: Self::Paused) -> Self::Setup;
+}
+
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
 /// Production delegates both operations to generated PAC registers. Its

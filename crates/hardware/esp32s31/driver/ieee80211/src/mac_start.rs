@@ -2,9 +2,7 @@
 
 use crate::cold_start::{WifiColdStart, WifiColdStartReport};
 
-use oer_esp32s31_hal::owner::{Radio, state::Powered};
-
-use oer_esp32s31_phy::{PhyCalibrationCache, PhyState, PhyTxTargetPowerProfile};
+use oer_esp32s31_phy::{PhyCalibrationCache, PhyTxTargetPowerProfile, RegisteredPhyRadio};
 
 use oer_esp32s31_wifi_mac::init::{
     MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
@@ -68,8 +66,7 @@ pub struct WifiMacStartReport {
 /// Powered radio after common MAC initialization but before role-specific RX,
 /// DMA and interrupt policy is activated.
 pub struct WifiMacReady<P> {
-    radio: Radio<P, Powered>,
-    phy: PhyState,
+    radio: RegisteredPhyRadio<P>,
     calibration_cache: Option<PhyCalibrationCache>,
     report: WifiMacStartReport,
 }
@@ -83,27 +80,25 @@ impl<P> WifiMacReady<P> {
         self.calibration_cache.as_ref()
     }
 
-    pub fn radio_mut(&mut self) -> &mut Radio<P, Powered> {
+    pub fn radio_mut(&mut self) -> &mut RegisteredPhyRadio<P> {
         &mut self.radio
     }
 
     pub fn into_parts(
         self,
     ) -> (
-        Radio<P, Powered>,
-        PhyState,
+        RegisteredPhyRadio<P>,
         Option<PhyCalibrationCache>,
         WifiMacStartReport,
     ) {
-        (self.radio, self.phy, self.calibration_cache, self.report)
+        (self.radio, self.calibration_cache, self.report)
     }
 }
 
 /// Failed MAC transition retaining the powered radio and calibrated PHY.
 pub struct WifiMacStartFailure<P> {
     pub error: MacColdStartError,
-    radio: Radio<P, Powered>,
-    phy: PhyState,
+    radio: RegisteredPhyRadio<P>,
     calibration_cache: Option<PhyCalibrationCache>,
     wifi_report: WifiColdStartReport,
 }
@@ -112,15 +107,13 @@ impl<P> WifiMacStartFailure<P> {
     pub fn into_parts(
         self,
     ) -> (
-        Radio<P, Powered>,
-        PhyState,
+        RegisteredPhyRadio<P>,
         Option<PhyCalibrationCache>,
         WifiColdStartReport,
         MacColdStartError,
     ) {
         (
             self.radio,
-            self.phy,
             self.calibration_cache,
             self.wifi_report,
             self.error,
@@ -145,7 +138,7 @@ where
     P: WifiMacPlatform,
 {
     let wifi_report = cold.report();
-    let (mut radio, phy, tx_power, calibration_cache, _) = cold.into_parts();
+    let (mut radio, tx_power, calibration_cache, _) = cold.into_parts();
     let mac = {
         let (platform, mut mac) = radio.cold_mac_parts();
         platform.install_phy_tx_power_profile(tx_power);
@@ -165,7 +158,6 @@ where
             return Err(WifiMacStartFailure {
                 error,
                 radio,
-                phy,
                 calibration_cache,
                 wifi_report,
             });
@@ -173,7 +165,6 @@ where
     };
     Ok(WifiMacReady {
         radio,
-        phy,
         calibration_cache,
         report: WifiMacStartReport {
             wifi: wifi_report,

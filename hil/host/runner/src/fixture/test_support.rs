@@ -152,8 +152,12 @@ fn fixture_lifecycle_harness() {
             fs::write(root.join("monitor"), "external").unwrap();
         }
         let result: crate::Result<Box<dyn std::any::Any>> = if case == "monitor-discovery-drop" {
-            super::openwrt_tx_monitor::OpenWrtDiscoveryCapture::start(config, &root)
-                .map(|owner| Box::new(owner) as Box<dyn std::any::Any>)
+            super::openwrt_tx_monitor::OpenWrtManagementCapture::start(
+                config,
+                &root,
+                Duration::from_secs(3),
+            )
+            .map(|owner| Box::new(owner) as Box<dyn std::any::Any>)
         } else {
             super::openwrt_tx_monitor::OpenWrtTxMonitorCapture::start(
                 config,
@@ -176,8 +180,8 @@ fn fixture_lifecycle_harness() {
                 "short capture must not wait for packet-block timeout"
             );
             assert!(
-                arguments.contains(&"type mgt"),
-                "broadcast discovery frames must reach capture"
+                arguments.contains(&"type mgt or type ctl"),
+                "broadcast discovery frames and control ACKs must reach capture"
             );
         }
         if case == "monitor-error" || case == "monitor-existing" {

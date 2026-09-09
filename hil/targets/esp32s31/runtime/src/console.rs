@@ -139,6 +139,10 @@ static WIFI_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, WifiControlReques
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WifiControlRequest {
+    Pause {
+        request_id: u32,
+        operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    },
     Cycle {
         request_id: u32,
     },
@@ -1378,6 +1382,27 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             )
                             .await;
                         }
+                    }
+                    Command::PauseStation { operation } => {
+                        let response = if !capabilities.features.station_pause {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !initialized
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Station)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::Pause {
+                                request_id,
+                                operation,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::CycleStationEpoch => {
                         let response = if !capabilities.features.station_epoch_control {

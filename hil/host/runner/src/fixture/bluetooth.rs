@@ -111,6 +111,68 @@ pub(crate) fn preflight(adapter: Adapter) -> crate::Result<()> {
     Ok(())
 }
 
+pub(crate) fn connect_reset(
+    root: &Path,
+    adapter: Adapter,
+    peer: model::PeerAddress,
+    hold_ms: u16,
+) -> crate::Result<()> {
+    let _lease = crate::lab::lock::acquire_bluetooth(adapter)?;
+    let directory = root.join("target/hil/fixture-checks");
+    fs::create_dir_all(&directory)?;
+    let output = tempfile::Builder::new()
+        .prefix("bluetooth-connect-reset-")
+        .tempdir_in(directory)?
+        .keep();
+    let mut command = Command::new("sudo");
+    command
+        .args([
+            "-n",
+            "/usr/local/libexec/open-radio-bluetooth",
+            "connect-reset",
+            "--adapter",
+            &adapter.to_string(),
+            "--peer",
+            &peer.to_string(),
+            "--hold-ms",
+            &hold_ms.to_string(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
+        .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
+    let result = (|| -> crate::Result<model::ConnectionReset> {
+        let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
+            &mut command,
+            Duration::from_secs(20),
+        )?;
+        let status = child.wait_timeout(Some(Duration::from_secs(45)))?;
+        let report: model::ConnectionReset = serde_json::from_slice(&fs::read(output.join("helper.json"))?)
+            .map_err(|error| format!("invalid connect-reset report ({error}); rebuild open-radio-bluetooth and run sudo hil/host/linux-bluetooth/install.sh"))?;
+        if !status.success() || !report.passed(adapter, peer, hold_ms) {
+            return Err(format!(
+                "connect-reset failed or incomplete: {}",
+                report.errors.join("; ")
+            )
+            .into());
+        }
+        Ok(report)
+    })();
+    let report = fs::read(output.join("helper.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<model::ConnectionReset>(&bytes).ok())
+        .unwrap_or_else(|| model::ConnectionReset::new(adapter, peer, hold_ms));
+    let summary = serde_json::json!({
+        "schema": 1, "operation": "connect-reset", "adapter": adapter.to_string(),
+        "output": output, "passed": result.is_ok(), "rf_loss_verified": false,
+        "error": result.as_ref().err().map(ToString::to_string), "helper": report,
+    });
+    crate::evidence::run::atomic_json(&output.join("result.json"), &summary)?;
+    crate::emit_json(&summary, true)?;
+    result
+        .map(|_| ())
+        .map_err(|error| format!("{error}; evidence: {}", output.display()).into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

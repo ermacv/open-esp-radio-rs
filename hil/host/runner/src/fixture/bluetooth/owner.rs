@@ -287,6 +287,34 @@ pub(super) fn check(adapter: Adapter, report: &mut Check) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn connect_reset(
+    adapter: Adapter,
+    peer: super::model::PeerAddress,
+    hold_ms: u16,
+    report: &mut super::model::ConnectionReset,
+) -> Result<()> {
+    if hold_ms > 5_000 {
+        return Err("connection hold must be at most 5000 ms".into());
+    }
+    let mut owner = Owner::snapshot(adapter)?;
+    report.initial_powered = Some(owner.powered);
+    report.initial_soft_blocked = Some(owner.rfkill.blocked);
+    let result = (|| {
+        owner.acquire()?;
+        let user = owner.user.as_ref().ok_or("missing exclusive HCI channel")?;
+        user.command(Reset::new())?;
+        super::connection_reset::run(user, peer, hold_ms, report)
+    })();
+    if let Err(error) = result {
+        report.errors.push(error.to_string());
+    }
+    match oer_process::cleanup(|| owner.restore()) {
+        Ok(()) => report.restored = true,
+        Err(error) => report.errors.push(format!("restore: {error}")),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

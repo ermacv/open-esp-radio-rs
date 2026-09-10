@@ -111,6 +111,14 @@ fn run() -> Result<()> {
         CliCommand::Fixture {
             command: cli::FixtureCommand::BluetoothCheck { adapter },
         } => fixture::bluetooth::check(&root, adapter),
+        CliCommand::Fixture {
+            command:
+                cli::FixtureCommand::BluetoothConnectReset {
+                    adapter,
+                    peer,
+                    hold_ms,
+                },
+        } => fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms),
         CliCommand::Archive { command } => archive::run(&root, command),
         CliCommand::Fixture {
             command: cli::FixtureCommand::InstallHost,

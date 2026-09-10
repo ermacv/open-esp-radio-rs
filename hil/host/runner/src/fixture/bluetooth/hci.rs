@@ -121,16 +121,35 @@ impl Socket {
             ) {
                 return Err(error.into());
             }
-            oer_process::sleep(Duration::from_millis(10))?;
+            // Wake as soon as a connection event arrives, while keeping signal
+            // cancellation bounded. A periodic sleep can miss the first window.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let timeout = remaining.as_millis().clamp(1, 10) as libc::c_int;
+            let mut readiness = libc::pollfd {
+                fd: self.0.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: readiness is one live pollfd with an owned descriptor.
+            if unsafe { libc::poll(&mut readiness, 1, timeout) } < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error.into());
+                }
+            }
         }
     }
 
-    pub(super) fn command<C: SyncCmd>(&self, command: C) -> Result<C::Return> {
-        let mut bytes = vec![0; 1 + bt_hci::WriteHci::size(&command)];
+    pub(super) fn send_command<C: bt_hci::cmd::Cmd>(&self, command: &C) -> Result<()> {
+        let mut bytes = vec![0; 1 + bt_hci::WriteHci::size(command)];
         bytes[0] = 1;
-        bt_hci::WriteHci::write_hci(&command, &mut bytes[1..])
+        bt_hci::WriteHci::write_hci(command, &mut bytes[1..])
             .map_err(|error| format!("HCI encode: {error:?}"))?;
-        self.send(&bytes)?;
+        self.send(&bytes)
+    }
+
+    pub(super) fn command<C: SyncCmd>(&self, command: C) -> Result<C::Return> {
+        self.send_command(&command)?;
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             let packet = self.receive(deadline)?;
@@ -220,6 +239,42 @@ fn management_completion(packet: &[u8], index: u16, opcode: u16) -> Result<Optio
 mod tests {
     use super::*;
     use bt_hci::cmd::le::LeTestEnd;
+    #[test]
+    fn connect_reset_drives_the_compiled_command_sequence_without_hardware() {
+        let (client, server) = std::os::unix::net::UnixDatagram::pair().unwrap();
+        client.set_nonblocking(true).unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let peer = super::super::model::PeerAddress([0xd1, 0xf6, 0xf3, 0xa0, 0xed, 0x30]);
+        let worker = std::thread::spawn(move || {
+            let mut bytes = [0; 64];
+            for opcode in [0x0c01_u16, 0x2001] {
+                assert!(server.recv(&mut bytes).unwrap() >= 4);
+                assert_eq!(&bytes[..3], &[1, opcode as u8, (opcode >> 8) as u8]);
+                server
+                    .send(&[4, 14, 4, 1, opcode as u8, (opcode >> 8) as u8, 0])
+                    .unwrap();
+            }
+            assert!(server.recv(&mut bytes).unwrap() >= 4);
+            assert_eq!(&bytes[..3], &[1, 0x0d, 0x20]);
+            server.send(&[4, 15, 4, 0, 1, 0x0d, 0x20]).unwrap();
+            let mut event = vec![4, 0x3e, 19, 1, 0, 1, 0, 0, 0];
+            event.extend(peer.0);
+            event.extend([80, 0, 0, 0, 200, 0, 0]);
+            server.send(&event).unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 4);
+            assert_eq!(&bytes[..4], &[1, 3, 12, 0]);
+            server.send(&[4, 14, 4, 1, 3, 12, 0]).unwrap();
+        });
+        let mut report =
+            super::super::model::ConnectionReset::new(super::super::model::Adapter(0), peer, 0);
+        super::super::connection_reset::run(&Socket(client.into()), peer, 0, &mut report).unwrap();
+        worker.join().unwrap();
+        assert!(report.connection_complete && report.reset_completed);
+        assert!(report.reset_after_connection_micros.is_some());
+        assert!(!report.restored);
+    }
     #[test]
     fn socket_exchange_and_expired_deadline_are_bounded_without_hardware() {
         let (client, server) = std::os::unix::net::UnixDatagram::pair().unwrap();

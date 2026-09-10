@@ -17,12 +17,14 @@ helper="$repository_root/target/debug/open-radio-bluetooth"
 test -x "$helper"
 
 # Validate before replacing the active grant. The executable accepts only a
-# finite check and a validated adapter index; it exposes no arbitrary HCI API.
+# finite operations with validated adapter/address/delay arguments; it exposes
+# no arbitrary HCI API, shell command or output path.
 candidate=$(mktemp)
 trap 'rm -f "$candidate"' EXIT HUP INT TERM
 echo "$operator ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter hci*" >"$candidate"
+echo "$operator ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth connect-reset --adapter hci*" >>"$candidate"
 /usr/sbin/visudo -cf "$candidate"
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -o root -g root -m 0755 "$helper" /usr/local/libexec/open-radio-bluetooth
 install -o root -g root -m 0440 "$candidate" /etc/sudoers.d/open-radio-bluetooth
-echo "installed finite Bluetooth DTM check for $operator"
+echo "installed finite Bluetooth DTM check and connect-reset for $operator"

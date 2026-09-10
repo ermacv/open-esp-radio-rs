@@ -9,7 +9,8 @@ cargo hil fixture bluetooth-check --adapter hci0
 ```
 
 Installation grants the invoking operator passwordless access only to the
-helper's finite `check --adapter hciN` operation. It does not grant root access
+helper's finite `check --adapter hciN` and `connect-reset --adapter hciN`
+operations. It does not grant root access
 to the general HIL runner. Reinstall after changing the helper. The adapter
 must be dedicated to the test: existing connections and a hardware rfkill
 block cause rejection before changing its state.
@@ -34,6 +35,32 @@ establish RF delivery: `result.json` always reports `rf_verified: false`. A
 zero RX count is valid here because this check has no coordinated transmitter.
 No qualification claim follows from this fixture check. Other PHYs, extended
 advertising and ISO/Audio are outside this finite check.
+
+## Connection loss fixture
+
+With a public-address LE peripheral already advertising, run:
+
+```console
+cargo hil fixture bluetooth-connect-reset --adapter hci0 --peer 30:ED:A0:F3:F6:D1
+cargo hil fixture bluetooth-connect-reset --adapter hci0 --peer 30:ED:A0:F3:F6:D1 --hold-ms 1000
+```
+
+Rebuild and reinstall the helper after updating its command set. The fixture
+owns the adapter's exclusive HCI user channel, uses legacy LE initiation with
+a 100-ms connection interval, zero latency and a 2-second supervision timeout,
+and waits at most 10 seconds for the exact peer's connection completion. It
+then sends HCI Reset, without issuing HCI Disconnect. `--hold-ms` is bounded
+to 0..5000; the default sends Reset as soon as the completion is received.
+Both success and failure restore the adapter's original power and rfkill state.
+
+The runner archives the helper report and errors under
+`target/hil/fixture-checks/bluetooth-connect-reset-*`. The report separates
+connection completion, Reset completion, local elapsed times and restoration.
+It proves command execution only: the Controller may already have exchanged
+packets before reporting its connection to the Host, and Reset is not a
+measured RF power cut. Target-side evidence must determine whether failed
+establishment or established-link supervision was exercised. This fixture
+does not start, flash or reset the ESP.
 
 ## ESP and adapter RF scenario
 

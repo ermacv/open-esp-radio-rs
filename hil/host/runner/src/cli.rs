@@ -184,6 +184,15 @@ pub(crate) enum FixtureCommand {
         #[arg(long, default_value = "hci0")]
         adapter: crate::fixture::bluetooth::model::Adapter,
     },
+    /// Connect to a public LE peer, reset the adapter and archive restoration evidence.
+    BluetoothConnectReset {
+        #[arg(long, default_value = "hci0")]
+        adapter: crate::fixture::bluetooth::model::Adapter,
+        #[arg(long)]
+        peer: crate::fixture::bluetooth::model::PeerAddress,
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
+        hold_ms: u16,
+    },
     /// Install the repository-owned Linux fixture helper and its sudo policy.
     InstallHost,
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.

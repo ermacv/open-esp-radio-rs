@@ -236,3 +236,18 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
             if scenario == "station-udp-tx-he20"
     ));
 }
+
+#[test]
+fn connection_reset_fixture_has_a_bounded_hold_and_requires_a_peer() {
+    let command = [
+        "hil",
+        "fixture",
+        "bluetooth-connect-reset",
+        "--peer",
+        "30:ED:A0:F3:F6:D1",
+    ];
+    assert!(Cli::try_parse_from(command).is_ok());
+    assert!(Cli::try_parse_from(command.into_iter().chain(["--hold-ms", "5000"])).is_ok());
+    assert!(Cli::try_parse_from(command.into_iter().chain(["--hold-ms", "5001"])).is_err());
+    assert!(Cli::try_parse_from(["hil", "fixture", "bluetooth-connect-reset"]).is_err());
+}

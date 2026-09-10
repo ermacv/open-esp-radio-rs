@@ -1466,10 +1466,10 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::BudgetExhausted),
+        Ok(DatapathRxProgress::StageCapacityBlocked),
     );
     assert_eq!(pool.claimed_slots(), STAGED as u32);
-    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 1);
+    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
     assert_eq!(
         observer
             .overload_recycled_descriptors
@@ -1511,6 +1511,83 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::Drained),
     );
+}
+
+#[test]
+fn burst_returns_to_consumer_before_treating_newly_filled_stage_as_overload() {
+    const COUNT: usize = 40;
+    const COMPLETED: usize = 34;
+    const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
+    const STAGED: usize = VENDOR_LARGE_RX_SLOT_COUNT - 1;
+
+    let storage = Box::leak(Box::new(ReceiveDmaStorage::<COUNT>::new()));
+    for index in 0..COMPLETED {
+        storage.buffer_mut(index).unwrap()[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2]
+            .copy_from_slice(&0x4008_u16.to_le_bytes());
+    }
+    let addresses = core::array::from_fn(|index| 0x2f00_2000 + index as u32 * 0x1200);
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    for index in 0..COMPLETED {
+        storage.descriptors()[index].write_word0(
+            ESP32S31_RX_BUFFER_SIZE as u32
+                | ((FRAME_LENGTH as u32) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+        );
+    }
+    hardware.release_through(COMPLETED - 1, Some(COMPLETED));
+
+    let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
+    let observer = RecordingRxObserver::default();
+    let queue = StagedRxQueue::<
+        NoopRawMutex,
+        VENDOR_LARGE_RX_SLOT_COUNT,
+        ESP32S31_RX_BUFFER_SIZE,
+        VENDOR_LARGE_RX_SLOT_COUNT,
+    >::new();
+    let (sender, receiver) = queue.split();
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_pipeline_observer(&observer);
+
+    // A responsive consumer has not had a scheduling opportunity yet.
+    // Filling this turn's available credits is not sustained backpressure.
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::StageCapacityBlocked),
+    );
+    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
+    assert_eq!(pool.claimed_slots(), STAGED as u32);
+    for _ in 0..STAGED {
+        drop(receiver.try_receive().expect("first bounded publication"));
+    }
+    embassy_futures::block_on(service.service(&mut hardware)).unwrap();
+    for _ in STAGED..COMPLETED {
+        drop(
+            receiver
+                .try_receive()
+                .expect("retained DMA tail must reach consumer"),
+        );
+    }
+    assert!(receiver.try_receive().is_err());
+    assert_eq!(
+        observer.completed_descriptors.load(Ordering::Relaxed),
+        COMPLETED
+    );
+    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
+    assert_eq!(pool.claimed_slots(), 0);
 }
 
 #[test]

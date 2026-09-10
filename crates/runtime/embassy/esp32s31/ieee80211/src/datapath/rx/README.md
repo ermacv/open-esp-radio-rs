@@ -37,6 +37,15 @@ before evaluation. The runtime owns the recycled-append telemetry selector
 and publication timestamp; the chip transaction creates no second counter or
 selector. Performance builds do not read diagnostic clocks.
 
+A pass that has just published owners yields before discarding another valid
+bulk unit for lack of staging credit. The fused post-DMA protocol phase can
+then release those owners; its existing `StageCapacityBlocked` continuation
+keeps the retained DMA tail runnable. A pass that starts blocked and publishes
+nothing still applies discard/recycle admission, so a persistently blocked
+consumer cannot hide critical traffic behind bulk frames. Critical frames may
+use their reserved credit in either case. This changes scheduling opportunity,
+not pool capacity or descriptor lifetime.
+
 The chip function is `inline(always)` into the `inline(never)` runtime service
 in `.hot.text.open_radio_rx_dma_service`. The chip crate forbids unsafe code.
 Final-image placement and stack checks apply after optimization; source module

@@ -44,6 +44,19 @@ This adapter does not reserve packet owners for control traffic; applications
 must budget neighbor queues and RX headroom together. This limitation also
 applies to the minimal patched stack, which retains the upstream pool.
 
+An already resolved peer can encounter a different control-plane limitation:
+the original stack constructs an immediate ARP response without retaining it
+across device backpressure. When the TX queue is full, `Device::transmit`
+returns the exact owner and Xarxa's `transmit_raw` drops it. Returning TX credit
+does not retry that response; another peer request is needed. The
+`arp_backpressure` integration test exercises the real original stack with
+available packet storage and an occupied device queue, then repeats the same
+request after returning credit. This distinguishes response loss from RX pool
+exhaustion. The current patched stack instead reuses the incoming owner and retains ARP
+responses in a bounded queue until TX credit returns; its source and limits
+are described in the network implementation guide. The original-stack test
+remains a characterization of the unmodified reference.
+
 Queue consumption wakes the radio; packet publication,
 TX queue-credit return and link changes wake the network runner. Dropping a
 selected TX owner also wakes it after releasing the packet's global pool slot:

@@ -291,6 +291,19 @@ where
             break;
         }
         let overload_drop = matches!(unavailable, Some(Unavailable::DiscardAndRecycle));
+        if overload_drop && staged_units != 0 {
+            // Give the fused turn's post-DMA consumer a chance to return
+            // the owners just published by this call. Filling our own
+            // staging window does not establish sustained backpressure.
+            // The untouched tail remains DMA-owned. If the next turn
+            // starts blocked, normal discard/recycle still reaches critical
+            // traffic instead of creating a receive/transmit progress cycle.
+            stage_capacity_blocked = true;
+            admission.observe(Observation::BulkAdmissionBlocked(
+                unavailable_preview.expect("overload admission has a preview"),
+            ));
+            break;
+        }
 
         hooks.phase(Phase::StageTake);
         let descriptor_limit = preflight

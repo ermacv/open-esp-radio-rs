@@ -98,7 +98,8 @@ wakes without packet progress. This is not a driver promise to busy-poll.
 The pinned Embassy `wait_send_ready` implementation checks only whether the
 socket is open; it does not establish queue or packet-pool capacity. Neither
 case is worked around in `upstream-xarxa`. The separate `patched-xarxa`
-composition corrects device-capacity wakeups inside Xarxa, as described in the
+composition corrects device-capacity wakeups and retains bounded ARP responses
+inside Xarxa, as described in the
 [implementation overview](network-implementations.md#why-keep-original-and-patched-xarxa).
 
 The host backpressure test uses the original stack and production adapter. It

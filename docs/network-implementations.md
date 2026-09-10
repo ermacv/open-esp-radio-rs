@@ -10,7 +10,7 @@ ownership and radio execution; component READMEs describe their own APIs.
 | Implementation | Purpose | Selection and availability |
 | --- | --- | --- |
 | **Upstream Xarxa + original Embassy** | An unmodified, reproducible reference for the Xarxa contract; applications can use the original APIs and measurements expose their actual limitations | `--network upstream-xarxa` in HIL and station/AP example builds |
-| **Patched Xarxa + original Embassy** | A source-compatible correction to UDP device-capacity wakeups, with the same driver and application contract as the reference | `--network patched-xarxa` in HIL and station/AP example builds |
+| **Patched Xarxa + original Embassy** | Source-compatible UDP wake and ARP response backpressure corrections, with the same driver and application contract as the reference | `--network patched-xarxa` in HIL and station/AP example builds |
 | **Upstream Embassy + smoltcp** | Compatibility with released network crates and their token-based driver API; an independent stack contract for comparison | `--network upstream-smoltcp` in HIL and station/AP example builds; `compat-network` in the product |
 | **Owned Xarxa/Embassy** | Explicit RX/TX packet pools and packet-owner handoff through a maintained, broader patchset | `--network owned-xarxa` in HIL and station/AP example builds; `owned-network` remains the product library default |
 | **Research engine** | Bounded synchronous protocol work and deferred packet construction | A library with host tests; no selectable native HIL or example composition |
@@ -38,7 +38,7 @@ radio-facing adapters and the underlying IEEE 802.11 driver.
 | Composition | External network crates and source | Repository adapter |
 | --- | --- | --- |
 | Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `oer-xarxa-upstream` |
-| Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [UDP wait patch](https://github.com/ermacv/xarxa/tree/d1919959c7821cf2ba17c79da932e1ac6edc2e66) | Same `oer-xarxa-upstream` |
+| Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [backpressure patch](https://github.com/ermacv/xarxa/tree/bbf4a670f5c673ba11fbb6b1a4c3a1dbac0cc7a7) | Same `oer-xarxa-upstream` |
 | Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-compat` |
 | Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net` |
 
@@ -89,7 +89,7 @@ contract and as a control for testing whether a patch addresses a specific
 limitation. Retaining it avoids treating a measured improvement as an
 assumption about every upstream workload.
 
-The patched composition changes one scheduling decision in Xarxa. A UDP send
+The patched composition corrects device backpressure handling in Xarxa. A UDP send
 blocked by a full device records its destination; stack polling resolves the
 current route and wakes that sender when the selected interface can transmit,
 or when routing fails so the caller can observe the error. This prevents a
@@ -97,6 +97,14 @@ full TX queue from sustaining the original sender/runner wakeup loop. An
 unrelated ready interface does not release the wait. Binding, closing or
 starting another send clears it; the existing driver capacity notification
 schedules the stack when TX space returns.
+
+ARP responses reuse the received packet owner instead of allocating a second
+pool slot. A four-entry per-interface queue retains responses until the driver
+accepts them; duplicate peer/local-address requests coalesce. New distinct
+requests beyond that bound are dropped explicitly. RX processing continues,
+while pending replies receive TX credit before new socket packets. Link down,
+interface removal and configuration changes release queued replies. Other
+immediate control protocols retain their original behavior.
 
 The [patch composition](../crates/network/dependencies/README.md)
 retains the exact original `xarxa-driver`, packet pool and Embassy wrapper.

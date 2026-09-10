@@ -1,5 +1,16 @@
 # Repository Guidelines
 
+## Ambiguous Requirements
+
+If requirements or repository rules admit materially different interpretations
+that change implementation, exclude required data, introduce a fallback, or
+leave requested work unfinished, explicitly explain the ambiguity and ask the
+user which interpretation to apply. Wait for their answer before making the
+dependent decision; continue independent work where possible. Do not silently
+choose a conservative interpretation, older behavior, approximation or omission
+as a fallback. Existing explicit user decisions remain authoritative and must
+not be requested again.
+
 ## Project Structure & Module Organization
 
 This Rust 2024 workspace separates shipping code from evidence and tooling:
@@ -90,5 +101,11 @@ History follows Conventional Commit-style subjects such as
 Keep commits scoped and imperative. PRs should explain the affected ownership
 boundary, list checks run, link qualification/HIL evidence where applicable,
 and call out generated SVD/PAC changes. Never commit vendor binaries,
-disassembly dumps, credentials, or proprietary extracted tables. Preserve
+disassembly dumps, credentials, or unreviewed extraction artifacts. Necessary
+recovered hardware tables and calibration coefficients are explicitly allowed
+in production source, including values recovered from binaries. Record their
+source identity, purpose, representation and applicable hardware/profile;
+verify their use against the real source artifact. Binary origin alone is
+never a reason to omit required data or substitute an older profile. See
+[docs/source-policy.md](docs/source-policy.md) for the canonical rule. Preserve
 unrelated changes in an already-dirty worktree.

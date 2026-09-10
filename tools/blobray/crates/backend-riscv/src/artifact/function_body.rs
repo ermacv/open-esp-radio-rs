@@ -11,14 +11,14 @@ use std::{
 };
 
 use object::{FileKind, Object, ObjectSymbol, SymbolKind, read::archive::ArchiveFile};
-use rv_asm::{Inst, Reg};
+use rv_asm::{Imm, Inst, Reg};
 
 use crate::{Error, Result};
 
 use super::symbols::load_code_symbols_from_data;
 use super::{
     AnalysisInstruction, ArtifactSymbolDefinition, CodeSymbolSelection, RelocationKind,
-    decode_symbol_for_analysis, unsupported_instruction_mnemonic,
+    andi_immediate, decode_symbol_for_analysis, unsupported_instruction_mnemonic,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -288,7 +288,17 @@ pub(super) fn build_body(
         });
         let (text, supported, blocker_class, control_flow) = match item {
             AnalysisInstruction::Supported(decoded) => (
-                decoded.instruction.to_string(),
+                match decoded.instruction {
+                    // Keep the human view consistent with the executable and
+                    // static engines' workaround for rv-asm's unsigned C.ANDI.
+                    Inst::Andi { imm, dest, src1 } => Inst::Andi {
+                        imm: Imm::new_i32(andi_immediate(imm, width) as i32),
+                        dest,
+                        src1,
+                    }
+                    .to_string(),
+                    instruction => instruction.to_string(),
+                },
                 true,
                 None,
                 classify_control_flow(decoded.address, decoded.instruction),
@@ -1154,6 +1164,19 @@ mod tests {
             "{:?}",
             body.labels
         );
+    }
+
+    #[test]
+    fn compressed_andi_view_preserves_the_architectural_sign() {
+        // c.andi a5,-4; ret. The immediate must not appear as positive 60.
+        let body = build_body(
+            Path::new("focused.elf"),
+            definition(&[0x8082_9bf1]),
+            Vec::new(),
+        )
+        .expect("function body");
+        assert_eq!(body.instructions[0].text, "andi a5, a5, -4");
+        assert_eq!(body.instructions[1].text, "ret");
     }
 
     #[test]

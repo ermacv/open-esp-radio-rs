@@ -278,14 +278,14 @@ fn writes_to_read_only_elf_memory_fail_closed() {
 fn execution_rejects_extra_arguments_and_unconsumed_mmio_reads() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
     let too_many = Scenario {
-        arguments: vec![0; 9],
+        arguments: vec![0; 73],
         ..Scenario::default()
     };
     assert!(
         execute(&image, &empty_svd(), "test", too_many)
             .unwrap_err()
             .to_string()
-            .contains("stack arguments are not implemented")
+            .contains("maximum is 72 RV32 integer argument words")
     );
 
     let mut unconsumed = Scenario::default();

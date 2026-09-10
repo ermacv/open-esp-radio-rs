@@ -245,6 +245,25 @@ impl Machine<'_> {
                     self.pc = return_address;
                     return Ok(true);
                 }
+                // A linked firmware may bind `callee` to an absolute ROM
+                // vector while the companion names the ROM body `callee` too.
+                // Follow the authenticated vector instruction before symbolic
+                // fallback; the primary binding must not turn this into a
+                // self-loop or redirect an explicit ROM call to a patched body.
+                if let Ok((
+                    Inst::Jal {
+                        dest: Reg::ZERO,
+                        offset,
+                    },
+                    _,
+                )) = self.image.instruction(self.pc)
+                {
+                    let target = self.pc.wrapping_add(offset.as_u32());
+                    if target != self.pc {
+                        self.pc = target;
+                        return Ok(true);
+                    }
+                }
                 if let Some(target) = self.image.symbol_address(&symbol)
                     && target != self.pc
                 {

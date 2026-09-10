@@ -1,5 +1,5 @@
 use super::cancellation;
-use crate::launcher::Config;
+use crate::launcher::{Config, Limits};
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -76,8 +76,11 @@ fn command(name: &str, runtime: &str) -> Command {
             "--expand-environment=no",
         ])
         .arg(format!("--unit={name}"))
+        .arg(format!(
+            "--property=MemoryMax={}",
+            Limits::default().memory_bytes
+        ))
         .args([
-            "--property=MemoryMax=1G",
             "--property=MemorySwapMax=0",
             "--property=TimeoutStopSec=10s",
             "--property=KillMode=control-group",

@@ -205,7 +205,22 @@ impl ExecutableImage {
                 }
                 continue;
             }
-            let (instruction, width) = self.instruction(address)?;
+            let (instruction, width) = match self.instruction(address) {
+                Ok(decoded) => decoded,
+                Err(error @ crate::Error::InstructionDecode { .. }) => {
+                    // Abstract call analysis also visits the return site of
+                    // callees whose non-returning behavior is not established.
+                    // Such a site can be padding or a literal/jump table. Keep
+                    // that edge unresolved instead of aborting the report or
+                    // claiming it is unreachable. Concrete instruction fetch
+                    // still rejects these bytes if execution reaches them.
+                    inventory
+                        .unresolved_edges
+                        .insert(address, error.to_string());
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let next = address.wrapping_add(width);
             let get =
                 |registers: &[Option<u32>; 32], register: Reg| registers[usize::from(register.0)];

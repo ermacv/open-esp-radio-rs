@@ -34,7 +34,7 @@ struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            memory_bytes: 1024 * 1024 * 1024,
+            memory_bytes: 4 * 1024 * 1024 * 1024,
             deadline: Duration::from_secs(15 * 60),
             grace: Duration::from_secs(10),
             poll: Duration::from_millis(100),

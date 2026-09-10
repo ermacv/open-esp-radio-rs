@@ -78,6 +78,7 @@ fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
     }
 }
 
+mod arguments;
 mod calls;
 mod devices;
 mod image_and_control;

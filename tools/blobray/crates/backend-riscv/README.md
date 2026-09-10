@@ -26,3 +26,13 @@ Reports identify the original archive and its hash. Archive code addresses use
 an analysis placement starting at `0x40000000`; they are not firmware addresses
 or evidence of final linker placement. Authentic firmware ELF images remain
 necessary when the behavior depends on final placement or runtime initialization.
+
+Concrete `Scenario::arguments` contains RV32 integer ABI words. The first eight
+use `a0` through `a7`; up to 64 additional words occupy the executor's private
+stack starting at the 16-byte-aligned entry SP, following the
+[RISC-V integer calling convention](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/#_integer_calling_convention).
+The caller supplies scalar widening and any multiword padding. This is not an
+automatic aggregate, variadic or floating-point ABI classifier. Stack argument
+storage is private to each invocation; conflicting explicit byte seeds are
+rejected and uninitialized stack bytes retain the configured poison/fill policy.
+Call observations continue to record the eight integer argument registers.

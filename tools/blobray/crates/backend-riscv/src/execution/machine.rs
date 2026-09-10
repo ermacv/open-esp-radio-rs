@@ -18,6 +18,14 @@ use super::{FifoLifecycleEvent, FifoServiceBinding, FifoServiceInstance};
 use crate::{MmioMap, Result};
 use open_radio_vendor_execution_model::ExecutionGoal;
 
+const REGISTER_ARGUMENTS: usize = 8;
+const MAX_STACK_ARGUMENTS: usize = 64;
+
+fn entry_stack_pointer(argument_count: usize) -> u32 {
+    let bytes = argument_count.saturating_sub(REGISTER_ARGUMENTS) * 4;
+    STACK_POINTER - bytes.next_multiple_of(16) as u32
+}
+
 #[cfg(test)]
 pub(super) use step::atomic_word_result;
 
@@ -131,14 +139,22 @@ impl<'a> Machine<'a> {
     ) -> Self {
         let mut registers = [0_u32; 32];
         registers[usize::from(Reg::RA.0)] = RETURN_SENTINEL;
-        registers[usize::from(Reg::SP.0)] = STACK_POINTER;
+        let stack_pointer = entry_stack_pointer(scenario.arguments.len());
+        registers[usize::from(Reg::SP.0)] = stack_pointer;
         if let Some(global_pointer) = image.global_pointer {
             registers[usize::from(Reg::GP.0)] = global_pointer;
         }
-        for (index, value) in scenario.arguments.into_iter().take(8).enumerate() {
-            registers[10 + index] = value;
+        let mut initial_overlay = scenario.memory_initial;
+        for (index, value) in scenario.arguments.into_iter().enumerate() {
+            if index < REGISTER_ARGUMENTS {
+                registers[10 + index] = value;
+            } else {
+                let address = stack_pointer + ((index - REGISTER_ARGUMENTS) * 4) as u32;
+                for (offset, byte) in value.to_le_bytes().into_iter().enumerate() {
+                    initial_overlay.insert(address + offset as u32, byte);
+                }
+            }
         }
-        let initial_overlay = scenario.memory_initial;
         Self {
             image,
             svd,
@@ -213,12 +229,34 @@ pub fn execute(
     symbol: &str,
     mut scenario: Scenario,
 ) -> Result<ExecutionResult> {
-    if scenario.arguments.len() > 8 {
+    if scenario.arguments.len() > REGISTER_ARGUMENTS + MAX_STACK_ARGUMENTS {
         return Err(format!(
-            "{} arguments were provided, but stack arguments are not implemented; maximum is 8",
+            "{} arguments were provided; maximum is 72 RV32 integer argument words (8 register and 64 stack)",
             scenario.arguments.len()
         )
         .into());
+    }
+    let stack_pointer = entry_stack_pointer(scenario.arguments.len());
+    for (index, value) in scenario
+        .arguments
+        .iter()
+        .skip(REGISTER_ARGUMENTS)
+        .enumerate()
+    {
+        let address = stack_pointer + (index * 4) as u32;
+        for (offset, byte) in value.to_le_bytes().into_iter().enumerate() {
+            let address = address + offset as u32;
+            if scenario
+                .memory_initial
+                .get(&address)
+                .is_some_and(|seed| *seed != byte)
+            {
+                return Err(format!(
+                    "stack argument conflicts with memory seed at {address:#010x}"
+                )
+                .into());
+            }
+        }
     }
     validate_diagnostic_boundaries(image, &scenario)?;
     validate_fifo_services(&scenario)?;

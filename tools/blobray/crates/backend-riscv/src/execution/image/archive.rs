@@ -12,13 +12,74 @@ impl ExecutableImage {
     /// Retained relocations let execution reject reachable missing definitions
     /// instead of treating the linker's placeholder bytes as executable truth.
     pub fn load_entry(path: &Path, symbol: &str) -> Result<Self> {
-        let is_archive = crate::read_artifact(path)?.starts_with(b"!<arch>\n");
-        if !is_archive {
-            return Self::load(path);
+        Self::load_entry_with_roots(path, symbol, &[], None)
+    }
+
+    /// Link an archive against only the missing definitions supplied by a
+    /// companion image, then load its bytes. Existing archive definitions keep
+    /// precedence. The linker resolves data addresses and relocation addends;
+    /// definitions absent from both inputs remain poisoned at execution time.
+    pub fn load_entry_with_companion(path: &Path, symbol: &str, companion: &Path) -> Result<Self> {
+        Self::load_entry_with_roots(path, symbol, &[], Some(companion))
+    }
+
+    /// Retain explicit indirect-call roots in the same analysis link as the entry.
+    /// Callbacks installed by a scenario must not be discarded merely because
+    /// no direct relocation from the entry refers to them. This retains their
+    /// actual bodies; it does not install a callback table or model their results.
+    pub fn load_entry_with_roots(
+        path: &Path,
+        symbol: &str,
+        roots: &[&str],
+        companion: Option<&Path>,
+    ) -> Result<Self> {
+        let archive = crate::read_artifact(path)?.starts_with(b"!<arch>\n");
+        let mut image = if archive {
+            Self::link_archive_entry(path, symbol, roots, &std::collections::BTreeMap::new())?
+        } else {
+            Self::load(path)?
+        };
+        if let Some(companion) = companion {
+            if archive {
+                let definitions = Self::load(companion)?;
+                let bindings: std::collections::BTreeMap<_, _> = image
+                    .unresolved_relocations_by_address
+                    .values()
+                    .filter_map(|relocation| {
+                        definitions
+                            .symbol_address(&relocation.name)
+                            .map(|address| (relocation.name.clone(), address))
+                    })
+                    .collect();
+                if !bindings.is_empty() {
+                    image = Self::link_archive_entry(path, symbol, roots, &bindings)?;
+                }
+            }
+            image.add_companion(companion)?;
         }
+        for root in roots {
+            if image.symbol_address(root).is_none() {
+                return Err(format!("missing retained execution root {root}").into());
+            }
+        }
+        Ok(image)
+    }
+
+    fn link_archive_entry(
+        path: &Path,
+        symbol: &str,
+        roots: &[&str],
+        bindings: &std::collections::BTreeMap<String, u32>,
+    ) -> Result<Self> {
         let temporary = tempfile::tempdir()?;
         let output = temporary.path().join("execution.elf");
         let mut linker = analysis_linker()?;
+        for (name, address) in bindings {
+            linker.arg("--defsym").arg(format!("{name}={address:#x}"));
+        }
+        for root in roots {
+            linker.arg("--undefined").arg(root);
+        }
         let result = linker
             .args([
                 "-m",
@@ -226,6 +287,28 @@ mod tests {
     }
 
     #[test]
+    fn explicit_callback_roots_retain_real_bodies_without_changing_entry() {
+        let (_directory, path) = archive_objects(false, true);
+        let pruned = ExecutableImage::load_entry(&path, "entry").unwrap();
+        assert!(pruned.symbol_address("missing").is_none());
+        let retained =
+            ExecutableImage::load_entry_with_roots(&path, "entry", &["missing"], None).unwrap();
+        let map = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        for symbol in ["entry", "missing"] {
+            assert_eq!(
+                execute(&retained, &map, symbol, Scenario::default())
+                    .unwrap()
+                    .return_value,
+                42
+            );
+        }
+        assert!(ExecutableImage::load_entry_with_roots(&path, "entry", &["absent"], None).is_err());
+    }
+
+    #[test]
     fn archive_missing_callee_remains_unresolved() {
         let (_directory, path) = archive(true);
         let image = ExecutableImage::load_entry(&path, "entry").unwrap();
@@ -282,7 +365,7 @@ mod tests {
                     Relocation {
                         offset,
                         symbol: target,
-                        addend: 0,
+                        addend: 0x32,
                         flags: object::RelocationFlags::Elf { r_type },
                     },
                 )
@@ -303,6 +386,48 @@ mod tests {
             .to_string();
         assert!(error.contains("unresolved ELF relocation"));
         assert!(error.contains("missing_data"));
+        // An unrelated companion must not remove the unresolved-data guard.
+        for supply_data in [false, true] {
+            let mut companion =
+                Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+            for (name, address) in [
+                ("entry", 0x12340000),
+                (
+                    if supply_data {
+                        "missing_data"
+                    } else {
+                        "unrelated"
+                    },
+                    0x2f07fc40,
+                ),
+            ] {
+                companion.add_symbol(Symbol {
+                    name: name.as_bytes().to_vec(),
+                    value: address,
+                    size: 0,
+                    kind: SymbolKind::Data,
+                    scope: SymbolScope::Dynamic,
+                    weak: false,
+                    section: SymbolSection::Absolute,
+                    flags: SymbolFlags::None,
+                });
+            }
+            let companion_path = directory.path().join("companion.elf");
+            std::fs::write(&companion_path, companion.write().unwrap()).unwrap();
+            let linked =
+                ExecutableImage::load_entry_with_companion(&path, "entry", &companion_path)
+                    .unwrap();
+            assert_eq!(
+                linked.symbol_address("entry"),
+                image.symbol_address("entry")
+            );
+            let result = execute(&linked, &map, "entry", Scenario::default());
+            if supply_data {
+                assert_eq!(result.unwrap().return_value, 0x2f07fc40 + 0x32);
+            } else {
+                assert!(result.unwrap_err().to_string().contains("missing_data"));
+            }
+        }
     }
 
     #[test]

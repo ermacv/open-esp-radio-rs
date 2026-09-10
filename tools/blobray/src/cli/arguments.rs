@@ -7,7 +7,7 @@ use clap::{Args, ValueEnum};
 use super::{NamedAddressRange, ProjectInputBinding, RevisionPath, SourcePath, SourceValue};
 use crate::source_id::SourceId;
 
-/// Bounded default proven to stay below the Blobray wrapper's 1-GiB limit
+/// Bounded default proven to stay below the Blobray wrapper's memory limit
 /// on the 3,132-function ESP32-S31 combined image while avoiding accidental
 /// single-core artifact analysis. Callers can still select one worker for a
 /// tighter memory budget or up to eight after measuring their own project.

@@ -2,6 +2,44 @@
 
 use super::*;
 
+#[test]
+fn abstract_decode_failure_is_unresolved_but_concrete_fetch_still_fails() {
+    let image = tiny_image(
+        vec![
+            0x63, 0x04, 0x05, 0x00, // beq a0, zero, +8
+            0x67, 0x80, 0x00, 0x00, // ret
+            0xea, 0x15, // non-instruction bytes from a Rust jump table
+        ],
+        10,
+    );
+    let inventory = image.coverage_inventory("test").unwrap();
+    assert_eq!(inventory.branch_sites, BTreeSet::from([0x1000]));
+    assert_eq!(inventory.unresolved_edges.len(), 1);
+    assert!(inventory.unresolved_edges[&0x1008].contains("cannot decode instruction"));
+
+    let mut arguments = [None; 8];
+    arguments[0] = Some(1);
+    let constrained = image
+        .coverage_inventory_with_argument_constraints("test", &arguments)
+        .unwrap();
+    assert!(constrained.unresolved_edges.is_empty());
+    assert_eq!(
+        constrained.branch_outcomes,
+        BTreeSet::from([(0x1000, false)])
+    );
+
+    let svd = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let error = execute(&image, &svd, "test", Scenario::default()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot decode instruction at 0x1008")
+    );
+}
+
 fn direct_call_closure_image(unrelated: [u8; 8], callee: [u8; 4]) -> ExecutableImage {
     let mut image = tiny_image(
         [
@@ -374,6 +412,44 @@ fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
     let result = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap();
     assert_eq!(result.ordered_calls.len(), 1);
     assert_eq!(result.ordered_calls[0].symbol, "callee");
+}
+
+#[test]
+fn backed_rom_vector_uses_its_instruction_despite_primary_symbol_collision() {
+    for primary_binding in [0x1010, 0x1028] {
+        let mut image = tiny_image(
+            [
+                [0x6f, 0x00, 0x00, 0x01], // entry: j +16
+                [0; 4],
+                [0; 4],
+                [0; 4],
+                [0x6f, 0x00, 0x00, 0x01], // ROM vector: j +16
+                [0; 4],
+                [0; 4],
+                [0; 4],
+                [0x13, 0x05, 0x70, 0x00], // ROM body: li a0, 7
+                [0x67, 0x80, 0x00, 0x00], // ret
+                [0x13, 0x05, 0x90, 0x00], // patched body: li a0, 9
+                [0x67, 0x80, 0x00, 0x00], // ret
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            48,
+        );
+        image
+            .symbols_by_name
+            .insert("service".into(), primary_binding);
+        image.symbols_by_address.insert(0x1010, "service".into());
+        image.symbols_by_address.insert(0x1020, "service".into());
+        image.call_trampoline_addresses.insert(0x1010);
+
+        let result = execute(&image, &empty_svd(), "test", Scenario::default()).unwrap();
+        assert_eq!(result.return_value, 7);
+        assert!(result.executed_pcs.contains(&0x1020));
+        assert!(!result.executed_pcs.contains(&0x1028));
+        assert_eq!(result.ordered_calls.len(), 1);
+    }
 }
 
 #[test]

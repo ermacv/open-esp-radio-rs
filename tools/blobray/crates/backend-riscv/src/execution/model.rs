@@ -267,6 +267,10 @@ impl ModeledCallResponse {
 
 #[derive(Clone, Debug, Default)]
 pub struct Scenario {
+    /// RV32 integer ABI words: first eight in a0-a7, up to 64 additional
+    /// words at increasing offsets from the 16-byte-aligned entry SP.
+    /// The caller supplies scalar widening and any multiword ABI padding;
+    /// this interface does not classify aggregates, varargs or FP arguments.
     pub arguments: Vec<u32>,
     pub mmio_initial: BTreeMap<u32, u32>,
     pub mmio_reads: BTreeMap<u32, VecDeque<u32>>,

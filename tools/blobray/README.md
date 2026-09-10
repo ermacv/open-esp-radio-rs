@@ -261,7 +261,7 @@ target/blobray/blobray-run \
   project analyze --check --project /path/to/vendor-project.toml
 ```
 
-The Linux limiter applies a 1-GiB aggregate-memory policy and a 15-minute timeout.
+The Linux limiter applies a 4-GiB aggregate-memory policy and a 15-minute timeout.
 Use `--jobs 1` explicitly when working under a tighter memory budget; raise the
 worker count above four only after measuring the target project.
 User-systemd mode also disables swap. When a usable user-systemd scope is not

@@ -284,8 +284,13 @@ impl ExecutableImage {
                 .byte(byte_address)
                 .ok_or_else(|| format!("truncated instruction at {address:#x}"))?;
         }
-        let (instruction, _) = Inst::decode(u32::from_le_bytes(word), Xlen::Rv32)
-            .map_err(|error| format!("cannot decode instruction at {address:#x}: {error}"))?;
+        let (instruction, _) =
+            Inst::decode(u32::from_le_bytes(word), Xlen::Rv32).map_err(|error| {
+                crate::Error::InstructionDecode {
+                    address,
+                    reason: error.to_string(),
+                }
+            })?;
         Ok((instruction, width))
     }
 }

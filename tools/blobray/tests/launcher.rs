@@ -203,7 +203,7 @@ fn native_systemd_applies_limits_and_cancels_the_owned_service() {
     assert!(output.status.success());
     let properties = String::from_utf8(output.stdout).unwrap();
     for expected in [
-        "MemoryMax=1073741824",
+        "MemoryMax=4294967296",
         "MemorySwapMax=0",
         "RuntimeMaxUSec=15min",
         "TimeoutStopUSec=10s",

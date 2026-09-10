@@ -12,6 +12,9 @@ pub enum Error {
     #[error("{0}")]
     Message(String),
 
+    #[error("cannot decode instruction at {address:#x}: {reason}")]
+    InstructionDecode { address: u32, reason: String },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

@@ -1,10 +1,8 @@
 use super::*;
+use crate::tracking::calibration::PhyCalibrationTrackingRequest;
 use crate::{
     PhyConfig,
-    analog::{
-        rfpll::{RfpllCapTrackingAction, RfpllCapTrackingTransition},
-        temperature::PhyTemperatureOutcome,
-    },
+    analog::temperature::PhyTemperatureOutcome,
     state::client::{PhyClientState, PhyPllTrackClock},
     tracking::{
         calibration::{PhyCalibrationTrackingAction, PhyCalibrationTrackingTransition},
@@ -65,7 +63,9 @@ fn thermal_conditions_and_scheduler_deadline_are_independent() {
     let decision = inspection.wifi.unwrap().calibration.unwrap();
     assert!(decision.common.is_due() && decision.transmit.is_due());
     let transition = PhyCalibrationTrackingTransition::new(
-        PhyCalibrationTrackingRequest { class: Class::Wifi },
+        PhyCalibrationTrackingRequest {
+            clients: (Class::Wifi).clients(),
+        },
         state.calibration_tracking_parameters(None),
     );
     assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
@@ -102,7 +102,15 @@ fn inactive_inhibited_and_shared_clients_do_not_invent_work() {
 }
 #[test]
 fn optional_children_follow_policy_and_real_predicates() {
-    for temperature in [4, 5, 30, 95] {
+    for (temperature, due) in [
+        (-15, true),
+        (-14, false),
+        (5, false),
+        (14, false),
+        (15, true),
+        (30, true),
+        (95, true),
+    ] {
         let state = state(temperature);
         let mut policy = PhyParamTrackingPolicy::for_registered_state(&state);
         policy.rfpll_cap_tracking_enabled = true;
@@ -111,12 +119,12 @@ fn optional_children_follow_policy_and_real_predicates() {
             Inspection::inspect(&state, policy, clients(&[PhyModemClient::Wifi]), 1001).unwrap();
         assert!(inspection.wifi.unwrap().calibration.is_none());
         let rfpll = inspection.rfpll.unwrap();
-        assert_eq!(rfpll.is_due(), temperature >= 5);
+        assert_eq!(rfpll.is_due(), due);
         assert_eq!(
             rfpll.is_due(),
             matches!(
-                RfpllCapTrackingTransition::new(rfpll).action(),
-                RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: false }
+                crate::tracking::rfpll::thermal::Transition::new(rfpll).action(),
+                crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
             )
         );
         let i2c = inspection.wifi_i2c.unwrap();

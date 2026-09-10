@@ -1,4 +1,5 @@
 use super::*;
+use std::vec::Vec;
 
 fn parameters() -> PhyRxGainMemoryParameters {
     PhyRxGainMemoryParameters {
@@ -61,6 +62,71 @@ fn complete(action: PhyRxGainPublishAction) -> PhyRxGainPublishCompletion {
         }
         PhyRxGainPublishAction::Complete(_) | PhyRxGainPublishAction::Failed(_) => {
             panic!("terminal action")
+        }
+    }
+}
+
+#[test]
+fn recalibration_publishes_fresh_rxbb_corrections_only_in_wifi_bank() {
+    fn publish(old: u16, fresh: u16) -> Vec<(PhyRxGainBank, PhyGainMemoryEntry)> {
+        let mut parameters = init_parameters();
+        parameters.memory.rxbb_dc_adjustments = [[old; 2]; 6];
+        let outcome = PhyRxGainDcOutcome {
+            wifi_index_dc: [[0x100; 2]; 8],
+            wifi_dc_base: [0x100; 2],
+            shared_index_dc: [[0x100; 2]; 11],
+            rxbb_dc_adjustments: [[fresh, fresh.wrapping_neg()]; 6],
+        };
+        let mut root = PhyRxGainInitTransition::new(parameters);
+        // Exercise the real handoff after a completed measurement, including
+        // outer control restoration and every table publication action.
+        root.step = InitStep::RestoreDcControl { outcome };
+        root.advance(PhyRxGainInitCompletion::DcControlRestored)
+            .unwrap();
+        let mut entries = Vec::new();
+        loop {
+            match root.action() {
+                PhyRxGainInitAction::Publish(action) => {
+                    if let PhyRxGainPublishAction::ProgramEntry { bank, entry } = action {
+                        entries.push((bank, entry));
+                    }
+                    root.advance(PhyRxGainInitCompletion::Publish(complete(action)))
+                        .unwrap();
+                }
+                PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => root
+                    .advance(PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index })
+                    .unwrap(),
+                PhyRxGainInitAction::EnableIqCorrection => root
+                    .advance(PhyRxGainInitCompletion::IqCorrectionEnabled)
+                    .unwrap(),
+                PhyRxGainInitAction::Complete(result) => {
+                    assert_eq!(result.dc, Some(outcome));
+                    return entries;
+                }
+                other => panic!("unexpected publication action: {other:?}"),
+            }
+        }
+    }
+
+    let fresh = publish(0, 3);
+    assert_eq!(
+        fresh,
+        publish(19, 3),
+        "old corrections must not leak into publication"
+    );
+    let changed = publish(0, 7);
+    for bank in [PhyRxGainBank::Wifi, PhyRxGainBank::Shared] {
+        let entries = |values: &[(PhyRxGainBank, PhyGainMemoryEntry)]| {
+            values
+                .iter()
+                .filter(|(entry_bank, _)| *entry_bank == bank)
+                .map(|(_, entry)| *entry)
+                .collect::<Vec<_>>()
+        };
+        assert!(!entries(&fresh).is_empty());
+        match bank {
+            PhyRxGainBank::Wifi => assert_ne!(entries(&fresh), entries(&changed)),
+            PhyRxGainBank::Shared => assert_eq!(entries(&fresh), entries(&changed)),
         }
     }
 }

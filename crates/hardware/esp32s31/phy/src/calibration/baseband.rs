@@ -116,12 +116,15 @@ pub fn phy_generated_rx_gain_memory_entry(
     } else {
         selected_bits as usize
     }];
-    let dc_base = match bank {
-        PhyRxGainBank::Wifi => parameters.wifi_dc_base,
+    // The current vendor publisher discards the RXBB correction for the
+    // shared bank. Its per-gain radio DC values still come from shared_index_dc.
+    let [dc_i, dc_q] = match bank {
+        PhyRxGainBank::Wifi => [
+            parameters.wifi_dc_base[0].wrapping_add(adjustment[0]),
+            parameters.wifi_dc_base[1].wrapping_add(adjustment[1]),
+        ],
         PhyRxGainBank::Shared => [0x100, 0x100],
     };
-    let dc_i = dc_base[0].wrapping_add(adjustment[0]);
-    let dc_q = dc_base[1].wrapping_add(adjustment[1]);
     let auxiliary = match bank {
         PhyRxGainBank::Wifi => parameters.wifi_auxiliary,
         PhyRxGainBank::Shared => 0,

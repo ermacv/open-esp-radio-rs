@@ -1,13 +1,13 @@
 //! Non-consuming inspection of the registered tracking policy.
 //!
 //! A schedule deadline asks for a tracking evaluation, not every heavy branch.
-//! Conditions use retained temperature with unknown acquisition time. They do
+//! Conditions use retained temperature with explicit acquisition provenance. They do
 //! not certify freshness, provide RF access or select independent executable
 //! jobs. Earlier children can change shared state; the executor reevaluates
 //! conditions at their actual action boundary using the same predicates.
 
 use super::{
-    calibration::{PhyCalibrationTrackingRequest, decision::Decision},
+    calibration::decision::Decision,
     i2c::PhyWifiI2cTrackingParameters,
     parameters::{PhyCalibrationTrackClass as Class, PhyParamTrackingPolicy},
     power::{PhyTxPowerTrackingDecision, PhyTxPowerTrackingRequest, decide_tx_power_tracking},
@@ -15,7 +15,6 @@ use super::{
 };
 use crate::{
     PhyState, RegisteredPhyState,
-    analog::rfpll::RfpllCapTrackingParameters,
     state::client::{PhyClientSnapshot, PhyModemClient, PhyTrackTimeError},
 };
 
@@ -31,9 +30,10 @@ pub struct ClassInspection {
 pub struct Inspection {
     /// Unmodified observation of the source scheduler's evaluation deadline.
     pub schedule: Schedule,
+    pub temperature: super::temperature::Observation,
     pub inhibited: bool,
     /// None when inactive, inhibited or disabled. Present does not mean due.
-    pub rfpll: Option<RfpllCapTrackingParameters>,
+    pub rfpll: Option<super::rfpll::thermal::Request>,
     /// None when Wi-Fi is inactive or tracking is inhibited.
     pub wifi: Option<ClassInspection>,
     pub wifi_i2c: Option<PhyWifiI2cTrackingParameters>,
@@ -81,13 +81,14 @@ impl Inspection {
             ),
             calibration: policy
                 .calibration_tracking_enabled
-                .then(|| calibration.decision(PhyCalibrationTrackingRequest { class })),
+                .then(|| calibration.decision()),
         };
         Ok(Self {
             schedule,
+            temperature: state.temperature_observation(),
             inhibited: policy.tracking_inhibited,
             rfpll: (active && policy.rfpll_cap_tracking_enabled)
-                .then(|| state.rfpll_cap_tracking_parameters(policy.rfpll_cap_tracking_threshold)),
+                .then(|| state.rfpll_tracking_request(policy.rfpll_cap_tracking_threshold)),
             wifi: wifi.then(|| class(Class::Wifi, true)),
             wifi_i2c: wifi.then(|| state.wifi_i2c_tracking_parameters()),
             bluetooth_ieee802154: shared.then(|| {

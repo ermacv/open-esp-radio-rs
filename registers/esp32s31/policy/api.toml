@@ -1052,19 +1052,19 @@ sources = ["BLOB_LIBPHY_PHY_I2C"]
 name = "TEMPERATURE_SENSOR_DAC_STATUS"
 description = "Temperature-sensor DAC status field."
 bank = 0x69
-register = 0x00
+register = 0x06
 bit-offset = 0
-bit-width = 7
-sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+bit-width = 4
+sources = ["ROM_REV0_PHY_TSENS_DAC"]
 
 [[indirect-register-field-domains.fields]]
 name = "TEMPERATURE_SENSOR_DAC"
 description = "Temperature-sensor DAC control field."
 bank = 0x69
-register = 0x00
+register = 0x06
 bit-offset = 0
 bit-width = 4
-sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+sources = ["ROM_REV0_PHY_TSENS_DAC"]
 
 [[indirect-register-field-domains.fields]]
 name = "TEMPERATURE_SENSOR_SAR2_STATUS"

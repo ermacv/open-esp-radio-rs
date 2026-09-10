@@ -210,6 +210,10 @@ under `tx_waits`; the raw stream remains in `protocol.jsonl`.
 
 ### Platform timer window
 
+`overlapping_interrupts` explicitly accounts for IRQ entry overlapping alarm
+programming before acknowledgement. These events have no attributable alarm
+latency or deadline lateness; they remain part of IRQ/ack/dispatch counts.
+
 `StationTimerObserved` includes due-deadline counts at registration and alarm
 programming boundaries, plus IRQ acknowledgment timing. These refer to all users
 of the shared platform timer, not exclusively PHY tasks. The event is separate from the PHY-specific wait detail. With
@@ -226,3 +230,34 @@ defines timestamp boundaries, partial windows and observer overhead. These are
 shared-timer measurements; they do not attribute every IRQ to PHY or measure
 wake-to-PHY-poll latency. A control pause may contain legitimate timer work from
 other tasks even when PHY wait counters are zero.
+
+The `StationTrackingService` detail precedes its correlated `StationPauseCompleted`
+event for the bounded automatic-service window. It counts completed observations
+and operations, actual common/TX calibration commits, physical pause durations
+and invalid/fault/suspension flags. The host requires repeated observations in
+the specified window and rejects missing or unrelated detail. Standalone
+operation requests distinguish temperature, power, I2C, common and TX diagnosis.
+
+The `rfpll` station-pause operation requests one zero-threshold measured RFPLL
+correction within the retained station epoch. Its normal pause result and PHY
+timing frame are required; a resumed result without exactly one completed RFPLL
+operation is insufficient. The automatic-service operation counters use the
+order temperature, Wi-Fi power, analog I2C, common calibration, Wi-Fi TX and
+RFPLL. A counter slot does not enable that operation in automatic policy.
+
+`StationRfpllObserved` is a separate detail frame preceding the matching
+`StationPauseCompleted`. The host requires matching boot, session and request
+identities and rejects duplicate detail. RFPLL completion timing requires one
+valid terminal detail; absence cannot stand for zero correction. The values
+distinguish skipped evaluation (`correction = None`), completed zero correction,
+and nonzero correction with memory publication. The `rfpll-check` operation uses
+the retained sample and ordinary thermal threshold; `rfpll` explicitly uses zero
+threshold. Neither command fabricates a temperature or certifies RF lock.
+
+`rfpll-observed` additionally requires a dated sample no older than
+`STATION_RFPLL_SAMPLE_MAX_AGE_MICROS` after physical admission. Its scenario
+first waits for a separate `temperature` pause completion and restoration;
+the target command itself does not implicitly acquire a new sample. RFPLL detail
+reports `sample_age_micros` from acquisition start at RFPLL entry. Missing or
+over-age detail fails this scenario. Temperature and RFPLL frames retain their
+own request correlations and operation timings.

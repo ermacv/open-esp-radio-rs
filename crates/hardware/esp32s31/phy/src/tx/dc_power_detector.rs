@@ -1,8 +1,9 @@
 //! Rust-owned TX-DC calibration through the power detector.
 //!
-//! This is the mandatory 520-byte archive root
-//! `phy_txdc_cal_pwdet_init` and its 954-byte archive search child
-//! `phy_txdc_cal_pwdet_new`. The vendor diagnostic branches are removed.
+//! Current esp-phy-lib b88e4b76 supplies the 562-byte root
+//! `phy_txdc_cal_pwdet_init` and its 948-byte search child
+//! `phy_txdc_cal_pwdet_new`. Runtime Wi-Fi and BT/154 use the cleanup-enabled
+//! form; vendor diagnostic branches are omitted.
 //! Each former delay, SAR observation and PBus force is represented by one
 //! externally completed action; the two 50-point scans are finite bounds, not
 //! executor polling loops.
@@ -620,7 +621,10 @@ const fn tx_on(index: u8) -> PhyPbusForceTest {
         6 => PhyPbusForceTest::new(2, 2, 0x100),
         7 => PhyPbusForceTest::new(3, 2, 0x100),
         8 => PhyPbusForceTest::new(1, 2, 0),
-        _ => PhyPbusForceTest::new(4, 1, 0x0b),
+        9 => PhyPbusForceTest::new(4, 1, 0x0b),
+        // Complete ROM phy_pbus_xpd_tx_on(15, 0) ends with selector 5.
+        // This precedes SAR setup and the per-row gain selection.
+        _ => PhyPbusForceTest::new(5, 1, 0x1cf),
     }
 }
 
@@ -775,7 +779,7 @@ impl PhyTxDcPwdetTransition {
             ),
             RootStep::TxOn { index } => (
                 tx_on(index),
-                if index == 9 {
+                if index == 10 {
                     match self.mode {
                         PhyTxDcPwdetMode::Wifi => RootStep::Sar,
                         PhyTxDcPwdetMode::Bluetooth { .. } => RootStep::BluetoothReadForcedPath,

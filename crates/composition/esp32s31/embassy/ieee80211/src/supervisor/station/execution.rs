@@ -193,29 +193,34 @@ async fn connected_datapath_task(mailbox: &'static ConnectedDatapathMailbox) {
 pub(super) async fn wait_connected_datapath_completion(
     mailbox: &'static ConnectedDatapathMailbox,
     control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
-) -> (Option<StationCommand>, super::PauseOperation) {
+    role: &super::pause::Role,
+) -> (Option<StationCommand>, super::PauseOperation, bool) {
     use super::PauseOperation;
     match select3(
         mailbox.wait_completed(),
         control.wait(),
-        super::pause_request::REQUESTS.wait(),
+        select(super::pause_request::REQUESTS.wait(), wait_automatic(role)),
     )
     .await
     {
-        Either3::First(()) => (None, PauseOperation::Access),
+        Either3::First(()) => (None, PauseOperation::Access, false),
         Either3::Second(command) => {
             mailbox.request_stop();
             mailbox.wait_completed().await;
-            (Some(command), PauseOperation::Access)
+            (Some(command), PauseOperation::Access, false)
         }
-        Either3::Third(operation) => {
+        Either3::Third(request) => {
+            let (operation, automatic) = match request {
+                Either::First(operation) => (operation, false),
+                Either::Second(operation) => (PauseOperation::Automatic(operation), true),
+            };
             mailbox.control.borrow().request_pause();
             match select(mailbox.wait_completed(), control.wait()).await {
-                Either::First(()) => (None, operation),
+                Either::First(()) => (None, operation, automatic),
                 Either::Second(command) => {
                     mailbox.request_stop();
                     mailbox.wait_completed().await;
-                    (Some(command), operation)
+                    (Some(command), operation, automatic)
                 }
             }
         }
@@ -249,8 +254,12 @@ pub(super) async fn run(
     let mut requested_command = None;
     mailbox.start(runner);
     loop {
-        let (requested, operation) =
-            await_stack_boundary!(wait_connected_datapath_completion(mailbox, station_control,));
+        let (requested, operation, automatic) =
+            await_stack_boundary!(wait_connected_datapath_completion(
+                mailbox,
+                station_control,
+                role.as_ref().expect("connected PHY owner")
+            ));
         requested_command = requested_command
             .into_iter()
             .chain(requested)
@@ -269,14 +278,35 @@ pub(super) async fn run(
                     )) {
                         Ok((irq, result)) => {
                             interrupt_epoch = irq;
-                            finish_pause(mailbox, result, started);
+                            if automatic {
+                                let super::PauseOperation::Automatic(operation) = operation else {
+                                    unreachable!("automatic selected operation")
+                                };
+                                match result {
+                                    Ok(outcome) => {
+                                        super::pause_request::REQUESTS.automatic.completed(
+                                            operation,
+                                            started.elapsed().as_micros(),
+                                            outcome,
+                                        )
+                                    }
+                                    Err(error) => super::pause_request::REQUESTS
+                                        .automatic
+                                        .report(super::TrackingStatus::Failed(error)),
+                                }
+                            } else {
+                                finish_pause(mailbox, result, started);
+                            }
                         }
                         Err(failure) => {
+                            pause_request::REQUESTS
+                                .automatic
+                                .report(super::TrackingStatus::Failed(failure.stage()));
                             pause_request::REQUESTS.finish(Err(failure.stage()));
                             return Err(failure);
                         }
                     }
-                } else {
+                } else if !automatic {
                     pause_request::REQUESTS.finish(Err(PauseError::Interrupted));
                 }
                 // Requests arriving while the parent owns the physical pause
@@ -343,4 +373,44 @@ fn take_runner(
     let returned = mailbox.take_return();
     *runner = Some(returned.runner);
     returned.result
+}
+
+async fn wait_automatic(
+    role: &super::pause::Role,
+) -> oer_esp32s31_phy::tracking::maintenance::Operation {
+    use super::{TrackingStatus, pause_request::REQUESTS};
+    use oer_esp32s31_phy::tracking::service::{Demand, Suspension};
+    loop {
+        let (config, observation_requested) = REQUESTS.automatic.snapshot();
+        let Some(config) = config else {
+            REQUESTS.automatic.changed().await;
+            continue;
+        };
+        let now = embassy_time::Instant::now().as_micros();
+        let demand = match role.inspect_phy_tracking(now) {
+            Ok(snapshot) => config.inspect(snapshot, now, observation_requested),
+            Err(_) => Demand::Suspended(Suspension::Clock),
+        };
+        match demand {
+            Demand::Run(operation) => {
+                if REQUESTS.automatic.try_begin(config, operation) {
+                    return operation;
+                }
+            }
+            Demand::At(deadline_micros) => {
+                REQUESTS
+                    .automatic
+                    .report(TrackingStatus::Waiting { deadline_micros });
+                select(
+                    embassy_time::Timer::at(embassy_time::Instant::from_micros(deadline_micros)),
+                    REQUESTS.automatic.changed(),
+                )
+                .await;
+            }
+            Demand::Suspended(reason) => {
+                REQUESTS.automatic.report(TrackingStatus::Suspended(reason));
+                REQUESTS.automatic.changed().await;
+            }
+        }
+    }
 }

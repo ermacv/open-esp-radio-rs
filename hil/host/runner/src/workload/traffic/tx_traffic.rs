@@ -331,8 +331,41 @@ pub(crate) fn run(
         let result = receiver
             .wait_started(Duration::from_secs(3))
             .and_then(|before| {
-                let (evidence, tx_waits, timer) =
-                    capture.station_pause_round_trip(operation, Duration::from_secs(2))?;
+                use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+                if operation == Op::RfpllObserved {
+                    // Completion and checked restoration of acquisition are
+                    // the prerequisite event, not a host delay or a fabricated
+                    // temperature. RFPLL rechecks freshness after its TX drain.
+                    let sample = capture
+                        .station_pause_round_trip(Op::Temperature, Duration::from_secs(2))?;
+                    fs::write(
+                        output.join("station-temperature.json"),
+                        serde_json::to_vec_pretty(&sample)?,
+                    )?;
+                    validate_pause(Op::Temperature, sample.evidence)?;
+                    validate_rfpll(Op::Temperature, sample.evidence.timings, sample.rfpll)?;
+                    validate_tx_waits(sample.evidence.timings, sample.tx_waits)?;
+                    if !sample.timer.is_some_and(|timer| timer.is_valid()) {
+                        return Err(
+                            "missing or inconsistent temperature acquisition timer evidence".into(),
+                        );
+                    }
+                }
+                let timeout = if operation
+                    == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
+                {
+                    Duration::from_micros(
+                        open_esp_radio_hil_protocol::STATION_TRACKING_SERVICE_WINDOW_MICROS,
+                    ) + Duration::from_secs(2)
+                } else {
+                    Duration::from_secs(2)
+                };
+                let report = capture.station_pause_round_trip(operation, timeout)?;
+                let evidence = report.evidence;
+                let tx_waits = report.tx_waits;
+                let timer = report.timer;
+                let service = report.service;
+                let rfpll = report.rfpll;
                 fs::write(
                     output.join("station-pause.json"),
                     serde_json::to_vec_pretty(&serde_json::json!({
@@ -340,9 +373,13 @@ pub(crate) fn run(
                         "evidence": evidence,
                         "tx_waits": tx_waits,
                         "timer": timer,
+                        "service": service,
+                        "rfpll": rfpll,
                     }))?,
                 )?;
                 validate_pause(operation, evidence)?;
+                validate_rfpll(operation, evidence.timings, rfpll)?;
+                validate_service(operation, service)?;
                 validate_tx_waits(evidence.timings, tx_waits)?;
                 if !timer.is_some_and(|timer| timer.is_valid()) {
                     return Err("missing or inconsistent platform timer evidence".into());
@@ -1293,10 +1330,13 @@ fn validate_pause(
     {
         return Err("PHY timing evidence is invalid, failed or incomplete".into());
     }
-    if operation != open_esp_radio_hil_protocol::StationPauseOperation::Access
-        && !evidence
-            .tracking
-            .is_some_and(|tracking| !tracking.inhibited)
+    if !matches!(
+        operation,
+        open_esp_radio_hil_protocol::StationPauseOperation::Access
+            | open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
+    ) && !evidence
+        .tracking
+        .is_some_and(|tracking| !tracking.inhibited)
     {
         return Err("requested PHY tracking did not execute uninhibited due work".into());
     }
@@ -1306,6 +1346,63 @@ fn validate_pause(
             .is_some_and(|tracking| tracking.common_calibrated && tracking.wifi_calibrated)
     {
         return Err("requested common/Wi-Fi calibration did not complete".into());
+    }
+    use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    if operation == Op::Temperature {
+        let timings = evidence
+            .timings
+            .ok_or("missing temperature acquisition timing")?;
+        if timings.temperature.started != 1
+            || timings.temperature.completed != 1
+            || [
+                timings.rfpll,
+                timings.wifi_power,
+                timings.bluetooth_ieee802154_power,
+                timings.wifi_i2c,
+                timings.calibration,
+            ]
+            .iter()
+            .any(|timing| timing.started != 0)
+        {
+            return Err("temperature pause did not complete exactly one acquisition".into());
+        }
+    }
+    if matches!(operation, Op::Rfpll | Op::RfpllCheck | Op::RfpllObserved) {
+        let timings = evidence.timings.ok_or("missing RFPLL completion timing")?;
+        if timings.rfpll.started != 1
+            || timings.rfpll.completed != 1
+            || (operation == Op::Rfpll && timings.rfpll.elapsed_micros == 0)
+            || [
+                timings.wifi_power,
+                timings.bluetooth_ieee802154_power,
+                timings.wifi_i2c,
+                timings.calibration,
+                timings.temperature,
+            ]
+            .iter()
+            .any(|timing| timing.started != 0)
+            || evidence.tracking.is_some_and(|tracking| {
+                tracking.common_calibrated
+                    || tracking.wifi_calibrated
+                    || tracking.bluetooth_ieee802154_calibrated
+            })
+        {
+            return Err("RFPLL pause did not complete exactly the requested operation".into());
+        }
+    }
+    if matches!(operation, Op::CommonCalibration | Op::TxCalibration) {
+        let tracking = evidence
+            .tracking
+            .ok_or("missing selected calibration evidence")?;
+        if (operation == Op::CommonCalibration
+            && (!tracking.common_calibrated || tracking.wifi_calibrated))
+            || (operation == Op::TxCalibration
+                && (!tracking.wifi_calibrated || tracking.common_calibrated))
+        {
+            return Err(
+                "selected calibration did not complete exactly its requested branch".into(),
+            );
+        }
     }
     Ok(())
 }
@@ -1322,5 +1419,54 @@ fn validate_tx_waits(
         (Some(timing), Some(waits)) if waits.fits(timing.tx_dc_pwdet) => Ok(()),
         (None, None) => Ok(()),
         _ => Err("missing or inconsistent TX calibration wait evidence".into()),
+    }
+}
+
+fn validate_service(
+    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::{
+        STATION_TRACKING_SERVICE_WINDOW_MICROS, StationPauseOperation,
+    };
+    match (operation, service) {
+        (StationPauseOperation::TrackingService, Some(report))
+            if report.is_valid()
+                && report.operations[0] >= 3
+                && report.elapsed_micros >= STATION_TRACKING_SERVICE_WINDOW_MICROS =>
+        {
+            Ok(())
+        }
+        (StationPauseOperation::TrackingService, _) => Err(
+            "automatic PHY service did not provide a valid continuous observation window".into(),
+        ),
+        (_, None) => Ok(()),
+        (_, Some(_)) => Err("unexpected automatic PHY service detail".into()),
+    }
+}
+
+fn validate_rfpll(
+    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    timings: Option<open_esp_radio_hil_protocol::PhyTimingEvidence>,
+    detail: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    let count = timings.map_or(0, |timing| timing.rfpll.completed);
+    match (count, detail) {
+        (0, None) if !matches!(operation, Op::Rfpll | Op::RfpllCheck | Op::RfpllObserved) => Ok(()),
+        (1, Some(detail))
+            if detail.is_valid()
+                && (operation != Op::Rfpll
+                    || (detail.threshold == 0 && detail.correction.is_some()))
+                && (!matches!(operation, Op::RfpllCheck | Op::RfpllObserved)
+                    || detail.threshold == 15)
+                && (operation != Op::RfpllObserved
+                    || detail.sample_age_micros.is_some_and(|age| {
+                        age <= open_esp_radio_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS
+                    })) =>
+        {
+            Ok(())
+        }
+        _ => Err("missing, duplicate or inconsistent RFPLL terminal detail".into()),
     }
 }

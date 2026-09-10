@@ -146,6 +146,33 @@ pub(super) async fn round_trip(
     let mut clock = EmbassyPhyClock;
     let tracking = if operation != PauseOperation::Access {
         let request = match operation {
+            PauseOperation::ObservedOperation {
+                operation,
+                maximum_age_micros,
+            } => oer_esp32s31_phy::WifiPhyMaintenanceRequest::ObservedOperation {
+                operation,
+                maximum_age_micros,
+            },
+            PauseOperation::Automatic(operation) => {
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::ObservedOperation {
+                    operation,
+                    maximum_age_micros: super::super::pause_request::REQUESTS
+                        .automatic
+                        .snapshot()
+                        .0
+                        .map_or(0, |config| config.sample_period_micros()),
+                }
+            }
+            PauseOperation::Operation(operation) => {
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::Operation(operation)
+            }
+            PauseOperation::CommonCalibration => {
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::CalibrateCommon
+            }
+            PauseOperation::TxCalibration => {
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::CalibrateTransmit
+            }
+            PauseOperation::Rfpll => oer_esp32s31_phy::WifiPhyMaintenanceRequest::MeasureRfpll,
             PauseOperation::Calibration => oer_esp32s31_phy::WifiPhyMaintenanceRequest::Calibrate,
             _ => oer_esp32s31_phy::WifiPhyMaintenanceRequest::Track,
         };

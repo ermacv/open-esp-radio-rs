@@ -200,7 +200,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             installed_security,
         } = connected;
         let interface = runtime.board().interface;
-        let returned = run_connected(
+        let returned = oer_wifi_embassy::await_stack_boundary!(run_connected(
             control,
             ConnectedStationResources::new(
                 runtime,
@@ -212,8 +212,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 installed_security,
                 security,
             ),
-        )
-        .await;
+        ));
         let returned = match returned {
             ConnectedStationRunExit::Returned(returned) => returned,
             ConnectedStationRunExit::Faulted(fault) => {

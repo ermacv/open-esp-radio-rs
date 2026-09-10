@@ -33,6 +33,8 @@ pub struct TimerWindowEvidence {
     pub replaced: u32,
     pub stopped: u32,
     pub unmatched_interrupts: u32,
+    /// IRQ entry precedes completion of an alarm program observed before acknowledgement.
+    pub overlapping_interrupts: u32,
     pub unmatched_dispatches: u32,
     pub coalesced_interrupts: u32,
     pub early_interrupts: u32,
@@ -41,7 +43,10 @@ pub struct TimerWindowEvidence {
 }
 impl TimerWindowEvidence {
     pub fn is_valid(&self) -> bool {
-        let matched = self.interrupts.checked_sub(self.unmatched_interrupts);
+        let matched = self
+            .interrupts
+            .checked_sub(self.unmatched_interrupts)
+            .and_then(|count| count.checked_sub(self.overlapping_interrupts));
         !self.invalid
             && [
                 self.irq_ack,
@@ -63,7 +68,8 @@ impl TimerWindowEvidence {
             && self
                 .alarm_to_irq
                 .count
-                .checked_add(self.replaced)
+                .checked_add(self.overlapping_interrupts)
+                .and_then(|sum| sum.checked_add(self.replaced))
                 .and_then(|sum| sum.checked_add(self.stopped))
                 .and_then(|sum| sum.checked_add(u32::from(self.armed_at_end)))
                 == Some(self.programming.count)

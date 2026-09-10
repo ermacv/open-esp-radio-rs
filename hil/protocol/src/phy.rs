@@ -1,5 +1,7 @@
 //! Inclusive PHY operation timing; no raw register or vendor ABI values.
 use serde::{Deserialize, Serialize};
+mod rfpll;
+pub use rfpll::{RfpllCorrectionEvidence, RfpllEvidence, STATION_RFPLL_SAMPLE_MAX_AGE_MICROS};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyOperationTiming {
@@ -52,8 +54,7 @@ pub struct PhyTimingEvidence {
     pub wifi_power: PhyOperationTiming,
     pub bluetooth_ieee802154_power: PhyOperationTiming,
     pub wifi_i2c: PhyOperationTiming,
-    pub wifi_calibration: PhyOperationTiming,
-    pub bluetooth_ieee802154_calibration: PhyOperationTiming,
+    pub calibration: PhyOperationTiming,
     pub temperature: PhyOperationTiming,
     pub pbus_clear: PhyOperationTiming,
     pub dcode: PhyOperationTiming,
@@ -81,8 +82,7 @@ impl PhyTimingEvidence {
                 self.wifi_power,
                 self.bluetooth_ieee802154_power,
                 self.wifi_i2c,
-                self.wifi_calibration,
-                self.bluetooth_ieee802154_calibration,
+                self.calibration,
                 self.temperature,
                 self.pbus_clear,
                 self.dcode,
@@ -184,5 +184,35 @@ impl PhyTxWaitEvidence {
             .try_fold(0u32, |sum, v| sum.checked_add(v.elapsed_micros))
             .is_some_and(|total| total <= operation.elapsed_micros)
             && (operation.started != 0 || self == Self::default())
+    }
+}
+
+/// Duration of the bounded automatic-service measurement within UDP traffic.
+pub const STATION_TRACKING_SERVICE_WINDOW_MICROS: u64 = 4_000_000;
+
+/// Separate detail frame, correlated before StationPauseCompleted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationTrackingServiceEvidence {
+    /// Temperature, Wi-Fi power, analog-I2C, common calibration, Wi-Fi TX, RFPLL.
+    pub operations: [u16; 6],
+    pub deferred: u16,
+    pub common_calibrated: u16,
+    pub wifi_calibrated: u16,
+    pub elapsed_micros: u64,
+    pub pause_micros: u64,
+    pub maximum_pause_micros: u64,
+    pub failed: bool,
+    pub suspended: bool,
+    pub invalid: bool,
+}
+impl StationTrackingServiceEvidence {
+    pub fn is_valid(self) -> bool {
+        !self.failed
+            && !self.suspended
+            && !self.invalid
+            && self.maximum_pause_micros <= self.pause_micros
+            && self.pause_micros <= self.elapsed_micros
+            && self.common_calibrated <= self.operations[3]
+            && self.wifi_calibrated <= self.operations[4]
     }
 }

@@ -454,3 +454,57 @@ station policy and continued UDP delivery without reconnecting. The ordinary
 `station_pause = "tracking"` leaves the registered temperature policy intact;
 `station_pause = "access"` checks the ownership round trip without tracking.
 The protocol carries this choice as one operation, not independent booleans.
+
+Separate PHY operation scenarios use the same correctness image:
+`diagnostic-station-phy-temperature`, `diagnostic-station-phy-wifi-power`,
+`diagnostic-station-phy-wifi-i2c`, `diagnostic-station-phy-common-calibration`,
+`diagnostic-station-phy-tx-calibration` and
+`diagnostic-station-phy-tracking-service`. Each runs a twelve-second UDP TX
+workload. The common/TX scenarios force only their named measurement branch.
+The service scenario enables a one-second observation cadence for a measured
+four-second window, disables it, and waits for a final restoration barrier.
+It requires a separate correlated service report; no operator-side delay or
+manual router configuration is required. See the
+[service ownership contract](../../../crates/hardware/esp32s31/phy/src/tracking/service/README.md).
+
+`cargo hil run diagnostic-station-phy-rfpll --network patched-xarxa` requests
+one measured RFPLL correction through the same exclusive station pause. The
+request sets only this operation's thermal threshold to zero; temperature,
+capacitor delta and hardware statuses are not fabricated. It does not enable
+registered periodic RFPLL, advance the periodic evaluation deadline or execute
+power/RXCAL/TXCAL branches. The runner requires exactly one completed RFPLL
+operation with nonzero timing, checked restoration and continued delivery in the
+same connection. The correlated `StationRfpllObserved` detail distinguishes skipped evaluation,
+zero correction and nonzero frequency-memory update. It retains the request's
+sensor value and reference, selected threshold, committed reference, initial and
+selected capacitor inputs, accepted sample count, updated entry count and
+restored frequency index. These are procedure values, not RF lock evidence or
+capacitor readback. The result is emitted after hardware-control restoration and
+semantic commit, and serialized after the physical round trip unwinds.
+
+`diagnostic-station-phy-rfpll-check` uses the same image and radio admission but
+retains the ordinary 15-sensor-unit temperature threshold. Its result may be
+skipped; the host verifies the branch and reference update against the reported
+inputs. Both scenarios use the retained sensor sample without refreshing it.
+
+`diagnostic-station-phy-rfpll-observed` first requests a separate temperature
+acquisition during UDP transmission. Only its correlated completion and checked
+restoration allow the host to issue `rfpll-observed`. That operation retains the
+ordinary threshold and rechecks sample age after physical admission, accepting
+at most `STATION_RFPLL_SAMPLE_MAX_AGE_MICROS` (one second). Missing, stale or
+invalid-clock samples do not execute RFPLL. No timed host sleep supplies readiness.
+The host retains the first operation in `station-temperature.json` and RFPLL
+in `station-pause.json`; a missing/deferred result fails the scenario.
+
+RFPLL detail includes `sample_age_micros`, measured from sensor acquisition
+start to RFPLL entry, including acquisition waits and the subsequent handoff.
+`None` means usable acquisition/observation timing is unavailable. The observed
+scenario requires a reported age within its bound. This bound is a diagnostic
+freshness policy, not an established safe RF maintenance interval. These
+scenarios do not enable automatic tracking or constitute a physical thermal sweep.
+
+`StationPauseEvidence.elapsed_micros` measures the physical maintenance round
+trip after the TX worker returns its paused owner and before the parent resumes
+that worker. It excludes the earlier TX drain/admission wait and subsequent
+worker scheduling. RFPLL timing is nested inside this interval; neither value
+alone measures end-to-end traffic interruption.

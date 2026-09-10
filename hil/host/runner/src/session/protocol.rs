@@ -630,11 +630,7 @@ impl SerialCapture {
         &self,
         operation: open_esp_radio_hil_protocol::StationPauseOperation,
         timeout: Duration,
-    ) -> Result<(
-        open_esp_radio_hil_protocol::StationPauseEvidence,
-        Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
-        Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
-    )> {
+    ) -> Result<pause::Report> {
         let handle =
             self.request_wifi_command(Command::PauseStation { operation }, "station pause")?;
         let event = self
@@ -660,7 +656,21 @@ impl SerialCapture {
             state.messages.get(handle.first_event..).unwrap_or_default(),
             &event,
         )?;
-        Ok((evidence, waits, timer))
+        let service = pause::service(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
+        let rfpll = pause::rfpll(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
+        Ok(pause::Report {
+            rfpll,
+            evidence,
+            tx_waits: waits,
+            timer,
+            service,
+        })
     }
 
     pub(crate) fn request_station_epoch_cycle(&self) -> Result<StationEpochHandle> {

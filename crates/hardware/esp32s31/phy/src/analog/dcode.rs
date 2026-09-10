@@ -1,7 +1,8 @@
 //! Rust-owned ESP32-S31 PHY D-code calibration.
 //!
 //! The required root is ROM `phy_dcode_cal_init` at `0x2f82_b8da`, size
-//! 128 bytes. It visits four fixed RF frequency codes, resets four CKGEN
+//! 128 bytes. It visits Wi-Fi channels 1, 5, 10 and 14 through the frequency-table
+//! switch path (including its NRX update), resets four CKGEN
 //! fields through PHY-I2C, reads two six-bit D-code values, and stores the
 //! resulting eight bytes through the global `phy_param` pointer.
 //!
@@ -18,7 +19,7 @@ use crate::analog::{
     },
 };
 
-pub const PHY_DCODE_FREQUENCY_CODES: [u8; 4] = [115, 116, 117, 118];
+const CHANNELS: [u8; 4] = [1, 5, 10, 14];
 
 const CKGEN_WRITES: [(PhyI2cField, u8); 4] = [
     (analog_registers::RFPLL_DCODE_0_SOURCE_SELECT, 0),
@@ -48,7 +49,6 @@ pub enum PhyDcodeFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyDcodeAction {
     Rfpll(RfpllFrequencyAction),
-    ConfigureNrx { frequency_code: u8 },
     WriteMasked { field: PhyI2cField, value: u8 },
     ReadMasked { field: PhyI2cField },
     Complete(PhyDcodeOutcome),
@@ -58,7 +58,6 @@ pub enum PhyDcodeAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyDcodeCompletion {
     Rfpll(RfpllFrequencyCompletion),
-    NrxConfigured { frequency_code: u8 },
     MaskedWrite { field: PhyI2cField, value: u8 },
     MaskedRead { field: PhyI2cField, value: u8 },
 }
@@ -75,9 +74,6 @@ enum PhyDcodeStep {
         calibration_index: u8,
         transition: RfpllFrequencyTransition,
     },
-    ConfigureNrx {
-        calibration_index: u8,
-    },
     ResetCkgen {
         calibration_index: u8,
         write_index: u8,
@@ -93,9 +89,9 @@ enum PhyDcodeStep {
 }
 
 const fn rfpll_transition(calibration_index: u8, crystal_selector: u8) -> RfpllFrequencyTransition {
-    RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+    RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
         crystal_selector,
-        frequency_code: PHY_DCODE_FREQUENCY_CODES[calibration_index as usize] as u16,
+        frequency_code: CHANNELS[calibration_index as usize] as u16,
         offset: 0,
     })
 }
@@ -122,9 +118,6 @@ impl PhyDcodeTransition {
     pub const fn action(self) -> PhyDcodeAction {
         match self.step {
             PhyDcodeStep::Rfpll { transition, .. } => PhyDcodeAction::Rfpll(transition.action()),
-            PhyDcodeStep::ConfigureNrx { calibration_index } => PhyDcodeAction::ConfigureNrx {
-                frequency_code: PHY_DCODE_FREQUENCY_CODES[calibration_index as usize],
-            },
             PhyDcodeStep::ResetCkgen { write_index, .. } => {
                 let (field, value) = CKGEN_WRITES[write_index as usize];
                 PhyDcodeAction::WriteMasked { field, value }
@@ -156,9 +149,10 @@ impl PhyDcodeTransition {
                     .advance(completion)
                     .map_err(|_| PhyDcodeTransitionError::WrongCompletion)?;
                 match transition.action() {
-                    RfpllFrequencyAction::Complete(_) => {
-                        PhyDcodeStep::ConfigureNrx { calibration_index }
-                    }
+                    RfpllFrequencyAction::Complete(_) => PhyDcodeStep::ResetCkgen {
+                        calibration_index,
+                        write_index: 0,
+                    },
                     RfpllFrequencyAction::Failed(failure) => {
                         PhyDcodeStep::Failed(PhyDcodeFailure::Rfpll {
                             calibration_index,
@@ -169,15 +163,6 @@ impl PhyDcodeTransition {
                         calibration_index,
                         transition,
                     },
-                }
-            }
-            (
-                PhyDcodeStep::ConfigureNrx { calibration_index },
-                PhyDcodeCompletion::NrxConfigured { frequency_code },
-            ) if frequency_code == PHY_DCODE_FREQUENCY_CODES[calibration_index as usize] => {
-                PhyDcodeStep::ResetCkgen {
-                    calibration_index,
-                    write_index: 0,
                 }
             }
             (
@@ -218,7 +203,7 @@ impl PhyDcodeTransition {
                 },
             ) if value <= 0x3f => {
                 self.codes[calibration_index as usize * 2 + 1] = value;
-                if calibration_index + 1 == PHY_DCODE_FREQUENCY_CODES.len() as u8 {
+                if calibration_index + 1 == CHANNELS.len() as u8 {
                     PhyDcodeStep::Complete(PhyDcodeOutcome { codes: self.codes })
                 } else {
                     let next = calibration_index + 1;
@@ -242,34 +227,6 @@ pub enum PhyDcodeBindingError {
     UnsupportedAction,
     IncompleteTransaction,
     UnexpectedOutcome,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct PhyDcodeMmioBinding {
-    frequency_code: u8,
-}
-
-impl PhyDcodeMmioBinding {
-    pub fn new(action: PhyDcodeAction) -> Result<Self, PhyDcodeBindingError> {
-        match action {
-            PhyDcodeAction::ConfigureNrx { frequency_code } => Ok(Self { frequency_code }),
-            _ => Err(PhyDcodeBindingError::UnsupportedAction),
-        }
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub fn execute_target(
-        self,
-        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
-    ) -> PhyDcodeCompletion {
-        oer_esp32s31_hal::phy::frequency::configure_nrx_frequency(
-            registers,
-            u32::from(self.frequency_code),
-        );
-        PhyDcodeCompletion::NrxConfigured {
-            frequency_code: self.frequency_code,
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -376,7 +333,6 @@ impl PhyDcodeI2cBinding {
 #[derive(Debug, Eq, PartialEq)]
 pub enum PhyDcodeExternalBinding {
     Rfpll(crate::analog::rfpll::RfpllFrequencyExternalBinding),
-    Mmio(PhyDcodeMmioBinding),
     I2c(PhyDcodeI2cBinding),
 }
 
@@ -388,7 +344,6 @@ impl PhyDcodeExternalBinding {
                     .map(Self::Rfpll)
                     .map_err(|_| PhyDcodeBindingError::UnsupportedAction)
             }
-            PhyDcodeAction::ConfigureNrx { .. } => PhyDcodeMmioBinding::new(action).map(Self::Mmio),
             PhyDcodeAction::WriteMasked { .. } | PhyDcodeAction::ReadMasked { .. } => {
                 PhyDcodeI2cBinding::new(action).map(Self::I2c)
             }

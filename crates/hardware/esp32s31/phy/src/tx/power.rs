@@ -673,7 +673,7 @@ impl PhyTxPowerTransition {
     }
 
     fn rfpll(&self) -> RfpllFrequencyTransition {
-        RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+        RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
             crystal_selector: self.parameters.crystal_selector,
             frequency_code: CHANNEL_CODES[self.channel as usize],
             offset: 0,

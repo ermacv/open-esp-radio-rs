@@ -4,8 +4,8 @@ use std::vec::Vec;
 const PARAMETERS: PhyCalibrationTrackingParameters = PhyCalibrationTrackingParameters {
     current_temperature: 50,
     common_reference_temperature: 20,
-    wifi_reference_temperature: 20,
-    bluetooth_ieee802154_reference_temperature: 20,
+    transmit_reference_temperature: 20,
+
     threshold_override: None,
     current_channel: 11,
     channel_bandwidth: 1,
@@ -98,6 +98,9 @@ fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCom
                 PhyCalibrationForceTxRxCompletion { enabled },
             )
         }
+        PhyCalibrationTrackingAction::DisableWifiBaseband => {
+            PhyCalibrationTrackingCompletion::WifiBasebandDisabled
+        }
         PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw } => {
             PhyCalibrationTrackingCompletion::BasebandChannelConfigured { cbw }
         }
@@ -139,7 +142,7 @@ fn run(
 ) -> Vec<PhyCalibrationTrackingAction> {
     let mut transition = PhyCalibrationTrackingTransition::new(request, parameters);
     let mut actions = Vec::new();
-    for _ in 0..24 {
+    for _ in 0..32 {
         let action = transition.action();
         actions.push(action);
         if matches!(
@@ -157,7 +160,7 @@ fn run(
 fn wifi_inclusive_threshold_runs_common_then_wifi_and_restores_every_guard() {
     let actions = run(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
@@ -182,7 +185,7 @@ fn wifi_inclusive_threshold_runs_common_then_wifi_and_restores_every_guard() {
         panic!("missing terminal outcome")
     };
     assert!(outcome.common_updated);
-    assert!(outcome.class_updated);
+    assert!(outcome.transmit_updated);
     assert_eq!(
         outcome.dcode,
         Some(crate::analog::dcode::PhyDcodeOutcome { codes: [7; 8] })
@@ -190,24 +193,23 @@ fn wifi_inclusive_threshold_runs_common_then_wifi_and_restores_every_guard() {
     assert_eq!(outcome.rx_gain, Some(RX_GAIN_OUTCOME));
     assert_eq!(outcome.channel, Some(channel_outcome(11, 1, 50)));
     assert_eq!(
-        outcome.tx_dc_pwdet,
+        outcome.wifi_tx_dc_pwdet,
         Some(tx_dc_pwdet_outcome(PhyCalibrationTrackClass::Wifi))
     );
     assert_eq!(outcome.common_reference_temperature, 50);
-    assert_eq!(outcome.wifi_reference_temperature, 50);
-    assert_eq!(outcome.bluetooth_ieee802154_reference_temperature, 20);
+    assert_eq!(outcome.transmit_reference_temperature, 50);
 }
 
 #[test]
 fn bluetooth_class_uses_its_own_reference_and_skips_common_when_below_threshold() {
     let actions = run(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            clients: (PhyCalibrationTrackClass::BluetoothIeee802154).clients(),
         },
         PhyCalibrationTrackingParameters {
             common_reference_temperature: 50,
-            wifi_reference_temperature: 0,
-            bluetooth_ieee802154_reference_temperature: 20,
+            transmit_reference_temperature: 0,
+
             ..PARAMETERS
         },
     );
@@ -223,7 +225,7 @@ fn bluetooth_class_uses_its_own_reference_and_skips_common_when_below_threshold(
 fn below_threshold_completes_without_hardware_operations() {
     let actions = run(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PhyCalibrationTrackingParameters {
             threshold_override: Some(31),
@@ -234,17 +236,18 @@ fn below_threshold_completes_without_hardware_operations() {
         actions,
         [PhyCalibrationTrackingAction::Complete(
             PhyCalibrationTrackingOutcome {
-                class: PhyCalibrationTrackClass::Wifi,
+                clients: (PhyCalibrationTrackClass::Wifi).clients(),
                 threshold: 31,
                 common_reference_temperature: 20,
-                wifi_reference_temperature: 20,
-                bluetooth_ieee802154_reference_temperature: 20,
+                transmit_reference_temperature: 20,
+
                 common_updated: false,
-                class_updated: false,
+                transmit_updated: false,
                 dcode: None,
                 rx_gain: None,
                 channel: None,
-                tx_dc_pwdet: None,
+                wifi_tx_dc_pwdet: None,
+                bluetooth_ieee802154_tx_dc_pwdet: None,
             }
         ),]
     );
@@ -259,10 +262,12 @@ fn common_calibration_restores_gain_before_admitting_the_class_branch() {
         for class_due in [false, true] {
             let reference = if class_due { 20 } else { 50 };
             let actions = run(
-                PhyCalibrationTrackingRequest { class },
+                PhyCalibrationTrackingRequest {
+                    clients: class.clients(),
+                },
                 PhyCalibrationTrackingParameters {
-                    wifi_reference_temperature: reference,
-                    bluetooth_ieee802154_reference_temperature: reference,
+                    transmit_reference_temperature: reference,
+
                     ..PARAMETERS
                 },
             );
@@ -310,7 +315,7 @@ fn common_calibration_restores_gain_before_admitting_the_class_branch() {
 fn wrong_completion_preserves_action_and_terminal_rejects_more_work() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
@@ -338,6 +343,7 @@ fn external_lowering_owns_only_complete_direct_hardware_leaves() {
         PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true },
         PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0 },
         PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0x13 },
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
         PhyCalibrationTrackingAction::EnableMacBaseband,
         PhyCalibrationTrackingAction::RestoreTxGainCompensation,
     ];
@@ -365,17 +371,18 @@ fn external_lowering_owns_only_complete_direct_hardware_leaves() {
         PhyCalibrationTrackingAction::PublishWifiTxGain { channel: 11 },
         PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain,
         PhyCalibrationTrackingAction::Complete(PhyCalibrationTrackingOutcome {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
             threshold: 30,
             common_reference_temperature: 20,
-            wifi_reference_temperature: 20,
-            bluetooth_ieee802154_reference_temperature: 20,
+            transmit_reference_temperature: 20,
+
             common_updated: false,
-            class_updated: false,
+            transmit_updated: false,
             dcode: None,
             rx_gain: None,
             channel: None,
-            tx_dc_pwdet: None,
+            wifi_tx_dc_pwdet: None,
+            bluetooth_ieee802154_tx_dc_pwdet: None,
         }),
         PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
             crate::analog::pbus::PhyPbusForceTest::new(4, 1, 0),
@@ -393,12 +400,12 @@ fn external_lowering_owns_only_complete_direct_hardware_leaves() {
 fn force_txrx_parent_proof_requires_both_writes_and_timer_edges() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            clients: (PhyCalibrationTrackClass::BluetoothIeee802154).clients(),
         },
         PhyCalibrationTrackingParameters {
             common_reference_temperature: 50,
-            wifi_reference_temperature: 0,
-            bluetooth_ieee802154_reference_temperature: 20,
+            transmit_reference_temperature: 0,
+
             ..PARAMETERS
         },
     );
@@ -451,7 +458,7 @@ fn force_txrx_parent_proof_requires_both_writes_and_timer_edges() {
 fn dcode_parent_proof_starts_the_existing_complete_hardware_graph() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
@@ -475,7 +482,7 @@ fn dcode_parent_proof_starts_the_existing_complete_hardware_graph() {
 fn dcode_failure_restores_gain_without_publishing_common_progress() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
@@ -512,13 +519,14 @@ fn dcode_failure_restores_gain_without_publishing_common_progress() {
 fn rx_gain_parent_proof_forces_dc_and_tables_through_complete_hardware_graph() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
     for action in [
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
     ] {
         assert_eq!(transition.action(), action);
         transition.advance(completion(action)).unwrap();
@@ -558,13 +566,14 @@ fn rx_gain_parent_proof_forces_dc_and_tables_through_complete_hardware_graph() {
 fn channel_parent_proof_starts_the_complete_async_hardware_graph() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
     for action in [
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
         PhyCalibrationTrackingAction::RecalibrateRxGain,
     ] {
         assert_eq!(transition.action(), action);
@@ -590,16 +599,17 @@ fn channel_parent_proof_starts_the_complete_async_hardware_graph() {
 fn restored_channel_temperature_drives_following_class_threshold_and_references() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PhyCalibrationTrackingParameters {
-            wifi_reference_temperature: 30,
+            transmit_reference_temperature: 30,
             ..PARAMETERS
         },
     );
     for action in [
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
         PhyCalibrationTrackingAction::RecalibrateRxGain,
     ] {
         transition.advance(completion(action)).unwrap();
@@ -630,7 +640,7 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
         let action = transition.action();
         if let PhyCalibrationTrackingAction::Complete(outcome) = action {
             assert_eq!(outcome.common_reference_temperature, 60);
-            assert_eq!(outcome.wifi_reference_temperature, 60);
+            assert_eq!(outcome.transmit_reference_temperature, 60);
             assert_eq!(outcome.channel, Some(channel_outcome(11, 1, 60)));
             break;
         }
@@ -642,13 +652,14 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
 fn restored_temperature_can_remove_tx_demand_without_committing_tx_reference() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
     for action in [
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
         PhyCalibrationTrackingAction::RecalibrateRxGain,
     ] {
         transition.advance(completion(action)).unwrap();
@@ -670,17 +681,17 @@ fn restored_temperature_can_remove_tx_demand_without_committing_tx_reference() {
         panic!("TX demand must be reevaluated after channel restoration");
     };
     assert!(outcome.common_updated);
-    assert!(!outcome.class_updated);
+    assert!(!outcome.transmit_updated);
     assert_eq!(outcome.common_reference_temperature, 21);
     assert_eq!(
-        outcome.wifi_reference_temperature,
-        PARAMETERS.wifi_reference_temperature
+        outcome.transmit_reference_temperature,
+        PARAMETERS.transmit_reference_temperature
     );
     assert_eq!(
-        outcome.bluetooth_ieee802154_reference_temperature,
-        PARAMETERS.bluetooth_ieee802154_reference_temperature
+        outcome.transmit_reference_temperature,
+        PARAMETERS.transmit_reference_temperature
     );
-    assert!(outcome.tx_dc_pwdet.is_none());
+    assert!(outcome.wifi_tx_dc_pwdet.is_none());
 }
 
 #[test]
@@ -690,7 +701,9 @@ fn class_tx_dc_pwdet_parent_selects_both_complete_hardware_graphs() {
         PhyCalibrationTrackClass::BluetoothIeee802154,
     ] {
         let mut transition = PhyCalibrationTrackingTransition::new(
-            PhyCalibrationTrackingRequest { class },
+            PhyCalibrationTrackingRequest {
+                clients: class.clients(),
+            },
             PhyCalibrationTrackingParameters {
                 common_reference_temperature: 50,
                 ..PARAMETERS
@@ -731,7 +744,9 @@ fn class_tx_gain_publication_captures_pending_dco_for_both_radio_banks() {
         PhyCalibrationTrackClass::BluetoothIeee802154,
     ] {
         let mut transition = PhyCalibrationTrackingTransition::new(
-            PhyCalibrationTrackingRequest { class },
+            PhyCalibrationTrackingRequest {
+                clients: class.clients(),
+            },
             PhyCalibrationTrackingParameters {
                 common_reference_temperature: 50,
                 ..PARAMETERS
@@ -789,7 +804,7 @@ fn class_tx_gain_publication_captures_pending_dco_for_both_radio_banks() {
 fn tx_dc_pwdet_failure_runs_outer_force_frequency_and_gain_cleanup() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            clients: (PhyCalibrationTrackClass::BluetoothIeee802154).clients(),
         },
         PhyCalibrationTrackingParameters {
             common_reference_temperature: 50,
@@ -833,13 +848,14 @@ fn tx_dc_pwdet_failure_runs_outer_force_frequency_and_gain_cleanup() {
 fn rx_gain_failure_restores_gain_without_publishing_common_progress() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PARAMETERS,
     );
     for action in [
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
+        PhyCalibrationTrackingAction::DisableWifiBaseband,
     ] {
         transition.advance(completion(action)).unwrap();
     }
@@ -873,12 +889,12 @@ fn rx_gain_failure_restores_gain_without_publishing_common_progress() {
 fn class_pbus_timeout_restores_force_frequency_and_gain_before_failure() {
     let mut transition = PhyCalibrationTrackingTransition::new(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            clients: (PhyCalibrationTrackClass::BluetoothIeee802154).clients(),
         },
         PhyCalibrationTrackingParameters {
             common_reference_temperature: 50,
-            wifi_reference_temperature: 0,
-            bluetooth_ieee802154_reference_temperature: 20,
+            transmit_reference_temperature: 0,
+
             ..PARAMETERS
         },
     );
@@ -1028,6 +1044,7 @@ fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
             transaction: crate::analog::pbus::PhyPbusForceTest::new(4, 1, 0),
         },
     );
+    child.advance(Completion::WifiBasebandDisabled).unwrap();
     child
         .advance(Completion::RxGainRecalibrated(
             PhyCalibrationRxGainCompletion {
@@ -1057,13 +1074,13 @@ fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
 fn zero_threshold_runs_both_branches_without_changing_temperature() {
     let actions = run(
         PhyCalibrationTrackingRequest {
-            class: PhyCalibrationTrackClass::Wifi,
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
         },
         PhyCalibrationTrackingParameters {
             current_temperature: 50,
             common_reference_temperature: 50,
-            wifi_reference_temperature: 50,
-            bluetooth_ieee802154_reference_temperature: 50,
+            transmit_reference_temperature: 50,
+
             threshold_override: Some(0),
             ..PARAMETERS
         },
@@ -1072,11 +1089,176 @@ fn zero_threshold_runs_both_branches_without_changing_temperature() {
         panic!("missing terminal outcome")
     };
     assert!(outcome.common_updated);
-    assert!(outcome.class_updated);
+    assert!(outcome.transmit_updated);
     assert_eq!(outcome.common_reference_temperature, 50);
-    assert_eq!(outcome.wifi_reference_temperature, 50);
+    assert_eq!(outcome.transmit_reference_temperature, 50);
     assert!(outcome.dcode.is_some());
     assert!(outcome.rx_gain.is_some());
     assert!(outcome.channel.is_some());
-    assert!(outcome.tx_dc_pwdet.is_some());
+    assert!(outcome.wifi_tx_dc_pwdet.is_some());
+}
+
+mod selection;
+
+#[test]
+fn both_clients_share_one_tx_envelope_and_keep_distinct_results() {
+    let clients = crate::tracking::parameters::PhyParamTrackRequest::new(true, true);
+    let actions = run(PhyCalibrationTrackingRequest { clients }, PARAMETERS);
+    let classes: Vec<_> = actions
+        .iter()
+        .filter_map(|action| match action {
+            PhyCalibrationTrackingAction::CalibrateTxDcPwdet { class } => Some(*class),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        classes,
+        [
+            PhyCalibrationTrackClass::Wifi,
+            PhyCalibrationTrackClass::BluetoothIeee802154
+        ]
+    );
+    for enabled in [false, true] {
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| **action
+                    == PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled })
+                .count(),
+            1
+        );
+    }
+    let PhyCalibrationTrackingAction::Complete(outcome) = actions.last().unwrap() else {
+        panic!("terminal result")
+    };
+    assert_eq!(outcome.clients, clients);
+    assert!(outcome.common_updated && outcome.transmit_updated);
+    assert_eq!(
+        outcome.wifi_tx_dc_pwdet,
+        Some(tx_dc_pwdet_outcome(PhyCalibrationTrackClass::Wifi))
+    );
+    assert_eq!(
+        outcome.bluetooth_ieee802154_tx_dc_pwdet,
+        Some(tx_dc_pwdet_outcome(
+            PhyCalibrationTrackClass::BluetoothIeee802154
+        ))
+    );
+    assert_eq!(
+        outcome.transmit_reference_temperature,
+        PARAMETERS.current_temperature
+    );
+}
+
+#[test]
+fn tx_envelope_without_selected_clients_has_no_class_calibration() {
+    // The vendor child tests RX/TX demand independently of its two class
+    // flags. A direct no-client invocation can restore TX and advance its
+    // shared reference without either class child.
+    let actions = run(
+        PhyCalibrationTrackingRequest {
+            clients: crate::tracking::parameters::PhyParamTrackRequest::new(false, false),
+        },
+        PARAMETERS,
+    );
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        PhyCalibrationTrackingAction::CalibrateTxDcPwdet { .. }
+    )));
+    let PhyCalibrationTrackingAction::Complete(outcome) = actions.last().unwrap() else {
+        panic!("terminal result")
+    };
+    assert!(outcome.transmit_updated);
+    assert!(
+        outcome.wifi_tx_dc_pwdet.is_none() && outcome.bluetooth_ieee802154_tx_dc_pwdet.is_none()
+    );
+}
+
+#[test]
+fn second_class_failure_cannot_publish_first_class_or_shared_reference() {
+    let mut transition = PhyCalibrationTrackingTransition::new(
+        PhyCalibrationTrackingRequest {
+            clients: crate::tracking::parameters::PhyParamTrackRequest::new(true, true),
+        },
+        PARAMETERS,
+    );
+    loop {
+        let action = transition.action();
+        if action
+            == (PhyCalibrationTrackingAction::CalibrateTxDcPwdet {
+                class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            })
+        {
+            break;
+        }
+        assert!(!matches!(
+            action,
+            PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_)
+        ));
+        transition.advance(completion(action)).unwrap();
+    }
+    assert!(transition.tx_dc_pwdet[0].is_some());
+    let before = transition;
+    assert_eq!(
+        transition.advance(PhyCalibrationTrackingCompletion::TxDcPwdetCalibrated(
+            PhyCalibrationTxDcPwdetCompletion {
+                class: PhyCalibrationTrackClass::Wifi,
+                result: Ok(tx_dc_pwdet_outcome(PhyCalibrationTrackClass::Wifi)),
+            }
+        )),
+        Err(PhyCalibrationTrackingTransitionError::WrongCompletion)
+    );
+    assert_eq!(transition, before);
+    // A failure must traverse cleanup and terminate as Failed, never Complete.
+    transition
+        .advance(PhyCalibrationTrackingCompletion::TxDcPwdetCalibrated(
+            PhyCalibrationTxDcPwdetCompletion {
+                class: PhyCalibrationTrackClass::BluetoothIeee802154,
+                result: Err(
+                    crate::tx::dc_power_detector::PhyTxDcPwdetFailure::PbusTimedOut(
+                        crate::analog::pbus::PhyPbusForceTest::new(4, 1, 0),
+                    ),
+                ),
+            },
+        ))
+        .unwrap();
+    for _ in 0..10 {
+        let action = transition.action();
+        assert!(!matches!(action, PhyCalibrationTrackingAction::Complete(_)));
+        if matches!(action, PhyCalibrationTrackingAction::Failed(_)) {
+            return;
+        }
+        transition.advance(completion(action)).unwrap();
+    }
+    panic!("failure cleanup did not terminate")
+}
+
+#[test]
+fn each_measurement_branch_disables_wifi_baseband_before_its_children() {
+    let actions = run(
+        PhyCalibrationTrackingRequest {
+            clients: super::super::parameters::PhyParamTrackRequest::new(true, true),
+        },
+        PARAMETERS,
+    );
+    let boundaries: Vec<_> = actions
+        .windows(3)
+        .filter(|window| window[1] == PhyCalibrationTrackingAction::DisableWifiBaseband)
+        .collect();
+    assert_eq!(boundaries.len(), 2);
+    assert_eq!(
+        boundaries[0],
+        &[
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::DisableWifiBaseband,
+            PhyCalibrationTrackingAction::RecalibrateRxGain,
+        ]
+    );
+    assert_eq!(
+        boundaries[1],
+        &[
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::DisableWifiBaseband,
+            PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0 },
+        ]
+    );
 }

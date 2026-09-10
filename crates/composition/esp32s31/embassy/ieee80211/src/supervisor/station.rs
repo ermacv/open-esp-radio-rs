@@ -107,7 +107,11 @@ use static_cell::{ConstStaticCell, StaticCell};
 mod execution;
 mod pause;
 mod pause_request;
-pub use pause_request::{PauseError, PauseOperation, PauseReport, station_pause_round_trip};
+pub use pause_request::{
+    PauseError, PauseOperation, PauseReport, TrackingConfig, TrackingReport, TrackingStatus,
+    configure_station_tracking, request_station_temperature_observation, station_pause_round_trip,
+    station_tracking_report, station_tracking_status,
+};
 
 pub(crate) use execution::ConnectedDatapathMailbox;
 

@@ -42,6 +42,41 @@ fn conversion_and_in_range_path_match_rom_integer_arithmetic() {
 }
 
 #[test]
+fn saturated_range_waits_for_reapplication_even_when_dac_is_unchanged() {
+    for (dac, code) in [(5, 255), (10, 0)] {
+        let mut transition = PhyTemperatureTransition::new();
+        complete_dac_read(&mut transition, dac);
+        transition
+            .advance(PhyTemperatureCompletion::CodeSampled { value: code })
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyTemperatureAction::WriteMasked {
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
+                value: dac,
+            }
+        );
+        assert_eq!(
+            transition.advance(PhyTemperatureCompletion::MaskedWrite {
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
+                value: dac ^ 1,
+            }),
+            Err(PhyTemperatureTransitionError::WrongCompletion)
+        );
+        transition
+            .advance(PhyTemperatureCompletion::MaskedWrite {
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
+                value: dac,
+            })
+            .unwrap();
+        assert!(
+            matches!(transition.action(), PhyTemperatureAction::Complete(outcome)
+            if outcome.next_dac == dac)
+        );
+    }
+}
+
+#[test]
 fn range_change_requires_an_exact_i2c_write_completion() {
     let mut transition = PhyTemperatureTransition::new();
     complete_dac_read(&mut transition, 15);

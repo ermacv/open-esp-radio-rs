@@ -66,6 +66,12 @@ use oer_esp32s31_hal::owner::SharedPhyAccess;
 /// zero-sized implementation backed by an executor timer or a dedicated
 /// hardware timer without storing an executor object in the radio owner.
 pub trait PhyAsyncDelay {
+    /// Monotonic clock shared with the tracking scheduler, when available.
+    /// None preserves explicit unknown sample age for untimed backends.
+    fn now_micros() -> Option<u64> {
+        None
+    }
+
     fn after_micros(micros: u64) -> impl Future<Output = ()>;
 
     /// Optional measurement against the timer's own deadline. Unsupported

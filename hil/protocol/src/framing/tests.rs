@@ -1317,6 +1317,15 @@ fn tracking_pause_request_and_committed_branches_round_trip() {
         crate::StationPauseOperation::Access,
         crate::StationPauseOperation::Tracking,
         crate::StationPauseOperation::Calibration,
+        crate::StationPauseOperation::Temperature,
+        crate::StationPauseOperation::WifiPower,
+        crate::StationPauseOperation::WifiI2c,
+        crate::StationPauseOperation::CommonCalibration,
+        crate::StationPauseOperation::TxCalibration,
+        crate::StationPauseOperation::TrackingService,
+        crate::StationPauseOperation::Rfpll,
+        crate::StationPauseOperation::RfpllCheck,
+        crate::StationPauseOperation::RfpllObserved,
     ] {
         let expected = Envelope::new(1, 2, 0, 3, Command::PauseStation { operation });
         let mut encoder = FrameEncoder::new();
@@ -1405,8 +1414,7 @@ fn maximum_phy_timing_evidence_fits_existing_frame_and_round_trips() {
                 wifi_power: timing,
                 bluetooth_ieee802154_power: timing,
                 wifi_i2c: timing,
-                wifi_calibration: timing,
-                bluetooth_ieee802154_calibration: timing,
+                calibration: timing,
                 temperature: timing,
                 pbus_clear: timing,
                 dcode: timing,
@@ -1500,6 +1508,7 @@ fn maximum_timer_window_fits_its_own_frame() {
             replaced: u32::MAX,
             stopped: u32::MAX,
             unmatched_interrupts: u32::MAX,
+            overlapping_interrupts: u32::MAX,
             unmatched_dispatches: u32::MAX,
             coalesced_interrupts: u32::MAX,
             early_interrupts: u32::MAX,
@@ -1514,4 +1523,70 @@ fn maximum_timer_window_fits_its_own_frame() {
         observed = Some(result.unwrap())
     });
     assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn automatic_phy_service_detail_fits_one_frame_at_counter_limits() {
+    let expected = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::StationTrackingService(crate::StationTrackingServiceEvidence {
+            operations: [u16::MAX; 6],
+            deferred: u16::MAX,
+            common_calibrated: u16::MAX,
+            wifi_calibrated: u16::MAX,
+            elapsed_micros: u64::MAX,
+            pause_micros: u64::MAX,
+            maximum_pause_micros: u64::MAX,
+            failed: true,
+            suspended: true,
+            invalid: true,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn rfpll_detail_fits_frame_and_preserves_full_numeric_range() {
+    for correction in [
+        None,
+        Some(crate::RfpllCorrectionEvidence {
+            initial_cap: u16::MAX,
+            selected_cap: u16::MAX,
+            accepted_samples: u8::MAX,
+            entries_updated: u8::MAX,
+            restored_frequency_index: Some(u8::MAX),
+        }),
+    ] {
+        let expected = Envelope::new(
+            u64::MAX,
+            u32::MAX,
+            u64::MAX,
+            u32::MAX,
+            Event::StationRfpllObserved(crate::RfpllEvidence {
+                sample_age_micros: Some(u64::MAX),
+                temperature: i16::MIN,
+                reference_before: i16::MAX,
+                reference_after: i16::MIN,
+                threshold: u8::MAX,
+                channel: u16::MAX,
+                correction,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |value| {
+            observed = Some(value.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
 }

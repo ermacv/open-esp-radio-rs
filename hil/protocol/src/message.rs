@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 107;
+pub const PROTOCOL_VERSION: u16 = 113;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1127,6 +1127,16 @@ pub enum StationPauseOperation {
     Access,
     Tracking,
     Calibration,
+    Temperature,
+    WifiPower,
+    WifiI2c,
+    CommonCalibration,
+    TxCalibration,
+    TrackingService,
+    Rfpll,
+    RfpllCheck,
+    /// RFPLL evaluation requiring a recent completed sensor acquisition.
+    RfpllObserved,
 }
 
 /// Outcome of a correlated physical pause round trip. Busy is not success.
@@ -2322,6 +2332,8 @@ pub enum Event {
     StartupArtifact(StartupArtifactChunk),
     StationPauseCompleted(StationPauseEvidence),
     StationPhyTxWaits(crate::PhyTxWaitEvidence),
+    StationRfpllObserved(crate::RfpllEvidence),
+    StationTrackingService(crate::StationTrackingServiceEvidence),
     StationTimerObserved(crate::TimerWindowEvidence),
 }
 

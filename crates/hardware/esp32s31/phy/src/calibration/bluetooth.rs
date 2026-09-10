@@ -31,6 +31,13 @@ pub const fn bluetooth_baseband_to_gain_index(baseband: u32) -> u32 {
     }
 }
 
+// ESP32-S31 BT/154 gain profile from `phy_bt_get_tx_tab_new` in esp-phy-lib
+// b88e4b76e090ae59c51cb00b916d38def895b396, libphy.a SHA-256
+// d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580.
+// phy_tx_gain.o .rodata offsets 0/0x24/0x48: 18 little-endian halfwords each.
+// LOW/MID encode RF/baseband settings; HIGH contains signed gain references.
+// Physical gain units are not established. This profile retains subtractive
+// attenuation and is independent of the current Wi-Fi profile and adjustment.
 const BLUETOOTH_TX_GAIN_TABLE_LOW: [u16; 18] = [
     0x003f, 0x002f, 0x001f, 0x0016, 0x000f, 0x000e, 0x000d, 0x000d, 0x000c, 0x000b, 0x0005, 0x0004,
     0x0003, 0x0002, 0x0001, 0x0001, 0x0000, 0x0000,
@@ -575,6 +582,13 @@ impl PhyBluetoothTxDcTransition {
 }
 
 impl PhyBluetoothTxDcPwdetTransition {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn transition_mut(
+        &mut self,
+    ) -> &mut crate::tx::dc_power_detector::PhyTxDcPwdetTransition {
+        &mut self.inner
+    }
+
     pub const fn new(
         parameters: crate::tx::dc_power_detector::PhyTxDcPwdetParameters,
         tx_path_value: u8,

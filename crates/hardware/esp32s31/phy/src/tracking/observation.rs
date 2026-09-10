@@ -9,7 +9,7 @@ use crate::executor::wait;
 
 use super::{
     calibration::PhyCalibrationTrackingAction as Calibration,
-    parameters::{PhyCalibrationTrackClass as Class, PhyParamTrackingAction as Parameter},
+    parameters::PhyParamTrackingAction as Parameter,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,8 +19,7 @@ pub enum Operation {
     WifiPower,
     BluetoothIeee802154Power,
     WifiI2c,
-    WifiCalibration,
-    BluetoothIeee802154Calibration,
+    Calibration,
     Temperature,
     PbusClear,
     Dcode,
@@ -32,7 +31,7 @@ pub enum Operation {
     FrequencySettle,
 }
 
-pub const OPERATION_COUNT: usize = 15;
+pub const OPERATION_COUNT: usize = 14;
 const POLLED_COUNT: usize = 3;
 
 impl Operation {
@@ -51,13 +50,7 @@ impl Operation {
             Parameter::WifiTxPowerTrack { .. } => Self::WifiPower,
             Parameter::BluetoothIeee802154TxPowerTrack { .. } => Self::BluetoothIeee802154Power,
             Parameter::WifiI2cTrack => Self::WifiI2c,
-            Parameter::CalibrationTrack {
-                class: Class::Wifi, ..
-            } => Self::WifiCalibration,
-            Parameter::CalibrationTrack {
-                class: Class::BluetoothIeee802154,
-                ..
-            } => Self::BluetoothIeee802154Calibration,
+            Parameter::CalibrationTrack { .. } => Self::Calibration,
             Parameter::TemperatureRead => Self::Temperature,
             Parameter::EnterCritical | Parameter::ExitCritical | Parameter::Complete(_) => {
                 return None;
@@ -79,6 +72,7 @@ impl Operation {
             Calibration::SetHardwareFrequencyControl { .. }
             | Calibration::SetForcedDigitalGain { .. }
             | Calibration::ConfigureBasebandChannel { .. }
+            | Calibration::DisableWifiBaseband
             | Calibration::EnableMacBaseband
             | Calibration::RestoreTxGainCompensation
             | Calibration::Complete(_)
@@ -124,6 +118,7 @@ pub struct Timing {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Report {
+    pub rfpll: Option<super::rfpll::Observation>,
     pub timings: [Timing; OPERATION_COUNT],
     pub polls: [PollTiming; POLLED_COUNT],
     /// Clock reversal, overflow or malformed observations invalidate timing.
@@ -149,6 +144,7 @@ impl Report {
 /// The caller owns the monotonic clock and decides where this storage lives.
 #[derive(Default)]
 pub struct Recorder {
+    rfpll: Option<super::rfpll::Observation>,
     timings: [Timing; OPERATION_COUNT],
     polls: [PollTiming; POLLED_COUNT],
     invalid: bool,
@@ -162,6 +158,14 @@ pub struct Recorder {
 }
 
 impl Recorder {
+    pub fn observe_rfpll(&mut self, observation: super::rfpll::Observation) {
+        if self.active[Operation::Rfpll as usize].is_none() || self.rfpll.is_some() {
+            self.invalid = true;
+            return;
+        }
+        self.rfpll = Some(observation);
+    }
+
     pub fn observe(&mut self, operation: Operation, event: Event, now_micros: u64) {
         if self.last_observed.is_some_and(|last| now_micros < last) {
             self.invalid = true;
@@ -331,6 +335,7 @@ impl Recorder {
 
     pub fn report(&self) -> Report {
         Report {
+            rfpll: self.rfpll,
             timings: self.timings,
             polls: self.polls,
             dcode_waits: self.wait.report(),

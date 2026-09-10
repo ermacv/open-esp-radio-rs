@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn final_tx_enable_command_must_complete_before_sar_or_bluetooth_setup() {
+    let parameters = PhyTxDcPwdetParameters {
+        dco: [[0x100; 4]; 3],
+        clear_tone_after_ready: false,
+    };
+    for (mut transition, next) in [
+        (
+            PhyTxDcPwdetTransition::new(parameters),
+            PhyTxDcPwdetAction::ConfigureSarCalibration,
+        ),
+        (
+            PhyTxDcPwdetTransition::new_bluetooth(parameters, 7),
+            PhyTxDcPwdetAction::ReadPbus {
+                selector: 1,
+                path: 1,
+            },
+        ),
+    ] {
+        transition.step = RootStep::TxOn { index: 9 };
+        let previous = PhyPbusForceTest::new(4, 1, 0x0b);
+        transition
+            .advance(PhyTxDcPwdetCompletion::PbusCompleted(previous))
+            .unwrap();
+        let final_command = PhyPbusForceTest::new(5, 1, 0x1cf);
+        assert_eq!(
+            transition.action(),
+            PhyTxDcPwdetAction::ForcePbus(final_command)
+        );
+        assert_eq!(
+            transition.advance(PhyTxDcPwdetCompletion::SarCalibrationConfigured),
+            Err(PhyTxDcPwdetTransitionError::WrongCompletion)
+        );
+        assert_eq!(
+            transition.action(),
+            PhyTxDcPwdetAction::ForcePbus(final_command)
+        );
+        transition
+            .advance(PhyTxDcPwdetCompletion::PbusCompleted(final_command))
+            .unwrap();
+        assert_eq!(transition.action(), next);
+    }
+}
+
+#[test]
 fn unsupported_pbus_read_fails_closed() {
     assert_eq!(
         require_pbus_result(None),
@@ -350,12 +394,14 @@ fn wifi_calibration_forces_tx_path_per_row_and_cleans_it_up() {
                 }
                 if (transaction.selector(), transaction.path()) == (5, 1) {
                     path_values.push(transaction.value());
-                    if transaction.value() != 0 {
-                        assert!(
-                            sar_configured,
-                            "TX path must not be enabled by the initial TX-on prefix"
-                        );
+                    if transaction.value() != 0 && sar_configured {
                         awaiting_gain = true;
+                    } else if transaction.value() != 0 {
+                        assert_eq!(
+                            transaction.value(),
+                            0x1cf,
+                            "initial TX-on uses its own path value"
+                        );
                     }
                 }
                 PhyTxDcPwdetCompletion::PbusCompleted(transaction)
@@ -373,6 +419,7 @@ fn wifi_calibration_forces_tx_path_per_row_and_cleans_it_up() {
                 PhyTxDcPwdetCompletion::DelayElapsed { phase, micros }
             }
             PhyTxDcPwdetAction::ConfigureSarCalibration => {
+                assert_eq!(path_values.last(), Some(&0x1cf));
                 sar_configured = true;
                 PhyTxDcPwdetCompletion::SarCalibrationConfigured
             }
@@ -411,7 +458,7 @@ fn wifi_calibration_forces_tx_path_per_row_and_cleans_it_up() {
         };
         transition.advance(completion).unwrap();
     }
-    assert_eq!(path_values, [0, 0x1ef, 0x1ef, 0x1e7, 0]);
+    assert_eq!(path_values, [0, 0x1cf, 0x1ef, 0x1ef, 0x1e7, 0]);
 }
 
 fn search_completion(action: PhyTxDcPwdetSearchAction) -> PhyTxDcPwdetSearchCompletion {

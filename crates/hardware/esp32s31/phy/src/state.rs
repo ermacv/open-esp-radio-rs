@@ -1,7 +1,7 @@
 //! Typed software state retained by the ESP32-S31 PHY.
 //!
 //! The vendor implementation stores unrelated configuration, calibration and
-//! runtime values in one 508-byte `phy_param` byte image.  The Rust driver
+//! runtime values in a version-specific `phy_param` byte image. The Rust driver
 //! keeps those values in semantic fields instead.  Vendor offsets belong to
 //! qualification code, never to the live radio owner.
 
@@ -11,7 +11,6 @@ use crate::{
     analog::frequency::PhyChannelFrequencyInitControl,
     analog::i2c::{FilterDcapParameters, PhyRfInitPrefixOutcome},
     analog::pbus::memory::PhyPbusMemoryParameters,
-    analog::rfpll::{RfpllCapTrackingOutcome, RfpllCapTrackingParameters},
     analog::temperature::PhyTemperatureOutcome,
     calibration::baseband::{
         PHY_RX_TABLE_ENTRY_COUNT, PhyGeneratedRxGainTable, PhyRegisterInitParameters,
@@ -66,7 +65,7 @@ pub struct PhyConfig {
     bluetooth_tx_path: u8,
     power_offset: i16,
     initial_attenuation: u8,
-    tx_gain_attenuation: u8,
+    bluetooth_tx_gain_attenuation: u8,
     tx_gain_base: u8,
     bluetooth_tx_gain_base: u8,
     target_power_maximum: i8,
@@ -88,7 +87,7 @@ impl PhyConfig {
             bluetooth_tx_path: 1,
             power_offset: 0x160,
             initial_attenuation: 0x50,
-            tx_gain_attenuation: 0,
+            bluetooth_tx_gain_attenuation: 0,
             tx_gain_base: 0,
             bluetooth_tx_gain_base: 0,
             target_power_maximum: 0x54,
@@ -135,8 +134,10 @@ impl Default for PhyConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CommonPhyState {
     temperature: i16,
+    temperature_acquisition: crate::tracking::temperature::StoredAcquisition,
     rfpll_tracking_temperature: i16,
     calibration_tracking_temperature: i16,
+    txdc_tracking_temperature: i16,
     tracking_temperature: i16,
     tracking_gain_base: i8,
     sensor_index: u8,
@@ -157,6 +158,9 @@ struct CommonPhyState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct WifiPhyState {
+    // Current archive's independent additive gain input. Its initial value is
+    // zero; no full-calibration producer or physical unit is established yet.
+    tx_gain_adjustment: i8,
     dot11p_enabled: u8,
     dot11p_configuration: u8,
     current_level: u8,
@@ -180,7 +184,6 @@ struct WifiPhyState {
     rx_iq_coefficients: [u16; 4],
     external_dcode: [u8; 2],
     calibration_temperature: i16,
-    txdc_tracking_temperature: i16,
     current_channel: u16,
     channel_initialized: bool,
     channel_bandwidth: u8,
@@ -201,7 +204,6 @@ struct BluetoothPhyState {
     tx_power_curve: [i8; 3],
     tx_power_corrections: [i8; 3],
     tx_power_adjustment: i8,
-    txdc_tracking_temperature: i16,
     channel_base: u8,
 }
 
@@ -238,7 +240,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 4;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCommonCalibration {
@@ -256,6 +258,8 @@ pub struct PhyCommonCalibration {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyWifiCalibration {
+    /// Independent additive gain input; does not encode Bluetooth attenuation.
+    pub tx_gain_adjustment: i8,
     pub baseband_calibrated: bool,
     pub pwdet_calibrated: bool,
     pub tx_power_calibrated: bool,
@@ -393,8 +397,11 @@ impl PhyState {
             config,
             common: CommonPhyState {
                 temperature: 0,
+                temperature_acquisition:
+                    crate::tracking::temperature::StoredAcquisition::UNOBSERVED,
                 rfpll_tracking_temperature: 0,
                 calibration_tracking_temperature: 0,
+                txdc_tracking_temperature: 0,
                 tracking_temperature: 0,
                 tracking_gain_base: 0,
                 sensor_index: 2,
@@ -413,6 +420,7 @@ impl PhyState {
                 temperature_debug: [0; 2],
             },
             wifi: WifiPhyState {
+                tx_gain_adjustment: 0,
                 dot11p_enabled: 0,
                 dot11p_configuration: 0,
                 current_level: 0,
@@ -436,7 +444,6 @@ impl PhyState {
                 rx_iq_coefficients: [0; 4],
                 external_dcode: [0; 2],
                 calibration_temperature: 0,
-                txdc_tracking_temperature: 0,
                 current_channel: 0,
                 channel_initialized: false,
                 channel_bandwidth: 0,
@@ -455,14 +462,43 @@ impl PhyState {
                 tx_power_curve: [0; 3],
                 tx_power_corrections: [0; 3],
                 tx_power_adjustment: 0,
-                txdc_tracking_temperature: 0,
                 channel_base: 0,
             },
         }
     }
 
+    /// Semantic fixture only; does not mint a registered epoch or RF access.
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn calibration_tracking_fixture(
+        parameters: PhyCalibrationTrackingParameters,
+    ) -> Self {
+        let mut state = Self::default();
+        state.common.temperature = parameters.current_temperature;
+        state.common.calibration_tracking_temperature = parameters.common_reference_temperature;
+        state.common.txdc_tracking_temperature = parameters.transmit_reference_temperature;
+        state.common.crystal_selector = parameters.crystal_selector;
+        state.wifi.current_channel = parameters.current_channel;
+        state.wifi.channel_bandwidth = parameters.channel_bandwidth;
+        if let Some(threshold) = parameters.threshold_override {
+            state.common.temperature_debug = [2, threshold];
+        }
+        state
+    }
+
     pub const fn config(&self) -> &PhyConfig {
         &self.config
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn parameter_tracking_fixture(
+        parameters: PhyCalibrationTrackingParameters,
+        gain_adjustment: i8,
+        relaxed_threshold: bool,
+    ) -> Self {
+        let mut state = Self::calibration_tracking_fixture(parameters);
+        state.wifi.tx_gain_adjustment = gain_adjustment;
+        state.wifi.tx_power_tracking_slow = relaxed_threshold.into();
+        state
     }
 
     pub fn set_tx_power_tracking_slow(&mut self, value: u8) {
@@ -618,7 +654,7 @@ impl PhyState {
             ],
             correction: self.bluetooth.tx_power_adjustment,
             base: self.config.bluetooth_tx_gain_base,
-            attenuation: self.config.tx_gain_attenuation,
+            attenuation: self.config.bluetooth_tx_gain_attenuation,
         }
     }
 
@@ -805,31 +841,58 @@ impl PhyState {
 
     pub fn apply_temperature_outcome(&mut self, outcome: PhyTemperatureOutcome) {
         self.common.temperature = outcome.temperature;
+        self.common.temperature_acquisition = crate::tracking::temperature::StoredAcquisition::new(
+            crate::tracking::temperature::Acquisition::Undated,
+        );
         self.common.sensor_index = outcome.sensor_index;
     }
 
-    /// Project the semantic state consumed by periodic RFPLL-cap tracking.
-    pub const fn rfpll_cap_tracking_parameters(
-        &self,
-        threshold_override: Option<u8>,
-    ) -> RfpllCapTrackingParameters {
-        RfpllCapTrackingParameters {
-            current_temperature: self.common.temperature,
-            reference_temperature: self.common.rfpll_tracking_temperature,
-            threshold_override,
-            current_channel: self.wifi.current_channel,
+    /// Retained sensor value and its acquisition provenance, independent of
+    /// the scheduler's last evaluation time.
+    pub const fn temperature_observation(&self) -> crate::tracking::temperature::Observation {
+        crate::tracking::temperature::Observation {
+            value: self.common.temperature,
+            acquisition: self.common.temperature_acquisition.get(),
         }
     }
 
-    /// Commit only the reference-temperature effect of a terminal RFPLL
-    /// tracking transaction.
-    pub fn apply_rfpll_cap_tracking_outcome(&mut self, outcome: RfpllCapTrackingOutcome) {
-        if outcome.updated {
+    pub(crate) fn apply_observed_temperature_outcome(
+        &mut self,
+        outcome: PhyTemperatureOutcome,
+        started: Option<u64>,
+        completed: Option<u64>,
+    ) {
+        self.apply_temperature_outcome(outcome);
+        if let (Some(started), Some(completed)) = (started, completed) {
+            self.common.temperature_acquisition =
+                crate::tracking::temperature::StoredAcquisition::new(
+                    crate::tracking::temperature::Acquisition::Window { started, completed },
+                );
+        }
+    }
+
+    pub(crate) const fn rfpll_tracking_request(
+        &self,
+        threshold_override: Option<u8>,
+    ) -> crate::tracking::rfpll::thermal::Request {
+        crate::tracking::rfpll::thermal::Request {
+            current_temperature: self.common.temperature,
+            reference_temperature: self.common.rfpll_tracking_temperature,
+            current_channel: self.wifi.current_channel,
+            threshold_override,
+        }
+    }
+
+    pub(crate) fn commit_rfpll_tracking(
+        &mut self,
+        outcome: crate::tracking::rfpll::thermal::Outcome,
+    ) {
+        if outcome.correction.is_some() {
             self.common.rfpll_tracking_temperature = outcome.reference_temperature;
         }
     }
 
-    /// Project the three independent semantic references consumed by
+    /// Project the RX and shared TX semantic references consumed by
     /// `phy_cal_param_track`.
     pub const fn calibration_tracking_parameters(
         &self,
@@ -838,8 +901,7 @@ impl PhyState {
         PhyCalibrationTrackingParameters {
             current_temperature: self.common.temperature,
             common_reference_temperature: self.common.calibration_tracking_temperature,
-            wifi_reference_temperature: self.wifi.txdc_tracking_temperature,
-            bluetooth_ieee802154_reference_temperature: self.bluetooth.txdc_tracking_temperature,
+            transmit_reference_temperature: self.common.txdc_tracking_temperature,
             threshold_override,
             current_channel: self.wifi.current_channel,
             channel_bandwidth: self.wifi.channel_bandwidth,
@@ -875,11 +937,14 @@ impl PhyState {
             // Reject structurally inconsistent caller-created outcomes.
             _ => return,
         };
-        let class_tx_dc_pwdet = match (outcome.class_updated, outcome.tx_dc_pwdet) {
-            (true, Some(tx_dc_pwdet)) => Some(tx_dc_pwdet),
-            (false, None) => None,
-            _ => return,
-        };
+        // Validate the complete requested TX set before publishing any result.
+        if outcome.wifi_tx_dc_pwdet.is_some()
+            != (outcome.transmit_updated && outcome.clients.wifi())
+            || outcome.bluetooth_ieee802154_tx_dc_pwdet.is_some()
+                != (outcome.transmit_updated && outcome.clients.bluetooth_ieee802154())
+        {
+            return;
+        }
 
         if let Some((dcode, rx_gain, channel)) = common {
             self.apply_dcode_outcome(dcode);
@@ -887,18 +952,14 @@ impl PhyState {
             self.apply_channel_outcome(channel);
             self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
         }
-        if let Some(tx_dc_pwdet) = class_tx_dc_pwdet {
-            match outcome.class {
-                crate::tracking::parameters::PhyCalibrationTrackClass::Wifi => {
-                    self.apply_tx_dc_pwdet_outcome(tx_dc_pwdet);
-                    self.wifi.txdc_tracking_temperature = outcome.wifi_reference_temperature;
-                }
-                crate::tracking::parameters::PhyCalibrationTrackClass::BluetoothIeee802154 => {
-                    self.apply_bluetooth_tx_dc_pwdet_outcome(tx_dc_pwdet);
-                    self.bluetooth.txdc_tracking_temperature =
-                        outcome.bluetooth_ieee802154_reference_temperature;
-                }
-            }
+        if let Some(result) = outcome.wifi_tx_dc_pwdet {
+            self.apply_tx_dc_pwdet_outcome(result);
+        }
+        if let Some(result) = outcome.bluetooth_ieee802154_tx_dc_pwdet {
+            self.apply_bluetooth_tx_dc_pwdet_outcome(result);
+        }
+        if outcome.transmit_updated {
+            self.common.txdc_tracking_temperature = outcome.transmit_reference_temperature;
         }
     }
 
@@ -1126,7 +1187,7 @@ impl PhyState {
             ],
             tx_gain_correction: self.wifi.tx_power_adjustment,
             tx_gain_base: self.config.tx_gain_base,
-            tx_gain_attenuation: self.config.tx_gain_attenuation,
+            tx_gain_adjustment: self.wifi.tx_gain_adjustment,
             tx_capacitance: self.wifi.tx_capacitance,
         }
     }
@@ -1153,7 +1214,8 @@ impl PhyState {
             channel,
             calibration_curve: parameters.tx_gain_curve,
             correction: parameters.tx_gain_correction,
-            base_and_delta: (gain_base as u8).wrapping_sub(parameters.tx_gain_attenuation) as i8,
+            base_and_delta: (gain_base as u8).wrapping_add(parameters.tx_gain_adjustment as u8)
+                as i8,
         });
         image.seed = parameters.tx_gain_seed;
         image.config = parameters.tx_gain_config;
@@ -1228,6 +1290,7 @@ impl PhyState {
                 clear_tone_after_ready: self.common.clear_tone_after_ready,
             },
             wifi: PhyWifiCalibration {
+                tx_gain_adjustment: self.wifi.tx_gain_adjustment,
                 baseband_calibrated: self.wifi.baseband_calibrated,
                 pwdet_calibrated: self.wifi.pwdet_calibrated,
                 tx_power_calibrated: self.wifi.tx_power_calibrated,
@@ -1291,8 +1354,7 @@ impl PhyState {
         }
         if control.updates_reference_copies() {
             self.common.calibration_tracking_temperature = outcome.temperature;
-            self.wifi.txdc_tracking_temperature = outcome.temperature;
-            self.bluetooth.txdc_tracking_temperature = outcome.temperature;
+            self.common.txdc_tracking_temperature = outcome.temperature;
         }
     }
 

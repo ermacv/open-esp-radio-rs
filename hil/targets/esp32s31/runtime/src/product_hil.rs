@@ -4,7 +4,6 @@
 //! DMA, ISR and station internals stay in `oer-esp32s31-embassy-wifi`.
 
 mod phy;
-use phy::phy_timing_evidence;
 
 use core::{
     num::NonZeroU16,
@@ -91,7 +90,7 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_station_pause, complete_wifi_role_failure,
+    complete_station_epoch_cycle, complete_wifi_role_failure,
     complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
     publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
     receive_wifi_control_request, runtime_log, set_wifi_role,
@@ -2083,71 +2082,7 @@ async fn wifi_role_task(
                     request_id,
                     operation,
                 } => {
-                    use oer_esp32s31_embassy_wifi::{PauseError, PauseOperation};
-                    use open_esp_radio_hil_protocol::{StationPauseEvidence, StationPauseResult};
-                    #[cfg(feature = "driver-observation")]
-                    let timer_window = oer_esp32s31_embassy_runtime::timer_observation::Window::begin();
-                    let mut tx_waits = None;
-                    let evidence = match await_stack_boundary!(
-                        oer_esp32s31_embassy_wifi::station_pause_round_trip(match operation {
-                            open_esp_radio_hil_protocol::StationPauseOperation::Access =>
-                                PauseOperation::Access,
-                            open_esp_radio_hil_protocol::StationPauseOperation::Tracking =>
-                                PauseOperation::Tracking,
-                            open_esp_radio_hil_protocol::StationPauseOperation::Calibration =>
-                                PauseOperation::Calibration,
-                        })
-                    ) {
-                        Ok(report) => {
-                            tx_waits = report.timings.map(|value| phy::tx_wait_evidence(value.tx_waits));
-                            StationPauseEvidence {
-                            timings: report.timings.map(phy_timing_evidence),
-                            tracking: report.tracking.map(|outcome| {
-                                open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
-                                    inhibited: outcome.tracking_inhibited,
-                                    common_calibrated: outcome.calibration.common,
-                                    wifi_calibrated: outcome.calibration.wifi,
-                                    bluetooth_ieee802154_calibrated: outcome
-                                        .calibration
-                                        .bluetooth_ieee802154,
-                                }
-                            }),
-                            result: StationPauseResult::Resumed,
-                            elapsed_micros: report.elapsed_micros,
-                        }},
-                        Err(error) => StationPauseEvidence {
-                            timings: None,
-                            tracking: None,
-                            result: match error {
-                                PauseError::Unavailable => StationPauseResult::Unavailable,
-                                PauseError::Busy => StationPauseResult::Busy,
-                                PauseError::Interrupted => StationPauseResult::Interrupted,
-                                PauseError::MacStop => StationPauseResult::MacStop,
-                                PauseError::RxBusy => StationPauseResult::RxBusy,
-                                PauseError::RxPause => StationPauseResult::RxPause,
-                                PauseError::IrqPause => StationPauseResult::IrqPause,
-                                PauseError::RxResume => StationPauseResult::RxResume,
-                                PauseError::IrqResume => StationPauseResult::IrqResume,
-                                PauseError::RegisterReclaim => StationPauseResult::RegisterReclaim,
-                                PauseError::PhyAdmission => StationPauseResult::PhyAdmission,
-                                PauseError::PhyRelease => StationPauseResult::PhyRelease,
-                                PauseError::RegisterRepublish => {
-                                    StationPauseResult::RegisterRepublish
-                                }
-                                PauseError::PhyTracking => StationPauseResult::PhyTracking,
-                                PauseError::MacRestoration => StationPauseResult::MacRestoration,
-                                PauseError::ReceivePolicyChanged => {
-                                    StationPauseResult::ReceivePolicyChanged
-                                }
-                            },
-                            elapsed_micros: 0,
-                        },
-                    };
-                    #[cfg(feature = "driver-observation")]
-                    let timer = timer_window.map(|window| phy::timer_evidence(window.finish()));
-                    #[cfg(not(feature = "driver-observation"))]
-                    let timer = None;
-                    complete_station_pause(request_id, evidence, tx_waits, timer).await;
+                    await_stack_boundary!(phy::run_station_pause(request_id, operation));
                     ProductWifiRole::Station(station)
                 }
                 WifiControlRequest::Cycle { request_id } => {

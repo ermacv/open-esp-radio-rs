@@ -52,6 +52,10 @@ pub struct CanonicalTemperatureTrackingState {
 }
 
 #[panic_handler]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "isolated verification image has no executor; panic is a terminal probe failure"
+)]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     loop {
         core::hint::spin_loop();
@@ -190,9 +194,12 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
 /// Compiled production-path probe for the complete `coex_core_pti_get`
 /// contract. The vendor ABI returns `0x102` for a null output pointer and
 /// otherwise copies one entry from its reviewed 48-byte priority table.
+///
+/// # Safety
+/// A non-null `output` must point to one exclusively writable byte.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u32 {
+pub unsafe extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u32 {
     if output.is_null() {
         return 0x102;
     }
@@ -210,9 +217,15 @@ pub extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u
 /// The vendor leaf accepts only the five events backed by `g_coex_param`,
 /// clears a non-null output for every other event, and uses `u32::MAX` as its
 /// invalid-argument status.
+///
+/// # Safety
+/// A non-null `output` must point to an aligned, exclusively writable word.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_coex_core_trace_event_duration_get(event: u32, output: *mut u32) -> u32 {
+pub unsafe extern "C" fn open_coex_core_trace_event_duration_get(
+    event: u32,
+    output: *mut u32,
+) -> u32 {
     if output.is_null() {
         return u32::MAX;
     }
@@ -953,11 +966,13 @@ pub extern "C" fn open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset(selector: u32)
     }
 }
 
+/// Read STA TSF into the caller's optional output words.
+///
+/// # Safety
+/// Non-null outputs must be aligned, exclusively writable, non-overlapping words.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_rom_power_tsf_trace_hal_get_sta_tsf(low: *mut u32, high: *mut u32) {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
+pub unsafe extern "C" fn open_rom_power_tsf_trace_hal_get_sta_tsf(low: *mut u32, high: *mut u32) {
     // SAFETY: the executable profile supplies either null or one aligned,
     // writable scratch word for each pointer, matching the ROM ABI.
     let low = unsafe { low.as_mut() };
@@ -1689,6 +1704,19 @@ pub extern "C" fn open_phy_trace_freq_i2c_mem_write(
 /// the PHY driver.
 #[inline(never)]
 pub fn retain_all_probes() {
+    core::hint::black_box(production_trace::open_phy_channel_trace_state as *const ());
+    core::hint::black_box(production_trace::open_phy_channel_trace_calculate_tx_gain as *const ());
+    core::hint::black_box(production_trace::open_phy_bluetooth_trace_tx_gain as *const ());
+    core::hint::black_box(production_trace::open_phy_channel_trace_publish_tx_gain as *const ());
+    core::hint::black_box(production_trace::open_phy_calibration_trace_dcode as *const ());
+    core::hint::black_box(production_trace::open_phy_calibration_trace_rx_gain as *const ());
+    core::hint::black_box(production_trace::open_phy_calibration_trace_pbus_clear as *const ());
+    core::hint::black_box(production_trace::open_phy_calibration_trace_tx_dc_pwdet as *const ());
+    core::hint::black_box(production_trace::open_phy_calibration_trace_combined as *const ());
+    core::hint::black_box(production_trace::open_phy_tracking_trace_parent as *const ());
+    core::hint::black_box(production_trace::open_phy_rfpll_trace_search as *const ());
+    core::hint::black_box(production_trace::open_phy_rfpll_trace_maintain as *const ());
+    core::hint::black_box(production_trace::open_phy_rfpll_trace_track as *const ());
     core::hint::black_box(
         production_trace::open_phy_production_trace_phy_chip_set_chan as *const (),
     );

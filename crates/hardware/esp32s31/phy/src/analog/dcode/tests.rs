@@ -1,23 +1,77 @@
 use super::*;
 use crate::analog::rfpll::RfpllFrequencyAction;
+use std::vec::Vec;
 
 #[test]
-fn first_nested_rfpll_request_owns_the_exact_rom_frequency() {
-    let transition = PhyDcodeTransition::new(PhyDcodeParameters {
-        crystal_selector: 0x31,
+fn channel_visits_update_nrx_once_before_each_measured_pair() {
+    let mut transition = PhyDcodeTransition::new(PhyDcodeParameters {
+        crystal_selector: 0,
     });
-    let PhyDcodeAction::Rfpll(action) = transition.action() else {
-        panic!("first action must be RFPLL");
-    };
-    match action {
-        RfpllFrequencyAction::WriteMasked { .. } => {}
-        _ => panic!("RFPLL begins with a masked write"),
+    let mut frequencies = Vec::new();
+    let mut values = 0;
+    for _ in 0..100 {
+        let completion = match transition.action() {
+            PhyDcodeAction::Rfpll(action) => PhyDcodeCompletion::Rfpll(match action {
+                RfpllFrequencyAction::StartChannelSwitch {
+                    frequency_index,
+                    crystal_selector,
+                } => RfpllFrequencyCompletion::ChannelSwitchStarted {
+                    frequency_index,
+                    crystal_selector,
+                },
+                RfpllFrequencyAction::ClearChannelSwitch => {
+                    RfpllFrequencyCompletion::ChannelSwitchCleared
+                }
+                RfpllFrequencyAction::DelayMicros(micros) => {
+                    RfpllFrequencyCompletion::DelayElapsed(micros)
+                }
+                RfpllFrequencyAction::ReadChannelReady { .. } => {
+                    RfpllFrequencyCompletion::ChannelReadyObserved { ready: true }
+                }
+                RfpllFrequencyAction::ConfigureNrx { frequency_mhz } => {
+                    assert_eq!(
+                        values,
+                        frequencies.len() * 2,
+                        "NRX must precede each pair exactly once"
+                    );
+                    frequencies.push(frequency_mhz);
+                    RfpllFrequencyCompletion::NrxConfigured { frequency_mhz }
+                }
+                _ => panic!("D-code must use channel-table switching, not a full PLL search"),
+            }),
+            PhyDcodeAction::WriteMasked { field, value } => {
+                PhyDcodeCompletion::MaskedWrite { field, value }
+            }
+            PhyDcodeAction::ReadMasked { field } => {
+                assert_eq!(frequencies.len(), values / 2 + 1);
+                let value = values as u8;
+                values += 1;
+                PhyDcodeCompletion::MaskedRead { field, value }
+            }
+            PhyDcodeAction::Complete(outcome) => {
+                assert_eq!(frequencies, [2412, 2432, 2457, 2484]);
+                assert_eq!(outcome.codes, [0, 1, 2, 3, 4, 5, 6, 7]);
+                return;
+            }
+            PhyDcodeAction::Failed(failure) => panic!("unexpected failure: {failure:?}"),
+        };
+        transition.advance(completion).unwrap();
     }
+    panic!("D-code did not finish within its finite operation bound");
 }
 
 #[test]
-fn frequency_table_is_the_exact_four_byte_rom_object() {
-    assert_eq!(PHY_DCODE_FREQUENCY_CODES, [0x73, 0x74, 0x75, 0x76]);
+fn first_frequency_request_uses_the_channel_table() {
+    let transition = PhyDcodeTransition::new(PhyDcodeParameters {
+        crystal_selector: 0x31,
+    });
+    assert!(matches!(
+        transition.action(),
+        PhyDcodeAction::Rfpll(RfpllFrequencyAction::StartChannelSwitch {
+            crystal_selector: 0x31,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -26,9 +80,9 @@ fn foreign_completion_is_rejected_without_advancing() {
         crystal_selector: 0x31,
     });
     assert_eq!(
-        transition.advance(PhyDcodeCompletion::NrxConfigured {
-            frequency_code: PHY_DCODE_FREQUENCY_CODES[0],
-        }),
+        transition.advance(PhyDcodeCompletion::Rfpll(
+            RfpllFrequencyCompletion::ChannelSwitchCleared
+        )),
         Err(PhyDcodeTransitionError::WrongCompletion)
     );
     assert!(matches!(transition.action(), PhyDcodeAction::Rfpll(_)));
@@ -41,17 +95,11 @@ fn ckgen_and_two_reads_commit_the_final_owned_pair() {
             crystal_selector: 0x31,
         },
         codes: [1, 2, 3, 4, 5, 6, 0, 0],
-        step: PhyDcodeStep::ConfigureNrx {
+        step: PhyDcodeStep::ResetCkgen {
             calibration_index: 3,
+            write_index: 0,
         },
     };
-
-    let PhyDcodeAction::ConfigureNrx { frequency_code } = transition.action() else {
-        panic!("expected NRX action");
-    };
-    transition
-        .advance(PhyDcodeCompletion::NrxConfigured { frequency_code })
-        .unwrap();
 
     for _ in 0..4 {
         let PhyDcodeAction::WriteMasked { field, value } = transition.action() else {
@@ -104,12 +152,6 @@ fn external_lowering_covers_every_dcode_operation_class() {
     assert!(matches!(
         PhyDcodeExternalBinding::lower(PhyDcodeAction::Rfpll(RfpllFrequencyAction::DelayMicros(5))),
         Ok(PhyDcodeExternalBinding::Rfpll(_))
-    ));
-    assert!(matches!(
-        PhyDcodeExternalBinding::lower(PhyDcodeAction::ConfigureNrx {
-            frequency_code: PHY_DCODE_FREQUENCY_CODES[0],
-        }),
-        Ok(PhyDcodeExternalBinding::Mmio(_))
     ));
     assert!(matches!(
         PhyDcodeExternalBinding::lower(PhyDcodeAction::WriteMasked {

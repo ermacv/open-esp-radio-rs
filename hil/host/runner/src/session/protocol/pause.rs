@@ -1,6 +1,25 @@
 //! Collect detail already received before a correlated pause completion.
 use open_esp_radio_hil_protocol::{Envelope, Event, PhyTxWaitEvidence};
 
+#[derive(serde::Serialize)]
+pub(crate) struct Report {
+    pub evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
+    pub tx_waits: Option<PhyTxWaitEvidence>,
+    pub rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
+    pub timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
+    pub service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
+}
+
+pub(super) fn rfpll(
+    messages: &[Envelope<Event>],
+    completion: &Envelope<Event>,
+) -> crate::Result<Option<open_esp_radio_hil_protocol::RfpllEvidence>> {
+    detail(messages, completion, |event| match event {
+        Event::StationRfpllObserved(value) => Some(*value),
+        _ => None,
+    })
+}
+
 pub(super) fn tx_waits(
     messages: &[Envelope<Event>],
     completion: &Envelope<Event>,
@@ -17,6 +36,16 @@ pub(super) fn timer(
 ) -> crate::Result<Option<open_esp_radio_hil_protocol::TimerWindowEvidence>> {
     detail(messages, completion, |event| match event {
         Event::StationTimerObserved(timer) => Some(*timer),
+        _ => None,
+    })
+}
+
+pub(super) fn service(
+    messages: &[Envelope<Event>],
+    completion: &Envelope<Event>,
+) -> crate::Result<Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>> {
+    detail(messages, completion, |event| match event {
+        Event::StationTrackingService(service) => Some(*service),
         _ => None,
     })
 }

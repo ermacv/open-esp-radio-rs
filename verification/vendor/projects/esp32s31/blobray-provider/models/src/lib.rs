@@ -24,6 +24,7 @@ pub use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_harness_esp32s31::{CONTRACTS, entry_contract, external_abi};
 pub use open_radio_vendor_semantics::*;
 
+pub mod phy_i2c;
 mod reviewed_summaries;
 
 const CHIP_SUMMARIES: &RiscvSummaryHooks =

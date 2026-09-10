@@ -1,13 +1,15 @@
 use super::*;
+use crate::tracking::calibration::PhyCalibrationTrackingRequest;
 use crate::tracking::calibration::{
     PhyCalibrationTrackingAction, PhyCalibrationTrackingTransition,
 };
+use crate::tracking::parameters::PhyCalibrationTrackClass;
 
 const PARAMETERS: PhyCalibrationTrackingParameters = PhyCalibrationTrackingParameters {
     current_temperature: 50,
     common_reference_temperature: 21,
-    wifi_reference_temperature: 20,
-    bluetooth_ieee802154_reference_temperature: 80,
+    transmit_reference_temperature: 20,
+
     threshold_override: None,
     current_channel: 13,
     channel_bandwidth: 1,
@@ -20,8 +22,10 @@ fn independent_references_select_only_due_hardware_branches() {
         PhyCalibrationTrackClass::Wifi,
         PhyCalibrationTrackClass::BluetoothIeee802154,
     ] {
-        let request = PhyCalibrationTrackingRequest { class };
-        let decision = PARAMETERS.decision(request);
+        let request = PhyCalibrationTrackingRequest {
+            clients: class.clients(),
+        };
+        let decision = PARAMETERS.decision();
         assert!(!decision.common.is_due());
         assert!(decision.transmit.is_due());
         assert_eq!(decision.transmit.delta(), 30);
@@ -30,26 +34,26 @@ fn independent_references_select_only_due_hardware_branches() {
             PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false },
         );
         let unchanged = PhyCalibrationTrackingParameters {
-            wifi_reference_temperature: 50,
-            bluetooth_ieee802154_reference_temperature: 50,
+            transmit_reference_temperature: 50,
+
             ..PARAMETERS
         };
         assert!(matches!(
             PhyCalibrationTrackingTransition::new(request, unchanged).action(),
             PhyCalibrationTrackingAction::Complete(outcome)
-                if !outcome.common_updated && !outcome.class_updated
+                if !outcome.common_updated && !outcome.transmit_updated
         ));
         let forced = PhyCalibrationTrackingParameters {
             threshold_override: Some(0),
             ..unchanged
         };
-        assert!(forced.decision(request).transmit.is_due());
+        assert!(forced.decision().transmit.is_due());
         assert_eq!(
             PhyCalibrationTrackingTransition::new(request, forced).action(),
             PhyCalibrationTrackingAction::ClearPbus,
         );
         // Observing demand did not commit or overwrite the source references.
-        assert_eq!(unchanged.wifi_reference_temperature, 50);
+        assert_eq!(unchanged.transmit_reference_temperature, 50);
         assert_eq!(unchanged.common_reference_temperature, 21);
     }
 }

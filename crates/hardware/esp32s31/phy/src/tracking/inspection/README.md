@@ -19,12 +19,16 @@ or copy of calibration reference state is introduced.
 | `calibration` | Existing common/TX thermal decision; absent if policy disables calibration. Common demand appearing in two active classes is the same shared state, not two queued jobs. |
 | `wifi_i2c` | Current retained temperature and band; `update_required()` uses the transition's own band decision. |
 
-Conditions refer to the retained temperature, whose acquisition time is not
-recorded by this API. The caller-supplied `now_micros` dates scheduler
-inspection, not temperature acquisition. A no-change result cannot establish
-that the current hardware temperature is stable or justify skipping sampling.
-Temperatures, deltas and thresholds use PHY sensor units, not guaranteed
-Celsius values.
+`temperature` carries the retained value and acquisition provenance:
+`Unobserved`, `Undated`, or a monotonic acquisition window. Reversed clocks
+and acquisition intervals exceeding the stored duration are explicit invalid
+provenance states. Runtime sensor
+completion records the start and end of the complete sensor transition.
+`freshness(now, maximum_age)` measures age conservatively from acquisition
+start, including sensor waits, and rejects reversed clocks. Other paths that
+replace temperature without a clock invalidate the old date. The inspection
+call itself never acquires a sample. Values and thresholds use PHY sensor
+units, not guaranteed Celsius values.
 
 This snapshot is deliberately not an executable plan. Earlier power children
 can change shared tracking references. Common calibration restores the channel
@@ -69,11 +73,13 @@ hardware children retain the same exclusive access. A child completion or an
 async Pending return is not a resumable protocol checkpoint. Hardware coex
 timer control does not supply a joint-protocol maintenance grant.
 
-External temperature notifications have no executable tracking admission API
-here. They cannot manufacture a PHY sensor sample, bypass the due check or
-serve as proof that RF is idle. The existing `Track` request follows registered
-policy; `Calibrate` is a due-only diagnostic override for both heavy branches.
-There is no automatic active-role service in these inspection methods.
+The connected Wi-Fi composition exposes an opt-in observation-driven service
+and a coalescing external request for a new measurement. These notifications
+carry no temperature and no RF authority. The existing `Track` request follows
+registered policy; `Calibrate` is a due-only diagnostic override for both heavy
+branches. Independent operations preserve the periodic scheduler timestamps.
+See the [service contract](../service/README.md). Inspection itself never starts
+the service or performs hardware work.
 
 Execution outcomes, observed conditions and protocol restoration remain three
 separate facts. Failure after consuming the operation retains an unusable epoch;

@@ -128,3 +128,112 @@ fn timer_detail_is_distinct_from_tx_detail_and_requires_its_own_correlation() {
         );
     }
 }
+
+#[test]
+fn service_detail_is_correlated_and_cannot_arrive_after_completion() {
+    let detail = Envelope::new(
+        7,
+        1,
+        0,
+        42,
+        Event::StationTrackingService(Default::default()),
+    );
+    let completion = Envelope::new(
+        7,
+        2,
+        0,
+        42,
+        Event::StationPauseCompleted(StationPauseEvidence {
+            timings: None,
+            tracking: None,
+            result: StationPauseResult::Resumed,
+            elapsed_micros: 1,
+        }),
+    );
+    assert!(
+        service(&[detail.clone(), completion.clone()], &completion)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        service(&[completion.clone(), detail.clone()], &completion)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        service(
+            &[detail.clone(), detail.clone(), completion.clone()],
+            &completion
+        )
+        .is_err()
+    );
+    let unrelated = Envelope {
+        request_id: 41,
+        ..detail
+    };
+    assert!(
+        service(&[unrelated, completion.clone()], &completion)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
+    let value = open_esp_radio_hil_protocol::RfpllEvidence {
+        sample_age_micros: None,
+        temperature: 10,
+        reference_before: 10,
+        reference_after: 10,
+        threshold: 15,
+        channel: 13,
+        correction: None,
+    };
+    let event = Envelope::new(7, 1, 0, 42, Event::StationRfpllObserved(value));
+    let completion = Envelope::new(
+        7,
+        2,
+        0,
+        42,
+        Event::StationPauseCompleted(StationPauseEvidence {
+            timings: None,
+            tracking: None,
+            result: StationPauseResult::Resumed,
+            elapsed_micros: 1,
+        }),
+    );
+    assert_eq!(
+        rfpll(&[event.clone(), completion.clone()], &completion).unwrap(),
+        Some(value)
+    );
+    assert_eq!(
+        rfpll(&[completion.clone(), event.clone()], &completion).unwrap(),
+        None
+    );
+    assert!(
+        rfpll(
+            &[event.clone(), event.clone(), completion.clone()],
+            &completion
+        )
+        .is_err()
+    );
+    for other in [
+        Envelope {
+            boot_id: 8,
+            ..event.clone()
+        },
+        Envelope {
+            request_id: 41,
+            ..event.clone()
+        },
+        Envelope {
+            session_id: 1,
+            ..event
+        },
+    ] {
+        assert_eq!(
+            rfpll(&[other, completion.clone()], &completion).unwrap(),
+            None
+        );
+    }
+}

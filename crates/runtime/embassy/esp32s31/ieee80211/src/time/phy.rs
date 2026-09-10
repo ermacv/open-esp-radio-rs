@@ -29,6 +29,10 @@ impl PhyTrackingTimer for EmbassyPhyClock {
 pub struct EmbassyPhyDelay;
 
 impl PhyAsyncDelay for EmbassyPhyDelay {
+    fn now_micros() -> Option<u64> {
+        Some(embassy_time::Instant::now().as_micros())
+    }
+
     fn after_micros_observed(
         micros: u64,
         enabled: bool,

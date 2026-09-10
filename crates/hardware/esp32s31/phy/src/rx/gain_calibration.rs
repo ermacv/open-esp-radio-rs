@@ -731,6 +731,7 @@ enum DcStep {
         index: u8,
         transition: PhyRxDcCalibrationTransition,
     },
+    PrepareWifiRadioLevel,
     CalibrateWifiRadio(PhyRxDcCalibrationTransition),
     SharedRestoreI2c(MaskedI2cWriteTransition),
     WifiRxOn {
@@ -991,6 +992,10 @@ impl PhyRxGainDcTransition {
             DcStep::FineCalibration { transition, .. } => {
                 PhyRxGainDcAction::Calibration(transition.action())
             }
+            DcStep::PrepareWifiRadioLevel => PhyRxGainDcAction::ForcePbus {
+                bank: PhyRxGainDcBank::Wifi,
+                transaction: PhyPbusForceTest::new(1, 2, 0),
+            },
             DcStep::SetupRadioI { bank, .. } => PhyRxGainDcAction::ForcePbus {
                 bank,
                 transaction: PhyPbusForceTest::new(2, 1, 0x100),
@@ -1075,17 +1080,9 @@ impl PhyRxGainDcTransition {
             PhyRxGainDcBank::Shared => self.shared_index_dc[index as usize] = outcome.configuration,
         }
         if bank == PhyRxGainDcBank::Wifi && index == 0 {
-            self.step = DcStep::CalibrateWifiRadio(PhyRxDcCalibrationTransition::new(
-                PhyRxDcCalibrationRequest {
-                    shared_radio: false,
-                    stage: PhyRxDcCalibrationStage::Radio,
-                    control: 0x800,
-                    initial: [0x100; 2],
-                    reference_delta: [0; 2],
-                    gain_index: 0,
-                    rx_saturation_detected: self.parameters.rx_saturation_detected,
-                },
-            ));
+            // The independent radio DC measurement must start at the low
+            // baseband level, not the previous delta measurement's high level.
+            self.step = DcStep::PrepareWifiRadioLevel;
         } else {
             self.next_gain(bank, index);
         }
@@ -1172,11 +1169,12 @@ impl PhyRxGainDcTransition {
                 DcStep::ConfigureRegisters,
                 PhyRxGainDcCompletion::RegistersConfigured { enabled: true },
             ) => {
-                self.step = DcStep::Rfpll(RfpllFrequencyTransition::new(RfpllFrequencyRequest {
-                    crystal_selector: self.parameters.crystal_selector,
-                    frequency_code: 0x9b4,
-                    offset: 0,
-                }));
+                self.step =
+                    DcStep::Rfpll(RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
+                        crystal_selector: self.parameters.crystal_selector,
+                        frequency_code: 0x9b4,
+                        offset: 0,
+                    }));
             }
             (DcStep::Rfpll(mut transition), PhyRxGainDcCompletion::Rfpll(completion)) => {
                 transition
@@ -1199,7 +1197,7 @@ impl PhyRxGainDcTransition {
                 PhyRxGainDcCompletion::RegistersConfigured { enabled: true },
             ) => {
                 self.step =
-                    DcStep::WifiRfpll(RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+                    DcStep::WifiRfpll(RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
                         crystal_selector: self.parameters.crystal_selector,
                         frequency_code: 0x9b4,
                         offset: 0,
@@ -1555,6 +1553,37 @@ impl PhyRxGainDcTransition {
                         };
                     }
                 }
+            }
+            (
+                DcStep::PrepareWifiRadioLevel,
+                PhyRxGainDcCompletion::PbusCompleted {
+                    bank: PhyRxGainDcBank::Wifi,
+                    transaction,
+                },
+            ) if transaction == PhyPbusForceTest::new(1, 2, 0) => {
+                self.step = DcStep::CalibrateWifiRadio(PhyRxDcCalibrationTransition::new(
+                    PhyRxDcCalibrationRequest {
+                        shared_radio: false,
+                        stage: PhyRxDcCalibrationStage::Radio,
+                        control: 0x800,
+                        initial: [0x100; 2],
+                        reference_delta: [0; 2],
+                        gain_index: 0,
+                        rx_saturation_detected: self.parameters.rx_saturation_detected,
+                    },
+                ));
+            }
+            (
+                DcStep::PrepareWifiRadioLevel,
+                PhyRxGainDcCompletion::PbusTimedOut {
+                    bank: PhyRxGainDcBank::Wifi,
+                    transaction,
+                },
+            ) if transaction == PhyPbusForceTest::new(1, 2, 0) => {
+                self.fail(PhyRxGainDcFailure::Pbus {
+                    bank: PhyRxGainDcBank::Wifi,
+                    transaction,
+                });
             }
             (
                 DcStep::CalibrateWifiRadio(mut transition),

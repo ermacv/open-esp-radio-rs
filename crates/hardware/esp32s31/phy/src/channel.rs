@@ -25,20 +25,24 @@ use crate::analog::{
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
-// Pinned rev0 ROM `phy_wifi_get_tx_tab_` tables at `0x2f848350`,
-// `0x2f848374`, and `0x2f848398`. Their semantic units are not public. The
-// recovered Rust translation below uses the same 18 aligned little-endian
-// halfwords selected by the actual channel path.
+// ESP32-S31 Wi-Fi gain profile consumed by `phy_wifi_get_tx_tab_new` in
+// esp-phy-lib b88e4b76e090ae59c51cb00b916d38def895b396, libphy.a SHA-256
+// d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580.
+// phy_tx_gain.o .rodata offsets 0x6c/0x90/0xb4: 18 little-endian halfwords
+// each. LOW/MID are RF/baseband settings; HIGH contains signed gain reference
+// values used for interval selection and residual digital correction. Physical
+// gain units are not established. These are Wi-Fi coefficients, not BT/154.
+// Verification executes the real current callback, never a copied oracle table.
 const WIFI_TX_GAIN_TABLE_LOW: [u16; 18] = [
-    0x003f, 0x0037, 0x002f, 0x0027, 0x0027, 0x001f, 0x0017, 0x0015, 0x000f, 0x000d, 0x000c, 0x000b,
+    0x003f, 0x0037, 0x002f, 0x0027, 0x0027, 0x001f, 0x0017, 0x000f, 0x000f, 0x000d, 0x000c, 0x0007,
     0x0006, 0x0005, 0x0004, 0x0003, 0x0002, 0x0001,
 ];
 const WIFI_TX_GAIN_TABLE_MID: [u16; 18] = [
-    0x0080, 0x0080, 0x0080, 0x0080, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0x0100, 0x0100, 0x0100, 0x0100, 0x0080, 0x0080, 0x0080, 0x0080, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 const WIFI_TX_GAIN_TABLE_HIGH: [u16; 18] = [
-    0x001d, 0x0019, 0x0014, 0x000e, 0x0006, 0x0000, 0xfff7, 0xffed, 0xffeb, 0xffe0, 0xffda, 0xffd4,
-    0xffcf, 0xffc8, 0xffc2, 0xffba, 0xffb1, 0xffa3,
+    0x001b, 0x0018, 0x0015, 0x000e, 0x0006, 0x0000, 0xfff6, 0xffe9, 0xffe1, 0xffd7, 0xffd0, 0xffc9,
+    0xffc4, 0xffbe, 0xffb8, 0xffb0, 0xffa5, 0xff97,
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,7 +62,9 @@ pub struct PhyChipChannelParameters {
     pub tx_gain_curve: [u8; 6],
     pub tx_gain_correction: i8,
     pub tx_gain_base: u8,
-    pub tx_gain_attenuation: u8,
+    /// Added to the base with signed-byte wrapping before gain calculation.
+    /// Independent of Bluetooth's subtractive attenuation; physical units unknown.
+    pub tx_gain_adjustment: i8,
     /// Former `phy_param[0xdc..=0xe1]`. Only bytes 0, 2 and 4 are selected
     /// by complete ROM `phy_set_txcap_reg`.
     pub tx_capacitance: [u8; 6],
@@ -146,7 +152,8 @@ const fn write_packed_halfword<const N: usize>(words: &mut [u32; N], index: usiz
     words[word] = (words[word] & !(0xffff_u32 << shift)) | ((value as u32) << shift);
 }
 
-/// Complete pure translation of rev0 ROM `phy_wifi_get_tx_gain` (`0x2f826ff8`,
+/// Current S31 Wi-Fi coefficient profile and pure translation of rev0 ROM
+/// `phy_wifi_get_tx_gain` (`0x2f826ff8`,
 /// 258 bytes), including its `phy_set_chan_cal_interp` and
 /// `phy_get_tx_gain_value` children.
 ///
@@ -483,7 +490,7 @@ impl PhyChipChannelTransition {
                 .request
                 .parameters
                 .tx_gain_base
-                .wrapping_sub(self.request.parameters.tx_gain_attenuation)
+                .wrapping_add(self.request.parameters.tx_gain_adjustment as u8)
                 as i8,
         }
     }

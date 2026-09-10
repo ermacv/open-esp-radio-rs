@@ -1,4 +1,8 @@
-//! One explicit same-connection access or due-tracking request; no shared RF grant.
+#[path = "pause_request/automatic.rs"]
+mod automatic;
+pub use automatic::{Report as TrackingReport, Status as TrackingStatus};
+pub use oer_esp32s31_phy::tracking::service::Config as TrackingConfig;
+// Same-connection maintenance requests; no shared RF grant.
 use core::cell::RefCell;
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
@@ -31,6 +35,16 @@ pub enum PauseOperation {
     Access,
     Tracking,
     Calibration,
+    CommonCalibration,
+    TxCalibration,
+    Rfpll,
+    Operation(oer_esp32s31_phy::tracking::maintenance::Operation),
+    /// Recheck the age of a completed sensor acquisition after RF admission.
+    ObservedOperation {
+        operation: oer_esp32s31_phy::tracking::maintenance::Operation,
+        maximum_age_micros: u64,
+    },
+    Automatic(oer_esp32s31_phy::tracking::maintenance::Operation),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +61,7 @@ struct State {
 }
 
 pub(super) struct Requests {
+    pub automatic: automatic::Control,
     state: Mutex<CriticalSectionRawMutex, RefCell<State>>,
     client: AsyncMutex<CriticalSectionRawMutex, ()>,
     requested: Signal<CriticalSectionRawMutex, PauseOperation>,
@@ -56,6 +71,7 @@ pub(super) struct Requests {
 impl Requests {
     pub const fn new() -> Self {
         Self {
+            automatic: automatic::Control::new(),
             state: Mutex::new(RefCell::new(State {
                 available: false,
                 pending: false,
@@ -116,6 +132,7 @@ impl Drop for Availability<'_> {
         self.0.state.lock(|state| {
             let mut state = state.borrow_mut();
             state.available = false;
+            self.0.automatic.end_epoch();
             self.0.requested.reset();
             if state.pending {
                 state.pending = false;
@@ -135,4 +152,40 @@ pub async fn station_pause_round_trip(
     operation: PauseOperation,
 ) -> Result<PauseReport, PauseError> {
     REQUESTS.request(operation).await
+}
+
+/// Enable or disable observation-driven tracking for this connected STA epoch.
+/// Each selected operation still performs the full physical pause/restoration.
+/// No configuration survives leaving the connected role. None is the default.
+pub fn configure_station_tracking(config: Option<TrackingConfig>) -> Result<(), PauseError> {
+    REQUESTS.state.lock(|state| {
+        if !state.borrow().available {
+            return Err(PauseError::Unavailable);
+        }
+        if config.is_some() && matches!(REQUESTS.automatic.status(), TrackingStatus::Pending(_)) {
+            return Err(PauseError::Busy);
+        }
+        REQUESTS.automatic.configure(config);
+        Ok(())
+    })
+}
+
+/// Ask the enabled service to acquire a new PHY sensor observation. This is
+/// an event, not a supplied temperature, calibration completion or RF grant.
+pub fn request_station_temperature_observation() -> Result<(), PauseError> {
+    REQUESTS.state.lock(|state| {
+        if !state.borrow().available {
+            return Err(PauseError::Unavailable);
+        }
+        REQUESTS.automatic.notify();
+        Ok(())
+    })
+}
+
+pub fn station_tracking_status() -> TrackingStatus {
+    REQUESTS.automatic.status()
+}
+
+pub fn station_tracking_report() -> TrackingReport {
+    REQUESTS.automatic.measurements()
 }

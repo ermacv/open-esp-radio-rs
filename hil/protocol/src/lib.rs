@@ -18,7 +18,7 @@ pub use io::write_frame;
 mod phy;
 pub use phy::{
     PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyTimingEvidence,
-    PhyTxWaitEvidence, PhyWaitTiming,
+    PhyTxWaitEvidence, PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence,
 };
 mod memory_benchmark;
 mod message;
@@ -79,3 +79,8 @@ pub use message::StationTxTerminalEvidence;
 
 mod timer;
 pub use timer::{TimerPhaseTiming, TimerWindowEvidence};
+
+pub use phy::{
+    STATION_RFPLL_SAMPLE_MAX_AGE_MICROS, STATION_TRACKING_SERVICE_WINDOW_MICROS,
+    StationTrackingServiceEvidence,
+};

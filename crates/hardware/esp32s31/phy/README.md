@@ -93,8 +93,8 @@ not own the shared RF resource and cannot independently admit PHY maintenance.
 
 [Registered-policy inspection](src/tracking/inspection/README.md) reports
 scheduling demand separately from the current RFPLL, power, analog-I2C and
-common/class calibration conditions. It makes no MMIO calls and does not mark
-retained temperature as freshly sampled. A due evaluation is not an instruction
+common/class calibration conditions. It makes no MMIO calls. Runtime sensor acquisitions have monotonic
+start/end provenance; undated replacements invalidate that provenance. A due evaluation is not an instruction
 to perform all heavy calibration. No hourly/daily calibration schedule or
 qualified maximum thermal deferral is implemented.
 
@@ -133,8 +133,8 @@ sequenceDiagram
 ```
 
 The [connected pause](../../../composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause.rs)
-is an explicit diagnostic route. Automatic periodic maintenance inside an
-active connected role is not enabled. A separate stopped-role path services
+is an explicit diagnostic route. The connected role also exposes an opt-in [observation-driven service](src/tracking/service/README.md),
+which starts disabled and uses the same physical pause/restoration boundary. A separate stopped-role path services
 due work at role boundaries. Joint Wi-Fi/Bluetooth/154 maintenance and
 active-traffic publication of individual compensation classes are not
 qualified execution modes.
@@ -169,13 +169,15 @@ radiated power, sensitivity or sustained thermal stability.
 
 ## Vendor reference scope
 
-The current class-oriented tracking graph is based on the reviewed archive
-with SHA-256
-`51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223`.
-It is not a claim of equivalence to every later `libphy.a`. The separately
-pinned current calibration leaves in the
-[verification project](../../../../verification/vendor/projects/esp32s31/verification-addon.toml)
-do not qualify the complete parent graph or live radio admission.
+The runtime parent order and combined RX/TX transaction follow esp-phy-lib
+`b88e4b76e090ae59c51cb00b916d38def895b396`, SHA-256
+`d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`.
+RX has its own temperature reference; TX uses one shared reference and retains
+separate Wi-Fi and BT/154 calibration results. Authenticated parent-boundary
+execution checks call order and arguments with explicit child models. Neither
+these checks nor the separately pinned calibration leaves establish complete
+child-effect equivalence or live radio admission. See the
+[tracking contract](src/tracking/README.md).
 
 ESP-IDF's [open orchestration](https://github.com/espressif/esp-idf/blob/c712a0dde385d659a1470a136251980d31a70bc1/components/esp_phy/src/phy_common.c)
 calls a binary parameter-tracking function from a periodic task timer and on

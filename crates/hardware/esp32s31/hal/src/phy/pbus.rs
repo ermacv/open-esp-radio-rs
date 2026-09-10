@@ -46,12 +46,14 @@ pub fn configure_debug_mode(registers: &mut impl SharedPhyAccess) {
 /// the caller's async transition.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_work_mode(registers: &mut impl SharedPhyContext) -> bool {
-    let settle_required =
-        SharedPhyContext::wifi_baseband_enable_observation(registers).is_enabled();
-    let registers = phy_pac_mut(registers);
-    registers.set_pbus_debug_mode(false);
-    registers.set_pbus_work_mode(true);
-    settle_required
+    {
+        let registers = phy_pac_mut(registers);
+        registers.set_pbus_debug_mode(false);
+        registers.set_pbus_work_mode(true);
+    }
+    // The ROM samples this condition after both mode writes. Preserve that
+    // observation boundary instead of using a pre-transition snapshot.
+    SharedPhyContext::wifi_baseband_enable_observation(registers).is_enabled()
 }
 
 /// Publish one PBus force-test command before the first busy sample.

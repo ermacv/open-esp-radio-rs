@@ -28,6 +28,63 @@ impl RegisteredWifiPhy {
             registered,
             clients,
         } = self;
+        let operation = match request {
+            WifiPhyMaintenanceRequest::Operation(operation)
+            | WifiPhyMaintenanceRequest::ObservedOperation { operation, .. } => Some(operation),
+            WifiPhyMaintenanceRequest::MeasureRfpll => {
+                Some(crate::tracking::maintenance::Operation::Rfpll)
+            }
+            WifiPhyMaintenanceRequest::CalibrateCommon => {
+                Some(crate::tracking::maintenance::Operation::CommonCalibration)
+            }
+            WifiPhyMaintenanceRequest::CalibrateTransmit => {
+                Some(crate::tracking::maintenance::Operation::WifiTxCalibration)
+            }
+            _ => None,
+        };
+        if let Some(operation) = operation {
+            // Validate the real scheduler clock without advancing any deadline.
+            if let Err(error) = clients.snapshot().tracking_schedule_at(clock.now_micros()) {
+                return Err((
+                    Self {
+                        registered,
+                        clients,
+                    },
+                    error,
+                ));
+            }
+            if !clients
+                .snapshot()
+                .contains(crate::state::client::PhyModemClient::Wifi)
+            {
+                return Ok(Evaluation::Idle(Self {
+                    registered,
+                    clients,
+                }));
+            }
+            if let WifiPhyMaintenanceRequest::ObservedOperation {
+                maximum_age_micros, ..
+            } = request
+                && operation != crate::tracking::maintenance::Operation::Temperature
+                && !matches!(
+                    registered
+                        .state()
+                        .temperature_observation()
+                        .freshness(clock.now_micros(), maximum_age_micros),
+                    crate::tracking::temperature::Freshness::Fresh { .. }
+                )
+            {
+                return Ok(Evaluation::Idle(Self {
+                    registered,
+                    clients,
+                }));
+            }
+            let pending = clients.begin_wifi_operation(request.policy(&registered), operation);
+            return Ok(Evaluation::Pending {
+                registered,
+                pending,
+            });
+        }
         let evaluation = match clients.evaluate_immediate_tracking(clock) {
             Ok(evaluation) => evaluation,
             Err(failure) => {
@@ -223,8 +280,14 @@ impl WifiPhyMaintenanceRequest {
         registered: &RegisteredPhyState,
     ) -> crate::tracking::parameters::PhyParamTrackingPolicy {
         let mut policy = registered.tracking_policy();
-        if self == Self::Calibrate {
+        if matches!(
+            self,
+            Self::Calibrate | Self::CalibrateCommon | Self::CalibrateTransmit
+        ) {
             policy.calibration_tracking_threshold = Some(0);
+        }
+        if self == Self::MeasureRfpll {
+            policy.rfpll_cap_tracking_threshold = Some(0);
         }
         policy
     }

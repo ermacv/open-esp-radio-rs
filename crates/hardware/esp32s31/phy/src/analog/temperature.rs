@@ -8,8 +8,10 @@
 //! algorithm.
 //!
 //! Rust exposes the PHY-I2C read, one temperature-code sample, and the
-//! conditional PHY-I2C range write as identity-bound actions. Invalid DAC
-//! codes fail closed instead of reproducing the ROM's out-of-bounds default
+//! conditional PHY-I2C range write as identity-bound actions. An out-of-range
+//! sample requires a completed range write even if it reselects the current DAC.
+//! The DAC register and field are supplied by the reviewed semantic PAC.
+//! Invalid DAC codes fail closed instead of reproducing the ROM's out-of-bounds default
 //! table index. The reset value zero is handled separately: cold-start HIL
 //! observed it before the first baseband temperature pass, and the existing
 //! vendor-oracle handoff primes the same field to the first ROM range (DAC 5)
@@ -241,7 +243,10 @@ impl PhyTemperatureTransition {
                     sensor_index,
                     next_dac,
                 };
-                if next_dac == current.dac {
+                // ROM phy_tsens_dac_cal writes on every out-of-range sample,
+                // including saturation at the current end range. Equality of
+                // DAC values alone does not prove that the write can be omitted.
+                if temperature >= current.low && temperature <= current.high {
                     PhyTemperatureStep::Complete(outcome)
                 } else {
                     PhyTemperatureStep::WriteDac { outcome }

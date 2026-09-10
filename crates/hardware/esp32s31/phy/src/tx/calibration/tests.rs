@@ -223,6 +223,96 @@ fn tone_sar_uses_two_samples_and_one_poll_per_external_edge() {
 }
 
 #[test]
+fn tone_sar_bounds_not_ready_observations_without_consuming_a_sample() {
+    let mut transition = PhyToneSarTransition::new(PhyToneSarRequest {
+        measurement: 7,
+        samples: 2,
+        clear_tone_after_ready: false,
+    })
+    .unwrap();
+    while !matches!(transition.action(), PhyToneSarAction::PollReady { .. }) {
+        transition
+            .advance(tone_sar_completion(transition.action(), 0))
+            .unwrap();
+    }
+    for observation in 1..=crate::HARDWARE_EDGE_LIMIT {
+        transition
+            .advance(PhyToneSarCompletion::ReadySampled {
+                measurement: 7,
+                sample: 0,
+                ready: false,
+            })
+            .unwrap();
+        if observation < crate::HARDWARE_EDGE_LIMIT {
+            assert!(matches!(
+                transition.action(),
+                PhyToneSarAction::PollReady { .. }
+            ));
+        }
+    }
+    assert_eq!(
+        transition.action(),
+        PhyToneSarAction::Failed(PhyToneSarFailure::ReadyObservationLimit {
+            measurement: 7,
+            sample: 0,
+            observations: crate::HARDWARE_EDGE_LIMIT,
+        })
+    );
+    assert_eq!(
+        transition.advance(PhyToneSarCompletion::ReadySampled {
+            measurement: 7,
+            sample: 0,
+            ready: true,
+        }),
+        Err(PhyToneSarTransitionError::AlreadyComplete)
+    );
+}
+
+#[test]
+fn tone_sar_observation_budget_restarts_for_each_conversion() {
+    let mut transition = PhyToneSarTransition::new(PhyToneSarRequest {
+        measurement: 9,
+        samples: 2,
+        clear_tone_after_ready: false,
+    })
+    .unwrap();
+    for sample in 0..2 {
+        while !matches!(transition.action(), PhyToneSarAction::PollReady { .. }) {
+            transition
+                .advance(tone_sar_completion(transition.action(), 123))
+                .unwrap();
+        }
+        for _ in 1..crate::HARDWARE_EDGE_LIMIT {
+            transition
+                .advance(PhyToneSarCompletion::ReadySampled {
+                    measurement: 9,
+                    sample,
+                    ready: false,
+                })
+                .unwrap();
+        }
+        transition
+            .advance(PhyToneSarCompletion::ReadySampled {
+                measurement: 9,
+                sample,
+                ready: true,
+            })
+            .unwrap();
+        assert!(matches!(
+            transition.action(),
+            PhyToneSarAction::ReadSar { .. }
+        ));
+        transition
+            .advance(tone_sar_completion(transition.action(), 123))
+            .unwrap();
+    }
+    assert!(matches!(
+        transition.action(),
+        PhyToneSarAction::Complete(PhyToneSarOutcome { sample: 123, .. })
+    ));
+}
+
+#[test]
 fn tx_cap_lowering_covers_every_nested_operation_class() {
     let i2c = analog_registers::RFPLL_CAPACITOR_LOW;
     assert!(matches!(

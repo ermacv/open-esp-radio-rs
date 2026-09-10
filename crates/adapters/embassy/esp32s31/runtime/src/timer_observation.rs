@@ -39,6 +39,8 @@ pub struct Report {
     pub replaced: u32,
     pub stopped: u32,
     pub unmatched_interrupts: u32,
+    /// IRQ entry overlaps the latest alarm programming; alarm latency is unattributable.
+    pub overlapping_interrupts: u32,
     pub unmatched_dispatches: u32,
     pub coalesced_interrupts: u32,
     pub early_interrupts: u32,
@@ -101,6 +103,7 @@ impl Recorder {
                 replaced: 0,
                 stopped: 0,
                 unmatched_interrupts: 0,
+                overlapping_interrupts: 0,
                 unmatched_dispatches: 0,
                 coalesced_interrupts: 0,
                 early_interrupts: 0,
@@ -192,20 +195,31 @@ impl Recorder {
         );
         increment(&mut self.report.interrupts, &mut self.report.invalid);
         if let Some((deadline, programmed)) = self.armed.take() {
-            record(
-                &mut self.report.alarm_to_irq,
-                programmed,
-                now,
-                &mut self.report.invalid,
-            );
-            if now < deadline {
-                increment(&mut self.report.early_interrupts, &mut self.report.invalid);
+            if now < programmed && programmed <= acknowledged {
+                // Entry is sampled before acquiring the timer mutex. Another core
+                // can finish a replacement alarm before this IRQ acquires it.
+                // Neither that alarm's deadline nor its latency belongs to a
+                // provably matched IRQ. Retire it without fabricating an interval.
+                increment(
+                    &mut self.report.overlapping_interrupts,
+                    &mut self.report.invalid,
+                );
+            } else {
+                record(
+                    &mut self.report.alarm_to_irq,
+                    programmed,
+                    now,
+                    &mut self.report.invalid,
+                );
+                if now < deadline {
+                    increment(&mut self.report.early_interrupts, &mut self.report.invalid);
+                }
+                self.report.invalid |= self
+                    .report
+                    .deadline_lateness
+                    .record(now.saturating_sub(deadline))
+                    .is_none();
             }
-            self.report.invalid |= self
-                .report
-                .deadline_lateness
-                .record(now.saturating_sub(deadline))
-                .is_none();
         } else {
             increment(
                 &mut self.report.unmatched_interrupts,

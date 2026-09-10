@@ -3,16 +3,16 @@ use super::*;
 #[test]
 fn nested_work_keeps_parent_inclusive_time_and_failed_attempts() {
     let mut recorder = Recorder::default();
-    recorder.observe(Operation::WifiCalibration, Event::Started, 100);
+    recorder.observe(Operation::Calibration, Event::Started, 100);
     recorder.observe(Operation::Dcode, Event::Started, 110);
     recorder.observe(Operation::Dcode, Event::Completed, 140);
     recorder.observe(Operation::RxGain, Event::Started, 145);
     recorder.observe(Operation::RxGain, Event::Failed, 160);
-    recorder.observe(Operation::WifiCalibration, Event::Failed, 170);
+    recorder.observe(Operation::Calibration, Event::Failed, 170);
     let report = recorder.report();
     assert!(!report.invalid);
     assert_eq!(
-        report.timing(Operation::WifiCalibration),
+        report.timing(Operation::Calibration),
         Timing {
             started: 1,
             failed: 1,
@@ -316,4 +316,39 @@ fn tx_waits_and_sar_samples_require_an_active_tx_calibration() {
     assert_eq!(recorder.report().dcode_waits, wait::Report::default());
     recorder.observe_tx_sar_ready(false);
     assert!(recorder.report().invalid);
+}
+
+#[test]
+fn rfpll_terminal_detail_is_scoped_to_one_active_operation() {
+    use crate::tracking::rfpll::{Observation, thermal};
+    let value = Observation {
+        sample_age_micros: Some(30),
+        request: thermal::Request {
+            current_temperature: 10,
+            reference_temperature: 10,
+            current_channel: 13,
+            threshold_override: None,
+        },
+        outcome: thermal::Outcome {
+            reference_temperature: 10,
+            correction: None,
+        },
+    };
+    let mut outside = Recorder::default();
+    outside.observe_rfpll(value);
+    assert!(outside.report().invalid);
+    let mut recorder = Recorder::default();
+    recorder.observe(Operation::Rfpll, Event::Started, 1);
+    recorder.observe_rfpll(value);
+    recorder.observe(Operation::Rfpll, Event::Completed, 2);
+    let report = recorder.report();
+    assert!(!report.invalid);
+    assert_eq!(report.rfpll, Some(value));
+    recorder.observe_rfpll(value);
+    assert!(recorder.report().invalid);
+    let mut duplicate = Recorder::default();
+    duplicate.observe(Operation::Rfpll, Event::Started, 1);
+    duplicate.observe_rfpll(value);
+    duplicate.observe_rfpll(value);
+    assert!(duplicate.report().invalid);
 }

@@ -3153,6 +3153,7 @@ dependencies = [
  "open-radio-vendor-knowledge-esp32s31",
  "open-radio-vendor-semantics",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]

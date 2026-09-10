@@ -348,7 +348,17 @@ pub struct PhyToneSarOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyToneSarFailure {
-    ReadyDeadlineElapsed { measurement: u8, sample: u8 },
+    ReadyDeadlineElapsed {
+        measurement: u8,
+        sample: u8,
+    },
+    /// Readiness was not observed within the bounded sample budget. This is
+    /// independent of elapsed time and must not be reported as a timer expiry.
+    ReadyObservationLimit {
+        measurement: u8,
+        sample: u8,
+        observations: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -448,14 +458,16 @@ enum ToneSarStep {
 /// Complete event-driven translation of `phy_get_tone_sar_dout_`.
 ///
 /// No completion interrupt is evidenced for the ready field. Each `PollReady`
-/// action is exactly one volatile sample; the async owner supplies a finite
-/// external deadline.
+/// action is exactly one volatile sample. The transition bounds unsuccessful
+/// observations per conversion; an async owner may additionally supply an
+/// external deadline. Neither mechanism fabricates a hardware completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyToneSarTransition {
     request: PhyToneSarRequest,
     step: ToneSarStep,
     sample: u8,
     sum: u32,
+    ready_observations: u16,
 }
 
 impl PhyToneSarTransition {
@@ -472,6 +484,7 @@ impl PhyToneSarTransition {
             step: ToneSarStep::Arm,
             sample: 0,
             sum: 0,
+            ready_observations: 0,
         }
     }
 
@@ -554,6 +567,7 @@ impl PhyToneSarTransition {
                     sample: completed_sample,
                 },
             ) if completed == measurement && completed_sample == sample => {
+                self.ready_observations = 0;
                 ToneSarStep::TriggerDelay
             }
             (
@@ -580,7 +594,16 @@ impl PhyToneSarTransition {
                         ToneSarStep::Read
                     }
                 } else {
-                    ToneSarStep::Poll
+                    self.ready_observations += 1;
+                    if self.ready_observations == crate::HARDWARE_EDGE_LIMIT {
+                        ToneSarStep::Failed(PhyToneSarFailure::ReadyObservationLimit {
+                            measurement,
+                            sample,
+                            observations: self.ready_observations,
+                        })
+                    } else {
+                        ToneSarStep::Poll
+                    }
                 }
             }
             (
@@ -1177,7 +1200,7 @@ impl PhyTxCapTransition {
                     PhyTxCalibrationEnvironmentAction::Complete(
                         PhyTxCalibrationEnvironment::Debug,
                     ) => {
-                        self.step = TxCapStep::Rfpll(RfpllFrequencyTransition::new(
+                        self.step = TxCapStep::Rfpll(RfpllFrequencyTransition::channel(
                             RfpllFrequencyRequest {
                                 crystal_selector: self.parameters.crystal_selector,
                                 frequency_code: TX_CAP_CHANNELS[self.channel as usize],
@@ -1284,7 +1307,7 @@ impl PhyTxCapTransition {
                         if self.channel == 3 {
                             self.exit(TxCapTerminal::Complete);
                         } else {
-                            self.step = TxCapStep::Rfpll(RfpllFrequencyTransition::new(
+                            self.step = TxCapStep::Rfpll(RfpllFrequencyTransition::channel(
                                 RfpllFrequencyRequest {
                                     crystal_selector: self.parameters.crystal_selector,
                                     frequency_code: TX_CAP_CHANNELS[self.channel as usize],

@@ -38,8 +38,11 @@ cargo blobray project inputs init \
   --bind rust-artifact=/path/to/rust-trace-probes.elf
 ```
 
-Never commit vendor binaries, extracted tables, disassembly dumps or private
-paths. `project files` lists every required role.
+Never commit vendor binaries, disassembly dumps, unreviewed extraction
+artifacts or private paths. Necessary recovered hardware tables belong in
+production source with provenance and consuming-code verification, as defined
+by the [source policy](../../../../docs/source-policy.md).
+`project files` lists every required role.
 
 Build the three Rust comparison inputs with
 `cargo xtask build vendor-probes --chip esp32s31`. Its `--list-roles`
@@ -112,6 +115,155 @@ timing. Temperature tracking follows the archive policy, including divisor eight
 for a positive Wi-Fi temperature delta; the ROM primitive uses divisor five and
 is not a direct-equivalence target for this computation. A selected-suite run writes its own generated report without replacing
 the complete project's evidence index.
+
+The private-input `phy_rfpll` integration tests also execute complete production
+children at the MMIO/I2C boundary. The calibration tests compare PBus clearing
+against the current archive with its authenticated ROM companion, without
+substituting child function completions. They cover both work-mode settle
+branches, retained register contents and delayed PBus readiness. Their comparison
+excludes only readiness-wait delays immediately preceding a status read; all
+register effects and work-mode settle delays remain ordered. A separate stuck
+PBus case checks that the production executor returns failure without clearing
+the unfinished transaction or restoring work mode. These tests require fresh
+probes and execution through `blobray-run`; they are not part of the four-leaf
+suite and do not establish complete RXCAL/TXCAL equivalence or hardware timing.
+
+The D-code comparison executes the production PBus/D-code prefix and both ROM
+children with matching peripheral inputs. It checks channel-switch MMIO, NRX
+updates, CKGEN I2C commands, explicit settle delays and eight measured output
+bytes. I2C host selection/configuration and readiness polling are outside the
+command-level projection. Readiness-wait delays are excluded only directly
+before a bus status read. The test covers crystal selectors, distinct retained
+analog bits, stack fills and delayed I2C completion. Channel-ready and I2C
+failure cases require no partial output publication. These are modeled
+peripheral responses, not proof of physical channel readiness or RF quality.
+
+
+The RX-gain comparison executes complete `phy_set_rx_gain_table` and the
+production `rx_gain_init` executor, including nested ROM DC measurements and
+both gain-memory publishers. It compares ordered hardware effects and projected
+per-gain/base/fine DC coefficients plus the two bank limits. Profiles exercise
+DC/table guards, retained register values, signed estimator inputs, delayed
+I2C completion and work-mode settling. Shared-bank baseband DC is compared
+independently from Wi-Fi corrections. Unknown analog reads and unresolved data
+relocations fail closed; the archive's missing ROM data symbols are resolved by
+the linker against the authenticated companion, preserving relocation addends.
+A stuck-channel profile requires failure without output or gain-table publication.
+
+These RX-gain profiles do not execute the enclosing calibration parent's
+working-channel restoration, temperature callback, MAC baseband restoration or
+semantic commit. The separate combined-calibration comparison below exercises
+these boundaries with actual children; parent call-order tests with modeled
+children alone do not close that gap. Constant
+estimator inputs exercise arithmetic/search paths, not an analog convergence or
+RF-quality model. No hardware timing or maintenance-grant claim follows from a
+matching trace.
+
+The separate channel comparison executes `phy_get_romfunc_addr` before
+`phy_chip_set_chan` in the same execution session. This retains the actual
+temperature, TX-gain and RX-compensation callbacks rather than manually
+selecting ROM replacements. Its temperature-prefix profile compares effects
+through the first gain-publication boundary with all five valid sensor ranges;
+it makes no claim about gain publication or whole-channel equivalence.
+Both channel profiles separately compare committed channel, bandwidth and
+temperature. This is channel state, not the enclosing RXCAL reference commit.
+A stuck-readiness profile requires failure without gain or semantic publication.
+The complete-root gate includes gain publication using the current archive's
+actual callback and coefficient profile. It compares all ordered channel effects
+without filtering gain writes; it does not qualify the enclosing RXCAL parent.
+
+Gain publication has an independent complete-body comparison using identical
+synthetic DC rows, baseband settings, RF settings and digital adjustments.
+It exercises bank-index wrap and retained command-register bits without copying
+vendor tables into fixtures. Matching this publisher does not qualify gain
+selection or RF power. The current callback also consumes an additive adjustment
+where the ROM callback consumes subtractive attenuation; the characterization
+executes both real bodies, including signed-byte narrowing.
+The gain-state characterization executes actual calibration backup and recovery
+in one session, destroys live state between them, and passes the recovered
+adjustment through init-parameter loading and gain calculation. Synthetic state
+exercises the complete serialized payload and untouched envelope bytes without
+copying vendor calibration data. This establishes preservation and consumption,
+not cache validation, full-calibration generation of the adjustment, its physical
+units, or production support for vendor calibration storage.
+
+Gain calculation is checked separately against the actual current archive
+callback with synthetic channel curves and signed correction boundaries.
+Production owns the reviewed current coefficients with explicit provenance. A distinct current-archive test
+executes its callback, observes its coefficient-copy sources and gain-kernel
+arguments, then executes the real ROM kernel directly with those inputs.
+Oracle tables are read from the supplied private archive, never from duplicate
+fixtures. These checks separate arithmetic from profile selection; neither
+substitutes ROM coefficients in the complete current-archive channel gate.
+
+The BT/154 gain comparison executes the current callback and complete 16-entry
+publication against compiled production calculation and publication. It varies
+calibration inputs, independent Wi-Fi fields and bank-index wrap. This is a
+shared PHY child comparison, not qualification of a Bluetooth/154 protocol
+runtime or the enclosing TXCAL transaction.
+
+TX-DC/PWDET comparison executes `phy_txdc_cal_pwdet_init` and its actual search,
+PBus and SAR children against the production executor used by runtime tracking.
+Cases vary Wi-Fi/BT selection, initial DC rows, constant and alternating SAR
+streams, tone clearing and work-mode settling. They compare DC outputs and
+ordered hardware control effects, retaining all writes and readiness reads.
+Only production PBus readiness-wait delays and three unused read-only SAR
+result words from the general ROM reader are excluded. Independent fault
+cases require typed PBus/SAR failure without coefficient publication; the SAR
+observation limit is distinct from a timer deadline or global execution budget.
+The actual TX-DC root preserves the independently seeded Wi-Fi gain adjustment;
+its producer elsewhere in calibration/configuration is not established by this
+comparison.
+
+The combined `phy_cal_param_track` comparison uses the actual current archive
+and ROM, including callback installation, DCODE, RX calibration, channel and
+temperature restoration, both TX-DC forms, gain publication and cleanup. Its
+production entry uses the same state-owned calibration transition and target
+executor as maintenance. The `validation-probes` bridge only constructs
+ordinary semantic fixtures and selects that child; it cannot mint registered
+state or physical access. The isolated probe provides its own validation HAL
+owner. No calibration child call is replaced by a modeled completion.
+
+Profiles cover channel 13/HT40, all client selections, default/debug thermal
+boundaries, and a restored temperature that creates or removes TX demand.
+Ordered effects, temperature references and RX/TX banks are compared. A
+production-only stuck-SAR profile fails after completed RX restoration and
+checks that the combined transaction retains its earlier semantic state.
+Synthetic measurements, valid DAC inputs and default weak grant hooks limit
+the claim to software behavior. Projections reuse the documented child I2C,
+PBus, estimator-poll and unused-SAR-read exclusions; they never remove control
+writes or gain publication.
+
+The full `phy_param_track_tot` comparison also executes the real BT power,
+Wi-Fi I2C/power and final temperature children using the registered production
+policy (RFPLL disabled, calibration enabled, diagnostics disabled). It compares
+shared power-cache state, per-class gain bases, retained additive adjustment and
+I2C band in addition to calibration state and ordered effects. Signed thermal
+boundaries, both power thresholds and nonzero retained adjustment inputs are
+covered. The parent failure profile rejects normal-owner recovery after TXCAL
+failure, retains completed power children and rejects partial calibration
+publication. It does not manufacture successful child completions or a registered
+PHY owner. A validation-only RFPLL-enabled profile additionally executes thermal
+gates and zero/positive/negative frequency-memory corrections inside this same
+parent, comparing the RFPLL reference commit. Its projection omits the single
+installed-layout query already documented for isolated frequency-memory
+comparison, retaining all memory/control transactions. The TXCAL failure profile
+also checks retention of an earlier completed RFPLL reference. Registered
+production RFPLL remains disabled pending physical qualification. External COEX
+grant hooks, elapsed timing and RF performance remain separate gates.
+
+The optional RF-test power producer is characterized by `phy_rfpll/gain_producer.rs`.
+It authenticates `OER_PHY_RFTEST` (`librftest.a`, SHA-256
+`547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e`, same
+`b88e4b76` source revision), along with the PHY archive and ROM. Host `ar` with
+MRI support combines unchanged members in a temporary archive; actual vendor
+callback registration, target-power lookup, `set_rate_power_index`, conditional
+gain publication and MAC power writes execute through Blobray. No power or gain
+callee is substituted. The profile tests rounding, saturation-branch selection
+and signed-byte wrap, and is a vendor characterization, not a production API
+comparison. The [tracking contract](../../../../crates/hardware/esp32s31/phy/src/tracking/README.md)
+describes why this optional test-power policy is distinct from runtime calibration.
+
 
 ## Contract ownership
 

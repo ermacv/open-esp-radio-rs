@@ -15,7 +15,7 @@ oer-esp32s31-coex.workspace = true
 oer-memory.workspace = true
 oer-esp32s31-hal.workspace = true
 oer-esp32s31-pac.workspace = true
-oer-esp32s31-phy.workspace = true
+oer-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
 oer-esp32s31-wifi-mac.workspace = true
 oer-esp32s31-wifi.workspace = true
 oer-esp32s31-wifi-dma.workspace = true

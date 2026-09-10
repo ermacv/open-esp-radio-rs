@@ -61,6 +61,14 @@ current poll and lock acquisition. `dispatch` measures IRQ-driven queue processi
 waker calls; immediate expiry during registration is outside this timing. It excludes programming the next alarm. None of these intervals
 measures wake-to-PHY-poll latency specifically.
 
+`overlapping_interrupts` counts IRQ entry before the latest alarm program
+returns, with that return preceding acknowledgement under the timer mutex.
+The entry timestamp is sampled before locking; another core may replace an
+alarm in between. Such an IRQ retires the observed alarm, but its alarm latency,
+deadline lateness and early classification are unknown and excluded. Ack and
+dispatch observations remain valid. This is an explicit attribution limitation,
+not a negative duration or proof of hardware alarm failure.
+
 Replacing or stopping an observed alarm retires it explicitly. IRQs from an
 alarm predating the window are unmatched; coalesced IRQs retain the earliest
 pending timestamp. Alarms and IRQs still pending at window end are reported,

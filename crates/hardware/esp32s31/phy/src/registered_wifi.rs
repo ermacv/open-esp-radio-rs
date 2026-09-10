@@ -25,15 +25,31 @@ pub struct RegisteredWifiPhy {
     pub(crate) clients: PhyClientState,
 }
 
-/// One maintenance pass, still subject to the real tracking deadline.
+/// A due periodic pass or an explicitly selected operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WifiPhyMaintenanceRequest {
     /// Apply the registered temperature policy.
     Track,
+    /// Execute one selected operation after physical admission. Thermal
+    /// predicates remain active; the periodic evaluation deadline is unchanged.
+    Operation(crate::tracking::maintenance::Operation),
+    /// Selected work rechecks sample age after physical admission.
+    /// A stale sample returns without executing or acknowledging the request.
+    ObservedOperation {
+        operation: crate::tracking::maintenance::Operation,
+        maximum_age_micros: u64,
+    },
     /// Run common and Wi-Fi calibration at the next due pass, even without
     /// a temperature change. The zero threshold applies only to this pass;
     /// sensor readings, timestamps and the registered policy are unchanged.
     Calibrate,
+    /// Diagnostic zero-threshold measurement of the common branch alone.
+    CalibrateCommon,
+    /// Diagnostic zero-threshold measurement of the Wi-Fi TX branch alone.
+    CalibrateTransmit,
+    /// One measured RFPLL correction with zero thermal threshold under exclusive
+    /// maintenance access. Does not enable periodic RFPLL or advance its deadline.
+    MeasureRfpll,
 }
 
 impl RegisteredWifiPhy {

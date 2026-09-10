@@ -291,6 +291,21 @@ impl PhyClientState {
         })
     }
 
+    /// Selected Wi-Fi work retains client ownership but does not acknowledge
+    /// unrelated periodic work or advance its timestamps.
+    pub(crate) fn begin_wifi_operation(
+        self,
+        policy: PhyParamTrackingPolicy,
+        operation: crate::tracking::maintenance::Operation,
+    ) -> PhyPendingTracking {
+        let request = PhyParamTrackRequest::new(true, false);
+        PhyPendingTracking {
+            owner: self,
+            request,
+            transition: PhyParamTrackingTransition::selected(request, policy, operation),
+        }
+    }
+
     /// Apply the reviewed immediate-on-enable due check without performing PLL
     /// hardware work.
     pub fn evaluate_immediate_tracking(
@@ -582,6 +597,27 @@ impl fmt::Debug for PhyPendingTracking {
 }
 
 impl PhyPendingTracking {
+    /// Ordinary model fixture; no registration or physical admission proof.
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn for_validation(
+        request: PhyParamTrackRequest,
+        policy: PhyParamTrackingPolicy,
+    ) -> Self {
+        let mut owner = PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS);
+        owner.bits = if request.wifi() { WIFI_BIT } else { 0 }
+            | if request.bluetooth_ieee802154() {
+                BLUETOOTH_BIT
+            } else {
+                0
+            };
+        owner.tracker_model_armed = owner.bits != 0;
+        Self {
+            owner,
+            request,
+            transition: PhyParamTrackingTransition::new(request, policy),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(request: PhyParamTrackRequest, policy: PhyParamTrackingPolicy) -> Self {
         Self {

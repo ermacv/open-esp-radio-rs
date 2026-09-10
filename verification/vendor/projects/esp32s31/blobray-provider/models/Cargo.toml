@@ -17,6 +17,9 @@ open-radio-vendor-execution-model = { path = "../../../../../../tools/blobray/cr
 open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
 open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
 
+[dev-dependencies]
+tempfile = "=3.27.0"
+
 [lints]
 workspace = true
 

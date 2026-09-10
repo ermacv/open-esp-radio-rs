@@ -39,11 +39,11 @@ fn frequency_memory_address_matches_wrapping_rom_arithmetic() {
 #[test]
 fn cap_adjustment_preserves_the_rom_mask_and_reencodes_bit_eight() {
     assert_eq!(
-        phy_frequency_cap_adjusted_word(0x00aa_bffe, PhyFrequencyCapCorrection::IncreaseTwo,),
+        phy_frequency_cap_adjusted_word(0x00aa_bffe, PhyFrequencyCapCorrection::from_delta(2),),
         0x0000_ff00
     );
     assert_eq!(
-        phy_frequency_cap_adjusted_word(0x00aa_ff01, PhyFrequencyCapCorrection::DecreaseTwo,),
+        phy_frequency_cap_adjusted_word(0x00aa_ff01, PhyFrequencyCapCorrection::from_delta(-2),),
         0x0000_bfff
     );
     assert_eq!(phy_frequency_channel_index(11), 62);
@@ -51,9 +51,57 @@ fn cap_adjustment_preserves_the_rom_mask_and_reencodes_bit_eight() {
 }
 
 #[test]
+fn cap_memory_underflow_retains_signed_mode_and_requires_its_completion() {
+    let mut transition = PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
+        correction: PhyFrequencyCapCorrection::from_delta(-5),
+        current_channel: 13,
+    });
+    let PhyFrequencyCapMemoryAction::ReadMemory {
+        entry_index,
+        address,
+        mode,
+    } = transition.action()
+    else {
+        panic!("must read before adjusting");
+    };
+    transition
+        .advance(PhyFrequencyCapMemoryCompletion::MemoryRead {
+            entry_index,
+            address,
+            mode,
+            value: 0x00aa_bf00,
+        })
+        .unwrap();
+    let PhyFrequencyCapMemoryAction::WriteMemory { value, mode, .. } = transition.action() else {
+        panic!("must publish the adjusted entry");
+    };
+    assert_eq!(value, 0x00ff_fffb);
+    assert_eq!(mode, 0xff);
+    assert_eq!(
+        transition.advance(PhyFrequencyCapMemoryCompletion::MemoryWritten {
+            entry_index,
+            address,
+            mode: 3,
+        }),
+        Err(PhyFrequencyCapMemoryTransitionError::WrongCompletion)
+    );
+    transition
+        .advance(PhyFrequencyCapMemoryCompletion::MemoryWritten {
+            entry_index,
+            address,
+            mode,
+        })
+        .unwrap();
+    assert!(matches!(
+        transition.action(),
+        PhyFrequencyCapMemoryAction::ReadMemory { entry_index: 1, .. }
+    ));
+}
+
+#[test]
 fn cap_memory_transition_reads_and_writes_all_entries_before_restore() {
     let request = PhyFrequencyCapMemoryRequest {
-        correction: PhyFrequencyCapCorrection::IncreaseTwo,
+        correction: PhyFrequencyCapCorrection::from_delta(2),
         current_channel: 11,
     };
     let mut transition = PhyFrequencyCapMemoryTransition::new(request);
@@ -129,7 +177,7 @@ fn cap_memory_transition_reads_and_writes_all_entries_before_restore() {
 #[test]
 fn cap_memory_transition_and_binding_reject_foreign_or_terminal_edges() {
     let mut transition = PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
-        correction: PhyFrequencyCapCorrection::DecreaseTwo,
+        correction: PhyFrequencyCapCorrection::from_delta(-2),
         current_channel: 1,
     });
     assert_eq!(
@@ -149,7 +197,7 @@ fn cap_memory_transition_and_binding_reject_foreign_or_terminal_edges() {
         PhyFrequencyCapMemoryExternalBinding::lower(PhyFrequencyCapMemoryAction::Complete(
             super::PhyFrequencyCapMemoryOutcome {
                 entries_updated: 85,
-                correction: PhyFrequencyCapCorrection::DecreaseTwo,
+                correction: PhyFrequencyCapCorrection::from_delta(-2),
                 restored_frequency_index: 12,
             }
         )),

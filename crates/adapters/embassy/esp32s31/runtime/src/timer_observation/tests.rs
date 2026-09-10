@@ -116,3 +116,35 @@ fn reversed_ack_timestamp_invalidates_the_window() {
     recorder.interrupt(5, 4);
     assert!(recorder.finish(10).invalid);
 }
+
+#[test]
+fn cross_core_reprogram_between_irq_entry_and_ack_is_unattributable() {
+    let mut recorder = Recorder::new();
+    recorder.begin(0);
+    recorder.arm(10, 1, 2);
+    // IRQ enters at 11, before locking. Another core replaces the alarm.
+    recorder.arm(30, 12, 14);
+    recorder.interrupt(11, 15);
+    recorder.dispatch(16, 17);
+    let report = recorder.finish(20);
+    assert!(!report.invalid);
+    assert_eq!(report.overlapping_interrupts, 1);
+    assert_eq!(report.replaced, 1);
+    assert_eq!(report.alarm_to_irq, Timing::default());
+    assert_eq!(report.deadline_lateness, Timing::default());
+    assert_eq!(report.early_interrupts, 0);
+    assert_eq!(report.irq_ack.total_micros, 4);
+    assert_eq!(report.irq_to_dispatch.total_micros, 5);
+    assert!(!report.armed_at_end && !report.irq_pending_at_end);
+}
+
+#[test]
+fn alarm_program_after_ack_is_still_invalid() {
+    let mut recorder = Recorder::new();
+    recorder.begin(0);
+    recorder.arm(30, 12, 14);
+    recorder.interrupt(10, 11);
+    let report = recorder.finish(20);
+    assert!(report.invalid);
+    assert_eq!(report.overlapping_interrupts, 0);
+}

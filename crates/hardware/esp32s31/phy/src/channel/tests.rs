@@ -12,7 +12,7 @@ const PARAMETERS: PhyChipChannelParameters = PhyChipChannelParameters {
     tx_gain_curve: [7, 8, 9, 10, 11, 12],
     tx_gain_correction: -3,
     tx_gain_base: 20,
-    tx_gain_attenuation: 2,
+    tx_gain_adjustment: 2,
     tx_capacitance: [1, 2, 3, 4, 5, 6],
 };
 
@@ -23,72 +23,18 @@ const REQUEST: PhyChipChannelRequest = PhyChipChannelRequest {
 };
 
 #[test]
-fn rust_tx_gain_translation_matches_the_recovered_packed_layout() {
-    let image = calculate_wifi_tx_gain(PhyWifiTxGainRequest {
-        channel: 11,
-        calibration_curve: PARAMETERS.tx_gain_curve,
-        correction: PARAMETERS.tx_gain_correction,
-        base_and_delta: PARAMETERS
-            .tx_gain_base
-            .wrapping_sub(PARAMETERS.tx_gain_attenuation) as i8,
-    });
-    assert_eq!(
-        image.output_32,
-        [
-            0x373b_3f43,
-            0x272b_2f33,
-            0x171b_1f23,
-            0x070b_0f13,
-            0xf7fb_ff03,
-            0xfefa_f8f7,
-            0xfdf8_fcfa,
-            0xf7fb_fff9,
-        ]
-    );
-    assert_eq!(
-        image.output_64,
-        [
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0080_0080,
-            0x0000_0080,
-            0,
-            0,
-            0,
-            0,
-        ]
-    );
-    assert_eq!(
-        image.output_72,
-        [
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x003f_003f,
-            0x002f_0037,
-            0x0027_0027,
-            0x001f_0027,
-            0x0017_001f,
-            0x0015_0017,
-            0x0015_0015,
-        ]
-    );
-    assert_eq!(image.seed, [0; 6]);
-    assert_eq!(image.config, 0);
+fn channel_gain_adds_independent_adjustment_with_signed_byte_wrapping() {
+    for (base, adjustment, expected) in [(20, 2, 22), (127, 1, -128), (128, -1, 127), (0, -1, -1)] {
+        let transition = PhyChipChannelTransition::new(PhyChipChannelRequest {
+            parameters: PhyChipChannelParameters {
+                tx_gain_base: base,
+                tx_gain_adjustment: adjustment,
+                ..PARAMETERS
+            },
+            ..REQUEST
+        });
+        assert_eq!(transition.tx_gain_request().base_and_delta, expected);
+    }
 }
 
 fn temperature_completion(action: PhyTemperatureAction) -> PhyTemperatureCompletion {

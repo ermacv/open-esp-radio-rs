@@ -1,3 +1,4 @@
+use super::RfpllFrequencyFailure;
 use super::{
     CAP_SEARCH_LIMIT, RfpllCapCorrectionAction, RfpllCapCorrectionBindingError,
     RfpllCapCorrectionCompletion, RfpllCapCorrectionDirection, RfpllCapCorrectionExternalBinding,
@@ -458,7 +459,7 @@ fn bounded_rom_cap_path_preserves_initial_when_no_sample_is_accepted() {
 
 #[test]
 fn wifi_channel_uses_the_rom_fast_switch_without_rfpll_i2c() {
-    let mut transition = RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+    let mut transition = RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
         crystal_selector: 0,
         frequency_code: 1,
         offset: 0,
@@ -575,5 +576,36 @@ fn rfpll_i2c_binding_preserves_the_masked_read_identity() {
     assert_eq!(
         binding.into_completion().unwrap(),
         RfpllFrequencyCompletion::MaskedRead { field, value: 1 }
+    );
+}
+
+#[test]
+fn channel_and_mhz_inputs_select_the_same_table_but_direct_calibration_does_not() {
+    for (channel, mhz) in [(1, 2412), (6, 2437), (13, 2472), (14, 2484)] {
+        let request = |frequency_code| RfpllFrequencyRequest {
+            crystal_selector: 0,
+            frequency_code,
+            offset: 0,
+        };
+        let channel = RfpllFrequencyTransition::channel(request(channel));
+        let frequency = RfpllFrequencyTransition::channel(request(mhz));
+        assert_eq!(channel.action(), frequency.action());
+        assert!(matches!(
+            frequency.action(),
+            RfpllFrequencyAction::StartChannelSwitch { .. }
+        ));
+        assert!(matches!(
+            RfpllFrequencyTransition::new(request(mhz)).action(),
+            RfpllFrequencyAction::WriteMasked { .. }
+        ));
+    }
+    let unsupported = RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
+        crystal_selector: 0,
+        frequency_code: 5000,
+        offset: 0,
+    });
+    assert_eq!(
+        unsupported.action(),
+        RfpllFrequencyAction::Failed(RfpllFrequencyFailure::UnsupportedChannelFrequency(5000))
     );
 }

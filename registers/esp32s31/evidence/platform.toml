@@ -104,3 +104,7 @@ description = "IEEE 802.11 HE PHY Capabilities byte three field semantics as exp
 [[sources]]
 id = "ESP_WIFI_SYS_S31_HE_SU_SIG"
 description = "Sibling esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h complete esp_wifi_su_siga1_t and packed esp_wifi_su_siga2_t layouts. These standard field names are joined only to bit positions independently exercised by the complete S31 blob formatter."
+
+[[sources]]
+id = "ROM_REV0_PHY_TSENS_DAC"
+description = "ESP32-S31 rev0 ROM ELF sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542: complete phy_tsens_temp_read_local at 0x2f825f1e size 0x5e reads PHY-I2C bank 0x69 register 6 then masks bits 3:0; complete phy_tsens_dac_cal at 0x2f825e5e size 0x6e writes the same low nibble through the masked-write ABI. esp-phy-lib b88e4b76e090ae59c51cb00b916d38def895b396, S31 libphy.a sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580: phy_get_romfunc_addr installs phy_get_tsens_value in callback slot 32; its complete weak body tail-calls phy_tsens_temp_read_local."

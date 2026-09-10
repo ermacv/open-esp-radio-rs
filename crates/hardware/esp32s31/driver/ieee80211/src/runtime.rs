@@ -247,6 +247,16 @@ pub struct WifiRoleOwner<P> {
 }
 
 impl<P> WifiRoleOwner<P> {
+    pub fn inspect_phy_tracking(
+        &self,
+        now_micros: u64,
+    ) -> Result<
+        oer_esp32s31_phy::tracking::inspection::Inspection,
+        oer_esp32s31_phy::state::client::PhyTrackTimeError,
+    > {
+        self.context.phy.inspect_tracking(now_micros)
+    }
+
     /// Service due PHY tracking while the outer role graph remains paused.
     ///
     /// Consumes the logical radio owner together with admitted physical access.

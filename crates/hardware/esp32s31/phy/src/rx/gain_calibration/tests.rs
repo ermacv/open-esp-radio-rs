@@ -255,3 +255,58 @@ fn cleanup_work_mode_pulse_uses_the_vendor_two_microsecond_delay() {
         Err(PhyRxGainDcTransitionError::WrongCompletion)
     );
 }
+
+#[test]
+fn independent_wifi_radio_measurement_waits_for_low_level_publication() {
+    let parameters = PhyRxGainDcParameters {
+        crystal_selector: 0,
+        pbus_rx_path_value: 0,
+        rx_saturation_detected: false,
+    };
+    let mut transition = PhyRxGainDcTransition::new(parameters);
+    transition.store_calibration(
+        PhyRxGainDcBank::Wifi,
+        0,
+        PhyRxDcCalibrationOutcome {
+            request: RADIO,
+            configuration: [0x123, 0x145],
+            iterations: 1,
+            converged: true,
+            readiness_activity_edges: 0,
+        },
+    );
+    let transaction = PhyPbusForceTest::new(1, 2, 0);
+    assert_eq!(
+        transition.action(),
+        PhyRxGainDcAction::ForcePbus {
+            bank: PhyRxGainDcBank::Wifi,
+            transaction
+        }
+    );
+    let mut failed = transition;
+    failed
+        .advance(PhyRxGainDcCompletion::PbusTimedOut {
+            bank: PhyRxGainDcBank::Wifi,
+            transaction,
+        })
+        .unwrap();
+    assert!(matches!(
+        failed.step,
+        DcStep::ClockOff(_, DcTerminal::Failed(PhyRxGainDcFailure::Pbus { .. }))
+    ));
+    assert!(
+        transition
+            .advance(PhyRxGainDcCompletion::PbusCompleted {
+                bank: PhyRxGainDcBank::Shared,
+                transaction
+            })
+            .is_err()
+    );
+    transition
+        .advance(PhyRxGainDcCompletion::PbusCompleted {
+            bank: PhyRxGainDcBank::Wifi,
+            transaction,
+        })
+        .unwrap();
+    assert!(matches!(transition.step, DcStep::CalibrateWifiRadio(_)));
+}

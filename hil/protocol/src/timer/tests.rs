@@ -129,3 +129,35 @@ fn deadline_counters_and_acknowledgements_must_reconcile() {
         assert!(!invalid.is_valid());
     }
 }
+
+#[test]
+fn overlapping_irq_retires_an_alarm_without_a_latency_sample() {
+    let report = TimerWindowEvidence {
+        overlapping_interrupts: 1,
+        alarm_to_irq: TimerPhaseTiming::default(),
+        deadline_lateness: TimerPhaseTiming::default(),
+        ..completed()
+    };
+    assert!(report.is_valid());
+    assert!(
+        !TimerWindowEvidence {
+            overlapping_interrupts: 2,
+            ..report
+        }
+        .is_valid()
+    );
+    assert!(
+        !TimerWindowEvidence {
+            alarm_to_irq: completed().alarm_to_irq,
+            ..report
+        }
+        .is_valid()
+    );
+    assert!(
+        !TimerWindowEvidence {
+            programming: TimerPhaseTiming::default(),
+            ..report
+        }
+        .is_valid()
+    );
+}

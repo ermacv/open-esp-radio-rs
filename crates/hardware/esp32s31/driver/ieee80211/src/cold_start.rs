@@ -137,9 +137,14 @@ where
         config.calibration_identity,
         calibration_cache,
     );
-    let target_registration = run_target_phy_register::<_, D, _>(attempt, observer.clone())
-        .await
-        .map_err(WifiColdStartFailure::Registration)?;
+    let mut registration = core::pin::pin!(run_target_phy_register::<_, D, _>(
+        attempt,
+        observer.clone()
+    ));
+    let target_registration =
+        core::future::poll_fn(|cx| poll_registration(registration.as_mut(), cx))
+            .await
+            .map_err(WifiColdStartFailure::Registration)?;
     let (powered, calibration_cache, registration, port_counters) =
         target_registration.into_registered_parts();
     let acquired = powered
@@ -193,4 +198,20 @@ where
         calibration_cache,
         report,
     })
+}
+
+// Registration's pinned state already lives in its parent future. Keep its
+// hardware-step stack temporaries outside the cold-start owner-transfer frame.
+#[inline(never)]
+fn poll_registration<F: core::future::Future>(
+    future: core::pin::Pin<&mut F>,
+    cx: &mut core::task::Context<'_>,
+) -> core::task::Poll<F::Output> {
+    type PollFn<F> = for<'a, 'b, 'c> fn(
+        core::pin::Pin<&'a mut F>,
+        &'b mut core::task::Context<'c>,
+    )
+        -> core::task::Poll<<F as core::future::Future>::Output>;
+    let poll: PollFn<F> = F::poll;
+    core::hint::black_box(poll)(future, cx)
 }

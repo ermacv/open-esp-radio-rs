@@ -292,12 +292,18 @@ pub async fn complete_station_pause(
     evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
     tx_waits: Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
     timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
+    service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
+    rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
 ) {
+    if let Some(rfpll) = rfpll {
+        publish_event_reliably(0, request_id, Event::StationRfpllObserved(rfpll)).await;
+    }
     if let Some(waits) = tx_waits {
         publish_event_reliably(0, request_id, Event::StationPhyTxWaits(waits)).await;
     }
     if let Some(timer) = timer {
         publish_event_reliably(0, request_id, Event::StationTimerObserved(timer)).await;
     }
+    if let Some(service) = service { publish_event_reliably(0, request_id, Event::StationTrackingService(service)).await; }
     publish_event_reliably(0, request_id, Event::StationPauseCompleted(evidence)).await;
 }

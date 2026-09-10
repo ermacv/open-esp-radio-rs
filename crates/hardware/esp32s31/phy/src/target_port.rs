@@ -6,6 +6,9 @@
 
 use core::marker::PhantomData;
 
+pub mod calibration;
+pub mod rfpll;
+
 use crate::{
     HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
     PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError,
@@ -13,11 +16,7 @@ use crate::{
         dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
         i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
         pbus::{PhyForceTxRxExternalBinding, PhyPbusHardwareObservation},
-        rfpll::{
-            RfpllCapCorrectionCompletion, RfpllCapCorrectionExternalBinding,
-            RfpllCapTrackingCompletion, RfpllCapTrackingExternalBinding, RfpllFrequencyAction,
-            RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
-        },
+        rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding},
         temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
     },
     calibration::{
@@ -88,9 +87,7 @@ use crate::{
     },
     tracking::{
         calibration::{
-            PhyCalibrationChannelTransition, PhyCalibrationDcodeTransition,
-            PhyCalibrationForceTxRxTransition, PhyCalibrationPbusClearTransition,
-            PhyCalibrationRxGainTransition, PhyCalibrationTrackingAction,
+            PhyCalibrationForceTxRxTransition, PhyCalibrationTrackingAction,
             PhyCalibrationTrackingCompletion, PhyCalibrationTrackingExternalBinding,
             PhyCalibrationTxDcPwdetTransition,
         },
@@ -164,6 +161,8 @@ pub enum PhyRfBoundary {
 /// capture diagnostic MMIO without placing either dependency in this crate.
 pub trait PhyTargetObserver {
     const OBSERVE_DELAYS: bool = false;
+    /// Include sensor age at RFPLL entry; disabled observers add no clock read.
+    const OBSERVE_RFPLL_AGE: bool = false;
     fn tx_wait(
         &mut self,
         _scope: crate::executor::wait::tx::Scope,
@@ -172,6 +171,8 @@ pub trait PhyTargetObserver {
     ) {
     }
     fn tx_sar_ready(&mut self, _ready: bool) {}
+    /// Emitted only after the thermal child restores control and commits state.
+    fn rfpll_completed(&mut self, _observation: crate::tracking::rfpll::Observation) {}
 
     fn dcode_wait(
         &mut self,
@@ -853,64 +854,6 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_rfpll_cap_correction<P>(
-        binding: RfpllCapCorrectionExternalBinding,
-        _platform: &mut P,
-        registers: &mut impl SharedPhyAccess,
-    ) -> Result<RfpllCapCorrectionCompletion, PhyTargetPortError> {
-        match binding {
-            RfpllCapCorrectionExternalBinding::Memory(binding) => Ok(
-                RfpllCapCorrectionCompletion::Memory(binding.execute_target(registers)),
-            ),
-            RfpllCapCorrectionExternalBinding::I2c(mut binding) => {
-                for _ in 0..HARDWARE_EDGE_LIMIT {
-                    match binding.action() {
-                        PhyColdI2cAction::StartRead { .. }
-                        | PhyColdI2cAction::StartWrite { .. } => {
-                            match binding.start_target(registers) {
-                                Ok(()) => {}
-                                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
-                                Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
-                            }
-                        }
-                        PhyColdI2cAction::AwaitReadCompletionEdge { .. }
-                        | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                            D::after_micros(1).await;
-                            match binding
-                                .observe_target_edge(registers)
-                                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
-                            {
-                                PhyColdI2cObservation::EdgeConsumed
-                                | PhyColdI2cObservation::StillPending => {}
-                            }
-                        }
-                        PhyColdI2cAction::Complete(_) => {
-                            return binding
-                                .into_completion()
-                                .map_err(|_| PhyTargetPortError::UnexpectedBinding);
-                        }
-                    }
-                }
-                Err(PhyTargetPortError::HardwareEdgeTimedOut)
-            }
-        }
-    }
-
-    async fn complete_rfpll_cap<P>(
-        binding: RfpllCapTrackingExternalBinding,
-        platform: &mut P,
-        registers: &mut impl SharedPhyAccess,
-    ) -> Result<RfpllCapTrackingCompletion, PhyTargetPortError> {
-        match binding {
-            RfpllCapTrackingExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
-            RfpllCapTrackingExternalBinding::Correction(binding) => {
-                Ok(RfpllCapTrackingCompletion::Correction(
-                    Self::complete_rfpll_cap_correction(binding, platform, registers).await?,
-                ))
-            }
-        }
-    }
-
     async fn complete_tx_calibration_environment(
         binding: PhyTxCalibrationEnvironmentExternalBinding,
         registers: &mut impl SharedPhyContext,
@@ -1252,7 +1195,6 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 }
                 Ok(PhyDcodeCompletion::Rfpll(completion))
             }
-            PhyDcodeExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyDcodeExternalBinding::I2c(binding) => {
                 complete_dcode_i2c(binding, registers, |kind, micros| {
                     delay(crate::executor::wait::Scope::Dcode, kind, micros)
@@ -2140,101 +2082,6 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn run_calibration_pbus<O: PhyTargetObserver>(
-        mut child: PhyCalibrationPbusClearTransition,
-        registers: &mut impl SharedPhyContext,
-        observer: &mut O,
-    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        for _ in 0..RF_OPERATION_LIMIT {
-            child = match child.commit() {
-                Ok(completion) => return Ok(completion),
-                Err(child) => child,
-            };
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_rf(binding, registers, observer).await?;
-            child
-                .advance_external(completion)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        }
-        Err(PhyTargetPortError::RfOperationLimit)
-    }
-
-    async fn run_calibration_dcode<P, F: core::future::Future<Output = ()>>(
-        mut child: PhyCalibrationDcodeTransition,
-        platform: &mut P,
-        registers: &mut impl SharedPhyAccess,
-        mut delay: impl FnMut(crate::executor::wait::Scope, crate::executor::wait::Kind, u64) -> F,
-        mut observe: impl FnMut(bool),
-    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        for _ in 0..RF_OPERATION_LIMIT {
-            child = match child.commit() {
-                Ok(completion) => return Ok(completion),
-                Err(child) => child,
-            };
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion =
-                Self::complete_dcode(binding, platform, registers, &mut delay, &mut observe)
-                    .await?;
-            child
-                .advance(completion)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        }
-        Err(PhyTargetPortError::RfOperationLimit)
-    }
-
-    async fn run_calibration_rx_gain<P>(
-        mut child: PhyCalibrationRxGainTransition,
-        platform: &mut P,
-        registers: &mut impl SharedPhyContext,
-    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        for _ in 0..RF_OPERATION_LIMIT {
-            // Inspect readiness by borrow; transfer the sizeable child only once.
-            if matches!(
-                child.action(),
-                crate::rx::gain::PhyRxGainInitAction::Complete(_)
-                    | crate::rx::gain::PhyRxGainInitAction::Failed(_)
-            ) {
-                return child
-                    .commit()
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding);
-            }
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_rx_gain(binding, platform, registers).await?;
-            child
-                .advance(completion)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        }
-        Err(PhyTargetPortError::RfOperationLimit)
-    }
-
-    async fn run_calibration_channel<P, O: PhyTargetObserver>(
-        mut child: PhyCalibrationChannelTransition,
-        platform: &mut P,
-        registers: &mut impl SharedPhyAccess,
-        observer: &mut O,
-    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        for _ in 0..RF_OPERATION_LIMIT {
-            child = match child.commit() {
-                Ok(completion) => return Ok(completion),
-                Err(child) => child,
-            };
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_channel(binding, platform, registers, observer).await?;
-            child
-                .advance(completion)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        }
-        Err(PhyTargetPortError::RfOperationLimit)
-    }
-
     async fn run_calibration_force_txrx(
         mut child: PhyCalibrationForceTxRxTransition,
         registers: &mut impl SharedPhyAccess,
@@ -2266,42 +2113,47 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
         observer: &core::cell::RefCell<&mut O>,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        for _ in 0..RF_OPERATION_LIMIT {
-            // Inspect readiness by borrow; transfer the sizeable child only once.
-            if matches!(
-                child.action(),
-                crate::tx::dc_power_detector::PhyTxDcPwdetAction::Complete(_)
-                    | crate::tx::dc_power_detector::PhyTxDcPwdetAction::Failed(_)
-            ) {
-                return child
-                    .commit()
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding);
-            }
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_tx_dc_pwdet_with(binding, registers, observer).await?;
-            child
-                .advance(completion)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        }
-        Err(PhyTargetPortError::RfOperationLimit)
+        calibration::tx_dc_pwdet_init::<D, _>(child.transition_mut(), registers, observer).await?;
+        child
+            .commit()
+            .map_err(|_| PhyTargetPortError::UnexpectedBinding)
     }
 
-    async fn run_param_rfpll<P>(
+    async fn run_param_rfpll<O: PhyTargetObserver>(
         mut child: PhyParamTrackingRfpllTransition<'_>,
-        platform: &mut P,
         registers: &mut impl SharedPhyAccess,
+        observer: &mut O,
     ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        let request = child.request();
+        let sample_age_micros =
+            O::OBSERVE_RFPLL_AGE
+                .then(D::now_micros)
+                .flatten()
+                .and_then(|now| {
+                    match child
+                        .state()
+                        .temperature_observation()
+                        .freshness(now, u64::MAX)
+                    {
+                        crate::tracking::temperature::Freshness::Fresh { age_micros } => {
+                            Some(age_micros)
+                        }
+                        _ => None,
+                    }
+                });
         for _ in 0..RF_OPERATION_LIMIT {
-            child = match child.commit() {
-                Ok(completion) => return Ok(completion),
-                Err(child) => child,
-            };
-            let binding = child
-                .lower_external()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_rfpll_cap(binding, platform, registers).await?;
+            if let crate::tracking::rfpll::thermal::Action::Complete(outcome) = child.action() {
+                let completion = child
+                    .commit()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                observer.rfpll_completed(crate::tracking::rfpll::Observation {
+                    request,
+                    outcome,
+                    sample_age_micros,
+                });
+                return Ok(completion);
+            }
+            let completion = rfpll::complete_thermal::<D>(registers, child.action()).await?;
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2357,8 +2209,17 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        let started = D::now_micros();
         for _ in 0..RF_OPERATION_LIMIT {
-            child = match child.commit() {
+            let completed = if matches!(
+                child.action(),
+                crate::analog::temperature::PhyTemperatureAction::Complete(_)
+            ) {
+                D::now_micros()
+            } else {
+                None
+            };
+            child = match child.commit_observed(started, completed) {
                 Ok(completion) => return Ok(completion),
                 Err(child) => child,
             };
@@ -2434,7 +2295,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
         self.observer.operation_started();
         let completion = match transition.action() {
             PhyCalibrationTrackingAction::ClearPbus => {
-                TargetCompleter::<D>::run_calibration_pbus(
+                calibration::clear_pbus::<D, _>(
                     transition
                         .begin_pbus_clear()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
@@ -2447,7 +2308,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                 let observer = core::cell::RefCell::new(&mut *self.observer);
                 let observer = &observer;
                 crate::tracking::observation::observe_polls(
-                    TargetCompleter::<D>::run_calibration_dcode(
+                    calibration::dcode::<D, _, _>(
                         transition
                             .begin_dcode()
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
@@ -2471,7 +2332,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
             }
             PhyCalibrationTrackingAction::RecalibrateRxGain => {
                 crate::tracking::observation::observe_polls(
-                    TargetCompleter::<D>::run_calibration_rx_gain(
+                    calibration::rx_gain::<D, _>(
                         transition
                             .begin_rx_gain_recalibration()
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
@@ -2488,7 +2349,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                 .await?
             }
             PhyCalibrationTrackingAction::RestoreChipChannel { .. } => {
-                TargetCompleter::<D>::run_calibration_channel(
+                calibration::channel::<D, _, _>(
                     transition
                         .begin_channel_restore()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
@@ -2542,6 +2403,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
             PhyCalibrationTrackingAction::SetForcedDigitalGain { .. }
             | PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
             | PhyCalibrationTrackingAction::ConfigureBasebandChannel { .. }
+            | PhyCalibrationTrackingAction::DisableWifiBaseband
             | PhyCalibrationTrackingAction::EnableMacBaseband
             | PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
                 match transition
@@ -2592,8 +2454,8 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyP
                     pending
                         .begin_rfpll_cap_tracking(state)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                    self.platform,
                     self.registers,
+                    &mut self.observer,
                 )
                 .await?
             }

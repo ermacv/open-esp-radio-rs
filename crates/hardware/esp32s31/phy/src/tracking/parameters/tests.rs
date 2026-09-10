@@ -23,11 +23,11 @@ fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {
         PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
             PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled }
         }
-        PhyParamTrackingAction::CalibrationTrack { class, .. } => {
+        PhyParamTrackingAction::CalibrationTrack { clients, .. } => {
             PhyParamTrackingCompletion::CalibrationTracked(PhyParamTrackingCalibrationCompletion {
-                class,
+                clients,
                 common_updated: false,
-                class_updated: false,
+                transmit_updated: false,
             })
         }
         PhyParamTrackingAction::WifiI2cTrack => PhyParamTrackingCompletion::WifiI2cTracked,
@@ -72,7 +72,7 @@ fn ieee802154_only_preserves_exact_child_order() {
             },
             PhyParamTrackingAction::CalibrationTrack {
                 diagnostics: PhyTrackingDiagnostics::Enabled,
-                class: PhyCalibrationTrackClass::BluetoothIeee802154,
+                clients: (PhyCalibrationTrackClass::BluetoothIeee802154).clients(),
             },
             PhyParamTrackingAction::TemperatureRead,
             PhyParamTrackingAction::ExitCritical,
@@ -98,10 +98,6 @@ fn both_classes_run_bluetooth_before_wifi_and_temperature_last() {
                 enabled: true,
                 diagnostics: PhyTrackingDiagnostics::Enabled,
             },
-            PhyParamTrackingAction::CalibrationTrack {
-                diagnostics: PhyTrackingDiagnostics::Enabled,
-                class: PhyCalibrationTrackClass::BluetoothIeee802154,
-            },
             PhyParamTrackingAction::WifiI2cTrack,
             PhyParamTrackingAction::WifiTxPowerTrack {
                 enabled: true,
@@ -109,7 +105,7 @@ fn both_classes_run_bluetooth_before_wifi_and_temperature_last() {
             },
             PhyParamTrackingAction::CalibrationTrack {
                 diagnostics: PhyTrackingDiagnostics::Enabled,
-                class: PhyCalibrationTrackClass::Wifi,
+                clients: PhyParamTrackRequest::new(true, true),
             },
             PhyParamTrackingAction::TemperatureRead,
             PhyParamTrackingAction::ExitCritical,
@@ -214,18 +210,12 @@ fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
     });
 
     let child = transition.begin_rfpll_cap_tracking(&mut state).unwrap();
-    let crate::analog::rfpll::RfpllCapTrackingAction::Complete(outcome) = child.action() else {
-        panic!("six-degree override must skip a five-degree delta")
+    let crate::tracking::rfpll::thermal::Action::Complete(outcome) = child.action() else {
+        panic!("six-unit override must skip a five-unit delta")
     };
-    assert_eq!(outcome.threshold, 6);
-    assert!(!outcome.updated);
+    assert!(outcome.correction.is_none());
     let completion = child.commit().unwrap();
-    assert_eq!(
-        state
-            .rfpll_cap_tracking_parameters(None)
-            .reference_temperature,
-        20
-    );
+    assert_eq!(state.rfpll_tracking_request(None).reference_temperature, 20);
     transition.advance(completion).unwrap();
     assert!(matches!(
         transition.action(),
@@ -242,20 +232,97 @@ fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
     incomplete
         .advance(PhyParamTrackingCompletion::EnteredCritical)
         .unwrap();
+    state.apply_temperature_outcome(crate::analog::temperature::PhyTemperatureOutcome {
+        temperature: 35,
+        sensor_index: 2,
+        next_dac: 15,
+    });
     let child = incomplete.begin_rfpll_cap_tracking(&mut state).unwrap();
     assert_eq!(
         child.action(),
-        crate::analog::rfpll::RfpllCapTrackingAction::SetHardwareFrequencyControl {
-            enabled: false
-        }
+        crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
     );
     let child = child.commit().unwrap_err();
-    assert!(matches!(
-        child.lower_external(),
-        Ok(crate::analog::rfpll::RfpllCapTrackingExternalBinding::Mmio(
-            _
-        ))
-    ));
+    assert_eq!(
+        child.action(),
+        crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
+    );
+}
+#[test]
+fn measured_rfpll_reference_waits_for_restoration_and_parent_commit() {
+    use crate::tracking::rfpll::{self, search, thermal};
+    let mut parent =
+        PhyParamTrackingTransition::new(PhyParamTrackRequest::new(true, false), POLICY);
+    parent
+        .advance(PhyParamTrackingCompletion::EnteredCritical)
+        .unwrap();
+    let mut state = crate::state::PhyState::new(crate::state::PhyConfig::production());
+    state.apply_register_temperature_outcome(
+        crate::state::PhyRegisterTemperatureControl::FULL,
+        crate::analog::temperature::PhyTemperatureOutcome {
+            temperature: 20,
+            sensor_index: 2,
+            next_dac: 15,
+        },
+    );
+    state.apply_temperature_outcome(crate::analog::temperature::PhyTemperatureOutcome {
+        temperature: 35,
+        sensor_index: 2,
+        next_dac: 15,
+    });
+    let mut child = parent.begin_rfpll_cap_tracking(&mut state).unwrap();
+    for _ in 0..256 {
+        assert_eq!(
+            child
+                .state()
+                .rfpll_tracking_request(None)
+                .reference_temperature,
+            20
+        );
+        if child.action() == thermal::Action::RestoreHardwareControl {
+            break;
+        }
+        child = child
+            .commit()
+            .expect_err("no parent proof before physical restoration");
+        let completion = match child.action() {
+            thermal::Action::SelectSoftwareControl => thermal::Completion::SoftwareControlSelected,
+            thermal::Action::Settle => thermal::Completion::Settled,
+            thermal::Action::ObserveBoundary => thermal::Completion::BoundaryObserved,
+            thermal::Action::Correct(rfpll::Action::Search(action)) => {
+                let completion = match action {
+                    search::Action::ReadInitialCap => search::Completion::InitialCap(100),
+                    search::Action::EnableSearch => search::Completion::SearchEnabled,
+                    search::Action::WriteCap(value) => search::Completion::CapWritten(value),
+                    search::Action::DelayMicros(value) => search::Completion::DelayElapsed(value),
+                    search::Action::ReadStatus => search::Completion::Status(search::Status::Other),
+                    _ => panic!("unexpected search terminal"),
+                };
+                thermal::Completion::Correction(rfpll::Completion::Search(completion))
+            }
+            action => panic!("unexpected action {action:?}"),
+        };
+        child.advance(completion).unwrap();
+    }
+    assert_eq!(child.action(), thermal::Action::RestoreHardwareControl);
+    child = child.commit().unwrap_err();
+    assert_eq!(
+        child.advance(thermal::Completion::Settled),
+        Err(rfpll::Error::WrongCompletion)
+    );
+    child
+        .advance(thermal::Completion::HardwareControlRestored)
+        .unwrap();
+    assert_eq!(
+        child
+            .state()
+            .rfpll_tracking_request(None)
+            .reference_temperature,
+        20
+    );
+    let proof = child.commit().unwrap();
+    assert_eq!(state.rfpll_tracking_request(None).reference_temperature, 35);
+    parent.advance(proof).unwrap();
 }
 
 #[test]
@@ -304,7 +371,7 @@ fn skipped_calibration_commits_without_hardware_or_reference_changes() {
 
     let committed = state.calibration_tracking_parameters(None);
     assert_eq!(committed.common_reference_temperature, 20);
-    assert_eq!(committed.bluetooth_ieee802154_reference_temperature, 20);
+    assert_eq!(committed.transmit_reference_temperature, 20);
     transition.advance(completion).unwrap();
     assert_eq!(transition.action(), PhyParamTrackingAction::TemperatureRead);
     transition
@@ -325,28 +392,24 @@ fn calibration_progress_counts_only_accepted_completed_branches() {
         PhyParamTrackingTransition::new(PhyParamTrackRequest::new(true, true), POLICY);
     while !matches!(transition.action(), PhyParamTrackingAction::Complete(_)) {
         let action = transition.action();
-        let completed = if let PhyParamTrackingAction::CalibrationTrack { class, .. } = action {
-            let wrong_class = if class == PhyCalibrationTrackClass::Wifi {
-                PhyCalibrationTrackClass::BluetoothIeee802154
-            } else {
-                PhyCalibrationTrackClass::Wifi
-            };
+        let completed = if let PhyParamTrackingAction::CalibrationTrack { clients, .. } = action {
             let before = transition;
+            let wrong_clients = PhyParamTrackRequest::new(false, true);
             assert_eq!(
                 transition.advance(PhyParamTrackingCompletion::CalibrationTracked(
                     PhyParamTrackingCalibrationCompletion {
-                        class: wrong_class,
+                        clients: wrong_clients,
                         common_updated: true,
-                        class_updated: true
+                        transmit_updated: true
                     }
                 )),
                 Err(PhyParamTrackingTransitionError::WrongCompletion)
             );
             assert_eq!(transition, before);
             PhyParamTrackingCompletion::CalibrationTracked(PhyParamTrackingCalibrationCompletion {
-                class,
-                common_updated: class == PhyCalibrationTrackClass::BluetoothIeee802154,
-                class_updated: class == PhyCalibrationTrackClass::Wifi,
+                clients,
+                common_updated: true,
+                transmit_updated: true,
             })
         } else {
             completion(action)
@@ -361,7 +424,7 @@ fn calibration_progress_counts_only_accepted_completed_branches() {
         CalibrationProgress {
             common: true,
             wifi: true,
-            bluetooth_ieee802154: false
+            bluetooth_ieee802154: true
         }
     );
 }
@@ -370,6 +433,7 @@ fn calibration_progress_counts_only_accepted_completed_branches() {
 fn failed_temperature_child_cannot_complete_parent_or_mutate_state() {
     let mut policy = POLICY;
     policy.rfpll_cap_tracking_enabled = false;
+    policy.calibration_tracking_enabled = false;
     let mut transition =
         PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, false), policy);
     transition
@@ -467,4 +531,23 @@ fn temperature_to_power_matches_all_signed_16_bit_deltas() {
         temperature_to_tracking_power(i16::MIN, 1, PhyCalibrationTrackClass::BluetoothIeee802154,),
         (32_767_i16 / 5) as i8,
     );
+}
+
+mod selection;
+#[test]
+fn selected_rfpll_stops_before_power_and_calibration() {
+    let mut parent = PhyParamTrackingTransition::selected(
+        PhyParamTrackRequest::new(true, false),
+        POLICY,
+        crate::tracking::maintenance::Operation::Rfpll,
+    );
+    parent
+        .advance(PhyParamTrackingCompletion::EnteredCritical)
+        .unwrap();
+    parent
+        .advance(PhyParamTrackingCompletion::RfpllCapTracked(
+            PhyParamTrackingRfpllCompletion { committed: () },
+        ))
+        .unwrap();
+    assert_eq!(parent.action(), PhyParamTrackingAction::ExitCritical);
 }

@@ -2607,9 +2607,9 @@ pub mod phy_i2c_fields {
         PhyI2cField::generated(0x67, 0x03, 0x04, 2);
     /// Temperature-sensor DAC status field.
     pub const TEMPERATURE_SENSOR_DAC_STATUS: PhyI2cField =
-        PhyI2cField::generated(0x69, 0x00, 0x7f, 0);
+        PhyI2cField::generated(0x69, 0x06, 0x0f, 0);
     /// Temperature-sensor DAC control field.
-    pub const TEMPERATURE_SENSOR_DAC: PhyI2cField = PhyI2cField::generated(0x69, 0x00, 0x0f, 0);
+    pub const TEMPERATURE_SENSOR_DAC: PhyI2cField = PhyI2cField::generated(0x69, 0x06, 0x0f, 0);
     /// Temperature-sensor SAR2 status and initialization field.
     pub const TEMPERATURE_SENSOR_SAR2_STATUS: PhyI2cField =
         PhyI2cField::generated(0x69, 0x04, 0x0f, 0);

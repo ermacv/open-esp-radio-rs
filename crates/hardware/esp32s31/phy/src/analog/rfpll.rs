@@ -35,7 +35,6 @@ use crate::analog::{
 
 const LOCK_ATTEMPTS: u8 = 100;
 const CAP_SEARCH_LIMIT: u8 = 10;
-const WIFI_CHANNEL_MAX: u16 = 14;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RfpllSdmImage {
@@ -102,6 +101,8 @@ pub struct RfpllFrequencyOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyFailure {
+    /// The table-selection entry supports only the initialized 2.4-GHz domain.
+    UnsupportedChannelFrequency(u16),
     /// Defensive terminal retained for callers which persist this public
     /// outcome. The bounded rev0 ROM search completes both ten-sample phases,
     /// including the no-accepted-sample case, so the exact transition does
@@ -273,34 +274,39 @@ pub struct RfpllFrequencyTransition {
 }
 
 impl RfpllFrequencyTransition {
-    const fn channel_frequency(channel: u16) -> u16 {
-        if channel == 14 {
-            2_484
-        } else {
-            2_407_u16.wrapping_add(channel.wrapping_mul(5))
-        }
-    }
-
     const fn programmed_frequency(request: RfpllFrequencyRequest) -> u16 {
-        if request.frequency_code <= WIFI_CHANNEL_MAX {
-            Self::channel_frequency(request.frequency_code)
-        } else {
-            request.frequency_code
-        }
+        crate::channel::channel_to_frequency(request.frequency_code)
     }
 
+    /// Program the synthesizer directly, including capacitor calibration.
+    /// This is the `phy_set_rf_freq_offset` path used to build channel tables;
+    /// `frequency_code` is MHz and must not select an already-built table.
     pub const fn new(request: RfpllFrequencyRequest) -> Self {
         Self {
             request,
             sdm: calculate_rfpll_sdm(
-                Self::programmed_frequency(request),
+                request.frequency_code,
                 request.crystal_selector,
                 request.offset,
             ),
-            step: if request.frequency_code <= WIFI_CHANNEL_MAX {
+            step: RfpllFrequencyStep::InitialWrite(0),
+        }
+    }
+
+    /// Select an initialized 2.4-GHz frequency table, then update NRX.
+    /// Matches the supported `phy_set_channel_rfpll_freq` branch for both a
+    /// channel number and MHz input. It does not establish analog PLL lock.
+    pub const fn channel(request: RfpllFrequencyRequest) -> Self {
+        let frequency = Self::programmed_frequency(request);
+        Self {
+            request,
+            sdm: calculate_rfpll_sdm(frequency, request.crystal_selector, request.offset),
+            step: if frequency.wrapping_sub(2_400) <= 84 {
                 RfpllFrequencyStep::ChannelStart
             } else {
-                RfpllFrequencyStep::InitialWrite(0)
+                RfpllFrequencyStep::Failed(RfpllFrequencyFailure::UnsupportedChannelFrequency(
+                    frequency,
+                ))
             },
         }
     }
@@ -684,8 +690,8 @@ impl RfpllCapCorrectionDirection {
 
     pub const fn correction(self) -> Option<PhyFrequencyCapCorrection> {
         match self {
-            Self::IncreaseTwo => Some(PhyFrequencyCapCorrection::IncreaseTwo),
-            Self::DecreaseTwo => Some(PhyFrequencyCapCorrection::DecreaseTwo),
+            Self::IncreaseTwo => Some(PhyFrequencyCapCorrection::from_delta(2)),
+            Self::DecreaseTwo => Some(PhyFrequencyCapCorrection::from_delta(-2)),
             Self::StableZero | Self::StableThree => None,
         }
     }

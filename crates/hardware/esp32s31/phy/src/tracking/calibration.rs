@@ -1,25 +1,28 @@
-//! Periodic calibration tracking under exclusive PHY ownership.
+//! Runtime RX calibration followed by one shared TX calibration transaction.
 //!
-//! Common DCODE/RX calibration and each protocol's TXDC/gain calibration
-//! retain independent temperature references. The state owner commits only
-//! completed calibration results; it does not share the vendor's mutable
-//! combined Wi-Fi/Bluetooth tracking reference. Hardware calibration uses
-//! software frequency control and forced digital gain, with explicit release
-//! on both success and failure. Coexistence grant arbitration belongs to the
-//! radio owner and is not implemented by this transition.
-//! Each completed calibration branch restores TX gain compensation before
-//! the next branch starts. If neither branch is due, no hardware action runs.
+//! The current S31 vendor graph has one RX reference and one shared TX
+//! reference. Wi-Fi and BT/154 TX children run in that order inside the same
+//! frequency/gain envelope. References are published only after terminal
+//! restoration; grant arbitration remains the physical radio owner's job.
 
 use crate::tracking::parameters::PhyCalibrationTrackClass;
 
 pub mod decision;
 
+/// Which measurement branch is selected; each branch retains its complete
+/// hardware restoration sequence before returning maintenance access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Scope {
+    Both,
+    Common,
+    Transmit,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingParameters {
     pub current_temperature: i16,
     pub common_reference_temperature: i16,
-    pub wifi_reference_temperature: i16,
-    pub bluetooth_ieee802154_reference_temperature: i16,
+    pub transmit_reference_temperature: i16,
     pub threshold_override: Option<u8>,
     pub current_channel: u16,
     pub channel_bandwidth: u8,
@@ -28,22 +31,22 @@ pub struct PhyCalibrationTrackingParameters {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingRequest {
-    pub class: PhyCalibrationTrackClass,
+    pub clients: super::parameters::PhyParamTrackRequest,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingOutcome {
-    pub class: PhyCalibrationTrackClass,
+    pub clients: super::parameters::PhyParamTrackRequest,
     pub threshold: u8,
     pub common_reference_temperature: i16,
-    pub wifi_reference_temperature: i16,
-    pub bluetooth_ieee802154_reference_temperature: i16,
+    pub transmit_reference_temperature: i16,
     pub common_updated: bool,
-    pub class_updated: bool,
+    pub transmit_updated: bool,
     pub dcode: Option<crate::analog::dcode::PhyDcodeOutcome>,
     pub rx_gain: Option<crate::rx::gain::PhyRxGainInitOutcome>,
     pub channel: Option<crate::channel::PhyChipChannelOutcome>,
-    pub tx_dc_pwdet: Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>,
+    pub wifi_tx_dc_pwdet: Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>,
+    pub bluetooth_ieee802154_tx_dc_pwdet: Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +63,7 @@ pub enum PhyCalibrationTrackingAction {
     CalibrateTxDcPwdet { class: PhyCalibrationTrackClass },
     PublishWifiTxGain { channel: u16 },
     PublishBluetoothIeee802154TxGain,
+    DisableWifiBaseband,
     EnableMacBaseband,
     RestoreTxGainCompensation,
     Complete(PhyCalibrationTrackingOutcome),
@@ -79,6 +83,7 @@ pub enum PhyCalibrationTrackingCompletion {
     BasebandChannelConfigured { cbw: u8 },
     TxDcPwdetCalibrated(PhyCalibrationTxDcPwdetCompletion),
     TxGainPublished(PhyCalibrationTxGainCompletion),
+    WifiBasebandDisabled,
     MacBasebandEnabled,
     TxGainCompensationRestored,
 }
@@ -136,6 +141,15 @@ pub struct PhyCalibrationPbusClearCompletion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationDcodeCompletion {
     result: Result<crate::analog::dcode::PhyDcodeOutcome, crate::analog::dcode::PhyDcodeFailure>,
+}
+
+impl PhyCalibrationDcodeCompletion {
+    /// Inspect measured codes or terminal failure without publishing parent state.
+    pub const fn result(
+        &self,
+    ) -> Result<crate::analog::dcode::PhyDcodeOutcome, crate::analog::dcode::PhyDcodeFailure> {
+        self.result
+    }
 }
 
 /// Opaque terminal result of complete RX-DC calibration and table generation.
@@ -247,42 +261,45 @@ pub enum PhyCalibrationTrackingTransitionError {
 enum Step {
     CommonClearPbus,
     CommonDcode,
+    CommonDisableBaseband,
     CommonRecalibrateRxGain,
     CommonRestoreChannel,
     CommonEnableMac,
     CommonRestoreTxGainCompensation,
-    ClassDisableHardwareFrequency,
-    ClassSoftwareFrequencySettle,
-    ClassForceTxRxOff,
-    ClassForceDigitalGain,
-    ClassReleaseDigitalGain,
-    ClassClearPbus,
-    ClassConfigureBasebandZero,
-    ClassCalibrateTxDcPwdet,
-    ClassPublishTxGain,
-    ClassRestoreBaseband,
-    ClassEnableMac,
-    ClassReleaseTxRxOff,
-    ClassEnableHardwareFrequency,
+    TxDisableHardwareFrequency,
+    TxSoftwareFrequencySettle,
+    TxForceTxRxOff,
+    TxForceDigitalGain,
+    TxReleaseDigitalGain,
+    TxClearPbus,
+    TxDisableBaseband,
+    TxConfigureBasebandZero,
+    TxCalibrateTxDcPwdet,
+    TxPublishTxGain,
+    TxRestoreBaseband,
+    TxEnableMac,
+    TxReleaseTxRxOff,
+    TxEnableHardwareFrequency,
     RestoreTxGainCompensation,
     Complete,
     Failed,
 }
 
-/// Finite parent for the reviewed baseline's class-oriented calibration graph.
-/// Temperature references are independently owned; this is not equivalence
-/// to newer vendor parents that calibrate both active classes in one call.
+/// Finite RX/TX parent for the current three-argument vendor child.
+/// The shared TX reference advances once after all requested classes restore.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingTransition {
+    scope: Scope,
     request: PhyCalibrationTrackingRequest,
     parameters: PhyCalibrationTrackingParameters,
     threshold: u8,
     common_updated: bool,
-    class_updated: bool,
+    transmit_updated: bool,
+    active_class: PhyCalibrationTrackClass,
     dcode: Option<crate::analog::dcode::PhyDcodeOutcome>,
     rx_gain: Option<crate::rx::gain::PhyRxGainInitOutcome>,
     channel: Option<crate::channel::PhyChipChannelOutcome>,
-    tx_dc_pwdet: Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>,
+    tx_dc_pwdet: [Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>; 2],
     failure: Option<PhyCalibrationTrackingFailure>,
     step: Step,
 }
@@ -292,25 +309,39 @@ impl PhyCalibrationTrackingTransition {
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,
     ) -> Self {
-        let decision = parameters.decision(request);
+        Self::selected(request, parameters, Scope::Both)
+    }
+
+    pub(crate) const fn selected(
+        request: PhyCalibrationTrackingRequest,
+        parameters: PhyCalibrationTrackingParameters,
+        scope: Scope,
+    ) -> Self {
+        let decision = parameters.decision();
         let threshold = decision.common.threshold;
-        let step = if decision.common.is_due() {
+        let step = if !matches!(scope, Scope::Transmit) && decision.common.is_due() {
             Step::CommonClearPbus
-        } else if decision.transmit.is_due() {
-            Step::ClassDisableHardwareFrequency
+        } else if !matches!(scope, Scope::Common) && decision.transmit.is_due() {
+            Step::TxDisableHardwareFrequency
         } else {
             Step::Complete
         };
         Self {
+            scope,
             request,
             parameters,
             threshold,
             common_updated: false,
-            class_updated: false,
+            transmit_updated: false,
+            active_class: if request.clients.wifi() {
+                PhyCalibrationTrackClass::Wifi
+            } else {
+                PhyCalibrationTrackClass::BluetoothIeee802154
+            },
             dcode: None,
             rx_gain: None,
             channel: None,
-            tx_dc_pwdet: None,
+            tx_dc_pwdet: [None; 2],
             failure: None,
             step,
         }
@@ -318,36 +349,39 @@ impl PhyCalibrationTrackingTransition {
 
     pub const fn action(self) -> PhyCalibrationTrackingAction {
         match self.step {
-            Step::CommonClearPbus | Step::ClassClearPbus => PhyCalibrationTrackingAction::ClearPbus,
+            Step::CommonClearPbus | Step::TxClearPbus => PhyCalibrationTrackingAction::ClearPbus,
+            Step::CommonDisableBaseband | Step::TxDisableBaseband => {
+                PhyCalibrationTrackingAction::DisableWifiBaseband
+            }
             Step::CommonDcode => PhyCalibrationTrackingAction::CalibrateDcode,
             Step::CommonRecalibrateRxGain => PhyCalibrationTrackingAction::RecalibrateRxGain,
             Step::CommonRestoreChannel => PhyCalibrationTrackingAction::RestoreChipChannel {
                 channel: self.parameters.current_channel,
                 cbw: self.parameters.channel_bandwidth,
             },
-            Step::CommonEnableMac | Step::ClassEnableMac => {
+            Step::CommonEnableMac | Step::TxEnableMac => {
                 PhyCalibrationTrackingAction::EnableMacBaseband
             }
-            Step::ClassDisableHardwareFrequency => {
+            Step::TxDisableHardwareFrequency => {
                 PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
             }
-            Step::ClassSoftwareFrequencySettle => {
+            Step::TxSoftwareFrequencySettle => {
                 PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle
             }
-            Step::ClassForceDigitalGain => {
+            Step::TxForceDigitalGain => {
                 PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: true }
             }
-            Step::ClassReleaseDigitalGain => {
+            Step::TxReleaseDigitalGain => {
                 PhyCalibrationTrackingAction::SetForcedDigitalGain { enabled: false }
             }
-            Step::ClassForceTxRxOff => PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
-            Step::ClassConfigureBasebandZero => {
+            Step::TxForceTxRxOff => PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
+            Step::TxConfigureBasebandZero => {
                 PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0 }
             }
-            Step::ClassCalibrateTxDcPwdet => PhyCalibrationTrackingAction::CalibrateTxDcPwdet {
-                class: self.request.class,
+            Step::TxCalibrateTxDcPwdet => PhyCalibrationTrackingAction::CalibrateTxDcPwdet {
+                class: self.active_class,
             },
-            Step::ClassPublishTxGain => match self.request.class {
+            Step::TxPublishTxGain => match self.active_class {
                 PhyCalibrationTrackClass::Wifi => PhyCalibrationTrackingAction::PublishWifiTxGain {
                     channel: self.parameters.current_channel,
                 },
@@ -355,13 +389,11 @@ impl PhyCalibrationTrackingTransition {
                     PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain
                 }
             },
-            Step::ClassRestoreBaseband => PhyCalibrationTrackingAction::ConfigureBasebandChannel {
+            Step::TxRestoreBaseband => PhyCalibrationTrackingAction::ConfigureBasebandChannel {
                 cbw: self.parameters.channel_bandwidth,
             },
-            Step::ClassReleaseTxRxOff => {
-                PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false }
-            }
-            Step::ClassEnableHardwareFrequency => {
+            Step::TxReleaseTxRxOff => PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false },
+            Step::TxEnableHardwareFrequency => {
                 PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true }
             }
             Step::CommonRestoreTxGainCompensation | Step::RestoreTxGainCompensation => {
@@ -381,6 +413,13 @@ impl PhyCalibrationTrackingTransition {
     ) -> Result<(), PhyCalibrationTrackingTransitionError> {
         self.step = match (self.step, completion) {
             (
+                Step::CommonDisableBaseband,
+                PhyCalibrationTrackingCompletion::WifiBasebandDisabled,
+            ) => Step::CommonRecalibrateRxGain,
+            (Step::TxDisableBaseband, PhyCalibrationTrackingCompletion::WifiBasebandDisabled) => {
+                Step::TxConfigureBasebandZero
+            }
+            (
                 Step::CommonClearPbus,
                 PhyCalibrationTrackingCompletion::PbusClearCompleted(completion),
             ) => match completion.outcome {
@@ -396,7 +435,7 @@ impl PhyCalibrationTrackingTransition {
                 match completion.result {
                     Ok(outcome) => {
                         self.dcode = Some(outcome);
-                        Step::CommonRecalibrateRxGain
+                        Step::CommonDisableBaseband
                     }
                     Err(failure) => {
                         self.failure = Some(PhyCalibrationTrackingFailure::Dcode(failure));
@@ -443,87 +482,98 @@ impl PhyCalibrationTrackingTransition {
                 PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
             ) => {
                 self.common_updated = true;
-                self.first_class_step()
+                self.first_transmit_step()
             }
             (
-                Step::ClassDisableHardwareFrequency,
+                Step::TxDisableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
-            ) => Step::ClassSoftwareFrequencySettle,
+            ) => Step::TxSoftwareFrequencySettle,
             (
-                Step::ClassSoftwareFrequencySettle,
+                Step::TxSoftwareFrequencySettle,
                 PhyCalibrationTrackingCompletion::SoftwareFrequencySettled,
-            ) => Step::ClassForceTxRxOff,
+            ) => Step::TxForceTxRxOff,
             (
-                Step::ClassForceTxRxOff,
+                Step::TxForceTxRxOff,
                 PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
-            ) if completion.enabled => Step::ClassForceDigitalGain,
+            ) if completion.enabled => Step::TxForceDigitalGain,
             (
-                Step::ClassForceDigitalGain,
+                Step::TxForceDigitalGain,
                 PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: true },
-            ) => Step::ClassClearPbus,
+            ) => Step::TxClearPbus,
             (
-                Step::ClassReleaseDigitalGain,
+                Step::TxReleaseDigitalGain,
                 PhyCalibrationTrackingCompletion::ForcedDigitalGainSet { enabled: false },
-            ) => Step::ClassReleaseTxRxOff,
+            ) => Step::TxReleaseTxRxOff,
             (
-                Step::ClassClearPbus,
+                Step::TxClearPbus,
                 PhyCalibrationTrackingCompletion::PbusClearCompleted(completion),
             ) => match completion.outcome {
-                crate::analog::pbus::PhyPbusClearOutcome::Cleared => {
-                    Step::ClassConfigureBasebandZero
-                }
+                crate::analog::pbus::PhyPbusClearOutcome::Cleared => Step::TxDisableBaseband,
                 crate::analog::pbus::PhyPbusClearOutcome::ForceTestTimedOut(transaction) => {
                     self.failure = Some(PhyCalibrationTrackingFailure::PbusClearTimedOut(
                         transaction,
                     ));
-                    Step::ClassReleaseDigitalGain
+                    Step::TxReleaseDigitalGain
                 }
             },
             (
-                Step::ClassConfigureBasebandZero,
+                Step::TxConfigureBasebandZero,
                 PhyCalibrationTrackingCompletion::BasebandChannelConfigured { cbw: 0 },
-            ) => Step::ClassCalibrateTxDcPwdet,
+            ) => {
+                if self.request.clients.wifi() || self.request.clients.bluetooth_ieee802154() {
+                    Step::TxCalibrateTxDcPwdet
+                } else {
+                    Step::TxRestoreBaseband
+                }
+            }
             (
-                Step::ClassCalibrateTxDcPwdet,
+                Step::TxCalibrateTxDcPwdet,
                 PhyCalibrationTrackingCompletion::TxDcPwdetCalibrated(completion),
-            ) if completion.class == self.request.class => match completion.result {
+            ) if completion.class == self.active_class => match completion.result {
                 Ok(outcome) => {
-                    self.tx_dc_pwdet = Some(outcome);
-                    Step::ClassPublishTxGain
+                    self.tx_dc_pwdet[self.active_class.selector() as usize] = Some(outcome);
+                    Step::TxPublishTxGain
                 }
                 Err(failure) => {
                     self.failure = Some(PhyCalibrationTrackingFailure::TxDcPwdet(failure));
-                    Step::ClassReleaseDigitalGain
+                    Step::TxReleaseDigitalGain
                 }
             },
             (
-                Step::ClassPublishTxGain,
+                Step::TxPublishTxGain,
                 PhyCalibrationTrackingCompletion::TxGainPublished(completion),
-            ) if completion.class == self.request.class
+            ) if completion.class == self.active_class
                 && completion.channel
-                    == match self.request.class {
+                    == match self.active_class {
                         PhyCalibrationTrackClass::Wifi => Some(self.parameters.current_channel),
                         PhyCalibrationTrackClass::BluetoothIeee802154 => None,
                     } =>
             {
-                Step::ClassRestoreBaseband
+                if self.active_class == PhyCalibrationTrackClass::Wifi
+                    && self.request.clients.bluetooth_ieee802154()
+                {
+                    self.active_class = PhyCalibrationTrackClass::BluetoothIeee802154;
+                    Step::TxCalibrateTxDcPwdet
+                } else {
+                    Step::TxRestoreBaseband
+                }
             }
             (
-                Step::ClassRestoreBaseband,
+                Step::TxRestoreBaseband,
                 PhyCalibrationTrackingCompletion::BasebandChannelConfigured { cbw },
-            ) if cbw == self.parameters.channel_bandwidth => Step::ClassEnableMac,
-            (Step::ClassEnableMac, PhyCalibrationTrackingCompletion::MacBasebandEnabled) => {
-                Step::ClassReleaseDigitalGain
+            ) if cbw == self.parameters.channel_bandwidth => Step::TxEnableMac,
+            (Step::TxEnableMac, PhyCalibrationTrackingCompletion::MacBasebandEnabled) => {
+                Step::TxReleaseDigitalGain
             }
             (
-                Step::ClassReleaseTxRxOff,
+                Step::TxReleaseTxRxOff,
                 PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
-            ) if !completion.enabled => Step::ClassEnableHardwareFrequency,
+            ) if !completion.enabled => Step::TxEnableHardwareFrequency,
             (
-                Step::ClassEnableHardwareFrequency,
+                Step::TxEnableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: true },
             ) => {
-                self.class_updated = self.failure.is_none();
+                self.transmit_updated = self.failure.is_none();
                 Step::RestoreTxGainCompensation
             }
             (
@@ -613,15 +663,15 @@ impl PhyCalibrationTrackingTransition {
         &self,
         state: &crate::state::PhyState,
     ) -> Result<PhyCalibrationTxGainBinding, PhyCalibrationTrackingChildError> {
-        let Some(tx_dc_pwdet) = self.tx_dc_pwdet else {
+        let Some(tx_dc_pwdet) = self.tx_dc_pwdet[self.active_class.selector() as usize] else {
             return Err(PhyCalibrationTrackingChildError::IncompleteChildOutcome);
         };
         PhyCalibrationTxGainBinding::lower(self.action(), state, tx_dc_pwdet)
     }
 
-    const fn first_class_step(self) -> Step {
-        if self.parameters.decision(self.request).transmit.is_due() {
-            Step::ClassDisableHardwareFrequency
+    const fn first_transmit_step(self) -> Step {
+        if !matches!(self.scope, Scope::Common) && self.parameters.decision().transmit.is_due() {
+            Step::TxDisableHardwareFrequency
         } else {
             Step::Complete
         }
@@ -630,31 +680,20 @@ impl PhyCalibrationTrackingTransition {
     const fn outcome(self) -> PhyCalibrationTrackingOutcome {
         let current = self.parameters.current_temperature;
         PhyCalibrationTrackingOutcome {
-            class: self.request.class,
+            clients: self.request.clients,
             threshold: self.threshold,
             common_reference_temperature: if self.common_updated {
                 current
             } else {
                 self.parameters.common_reference_temperature
             },
-            wifi_reference_temperature: if self.class_updated
-                && matches!(self.request.class, PhyCalibrationTrackClass::Wifi)
-            {
+            transmit_reference_temperature: if self.transmit_updated {
                 current
             } else {
-                self.parameters.wifi_reference_temperature
-            },
-            bluetooth_ieee802154_reference_temperature: if self.class_updated
-                && matches!(
-                    self.request.class,
-                    PhyCalibrationTrackClass::BluetoothIeee802154
-                ) {
-                current
-            } else {
-                self.parameters.bluetooth_ieee802154_reference_temperature
+                self.parameters.transmit_reference_temperature
             },
             common_updated: self.common_updated,
-            class_updated: self.class_updated,
+            transmit_updated: self.transmit_updated,
             dcode: if self.common_updated {
                 self.dcode
             } else {
@@ -670,8 +709,13 @@ impl PhyCalibrationTrackingTransition {
             } else {
                 None
             },
-            tx_dc_pwdet: if self.class_updated {
-                self.tx_dc_pwdet
+            wifi_tx_dc_pwdet: if self.transmit_updated {
+                self.tx_dc_pwdet[0]
+            } else {
+                None
+            },
+            bluetooth_ieee802154_tx_dc_pwdet: if self.transmit_updated {
+                self.tx_dc_pwdet[1]
             } else {
                 None
             },
@@ -812,6 +856,16 @@ impl PhyCalibrationTxGainBinding {
 }
 
 impl PhyCalibrationTxDcPwdetTransition {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn transition_mut(
+        &mut self,
+    ) -> &mut crate::tx::dc_power_detector::PhyTxDcPwdetTransition {
+        match &mut self.child {
+            PhyCalibrationTxDcPwdetChild::Wifi(child) => child,
+            PhyCalibrationTxDcPwdetChild::BluetoothIeee802154(child) => child.transition_mut(),
+        }
+    }
+
     fn lower(
         parent_action: PhyCalibrationTrackingAction,
         wifi_parameters: crate::tx::dc_power_detector::PhyTxDcPwdetParameters,
@@ -937,6 +991,11 @@ impl PhyCalibrationChannelTransition {
 }
 
 impl PhyCalibrationRxGainTransition {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn transition_mut(&mut self) -> &mut crate::rx::gain::PhyRxGainInitTransition {
+        &mut self.child
+    }
+
     fn lower(
         parent_action: PhyCalibrationTrackingAction,
         parameters: crate::rx::gain::PhyRxGainInitParameters,
@@ -1226,22 +1285,30 @@ impl PhyCalibrationTrackingRegisterBinding {
     }
 }
 
-/// Non-cloneable owner of the route-PAC `phy_mac_enable_bb` edge.
+/// Non-cloneable owner of a route-PAC baseband edge: disable Wi-Fi before
+/// measurement, or execute the complete `phy_mac_enable_bb` restoration.
 #[derive(Debug, Eq, PartialEq)]
-pub struct PhyCalibrationTrackingMacBasebandBinding;
+pub struct PhyCalibrationTrackingMacBasebandBinding {
+    enabled: bool,
+}
 
 impl PhyCalibrationTrackingMacBasebandBinding {
     pub const fn new(
         action: PhyCalibrationTrackingAction,
     ) -> Result<Self, PhyCalibrationTrackingBindingError> {
         match action {
-            PhyCalibrationTrackingAction::EnableMacBaseband => Ok(Self),
+            PhyCalibrationTrackingAction::EnableMacBaseband => Ok(Self { enabled: true }),
+            PhyCalibrationTrackingAction::DisableWifiBaseband => Ok(Self { enabled: false }),
             _ => Err(PhyCalibrationTrackingBindingError::UnsupportedAction),
         }
     }
 
     pub const fn action(&self) -> PhyCalibrationTrackingAction {
-        PhyCalibrationTrackingAction::EnableMacBaseband
+        if self.enabled {
+            PhyCalibrationTrackingAction::EnableMacBaseband
+        } else {
+            PhyCalibrationTrackingAction::DisableWifiBaseband
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1249,8 +1316,15 @@ impl PhyCalibrationTrackingMacBasebandBinding {
         self,
         registers: &mut R,
     ) -> PhyCalibrationTrackingCompletion {
-        oer_esp32s31_hal::phy::frequency::enable_mac_baseband(registers);
-        PhyCalibrationTrackingCompletion::MacBasebandEnabled
+        if self.enabled {
+            oer_esp32s31_hal::phy::frequency::enable_mac_baseband(registers);
+            PhyCalibrationTrackingCompletion::MacBasebandEnabled
+        } else {
+            // Current b88e4b76 phy_cal_param_track clears Wi-Fi enable after
+            // DCODE (RX) or PBus clear (TX), before the measurement children.
+            oer_esp32s31_hal::phy::frequency::set_wifi_enabled(registers, false);
+            PhyCalibrationTrackingCompletion::WifiBasebandDisabled
+        }
     }
 }
 
@@ -1274,7 +1348,8 @@ impl PhyCalibrationTrackingExternalBinding {
                     Err(error) => Err(error),
                 }
             }
-            PhyCalibrationTrackingAction::EnableMacBaseband => {
+            PhyCalibrationTrackingAction::EnableMacBaseband
+            | PhyCalibrationTrackingAction::DisableWifiBaseband => {
                 match PhyCalibrationTrackingMacBasebandBinding::new(action) {
                     Ok(binding) => Ok(Self::MacBaseband(binding)),
                     Err(error) => Err(error),

@@ -144,7 +144,20 @@ pub(super) async fn round_trip(
         }
     };
     let mut clock = EmbassyPhyClock;
-    let tracking = if operation != PauseOperation::Access {
+    if let PauseOperation::Synthetic {
+        duration_micros, ..
+    } = operation
+    {
+        // A bounded experimental hold starts only after physical admission.
+        // The timer controls duration, never substitutes for readiness.
+        let deadline = embassy_time::Instant::now()
+            + embassy_time::Duration::from_micros(u64::from(duration_micros));
+        embassy_time::Timer::at(deadline).await;
+    }
+    let tracking = if !matches!(
+        operation,
+        PauseOperation::Access | PauseOperation::Synthetic { .. }
+    ) {
         let request = match operation {
             PauseOperation::ObservedOperation {
                 operation,
@@ -172,7 +185,9 @@ pub(super) async fn round_trip(
             PauseOperation::TxCalibration => {
                 oer_esp32s31_phy::WifiPhyMaintenanceRequest::CalibrateTransmit
             }
-            PauseOperation::Rfpll => oer_esp32s31_phy::WifiPhyMaintenanceRequest::MeasureRfpll,
+            PauseOperation::Rfpll { maximum_age_micros } => {
+                oer_esp32s31_phy::WifiPhyMaintenanceRequest::MeasureRfpll { maximum_age_micros }
+            }
             PauseOperation::Calibration => oer_esp32s31_phy::WifiPhyMaintenanceRequest::Calibrate,
             _ => oer_esp32s31_phy::WifiPhyMaintenanceRequest::Track,
         };

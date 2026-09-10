@@ -1,6 +1,6 @@
 schema = 4
 id = "diagnostic-station-phy-rfpll"
-description = "One measured RFPLL correction within a preserved station epoch during UDP delivery"
+description = "Fresh temperature acquisition followed by measured RFPLL correction within one station epoch during UDP delivery"
 repetitions = 1
 image = "correctness"
 isolation = "reset"

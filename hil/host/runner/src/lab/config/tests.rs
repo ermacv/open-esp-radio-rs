@@ -145,3 +145,29 @@ fn physical_identity_is_stable_and_path_safe() {
     assert!(validate_identifier("lab.id", "Berlin/S31").is_err());
     assert!(validate_identifier("device.id", "").is_err());
 }
+
+#[test]
+fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
+    use std::io::Write;
+    let mut raw: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    raw.as_table_mut().unwrap().insert(
+        "air_observer".into(),
+        toml::from_str("ssh_target='lab-observer'\nphy='phy0'\ninterface='observe0'\n").unwrap(),
+    );
+    for invalid in [false, true] {
+        let mut candidate = raw.clone();
+        if invalid {
+            candidate["air_observer"]["phy"] = toml::Value::String("phy0; false".into());
+        }
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
+            .unwrap();
+        assert_eq!(LabConfig::load(file.path()).is_ok(), !invalid);
+    }
+    raw["station_fixture"] = toml::from_str("kind='external'\nphys=['ht40']\n").unwrap();
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(toml::to_string(&raw).unwrap().as_bytes())
+        .unwrap();
+    assert!(LabConfig::load(file.path()).is_err());
+}

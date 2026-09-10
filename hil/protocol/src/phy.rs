@@ -98,6 +98,38 @@ impl PhyTimingEvidence {
     }
 }
 
+/// Disjoint executor stages nested in RX gain, sent before pause completion.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PhyRxGainEvidence {
+    pub prepare: PhyOperationTiming,
+    pub dc: PhyOperationTiming,
+    pub publish: PhyOperationTiming,
+    pub control: PhyOperationTiming,
+    pub advance: PhyOperationTiming,
+}
+impl PhyRxGainEvidence {
+    pub fn fits(self, operation: PhyOperationTiming) -> bool {
+        let details = [
+            self.prepare,
+            self.dc,
+            self.publish,
+            self.control,
+            self.advance,
+        ];
+        details.iter().all(|entry| {
+            entry.started == entry.completed
+                && entry.failed == 0
+                && entry.maximum_micros <= entry.elapsed_micros
+                && entry.maximum_micros <= operation.maximum_micros
+                && (entry.started != 0 || *entry == PhyOperationTiming::default())
+                && (operation.started != 0 || *entry == PhyOperationTiming::default())
+        }) && details
+            .iter()
+            .try_fold(0u32, |sum, entry| sum.checked_add(entry.elapsed_micros))
+            .is_some_and(|total| total <= operation.elapsed_micros)
+    }
+}
+
 #[cfg(test)]
 mod tests;
 

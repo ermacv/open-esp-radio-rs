@@ -6,26 +6,28 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "rx-delivery-telemetry")]
+#[cfg(feature = "driver-observation")]
 use core::cell::RefCell;
 
 use core::sync::atomic::AtomicU32;
 #[cfg(feature = "driver-observation")]
 use core::sync::atomic::Ordering;
 
-#[cfg(feature = "rx-delivery-telemetry")]
+#[cfg(feature = "driver-observation")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "driver-observation")]
 use oer_esp32s31_embassy_wifi::{
     ConnectedRxObservation, ConnectedRxObserver, ReceiveEvidence, RxObservedEthernetFrame,
 };
-#[cfg(feature = "rx-delivery-telemetry")]
+#[cfg(feature = "driver-observation")]
 use oer_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 
 #[cfg(feature = "rx-delivery-telemetry")]
-use oer_network::{FrameLengthError, RxEnqueueError};
+use oer_network::FrameLengthError;
+#[cfg(feature = "driver-observation")]
+use oer_network::RxEnqueueError;
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
     RxAmpduCounters, RxPhyCounters, RxSmpduCounters,
 };
@@ -41,6 +43,143 @@ static RX_DELIVERY: Mutex<CriticalSectionRawMutex, RefCell<Option<RxDeliveryTrac
     Mutex::new(RefCell::new(None));
 pub(crate) static LAST_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
 pub(crate) static LAST_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
+
+#[cfg(feature = "driver-observation")]
+static ANOMALIES: Mutex<
+    CriticalSectionRawMutex,
+    RefCell<open_esp_radio_hil_esp32s31_telemetry::rx_anomaly::Records<8>>,
+> = Mutex::new(RefCell::new(
+    open_esp_radio_hil_esp32s31_telemetry::rx_anomaly::Records::new(),
+));
+#[cfg(feature = "driver-observation")]
+pub(crate) static MAINTENANCE_PHASE: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "driver-observation")]
+pub(crate) fn begin_anomalies(session: u64) {
+    ANOMALIES.lock(|r| r.borrow_mut().begin(session));
+    ARP.lock(|r| r.borrow_mut().begin(session));
+    MAINTENANCE_PHASE.store(0, Ordering::Relaxed);
+}
+#[cfg(feature = "driver-observation")]
+pub(crate) fn end_anomalies(session: u64) -> (Option<u32>, Option<u32>) {
+    (
+        ARP.lock(|r| r.borrow_mut().end(session)),
+        ANOMALIES.lock(|r| r.borrow_mut().end(session)),
+    )
+}
+
+#[cfg(feature = "driver-observation")]
+pub(crate) async fn report_anomalies(session: u64, totals: (Option<u32>, Option<u32>)) {
+    use crate::console::runtime_log_reliably;
+    #[cfg(feature = "rx-delivery-telemetry")]
+    {
+        use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::FORWARD_GAP_SAMPLE_CAPACITY;
+        let count = RX_DELIVERY.lock(|r| {
+            r.borrow()
+                .as_ref()
+                .and_then(|r| r.completed_gap_samples(session).map(|(count, _)| count))
+        });
+        if let Some(count) = count {
+            runtime_log_reliably(format_args!(
+                "ORX_GAPS session={} correlated={} capacity={}",
+                session, count, FORWARD_GAP_SAMPLE_CAPACITY
+            ))
+            .await;
+            for index in 0..FORWARD_GAP_SAMPLE_CAPACITY {
+                let sample = RX_DELIVERY.lock(|r| {
+                    r.borrow().as_ref().and_then(|r| {
+                        r.completed_gap_samples(session)
+                            .and_then(|(_, samples)| samples[index])
+                    })
+                });
+                if let Some(sample) = sample {
+                    runtime_log_reliably(format_args!(
+                        "ORX_GAP session={} index={} {:?}",
+                        session, index, sample
+                    ))
+                    .await;
+                }
+            }
+        }
+    }
+    if let Some(total) = totals.0 {
+        runtime_log_reliably(format_args!(
+            "ORX_ARP_SUMMARY session={} total={} capacity=32",
+            session, total
+        ))
+        .await;
+        for index in 0..32 {
+            let sample = ARP.lock(|r| r.borrow().samples[index]);
+            if let Some(sample) = sample {
+                runtime_log_reliably(format_args!(
+                    "ORX_ARP session={} index={} {:?}",
+                    session, index, sample
+                ))
+                .await;
+            }
+        }
+    }
+    if let Some(total) = totals.1 {
+        runtime_log_reliably(format_args!(
+            "ORX_ANOMALIES session={} total={} capacity=8",
+            session, total
+        ))
+        .await;
+        for index in 0..8 {
+            let sample = ANOMALIES.lock(|r| r.borrow().samples[index]);
+            if let Some(sample) = sample {
+                runtime_log_reliably(format_args!(
+                    "ORX_ANOMALY session={} index={} {:?}",
+                    session, index, sample
+                ))
+                .await;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "driver-observation")]
+static ARP: Mutex<
+    CriticalSectionRawMutex,
+    RefCell<open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Records>,
+> = Mutex::new(RefCell::new(
+    open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Records::new(),
+));
+#[cfg(feature = "driver-observation")]
+fn observe_arp(
+    frame: RxObservedEthernetFrame<'_>,
+    stage: open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage,
+) {
+    use open_esp_radio_hil_esp32s31_telemetry::arp_frontier::{Identity, Sample};
+    if let Some(identity) = Identity::parse(frame.ether_type, frame.payload) {
+        let sample = Sample {
+            at_us: embassy_time::Instant::now().as_micros(),
+            stage,
+            identity,
+            ethernet_destination: frame.destination,
+        };
+        ARP.lock(|r| r.borrow_mut().observe(sample));
+    }
+}
+
+/// Observe a borrowed Ethernet packet at the original stack's driver boundary.
+#[cfg(all(feature = "driver-observation", feature = "upstream-network"))]
+pub(crate) fn observe_stack_arp(
+    packet: &[u8],
+    stage: open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage,
+) {
+    if packet.len() < 14 || packet[12..14] != [8, 6] {
+        return;
+    }
+    observe_arp(
+        RxObservedEthernetFrame {
+            destination: packet[..6].try_into().expect("checked Ethernet header"),
+            source: packet[6..12].try_into().expect("checked Ethernet header"),
+            ether_type: 0x0806,
+            payload: &packet[14..],
+        },
+        stage,
+    );
+}
 
 #[cfg(feature = "driver-observation")]
 pub(crate) struct HilConnectedRxObserver {
@@ -103,6 +242,7 @@ impl ConnectedRxObserver for HilConnectedRxObserver {
             }
             ConnectedRxObservation::Ethernet {
                 frame,
+                qos_sequence,
                 s_mpdu,
                 ampdu,
                 phy,
@@ -138,52 +278,95 @@ impl ConnectedRxObserver for HilConnectedRxObserver {
                         RX_PHY.observe_he_mcs(signal.mcs);
                     } else {
                         RX_PHY.observe_other();
+                        let sample = open_esp_radio_hil_esp32s31_telemetry::rx_anomaly::Sample {
+                            observed_us: embassy_time::Instant::now().as_micros(),
+                            phase: MAINTENANCE_PHASE.load(Ordering::Relaxed),
+                            udp_sequence: ipv4_udp_sequence(frame, self.udp_port),
+                            ip_bytes: frame.payload.len(),
+                            qos: qos_sequence.map(|q| (q.tid, q.sequence)),
+                            format: phy.baseband_format,
+                            rate: phy.rate,
+                            signal_words: phy.signal_words,
+                            ampdu: match ampdu {
+                                ReceiveEvidence::Unavailable => 0,
+                                ReceiveEvidence::Hardware(false) => 1,
+                                ReceiveEvidence::Hardware(true) => 2,
+                                ReceiveEvidence::Protocol(false) => 3,
+                                ReceiveEvidence::Protocol(true) => 4,
+                            },
+                        };
+                        ANOMALIES.lock(|r| r.borrow_mut().observe(sample));
                     }
                     LAST_PHY.store(packed, Ordering::Relaxed);
                 }
+            }
+            ConnectedRxObservation::Ethernet { frame, .. } if frame.ether_type == 0x0806 => {
+                observe_arp(
+                    frame,
+                    open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage::Radio,
+                );
             }
             _ => {}
         }
     }
 }
 
-#[cfg(feature = "rx-delivery-telemetry")]
+#[cfg(feature = "driver-observation")]
 impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
     fn admitted(&self, event: RxNetworkDeliveryEvent<'_>) {
-        let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
-            return;
-        };
-        RX_DELIVERY.lock(|tracker| {
-            if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.admitted(
-                    sequence,
-                    event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
-                );
-            }
-        });
+        observe_arp(
+            event.frame,
+            open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage::Admitted,
+        );
+        #[cfg(feature = "rx-delivery-telemetry")]
+        {
+            let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
+                return;
+            };
+            RX_DELIVERY.lock(|tracker| {
+                if let Some(tracker) = tracker.borrow_mut().as_mut() {
+                    tracker.admitted(
+                        sequence,
+                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                    );
+                }
+            });
+        }
     }
-
     fn dropped(&self, event: RxNetworkDeliveryEvent<'_>, error: RxEnqueueError) {
-        let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
-            return;
-        };
-        let reason = match error {
-            RxEnqueueError::QueueFull => NetworkDropReason::QueueFull,
-            RxEnqueueError::PoolExhausted => NetworkDropReason::PoolExhausted,
-            RxEnqueueError::LinkDown => NetworkDropReason::LinkDown,
-            RxEnqueueError::InvalidLength(
-                FrameLengthError::TooShort | FrameLengthError::TooLong,
-            ) => NetworkDropReason::InvalidLength,
-        };
-        RX_DELIVERY.lock(|tracker| {
-            if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.dropped(
-                    sequence,
-                    event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
-                    reason,
-                );
-            }
-        });
+        use open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage;
+        observe_arp(
+            event.frame,
+            match error {
+                RxEnqueueError::QueueFull => Stage::QueueFull,
+                RxEnqueueError::PoolExhausted => Stage::PoolExhausted,
+                RxEnqueueError::LinkDown => Stage::LinkDown,
+                RxEnqueueError::InvalidLength(_) => Stage::InvalidLength,
+            },
+        );
+        #[cfg(feature = "rx-delivery-telemetry")]
+        {
+            let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
+                return;
+            };
+            let reason = match error {
+                RxEnqueueError::QueueFull => NetworkDropReason::QueueFull,
+                RxEnqueueError::PoolExhausted => NetworkDropReason::PoolExhausted,
+                RxEnqueueError::LinkDown => NetworkDropReason::LinkDown,
+                RxEnqueueError::InvalidLength(
+                    FrameLengthError::TooShort | FrameLengthError::TooLong,
+                ) => NetworkDropReason::InvalidLength,
+            };
+            RX_DELIVERY.lock(|tracker| {
+                if let Some(tracker) = tracker.borrow_mut().as_mut() {
+                    tracker.dropped(
+                        sequence,
+                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                        reason,
+                    );
+                }
+            });
+        }
     }
 }
 
@@ -206,7 +389,7 @@ fn ipv4_udp_destination_port(frame: RxObservedEthernetFrame<'_>) -> Option<u16> 
     ]))
 }
 
-#[cfg(feature = "rx-delivery-telemetry")]
+#[cfg(feature = "driver-observation")]
 fn ipv4_udp_sequence(frame: RxObservedEthernetFrame<'_>, destination_port: u16) -> Option<i32> {
     if ipv4_udp_destination_port(frame) != Some(destination_port) {
         return None;

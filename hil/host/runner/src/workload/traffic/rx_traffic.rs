@@ -36,6 +36,8 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
+    pub(crate) maximum_rx_silence_ms: Option<u32>,
+    pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
     pub(crate) address: Ipv4Addr,
     pub(crate) port: u16,
     pub(crate) rate_bps: u64,
@@ -94,10 +96,12 @@ pub(crate) fn run(
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(0);
     for probe in 1..=same_boot_probes {
+        let probe_output = output.join(format!("same-boot-probe-{probe}"));
+        std::fs::create_dir_all(&probe_output)?;
         let fixture_capture = RxCapture::start(
             &context.lab.station_fixture,
-            options.address,
-            options.port,
+            std::net::SocketAddrV4::new(options.address, options.port),
+            &probe_output,
             options.duration,
             options.phy,
             evidence_policy.fixture_guard_interval,
@@ -158,12 +162,23 @@ pub(crate) fn run(
     }
     let fixture_capture = RxCapture::start(
         &context.lab.station_fixture,
-        options.address,
-        options.port,
+        std::net::SocketAddrV4::new(options.address, options.port),
+        output,
         options.duration,
         options.phy,
         evidence_policy.fixture_guard_interval,
         options.maximum_idle_channel_utilization_255,
+    )?;
+    let host_wire_capture = if context.lab.air_observer.is_some() {
+        Some(host_route.capture_wire(options.address, output, options.duration)?)
+    } else {
+        None
+    };
+    let remote_air_capture = crate::fixture::openwrt_air_monitor::Capture::start(
+        context.lab,
+        Some(options.address),
+        options.duration,
+        output,
     )?;
     let tx_monitor_capture = if evidence_policy.capture_openwrt_tx_monitor {
         let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
@@ -193,6 +208,10 @@ pub(crate) fn run(
         None
     };
     let duration_millis = u32::try_from(options.duration.as_millis())?;
+    if options.station_pause.is_some() {
+        super::maintenance::require(&capture)?;
+    }
+    let station_cursor = capture.station_lifecycle_cursor();
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -213,13 +232,45 @@ pub(crate) fn run(
         ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
-    let host = send_paced_udp(PacedUdpConfig {
-        address: options.address,
-        port: options.port,
-        rate_bps: options.rate_bps,
-        duration: options.duration,
-        payload: options.payload,
-    })?;
+    let (host_result, pause_result) = if let Some(operation) = options.station_pause {
+        std::thread::scope(|scope| {
+            let sender = scope.spawn(|| {
+                send_paced_udp(PacedUdpConfig {
+                    address: options.address,
+                    port: options.port,
+                    rate_bps: options.rate_bps,
+                    duration: options.duration,
+                    payload: options.payload,
+                })
+            });
+            let pause = (|| {
+                let device_rx = capture.wait_for_udp_rx_started(session, Duration::from_secs(3))?;
+                let host_rx: Option<u64> = None;
+                super::maintenance::run(
+                    &capture,
+                    operation,
+                    output,
+                    serde_json::json!({"device_rx_datagrams": device_rx, "host_rx_datagrams": host_rx}),
+                )
+            })();
+            let host = sender
+                .join()
+                .unwrap_or_else(|_| Err("UDP sender thread panicked".into()));
+            (host, pause)
+        })
+    } else {
+        (
+            send_paced_udp(PacedUdpConfig {
+                address: options.address,
+                port: options.port,
+                rate_bps: options.rate_bps,
+                duration: options.duration,
+                payload: options.payload,
+            }),
+            Ok(()),
+        )
+    };
+    let host = host_result?;
     host_route.verify_socket_source(host.source)?;
     host_route.record(output, options.address, host.source)?;
     let structured = match capture.wait_for_session(
@@ -233,6 +284,18 @@ pub(crate) fn run(
     };
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
+    }
+    if let Err(error) = pause_result {
+        return capture.finish_with(Err(error));
+    }
+    if options.station_pause.is_some() {
+        capture.require_station_unchanged_since(station_cursor)?;
+    }
+    if let Some(wire) = host_wire_capture {
+        wire.finish()?;
+    }
+    if let Some(observer) = remote_air_capture {
+        observer.finish()?;
     }
     let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
     let tx_monitor_rx = tx_monitor_capture
@@ -264,6 +327,7 @@ pub(crate) fn run(
         host.throughput_bps(),
         minimum_bps,
     );
+    super::continuity::require_rx_silence(options.maximum_rx_silence_ms, structured.transport)?;
     if !evidence_policy.require_driver_observation {
         if structured.radio.is_some()
             || structured.tx_timing.is_some()
@@ -777,6 +841,8 @@ fn rx_air_evidence_markdown(
 impl Default for Config {
     fn default() -> Self {
         Self {
+            maximum_rx_silence_ms: None,
+            station_pause: None,
             address: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             rate_bps: DEFAULT_RATE_BPS,

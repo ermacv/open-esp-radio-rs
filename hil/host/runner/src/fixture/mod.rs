@@ -29,3 +29,7 @@ pub(crate) mod local_ap;
 mod wpa_control;
 
 pub(crate) mod probe_load;
+
+pub(crate) mod openwrt_air_monitor;
+
+pub(crate) mod host_wire_capture;

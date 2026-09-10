@@ -2331,6 +2331,8 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                 .await?
             }
             PhyCalibrationTrackingAction::RecalibrateRxGain => {
+                let observer = core::cell::RefCell::new(&mut *self.observer);
+                let observer = &observer;
                 crate::tracking::observation::observe_polls(
                     calibration::rx_gain::<D, _>(
                         transition
@@ -2338,9 +2340,12 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                         self.platform,
                         self.registers,
+                        |operation, event| {
+                            observer.borrow_mut().tracking_operation(operation, event)
+                        },
                     ),
                     |event| {
-                        self.observer.tracking_operation(
+                        observer.borrow_mut().tracking_operation(
                             crate::tracking::observation::Operation::RxGain,
                             event,
                         )

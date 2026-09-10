@@ -45,6 +45,7 @@ impl Producer {
                             sequence: 0,
                         },
                         evidence: FlowTransportEvidence {
+                            rx_maximum_silence_micros: None,
                             flow_id: flow.flow_id,
                             rx_bytes: 0,
                             tx_bytes: 0,
@@ -169,6 +170,7 @@ impl Producer {
     pub fn evidence(self, now: u64) -> [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY] {
         self.flows.map(|flow| {
             flow.map(|flow| FlowTransportEvidence {
+                rx_maximum_silence_micros: None,
                 elapsed_micros: now.saturating_sub(self.started).max(1),
                 ..flow.evidence
             })

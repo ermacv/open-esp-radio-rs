@@ -455,6 +455,7 @@ pub enum ConnectedControlError {
     BeaconDeadline(StaBeaconLossConfigError),
     PowerSaveCompletion(UnexpectedStaPowerManagementCompletion),
     MissingPowerSavePlanner,
+    AbsenceState,
     PowerSaveDeadlineOverflow,
     DozeHardware(StationDozeHardwareError),
     IndividualTwt(IndividualTwtRequesterError),
@@ -561,6 +562,7 @@ pub struct ConnectedControlCore {
     beacon_probe_attempts: u8,
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
+    absence: Option<oer_wifi_sta::absence::Exchange>,
     ps_poll_association_id: Option<StaAssociationId>,
     pending_doze_permit: Option<StaDozePermit>,
     power_save_wake_deadline_micros: Option<u64>,
@@ -584,6 +586,7 @@ impl ConnectedControlCore {
             beacon_probe_attempts: 0,
             beacon_lost: false,
             power_save: None,
+            absence: None,
             ps_poll_association_id: None,
             pending_doze_permit: None,
             power_save_wake_deadline_micros: None,
@@ -605,7 +608,62 @@ impl ConnectedControlCore {
         self.beacon_lost = false;
     }
 
+    /// Begin notification at a drained scheduler boundary. Idle power-save
+    /// policy and maintenance cannot simultaneously own AP-visible PM state.
+    pub fn begin_absence(&mut self) -> bool {
+        if self.absence.is_some() || self.power_save.is_some() || self.in_flight.is_some() {
+            return false;
+        }
+        self.absence = Some(oer_wifi_sta::absence::Exchange::new());
+        true
+    }
+
+    pub fn restore_absence(&mut self) -> bool {
+        self.absence
+            .as_mut()
+            .is_some_and(|exchange| exchange.restore())
+    }
+
+    pub fn absence_admitted(&self) -> bool {
+        self.absence
+            .as_ref()
+            .is_some_and(|exchange| exchange.absent())
+    }
+
+    /// Drive only the PM exchange; the caller continues RX/IRQ service while
+    /// data admission and ordinary control publication remain closed.
+    pub fn service_absence<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError> {
+        use oer_wifi_sta::absence::Action;
+        let exchange = self
+            .absence
+            .as_mut()
+            .ok_or(ConnectedControlError::AbsenceState)?;
+        let outcome = if exchange.awaiting_completion() {
+            Some(
+                tx.take_last_outcome()
+                    .ok_or(ConnectedControlError::MissingTxOutcome)?
+                    .is_success(),
+            )
+        } else {
+            None
+        };
+        match exchange.advance(outcome) {
+            Action::Transmit(mode) => Ok(tx.start_power_management_null(hardware, mode)?),
+            Action::Absent => Ok(DatapathControlProgress::Idle),
+            Action::Restored { .. } => {
+                self.absence = None;
+                Ok(DatapathControlProgress::Idle)
+            }
+            Action::Failed => Err(ConnectedControlError::AbsenceState),
+        }
+    }
+
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
+        assert!(self.absence.is_none(), "maintenance retains PM ownership");
         self.power_save = Some(StaPowerSavePlanner::new(policy));
         self.ps_poll_association_id = None;
         self.pending_doze_permit = None;
@@ -937,6 +995,9 @@ impl ConnectedControlCore {
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
+        if self.absence.is_some() {
+            return Err(ConnectedControlError::AbsenceState);
+        }
         let ConnectedControlPorts {
             hardware,
             tx,

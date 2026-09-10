@@ -119,5 +119,9 @@ reference, with Wi-Fi then BT/154 inside one TX envelope. This does not admit
 joint execution: the observation service still rejects shared-radio use.
 Current RFPLL tracking uses a threshold of 15 sensor units and physical
 admission. Automatic RFPLL enable remains unavailable pending hardware
-qualification and complete child-effect comparison. Individual source-verified
-leaves do not qualify the whole runtime service.
+qualification and service integration. Current child-effect and RFPLL-enabled
+whole-parent comparisons exist; their modeled peripherals do not qualify the
+whole runtime service. A due RFPLL request currently suspends the service before
+power/I2C/calibration selection. Enabling the registered policy therefore also
+requires RFPLL selection, post-admission freshness checks, terminal restoration
+and hardware validation; changing only the policy flag is insufficient.

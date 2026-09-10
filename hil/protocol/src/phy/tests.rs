@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn rx_gain_detail_rejects_orphan_incomplete_and_overlapping_evidence() {
+    let stage = PhyOperationTiming {
+        started: 1,
+        completed: 1,
+        elapsed_micros: 40,
+        maximum_micros: 40,
+        ..Default::default()
+    };
+    let mut evidence = PhyRxGainEvidence {
+        dc: stage,
+        ..Default::default()
+    };
+    assert!(!evidence.fits(PhyOperationTiming::default()));
+    let operation = PhyOperationTiming {
+        elapsed_micros: 100,
+        maximum_micros: 100,
+        ..stage
+    };
+    evidence.advance = stage;
+    assert!(evidence.fits(operation));
+    evidence.publish = stage;
+    assert!(!evidence.fits(operation));
+    evidence.publish = PhyOperationTiming::default();
+    evidence.advance.completed = 0;
+    assert!(!evidence.fits(operation));
+    evidence.advance = PhyOperationTiming {
+        elapsed_micros: u32::MAX,
+        ..stage
+    };
+    assert!(!evidence.fits(operation));
+}
+
+#[test]
 fn successful_timing_requires_polls_within_the_observed_operation() {
     let mut evidence = PhyTimingEvidence::default();
     assert!(evidence.is_complete());

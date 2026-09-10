@@ -441,6 +441,11 @@ DCODE, RX gain and TX DC/PWDET additionally report poll count, time inside polls
 and maximum poll duration. The difference from operation duration includes
 suspension and scheduling; poll intervals include interrupts and observer cost.
 These measurements do not separate hardware delay from executor latency.
+A separate correlated `StationPhyRxGain` message records action preparation,
+DC execution, gain-bank publication, control execution and state advancement.
+These stages are disjoint within RX gain; execution includes nested waits.
+The host requires complete detail within the parent interval. Detail is sent
+only after the maintenance round trip, never as per-action console output.
 `timings: null` means no timing report was available, not zero hardware cost.
 Physical failures return their stage without a timing snapshot; diagnostics-off
 images have no PHY timing observer. See the
@@ -469,7 +474,9 @@ manual router configuration is required. See the
 
 `cargo hil run diagnostic-station-phy-rfpll --network patched-xarxa` requests
 one measured RFPLL correction through the same exclusive station pause. The
-request sets only this operation's thermal threshold to zero; temperature,
+host first completes a separate fresh temperature acquisition. The RFPLL
+request rechecks sample age after admission and sets only this operation's
+thermal threshold to zero; temperature,
 capacitor delta and hardware statuses are not fabricated. It does not enable
 registered periodic RFPLL, advance the periodic evaluation deadline or execute
 power/RXCAL/TXCAL branches. The runner requires exactly one completed RFPLL
@@ -485,7 +492,7 @@ semantic commit, and serialized after the physical round trip unwinds.
 `diagnostic-station-phy-rfpll-check` uses the same image and radio admission but
 retains the ordinary 15-sensor-unit temperature threshold. Its result may be
 skipped; the host verifies the branch and reference update against the reported
-inputs. Both scenarios use the retained sensor sample without refreshing it.
+inputs. This conditional scenario uses the retained sample without refreshing it.
 
 `diagnostic-station-phy-rfpll-observed` first requests a separate temperature
 acquisition during UDP transmission. Only its correlated completion and checked
@@ -499,7 +506,7 @@ in `station-pause.json`; a missing/deferred result fails the scenario.
 RFPLL detail includes `sample_age_micros`, measured from sensor acquisition
 start to RFPLL entry, including acquisition waits and the subsequent handoff.
 `None` means usable acquisition/observation timing is unavailable. The observed
-scenario requires a reported age within its bound. This bound is a diagnostic
+and measured scenarios require a reported age within their bound. This bound is a diagnostic
 freshness policy, not an established safe RF maintenance interval. These
 scenarios do not enable automatic tracking or constitute a physical thermal sweep.
 
@@ -508,3 +515,44 @@ trip after the TX worker returns its paused owner and before the parent resumes
 that worker. It excludes the earlier TX drain/admission wait and subsequent
 worker scheduling. RFPLL timing is nested inside this interval; neither value
 alone measures end-to-end traffic interruption.
+
+Station PHY maintenance workloads support UDP RX, TX and bidirectional traffic.
+`diagnostic-station-phy-calibration-rx` and `-bidirectional` execute the same
+combined calibration request as the TX scenario. RX waits for a session-correlated
+`UdpRxStarted` event after 256 valid datagrams; bidirectional also waits for host
+reception. The paced host sender continues through maintenance and the original
+measurement window is not shortened. `station-pause.json` retains the admission
+milestones and correlated operation evidence. Completion counts establish child
+coverage, not register readback, RF quality or event ordering. Radio restoration
+must preserve the station epoch; transport results retain any delivery loss.
+
+With driver observation enabled, single-flow RX sessions retain the first eight
+legacy/unknown PHY observations as `ORX_ANOMALY`, with UDP sequence (including
+negative terminal markers), IP length, QoS identity when present, copied PHY
+signal words and acquisition time. `ORX_ANOMALIES` reports the total even when
+storage is full. Records are printed after collection, never from the RX hook.
+`ORX_MAINTENANCE` brackets the control request and terminal response; its phase
+is not a claim about the exact MAC/DMA exclusion interval. The baseline,
+access-only, common-calibration, TX-calibration and combined-calibration RX
+scenarios keep a 12-second 65-Mbit/s offer for isolating maintenance effects.
+
+Delivery telemetry retains the first 16 forward UDP gaps with adjacent valid
+QoS identities in the same TID. `ORX_GAP` reports the UDP and MAC sequence pair;
+`ORX_GAPS` reports the correlated count so truncation remains visible. Missing
+or incompatible metadata is not reconstructed. These bounded records survive
+session completion, reset at the next session, and are printed after collection
+outside the RX observer and its critical section. They distinguish UDP gaps
+with continuous MAC numbering from losses of already numbered MPDUs; late
+recovery and the delivery ledger remain separate evidence.
+
+The correctness image also retains up to 32 ARP observations per UDP RX
+session. `ORX_ARP` records decoded Ethernet/IPv4 ARP identity and radio,
+network-admission or explicit rejection edges. With original/patched Xarxa,
+the observer additionally records stack consumption and the result of the
+stack's TX call (`TxAccepted`/`TxRejected`). Acceptance is queue admission, not
+radio completion. `ORX_ARP_SUMMARY` includes the total so a truncated sample set
+is visible. Records are frozen at session end and published through the console
+capacity event after measurements; no USB wait enters packet processing.
+These observations do not generate replies, reserve packet storage or change
+stack backpressure. Pair them with `host-wire.pcapng` to distinguish neighbor
+resolution stalls from radio delivery pauses.

@@ -138,6 +138,9 @@ fn merge_flow_evidence(
     let merged = core::array::from_fn(|index| match (first[index], second[index]) {
         (Some(first), Some(second)) if first.flow_id == second.flow_id => {
             Some(FlowTransportEvidence {
+                rx_maximum_silence_micros: first
+                    .rx_maximum_silence_micros
+                    .or(second.rx_maximum_silence_micros),
                 flow_id: first.flow_id,
                 rx_bytes: first.rx_bytes.saturating_add(second.rx_bytes),
                 tx_bytes: first.tx_bytes.saturating_add(second.tx_bytes),

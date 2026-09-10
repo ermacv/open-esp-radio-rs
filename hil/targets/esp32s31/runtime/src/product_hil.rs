@@ -90,10 +90,9 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_role_failure,
-    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
-    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
-    receive_wifi_control_request, runtime_log, set_wifi_role,
+    complete_station_epoch_cycle, complete_wifi_role_failure, complete_wifi_role_transition,
+    complete_wifi_scan, publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
+    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 use oer_esp32s31_soc::L1CachePerformanceCounters;
@@ -1652,16 +1651,7 @@ pub async fn run(
         },
         aggregate_tx: &AGGREGATE_TX,
         connected_rx: connected_rx_observer,
-        rx_delivery: {
-            #[cfg(feature = "rx-delivery-telemetry")]
-            {
-                Some(connected_rx_observer)
-            }
-            #[cfg(not(feature = "rx-delivery-telemetry"))]
-            {
-                None
-            }
-        },
+        rx_delivery: Some(connected_rx_observer),
         #[cfg(feature = "mac-irq-telemetry")]
         mac_irq: observe_mac_irq,
         station_attempt: observe_station_attempt,

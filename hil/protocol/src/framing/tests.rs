@@ -992,6 +992,13 @@ fn maximum_rx_delivery_evidence_fits_and_round_trips() {
             first_observed: Some(u32::MAX),
         },
         mac_order: RxMacOrderEvidence {
+            first_forward_gap: Some(crate::RxForwardGapEvidence {
+                previous_udp: u32::MAX,
+                current_udp: u32::MAX,
+                tid: u8::MAX,
+                previous_mac: u16::MAX,
+                current_mac: u16::MAX,
+            }),
             backward_mac_backward: u32::MAX,
             backward_mac_same: u32::MAX,
             backward_mac_forward: u32::MAX,
@@ -1208,6 +1215,7 @@ fn maximum_flow_transport_evidence_fits_and_round_trips() {
         9,
         2,
         Event::Evidence(EvidenceRecord::FlowTransport(FlowTransportEvidence {
+            rx_maximum_silence_micros: Some(u64::MAX),
             flow_id: u8::MAX,
             rx_bytes: u64::MAX,
             tx_bytes: u64::MAX,
@@ -1238,6 +1246,7 @@ fn evidence_digest_is_order_and_value_sensitive() {
     use crate::{EvidenceRecord, TransportEvidence};
 
     let first = EvidenceRecord::Transport(TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes: 1_200,
         tx_bytes: 0,
         rx_units: 1,
@@ -1246,6 +1255,7 @@ fn evidence_digest_is_order_and_value_sensitive() {
         transport_errors: 0,
     });
     let second = EvidenceRecord::Transport(TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes: 2_400,
         ..match first {
             EvidenceRecord::Transport(evidence) => evidence,
@@ -1589,4 +1599,35 @@ fn rfpll_detail_fits_frame_and_preserves_full_numeric_range() {
         });
         assert_eq!(observed, Some(expected));
     }
+}
+
+#[test]
+fn maximum_rx_gain_detail_fits_separate_frame_and_round_trips() {
+    let timing = crate::PhyOperationTiming {
+        started: u16::MAX,
+        completed: u16::MAX,
+        failed: u16::MAX,
+        elapsed_micros: u32::MAX,
+        maximum_micros: u32::MAX,
+    };
+    let expected = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::StationPhyRxGain(crate::PhyRxGainEvidence {
+            prepare: timing,
+            dc: timing,
+            publish: timing,
+            control: timing,
+            advance: timing,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
 }

@@ -278,3 +278,62 @@ separate observer device, but its capture still shares its client PHY.
 `cargo hil fixture probe-plan` prints the finite request schedule without
 loading lab configuration, opening interfaces or accessing the ESP. Installing
 the helper or executing the scenario is separate from this offline preview.
+
+A private `[air_observer]` section can attach a second OpenWrt host to station
+UDP RX/bidirectional runs: `ssh_target`, `phy` and `interface` name its SSH
+endpoint, dedicated PHY and temporary monitor interface. The PHY must initially
+have no interfaces; the runner refuses to retune an active AP/client. It locks
+both OpenWrt hosts, verifies distinct boot identities, derives the channel from
+the active AP and checks the observer's actual geometry after tcpdump readiness.
+The monitor and capture are owned until explicit Stop and cleaned up on errors.
+`independent-openwrt-air.pcap` and adjacent JSON record passive air evidence;
+the AP's own TX monitor remains a separate observation boundary. Captures with
+socket drops are retained but fail completeness. Fixture checks exercise setup,
+readiness and teardown without requiring a packet to arrive before immediate
+Stop; real traffic captures require at least one frame. Missing passive frames
+alone cannot establish over-the-air loss, and encrypted payloads require either
+a captured handshake/decryption or correlation with the AP's MAC identities.
+
+Independent OpenWrt air runs also collect `host-wire.pcapng` on the selected
+host route, including ARP and both UDP directions. This observes the host packet
+socket boundary, not a hardware transmit acknowledgement. Capture drop counts
+are retained and checked independently from radio and application drops.
+
+Station UDP RX and bidirectional scenarios can require
+`criteria.maximum_rx_silence_ms`. The gate consumes complete-window typed
+transport evidence, including the trailing silence; missing observation fails
+rather than falling back to average throughput. The no-maintenance PHY
+bidirectional control uses 250 ms to reject long delivery stalls independently
+of its throughput floor. This is a delivery-continuity limit, not an RF airtime
+measurement. Multi-client receive windows do not publish one ambiguous maximum.
+
+The `diagnostic-station-absence-{unannounced,pm}-rx` pair holds the same physical
+maintenance access for 10 ms without running a PHY algorithm. `station_pause =
+{ synthetic = { duration_micros = 10000, notify_ap = true } }` selects confirmed
+PM=1 before local stop and confirmed PM=0 after RX/MAC restoration. Durations
+are bounded to 1..=200000 us; this is an experimental hold, not a listen/DTIM
+schedule or a promise about AP buffer capacity. The ordinary idle power-save
+planner cannot concurrently own this exchange; conflicting control ownership
+returns Busy. A failed PM=1 requires acknowledged PM=0 recovery before normal
+traffic resumes. An ambiguous return retains the runner in quarantine.
+The reported round trip includes both PM exchanges when selected, while the
+requested hold starts only after physical admission. These scenarios do not
+enable PM notification for automatic calibration or qualify long absences.
+
+Managed OpenWrt RX runs retain `openwrt-wifi-egress.pcap` in the repetition
+artifacts. This is plaintext packet-socket evidence on the AP wireless
+interface, before driver/hardware transmission; it does not prove over-air
+delivery. The existing readiness/Stop capture owner bounds its lifetime,
+retains a 128-byte packet prefix, checks capture drops, and removes its private
+remote files. Same-boot probes keep separate capture directories. Independent
+observer and host clocks are not assumed synchronized; correlate packet
+identities before comparing timestamps across hosts.
+
+An OpenWrt fixture may set `read_only = true` in its private lab configuration
+when the AP also carries essential connectivity. HIL verifies the existing
+SSID, WPA2 credentials/settings and active PHY/channel geometry; it neither
+applies nor restores AP configuration. A mismatch fails before DUT traffic.
+Scenarios requiring AP stop/restart, an OpenWrt client, rate overrides or an
+AP-side monitor are rejected. Read-only station counters and packet capture on
+an existing interface remain available; independent observers may be used.
+This mode is explicit and never a fallback from failed automatic preparation.

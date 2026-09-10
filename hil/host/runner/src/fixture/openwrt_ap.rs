@@ -68,7 +68,8 @@ impl Profile {
         );
         if !observed.enabled
             || observed.channel != self.channel
-            || observed.htmode != self.htmode()
+            || !(observed.htmode == self.htmode()
+                || (self.phy == PhyExpectation::Ht40 && observed.htmode == "HT40"))
             || !observed.ht
             || observed.he != (self.phy == PhyExpectation::He20)
             || !observed
@@ -113,6 +114,9 @@ impl Backend for Remote {
         pending: &Value,
         ap_enabled: Option<bool>,
     ) -> Result<Zeroizing<String>> {
+        if self.0.read_only && !matches!(operation, "snapshot" | "observe" | "verify") {
+            return Err("read-only OpenWrt fixture forbids AP mutation".into());
+        }
         invoke(&self.0, operation, options, up, pending, ap_enabled)
     }
     fn observe(&self) -> Result<Observation> {
@@ -125,6 +129,7 @@ pub(crate) struct AccessPoint<B: Backend = Remote> {
     profile: Profile,
     before: Zeroizing<String>,
     restored: bool,
+    read_only: bool,
     pub(crate) applied: Observation,
 }
 
@@ -136,6 +141,13 @@ impl AccessPoint {
     ) -> Result<Self> {
         let profile = Profile::new(config, phy);
         probe(config, profile)?;
+        if config.read_only {
+            return Self::attach(
+                Remote(config.clone()),
+                profile,
+                profile.options(config, station),
+            );
+        }
         Self::prepare(
             Remote(config.clone()),
             profile,
@@ -149,12 +161,27 @@ impl AccessPoint {
         let before: Value = serde_json::from_str(&self.before)?;
         let radio = &before["options"][&self.backend.0.radio];
         Ok(json!({"schema": 1, "requested": self.profile,
+            "read_only": self.read_only,
             "before": {"up": before["up"], "channel": radio["channel"], "htmode": radio["htmode"]},
             "applied": self.applied}))
     }
 }
 
 impl<B: Backend> AccessPoint<B> {
+    fn attach(backend: B, profile: Profile, options: Value) -> Result<Self> {
+        let before = backend.invoke("verify", &options, true, &Value::Null, None)?;
+        let applied = backend.observe()?;
+        profile.verify(&applied)?;
+        Ok(Self {
+            backend,
+            profile,
+            before,
+            restored: true,
+            read_only: true,
+            applied,
+        })
+    }
+
     fn prepare(backend: B, profile: Profile, options: Value) -> Result<Self> {
         let before = backend.invoke("snapshot", &options, true, &Value::Null, None)?;
         // Establish ownership before the first mutation, including a failed SSH reply.
@@ -163,6 +190,7 @@ impl<B: Backend> AccessPoint<B> {
             profile,
             before,
             restored: false,
+            read_only: false,
             applied: Observation {
                 enabled: false,
                 channel: 0,
@@ -181,12 +209,18 @@ impl<B: Backend> AccessPoint<B> {
     }
 
     pub(crate) fn stop(&mut self) -> Result<()> {
+        if self.read_only {
+            return Err("read-only OpenWrt AP cannot be stopped".into());
+        }
         self.backend
             .invoke("state", &json!({}), false, &Value::Null, None)
             .map(|_| ())
     }
 
     pub(crate) fn restart(&mut self) -> Result<()> {
+        if self.read_only {
+            return Err("read-only OpenWrt AP cannot be restarted".into());
+        }
         self.backend
             .invoke("state", &json!({}), true, &Value::Null, None)?;
         self.profile.verify(&self.backend.observe()?)

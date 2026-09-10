@@ -412,6 +412,7 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
             &mut child,
             &mut (),
             radio.phy_hal_mut(),
+            |_, _| {},
         ),
     ) {
         Ok(()) => {}

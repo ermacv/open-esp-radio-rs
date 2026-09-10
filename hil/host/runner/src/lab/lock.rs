@@ -156,6 +156,19 @@ fn resource_keys(
             StationFixtureConfig::External(_) => {}
         }
     }
+    if required.station_network
+        && let Some(observer) = &lab.air_observer
+    {
+        let output = Command::new("ssh")
+            .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+            .arg(&observer.ssh_target)
+            .arg("cat /proc/sys/kernel/random/boot_id")
+            .supervised_output()?;
+        if !output.status.success() {
+            return Err("cannot resolve independent OpenWrt host ownership".into());
+        }
+        keys.push(remote_host_key(std::str::from_utf8(&output.stdout)?)?);
+    }
     Ok(keys)
 }
 

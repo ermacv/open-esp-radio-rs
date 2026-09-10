@@ -142,7 +142,9 @@ in the [tracking contract](../README.md).
 
 `WifiPhyMaintenanceRequest::MeasureRfpll` selects this child alone with a zero
 thermal threshold under the existing exclusive Wi-Fi maintenance owner. It
-preserves registered policy and periodic deadlines. Successful completion exits
+requires an explicit `maximum_age_micros` and rechecks the dated temperature
+sample after physical admission; forcing measurement does not bypass freshness.
+It preserves registered policy and periodic deadlines. Successful completion exits
 the maintenance graph before power/calibration/temperature children; failure
 retains the poisoned epoch and physical access. The request does not grant joint
 radio access and must not be cancelled after hardware work begins. Conditional

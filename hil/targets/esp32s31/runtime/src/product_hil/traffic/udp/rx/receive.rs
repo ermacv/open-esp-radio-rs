@@ -45,6 +45,8 @@ pub(super) async fn run(
         unreachable!("protocol owner accepts only duration-completed sessions")
     };
     let elapsed_us = u64::from(duration) * 1_000;
+    let mut delivery_start =
+        open_esp_radio_hil_esp32s31_telemetry::udp_rx_window::DeliveryStart::default();
     let single_flow = session.config.active_flow_count() == 1;
     let mut flows = session.config.flows.map(|flow| {
         flow.map(|flow| Flow {
@@ -57,6 +59,7 @@ pub(super) async fn run(
             payload: usize::from(flow.target_rx.expect("validated RX flow").payload_bytes),
             terminal: false,
             evidence: FlowTransportEvidence {
+                rx_maximum_silence_micros: None,
                 flow_id: flow.flow_id,
                 rx_bytes: 0,
                 tx_bytes: 0,
@@ -154,6 +157,14 @@ pub(super) async fn run(
         }
         flow.evidence.rx_bytes = flow.evidence.rx_bytes.saturating_add(length as u64);
         flow.evidence.rx_units = flow.evidence.rx_units.saturating_add(1);
+        if single_flow && delivery_start.observe(length == flow.payload, packet_sequence) {
+            crate::console::publish_event_reliably(
+                session.session_id,
+                0,
+                open_esp_radio_hil_protocol::Event::UdpRxStarted { datagrams: 256 },
+            )
+            .await;
+        }
         flow.evidence.transport_errors = flow
             .evidence
             .transport_errors
@@ -167,6 +178,11 @@ pub(super) async fn run(
         }
     }
     let silence = window.summary();
+    if single_flow {
+        for flow in flows.iter_mut().flatten() {
+            flow.evidence.rx_maximum_silence_micros = Some(silence.maximum_silence_micros);
+        }
+    }
     #[cfg(feature = "compat-network")]
     runtime_log_reliably(format_args!(
         "ORX_RESOURCES session={} interface={:?} start={:?} end={:?}",

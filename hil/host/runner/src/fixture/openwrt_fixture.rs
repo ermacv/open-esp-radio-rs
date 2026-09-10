@@ -2,7 +2,12 @@
 
 use super::capture_process;
 use oer_process::CommandExt as _;
-use std::{net::Ipv4Addr, process::Command, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    path::Path,
+    process::Command,
+    time::Duration,
+};
 
 use crate::{
     Result,
@@ -84,6 +89,9 @@ impl OpenWrtRateMask {
             HtGuardIntervalExpectation::Long => "lgi-2.4",
             HtGuardIntervalExpectation::Short => "sgi-2.4",
         };
+        if config.read_only {
+            return Err("read-only OpenWrt fixture forbids rate changes".into());
+        }
         let script = format!(
             "set -eu; iw dev {} set bitrates {interval}",
             config.wireless_interface
@@ -140,20 +148,22 @@ pub(crate) struct OpenWrtRxCapture {
     before: Snapshot,
     pre_workload_channel_utilization: Option<ChannelUtilization>,
     ingress: Option<Capture>,
-    wireless: Option<Capture>,
+    wireless: Option<super::openwrt_capture::RemoteCapture>,
     rate_mask: Option<OpenWrtRateMask>,
 }
 
 impl OpenWrtRxCapture {
     pub(crate) fn start(
         config: &OpenWrtConfig,
-        target: Ipv4Addr,
-        port: u16,
+        endpoint: SocketAddrV4,
+        output: &Path,
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
         forced_guard_interval: HtGuardIntervalExpectation,
         maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Self> {
+        let target = *endpoint.ip();
+        let port = endpoint.port();
         if forced_guard_interval != HtGuardIntervalExpectation::Any
             && expected_phy != PhyExpectation::Ht40
         {
@@ -182,12 +192,11 @@ impl OpenWrtRxCapture {
             port,
             timeout,
         )?;
-        let wireless = spawn_capture(
+        let wireless = super::openwrt_capture::RemoteCapture::start_managed(
             config,
-            "OpenWrt Wi-Fi egress",
             &config.wireless_interface,
-            target,
-            port,
+            output.join("openwrt-wifi-egress.pcap"),
+            &format!("udp and dst host {target} and dst port {port}"),
             timeout,
         )?;
         Ok(Self {
@@ -205,8 +214,11 @@ impl OpenWrtRxCapture {
     pub(crate) fn finish(mut self) -> Result<OpenWrtRxEvidence> {
         let ingress = finish_capture(self.ingress.take().expect("capture owns ingress"))
             .map_err(crate::fixture::Error::context)?;
-        let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))
+        let mut wireless_capture = self.wireless.take().expect("capture owns wireless");
+        let (wireless, _) = wireless_capture
+            .finish_capture()
             .map_err(crate::fixture::Error::context)?;
+        drop(wireless_capture);
         let after = snapshot(&self.config, self.target, Some(self.before.station_mac))
             .map_err(crate::fixture::Error::context)?;
         require_width(self.expected_phy, after.channel_width_mhz)?;

@@ -29,9 +29,14 @@ pub enum Operation {
     TxDcPwdet,
     TxGainPublication,
     FrequencySettle,
+    RxGainPrepare,
+    RxGainDc,
+    RxGainPublish,
+    RxGainControl,
+    RxGainAdvance,
 }
 
-pub const OPERATION_COUNT: usize = 14;
+pub const OPERATION_COUNT: usize = 19;
 const POLLED_COUNT: usize = 3;
 
 impl Operation {

@@ -1,12 +1,13 @@
 //! Exact, session-scoped UDP RX delivery evidence for qualification images.
 
 use open_esp_radio_hil_protocol::{
-    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence, RxReorderDeliveryEvidence,
-    RxSequenceStageEvidence,
+    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
+    RxReorderDeliveryEvidence, RxSequenceStageEvidence,
 };
 
 const SEEN_WINDOW: usize = 256;
 const SEEN_WORDS: usize = SEEN_WINDOW / 64;
+pub const FORWARD_GAP_SAMPLE_CAPACITY: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkDropReason {
@@ -134,15 +135,46 @@ enum MacOrder {
 struct MacOrderTracker {
     expected: [Option<u16>; 16],
     last: Option<(u8, u16)>,
+    last_udp: Option<u32>,
     evidence: RxMacOrderEvidence,
+    correlated_gaps: u32,
+    gap_samples: [Option<RxForwardGapEvidence>; FORWARD_GAP_SAMPLE_CAPACITY],
 }
 
 impl MacOrderTracker {
-    fn observe(&mut self, disposition: SequenceDisposition, mac: Option<(u8, u16)>) {
+    fn observe(&mut self, disposition: SequenceDisposition, mac: Option<(u8, u16)>, udp: i32) {
         if disposition == SequenceDisposition::Control {
             return;
         }
         let previous = self.last;
+        let previous_udp = self.last_udp;
+        self.last_udp = u32::try_from(udp).ok();
+        if matches!(disposition, SequenceDisposition::Gap)
+            && let (
+                Some(previous_udp),
+                Some(current_udp),
+                Some((previous_tid, previous_mac)),
+                Some((tid, current_mac)),
+            ) = (previous_udp, self.last_udp, previous, mac)
+            && previous_tid == tid
+            && tid < 16
+            && previous_mac < 4096
+            && current_mac < 4096
+            && current_udp > previous_udp.saturating_add(1)
+        {
+            let gap = RxForwardGapEvidence {
+                previous_udp,
+                current_udp,
+                tid,
+                previous_mac,
+                current_mac,
+            };
+            self.evidence.first_forward_gap.get_or_insert(gap);
+            if let Some(slot) = self.gap_samples.get_mut(self.correlated_gaps as usize) {
+                *slot = Some(gap);
+            }
+            self.correlated_gaps = self.correlated_gaps.saturating_add(1);
+        }
         let order = mac.map(|(tid, sequence)| self.observe_mac(tid, sequence));
         self.last = mac;
         if !matches!(
@@ -281,6 +313,7 @@ impl<const CAPACITY: usize> SequenceLedger<CAPACITY> {
 /// in the explicit delivery diagnostic profile.
 pub struct RxDeliveryTracker<const LEDGER_CAPACITY: usize> {
     session_id: Option<u64>,
+    completed_session_id: Option<u64>,
     post_reorder: SequenceTracker,
     network_enqueued: SequenceTracker,
     udp_consumer: SequenceTracker,
@@ -293,9 +326,21 @@ pub struct RxDeliveryTracker<const LEDGER_CAPACITY: usize> {
 }
 
 impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
+    /// Correlations from exactly one completed session; unavailable identities
+    /// are not invented. The total may exceed the retained sample capacity.
+    /// Reporting must happen outside the packet observer and critical section.
+    pub fn completed_gap_samples(
+        &self,
+        session_id: u64,
+    ) -> Option<(u32, &[Option<RxForwardGapEvidence>])> {
+        (self.completed_session_id == Some(session_id))
+            .then_some((self.mac.correlated_gaps, &self.mac.gap_samples[..]))
+    }
+
     pub fn new() -> Self {
         Self {
             session_id: None,
+            completed_session_id: None,
             post_reorder: SequenceTracker::default(),
             network_enqueued: SequenceTracker::default(),
             udp_consumer: SequenceTracker::default(),
@@ -318,7 +363,7 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
             return;
         }
         let disposition = self.post_reorder.observe(sequence);
-        self.mac.observe(disposition, mac);
+        self.mac.observe(disposition, mac, sequence);
         self.network_enqueued.observe(sequence);
         if sequence >= 0 {
             self.ledger.push(sequence as u32);
@@ -330,7 +375,7 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
             return;
         }
         let disposition = self.post_reorder.observe(sequence);
-        self.mac.observe(disposition, mac);
+        self.mac.observe(disposition, mac, sequence);
         match reason {
             NetworkDropReason::QueueFull => {
                 self.network_queue_full = self.network_queue_full.saturating_add(1)
@@ -366,6 +411,7 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
             return None;
         }
         self.session_id = None;
+        self.completed_session_id = Some(session_id);
         let ledger = core::mem::take(&mut self.ledger).finish();
         Some(RxDeliveryEvidence {
             post_reorder: self.post_reorder.evidence,

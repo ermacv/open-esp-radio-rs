@@ -279,3 +279,65 @@ fn controlled_stop_upgrades_pause_during_tx_drain_or_while_paused() {
         assert_eq!(runner.services.stops, 1);
     }
 }
+
+#[test]
+fn control_exchange_waits_for_each_terminal_event_without_admitting_prepared_data() {
+    let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
+    let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (device, owned) = endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator);
+    let resources = Box::leak(Box::new(
+        PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
+    ));
+    let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
+    let network = network::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    network.set_link_state(interface, LinkState::Up);
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let completion = Signal::new();
+    let mut runner = DatapathRunner::new(
+        &irq,
+        network,
+        interface,
+        Services {
+            completion: &completion,
+            prepared: Some(Box::new([0x42; 14])),
+            completions: 0,
+            fail_completion: false,
+            stops: 0,
+        },
+    );
+    runner.prepared_tx_interface = Some(interface);
+
+    let original = runner.services.prepared.as_ref().unwrap().as_ptr();
+    let mut step = 0;
+    let mut cx = Context::from_waker(Waker::noop());
+    {
+        let mut exchange = core::pin::pin!(runner.run_control_exchange(|services| {
+            assert_eq!(services.completions, step);
+            step += 1;
+            Ok(if step <= 2 {
+                DatapathControlProgress::TxPending
+            } else {
+                DatapathControlProgress::Idle
+            })
+        }));
+        assert!(exchange.as_mut().poll(&mut cx).is_pending());
+        assert!(exchange.as_mut().poll(&mut cx).is_pending());
+        completion.signal(());
+        assert!(exchange.as_mut().poll(&mut cx).is_pending());
+        assert!(exchange.as_mut().poll(&mut cx).is_pending());
+        completion.signal(());
+        assert_eq!(exchange.as_mut().poll(&mut cx), Poll::Ready(Ok(None)));
+    }
+    assert_eq!(step, 3);
+    assert_eq!(runner.services.completions, 2);
+    assert_eq!(runner.services.stops, 0);
+    assert_eq!(
+        runner.services.prepared.as_ref().unwrap().as_ptr(),
+        original
+    );
+    assert_eq!(runner.prepared_tx_interface, Some(interface));
+    assert!(runner.active_tx_interface.is_none());
+    let _ = device;
+}

@@ -148,6 +148,8 @@ fn execute_workload_inner(
                         .link
                         .expect("validated station workload has a link expectation");
                     let config = traffic::rx_traffic::Config {
+                        maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
+                        station_pause: *station_pause,
                         duration,
                         payload,
                         phy,
@@ -227,6 +229,8 @@ fn execute_workload_inner(
                         }
                     };
                     let config = traffic::bidirectional::Config {
+                        maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
+                        station_pause: *station_pause,
                         duration,
                         payload,
                         phy,

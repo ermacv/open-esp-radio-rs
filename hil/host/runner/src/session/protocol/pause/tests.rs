@@ -237,3 +237,61 @@ fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
         );
     }
 }
+
+#[test]
+fn rx_gain_requires_matching_request_boot_session_and_preceding_completion() {
+    let detail = Envelope::new(
+        7,
+        1,
+        0,
+        42,
+        Event::StationPhyRxGain(open_esp_radio_hil_protocol::PhyRxGainEvidence::default()),
+    );
+    let completion = Envelope::new(
+        7,
+        2,
+        0,
+        42,
+        Event::StationPauseCompleted(StationPauseEvidence {
+            timings: None,
+            tracking: None,
+            result: StationPauseResult::Resumed,
+            elapsed_micros: 1,
+        }),
+    );
+    assert_eq!(
+        rx_gain(&[detail.clone(), completion.clone()], &completion).unwrap(),
+        Some(open_esp_radio_hil_protocol::PhyRxGainEvidence::default())
+    );
+    assert_eq!(
+        rx_gain(&[completion.clone(), detail.clone()], &completion).unwrap(),
+        None
+    );
+    for unrelated in [
+        Envelope {
+            request_id: 41,
+            ..detail.clone()
+        },
+        Envelope {
+            boot_id: 6,
+            ..detail.clone()
+        },
+        Envelope {
+            session_id: 3,
+            ..detail.clone()
+        },
+    ] {
+        assert_eq!(
+            rx_gain(&[unrelated, completion.clone()], &completion).unwrap(),
+            None
+        );
+    }
+    assert!(
+        rx_gain(
+            &[detail.clone(), detail.clone(), completion.clone()],
+            &completion
+        )
+        .is_err()
+    );
+    assert!(rx_gain(&[detail], &completion).is_err());
+}

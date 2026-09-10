@@ -66,6 +66,7 @@ fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
 
 fn transport(bytes: u64, elapsed_micros: u64) -> TransportEvidence {
     TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes: bytes,
         tx_bytes: 0,
         rx_units: 2,

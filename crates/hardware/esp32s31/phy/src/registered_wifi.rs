@@ -49,7 +49,8 @@ pub enum WifiPhyMaintenanceRequest {
     CalibrateTransmit,
     /// One measured RFPLL correction with zero thermal threshold under exclusive
     /// maintenance access. Does not enable periodic RFPLL or advance its deadline.
-    MeasureRfpll,
+    /// Requires a recent completed sensor acquisition after physical admission.
+    MeasureRfpll { maximum_age_micros: u64 },
 }
 
 impl RegisteredWifiPhy {

@@ -60,3 +60,26 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
         }
     );
 }
+
+#[test]
+fn absence_does_not_steal_idle_power_save_or_an_existing_control_transaction() {
+    let mut control = core();
+    control.enable_power_save(StaPowerSavePolicy::new(100, 2000).unwrap());
+    assert!(!control.begin_absence());
+    assert_eq!(
+        control.power_save().unwrap().state(),
+        StaPowerSaveState::Awake
+    );
+    let mut control = core();
+    control.in_flight = Some(ControlInFlight::BeaconProbe);
+    assert!(!control.begin_absence());
+    assert!(matches!(
+        control.in_flight,
+        Some(ControlInFlight::BeaconProbe)
+    ));
+    control.in_flight = None;
+    assert!(control.begin_absence());
+    assert!(!control.begin_absence());
+    assert!(!control.absence_admitted());
+    assert!(!control.restore_absence());
+}

@@ -679,6 +679,27 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         result
     }
 
+    pub fn begin_absence(&mut self) -> bool {
+        if self.doze_restore.is_some() || self.security.as_ref().is_some_and(|s| s.tx_in_flight()) {
+            return false;
+        }
+        self.core.begin_absence()
+    }
+
+    pub fn restore_absence(&mut self) -> bool {
+        self.core.restore_absence()
+    }
+    pub fn absence_admitted(&self) -> bool {
+        self.core.absence_admitted()
+    }
+    pub fn service_absence<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError> {
+        self.core.service_absence(hardware, tx)
+    }
+
     pub fn service<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,

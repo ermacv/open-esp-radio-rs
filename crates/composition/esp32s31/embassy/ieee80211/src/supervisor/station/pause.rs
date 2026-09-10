@@ -35,14 +35,14 @@ type PausedIrq = PausedInterruptEpoch<'static, EspHalMacInterruptRoute, Critical
 pub(super) struct Storage {
     paused: core::cell::RefCell<Option<PausedRunner>>,
     access: &'static access::Storage,
-    observations: observation::Storage,
+    observations: &'static observation::Storage,
 }
 impl Storage {
     pub fn new() -> Self {
         Self {
             paused: core::cell::RefCell::new(None),
             access: access::Storage::initialize(),
-            observations: observation::Storage::default(),
+            observations: observation::Storage::initialize(),
         }
     }
 
@@ -54,6 +54,11 @@ impl Storage {
 /// Every failed checkpoint retains the exact non-runnable owner frontier.
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Failure {
+    PeerNotification {
+        _irq: MacInterruptEpoch,
+        _runner: ConnectedDatapathRunner,
+        _error: Option<ConnectedDatapathError>,
+    },
     MacStop {
         _irq: MacInterruptEpoch,
         _runner: ConnectedDatapathRunner,
@@ -99,6 +104,10 @@ impl Failure {
     pub fn stage(&self) -> PauseError {
         match self {
             Self::Access { _failure } => _failure.error().stage(),
+            Self::PeerNotification { _error, .. } => {
+                diagnostics_event!("open-radio: PM exchange failed: {:?}", _error);
+                PauseError::PeerNotification
+            }
             Self::MacStop { _error: error, .. } => {
                 diagnostics_event!("open-radio: pause MAC stop failed: {error:?}");
                 PauseError::MacStop
@@ -145,6 +154,112 @@ pub(super) async fn round_trip(
     runner: &mut Option<ConnectedDatapathRunner>,
     storage: &Storage,
 ) -> Result<(MacInterruptEpoch, Result<TrackingOutcome, PauseError>), &'static Failure> {
+    let notify_ap = matches!(
+        operation,
+        PauseOperation::Synthetic {
+            notify_ap: true,
+            ..
+        }
+    );
+    if notify_ap
+        && !runner
+            .as_mut()
+            .expect("paused runner")
+            .services_mut()
+            .control_mut()
+            .begin_absence()
+    {
+        return Ok((irq, Err(PauseError::Busy)));
+    }
+    let irq = if notify_ap {
+        let irq = exchange(irq, runner).await?;
+        if !runner
+            .as_ref()
+            .expect("paused runner")
+            .services()
+            .control()
+            .absence_admitted()
+        {
+            // Failed PM=1 has already completed a confirmed PM=0 recovery.
+            return Ok((irq, Err(PauseError::PeerNotification)));
+        }
+        diagnostics_event!(
+            "open-radio: PM absence acknowledged at_us={}",
+            embassy_time::Instant::now().as_micros()
+        );
+        irq
+    } else {
+        irq
+    };
+    let (irq, result) = oer_wifi_embassy::await_stack_boundary!(physical_round_trip(
+        irq, role, operation, runner, storage
+    ))?;
+    if !notify_ap {
+        return Ok((irq, result));
+    }
+    if !runner
+        .as_mut()
+        .expect("restored runner")
+        .services_mut()
+        .control_mut()
+        .restore_absence()
+    {
+        return Err(retain_peer(irq, runner, None));
+    }
+    // RX/MAC/IRQ are restored before PM=0: the AP can release its queue
+    // immediately. Stop/disconnect remain latched until this terminal edge.
+    let irq = exchange(irq, runner).await?;
+    diagnostics_event!(
+        "open-radio: PM active acknowledged at_us={}",
+        embassy_time::Instant::now().as_micros()
+    );
+    Ok((irq, result))
+}
+
+async fn exchange(
+    irq: MacInterruptEpoch,
+    runner: &mut Option<ConnectedDatapathRunner>,
+) -> Result<MacInterruptEpoch, &'static Failure> {
+    use oer_esp32s31_wifi_embassy::datapath::services::DatapathServiceError;
+    let result = oer_wifi_embassy::await_stack_boundary!(
+        runner
+            .as_mut()
+            .expect("live PM runner")
+            .run_control_exchange(|services| {
+                let (hardware, tx, control) = services.control_parts_mut();
+                control
+                    .service_absence(hardware, tx)
+                    .map_err(DatapathServiceError::Control)
+            })
+    );
+    match result {
+        Ok(None) => Ok(irq),
+        Ok(Some(_)) => Err(retain_peer(irq, runner, None)),
+        Err(error) => Err(retain_peer(irq, runner, Some(error))),
+    }
+}
+
+#[inline(never)]
+fn retain_peer(
+    irq: MacInterruptEpoch,
+    runner: &mut Option<ConnectedDatapathRunner>,
+    error: Option<ConnectedDatapathError>,
+) -> &'static Failure {
+    Failure::PeerNotification {
+        _irq: irq,
+        _runner: runner.take().expect("PM owner retained"),
+        _error: error,
+    }
+    .retain()
+}
+
+async fn physical_round_trip(
+    irq: MacInterruptEpoch,
+    role: &mut Option<Role>,
+    operation: PauseOperation,
+    runner: &mut Option<ConnectedDatapathRunner>,
+    storage: &Storage,
+) -> Result<(MacInterruptEpoch, Result<TrackingOutcome, PauseError>), &'static Failure> {
     storage.observations.reset();
     if let Err(error) = stop_mac(
         runner
@@ -179,7 +294,7 @@ pub(super) async fn round_trip(
                         interrupts,
                         &storage.paused,
                         storage.access,
-                        &storage.observations,
+                        storage.observations,
                         role,
                         operation
                     ))

@@ -154,11 +154,25 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
         parameters::{PhyParamTrackingAction as A, PhyParamTrackingCompletion as C},
         rfpll::thermal,
     };
-    let owner = owner();
+    let mut owner = owner();
+    let mut state = PhyState::new(PhyConfig::production());
+    state.apply_observed_temperature_outcome(
+        crate::analog::temperature::PhyTemperatureOutcome {
+            temperature: 20,
+            sensor_index: 2,
+            next_dac: 15,
+        },
+        Some(90),
+        Some(95),
+    );
+    owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
+    let request = WifiPhyMaintenanceRequest::MeasureRfpll {
+        maximum_age_micros: 1000,
+    };
     let before = owner.client_snapshot();
     let policy = owner.registered.tracking_policy();
     assert!(!policy.rfpll_cap_tracking_enabled);
-    let selected = WifiPhyMaintenanceRequest::MeasureRfpll.policy(&owner.registered);
+    let selected = request.policy(&owner.registered);
     assert_eq!(selected.rfpll_cap_tracking_threshold, Some(0));
     assert!(!selected.rfpll_cap_tracking_enabled);
     assert_eq!(owner.registered.tracking_policy(), policy);
@@ -166,7 +180,7 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
         registered: _,
         mut pending,
     } = owner
-        .evaluate(WifiPhyMaintenanceRequest::MeasureRfpll, &mut Clock(100))
+        .evaluate(request, &mut Clock(100))
         .unwrap_or_else(|_| panic!("selection failed"))
     else {
         panic!("explicit measurement waited for periodic deadline")
@@ -194,50 +208,58 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
         maintenance::Operation,
         parameters::{PhyParamTrackingAction as A, PhyParamTrackingCompletion as C},
     };
-    for (acquisition, now, expected) in [
-        (None, 1100, false),
-        (Some((100, 110)), 1100, true),
-        (Some((100, 110)), 1101, false),
-        (Some((100, 110)), 109, false),
-        (Some((110, 100)), 1100, false),
-    ] {
-        let mut owner = owner();
-        let mut state = PhyState::new(PhyConfig::production());
-        state.apply_observed_temperature_outcome(
-            crate::analog::temperature::PhyTemperatureOutcome {
-                temperature: 50,
-                sensor_index: 2,
-                next_dac: 15,
-            },
-            acquisition.map(|(start, _)| start),
-            acquisition.map(|(_, end)| end),
-        );
-        owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
-        let request = WifiPhyMaintenanceRequest::ObservedOperation {
-            operation: Operation::Rfpll,
-            maximum_age_micros: 1000,
-        };
-        assert!(!request.policy(&owner.registered).rfpll_cap_tracking_enabled);
-        assert_eq!(
-            request
-                .policy(&owner.registered)
-                .rfpll_cap_tracking_threshold,
-            None
-        );
-        let before = owner.client_snapshot();
-        match owner
-            .evaluate(request, &mut Clock(now))
-            .unwrap_or_else(|_| panic!("clock rejected"))
-        {
-            Evaluation::Idle(owner) => {
-                assert!(!expected);
-                assert_eq!(owner.client_snapshot(), before);
-            }
-            Evaluation::Pending { mut pending, .. } => {
-                assert!(expected);
-                assert_eq!(pending.snapshot(), before);
-                pending.advance(C::EnteredCritical).unwrap();
-                assert!(matches!(pending.action(), A::RfpllCapTrack { .. }));
+    for forced in [false, true] {
+        for (acquisition, now, expected) in [
+            (None, 1100, false),
+            (Some((100, 110)), 1100, true),
+            (Some((100, 110)), 1101, false),
+            (Some((100, 110)), 109, false),
+            (Some((110, 100)), 1100, false),
+        ] {
+            let mut owner = owner();
+            let mut state = PhyState::new(PhyConfig::production());
+            state.apply_observed_temperature_outcome(
+                crate::analog::temperature::PhyTemperatureOutcome {
+                    temperature: 50,
+                    sensor_index: 2,
+                    next_dac: 15,
+                },
+                acquisition.map(|(start, _)| start),
+                acquisition.map(|(_, end)| end),
+            );
+            owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
+            let request = if forced {
+                WifiPhyMaintenanceRequest::MeasureRfpll {
+                    maximum_age_micros: 1000,
+                }
+            } else {
+                WifiPhyMaintenanceRequest::ObservedOperation {
+                    operation: Operation::Rfpll,
+                    maximum_age_micros: 1000,
+                }
+            };
+            assert!(!request.policy(&owner.registered).rfpll_cap_tracking_enabled);
+            assert_eq!(
+                request
+                    .policy(&owner.registered)
+                    .rfpll_cap_tracking_threshold,
+                forced.then_some(0)
+            );
+            let before = owner.client_snapshot();
+            match owner
+                .evaluate(request, &mut Clock(now))
+                .unwrap_or_else(|_| panic!("clock rejected"))
+            {
+                Evaluation::Idle(owner) => {
+                    assert!(!expected);
+                    assert_eq!(owner.client_snapshot(), before);
+                }
+                Evaluation::Pending { mut pending, .. } => {
+                    assert!(expected);
+                    assert_eq!(pending.snapshot(), before);
+                    pending.advance(C::EnteredCritical).unwrap();
+                    assert!(matches!(pending.action(), A::RfpllCapTrack { .. }));
+                }
             }
         }
     }

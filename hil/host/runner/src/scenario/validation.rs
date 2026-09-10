@@ -210,7 +210,8 @@ impl Scenario {
         if self.evidence.openwrt_tx_monitor_rx
             && (!matches!(
                 self.image,
-                ImageClass::DiagnosticTaskResidence
+                ImageClass::Correctness
+                    | ImageClass::DiagnosticTaskResidence
                     | ImageClass::DiagnosticTaskPoll
                     | ImageClass::DiagnosticRxDelivery
                     | ImageClass::DiagnosticCore0RxCoarse
@@ -224,7 +225,7 @@ impl Scenario {
             ))
         {
             return Err(format!(
-                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP diagnostic with task-poll, delivery, or Core0-cycle evidence",
+                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP workload with a correctness or supported diagnostic image",
                 self.source.display()
             )
             .into());
@@ -547,12 +548,12 @@ impl Scenario {
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
-                if station_pause.is_some()
-                    && (*direction != Direction::Tx || *duration_seconds < 12)
+                if matches!(station_pause, Some(open_esp_radio_hil_protocol::StationPauseOperation::Synthetic { duration_micros, .. }) if *duration_micros == 0 || *duration_micros > 200_000)
                 {
-                    return Err(
-                        "station_pause requires station UDP TX and at least 12 seconds".into(),
-                    );
+                    return Err("synthetic station pause must be between 1 and 200000 us".into());
+                }
+                if station_pause.is_some() && *duration_seconds < 12 {
+                    return Err("station_pause requires at least 12 seconds of station UDP".into());
                 }
                 if matches!(
                     self.image,
@@ -969,6 +970,20 @@ impl Scenario {
                     "maximum_flow_skew_percent is invalid for unequal offered rates",
                 );
             }
+        }
+        if let Some(maximum) = self.criteria.maximum_rx_silence_ms
+            && (maximum == 0
+                || !matches!(
+                    self.workload,
+                    Workload::Udp {
+                        direction: Direction::Rx | Direction::Bidirectional,
+                        ..
+                    }
+                ))
+        {
+            return self.criteria_error(
+                "maximum_rx_silence_ms requires nonzero station UDP RX/bidirectional bound",
+            );
         }
         if let Some(maximum) = self.criteria.maximum_secondary_tx_interarrival_ms {
             if maximum == 0 {

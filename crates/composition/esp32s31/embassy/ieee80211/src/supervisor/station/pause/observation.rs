@@ -8,6 +8,13 @@ pub(super) struct Storage {
 }
 
 impl Storage {
+    /// Claim once with the station checkpoint. Separate static storage avoids
+    /// moving the recorder together with the complete paused runner at startup.
+    pub fn initialize() -> &'static Self {
+        static STORAGE: static_cell::StaticCell<Storage> = static_cell::StaticCell::new();
+        STORAGE.init_with(Self::default)
+    }
+
     // Initialize before entering the hardware call chain; do not reserve this
     // temporary recorder in the enclosing async poll frame during calibration.
     #[inline(never)]

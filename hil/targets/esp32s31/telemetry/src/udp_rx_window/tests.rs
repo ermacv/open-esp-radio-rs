@@ -57,3 +57,20 @@ fn grace_accepts_completion_but_excludes_late_payload() {
     assert!(window.finished(16_950, false));
     assert_eq!(window.next_deadline(16_300), 16_950);
 }
+
+#[test]
+fn delivery_start_requires_data_and_is_published_only_once() {
+    let mut start = super::DeliveryStart::default();
+    for _ in 0..300 {
+        assert!(!start.observe(true, Some(-1)));
+        assert!(!start.observe(false, Some(0)));
+        assert!(!start.observe(true, None));
+    }
+    for n in 0..255 {
+        assert!(!start.observe(true, Some(n)));
+    }
+    assert!(start.observe(true, Some(255)));
+    for n in 256..1000 {
+        assert!(!start.observe(true, Some(n)));
+    }
+}

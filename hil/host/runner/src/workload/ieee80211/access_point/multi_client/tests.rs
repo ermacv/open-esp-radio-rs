@@ -52,6 +52,7 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
     let output = tempfile::tempdir().unwrap();
     let flows = std::array::from_fn(|index| {
         Some(FlowTransportEvidence {
+            rx_maximum_silence_micros: None,
             flow_id: index as u8,
             rx_bytes: 0,
             rx_units: 0,

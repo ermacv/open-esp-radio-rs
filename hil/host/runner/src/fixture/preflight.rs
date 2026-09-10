@@ -16,6 +16,15 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         return Err(super::Error::new(failure.message).into());
     }
     let required = Requirements::for_scenario(scenario);
+    if let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture
+        && config.read_only
+        && (required.station_control || required.openwrt_client || required.openwrt_tx_monitor)
+    {
+        return Err(super::Error::new(
+            "scenario requires mutations forbidden by read-only OpenWrt fixture",
+        )
+        .into());
+    }
     if required.probe_load {
         if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
             return Err(

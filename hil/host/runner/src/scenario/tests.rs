@@ -970,7 +970,7 @@ fn pause_round_trip_is_explicit_and_rejects_unsupported_direction_or_short_windo
 }
 
 #[test]
-fn calibration_scenario_selects_explicit_work_and_rejects_receive_only() {
+fn calibration_scenario_accepts_each_direction_with_matching_rates() {
     let catalog =
         Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
     let mut scenario = catalog
@@ -981,6 +981,8 @@ fn calibration_scenario_selects_explicit_work_and_rejects_receive_only() {
     let Workload::Udp {
         station_pause,
         direction,
+        rx_rate_bps,
+        tx_rate_bps,
         ..
     } = &mut scenario.workload
     else {
@@ -991,5 +993,81 @@ fn calibration_scenario_selects_explicit_work_and_rejects_receive_only() {
         Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
     );
     *direction = Direction::Rx;
+    *rx_rate_bps = tx_rate_bps.take();
+    scenario.criteria.minimum_rx_bps = scenario.criteria.minimum_tx_bps.take();
+    assert!(scenario.validate().is_ok());
+    if let Workload::Udp {
+        direction,
+        tx_rate_bps,
+        ..
+    } = &mut scenario.workload
+    {
+        *direction = Direction::Bidirectional;
+        *tx_rate_bps = Some(65_000_000);
+    }
+    assert!(scenario.validate().is_ok());
+}
+
+#[test]
+fn external_rx_monitor_requires_rx_traffic_and_radio_evidence_not_a_specific_profiler() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-phy-calibration-rx")
+        .unwrap()
+        .clone();
+    assert!(scenario.validate().is_ok());
+    scenario.image = ImageClass::Performance;
+    scenario.criteria.require_no_beacon_loss = false;
     assert!(scenario.validate().is_err());
+    scenario = catalog
+        .get("diagnostic-station-phy-calibration")
+        .unwrap()
+        .clone();
+    scenario.evidence.openwrt_tx_monitor_rx = true;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn continuity_bound_is_explicit_and_only_applies_to_station_udp_rx() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-phy-baseline-bidirectional")
+        .unwrap()
+        .clone();
+    assert_eq!(scenario.criteria.maximum_rx_silence_ms, Some(250));
+    assert!(scenario.validate().is_ok());
+    scenario.criteria.maximum_rx_silence_ms = Some(0);
+    assert!(scenario.validate().is_err());
+    let mut unsupported = catalog.get("diagnostic-ap-mixed-tx-work").unwrap().clone();
+    unsupported.criteria.maximum_rx_silence_ms = Some(250);
+    assert!(unsupported.validate().is_err());
+}
+
+#[test]
+fn synthetic_absence_profiles_keep_the_same_load_and_validate_duration() {
+    use open_esp_radio_hil_protocol::StationPauseOperation;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-absence-pm-rx")
+        .unwrap()
+        .clone();
+    for (duration, valid) in [
+        (0, false),
+        (1, true),
+        (10000, true),
+        (200000, true),
+        (200001, false),
+    ] {
+        let Workload::Udp { station_pause, .. } = &mut scenario.workload else {
+            panic!("UDP");
+        };
+        *station_pause = Some(StationPauseOperation::Synthetic {
+            duration_micros: duration,
+            notify_ap: true,
+        });
+        assert_eq!(scenario.validate().is_ok(), valid);
+    }
 }

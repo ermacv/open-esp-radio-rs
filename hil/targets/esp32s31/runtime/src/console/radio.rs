@@ -304,6 +304,8 @@ pub async fn complete_station_pause(
     if let Some(timer) = timer {
         publish_event_reliably(0, request_id, Event::StationTimerObserved(timer)).await;
     }
-    if let Some(service) = service { publish_event_reliably(0, request_id, Event::StationTrackingService(service)).await; }
+    if let Some(service) = service {
+        publish_event_reliably(0, request_id, Event::StationTrackingService(service)).await;
+    }
     publish_event_reliably(0, request_id, Event::StationPauseCompleted(evidence)).await;
 }

@@ -174,9 +174,12 @@ The runtime parent order and combined RX/TX transaction follow esp-phy-lib
 `d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`.
 RX has its own temperature reference; TX uses one shared reference and retains
 separate Wi-Fi and BT/154 calibration results. Authenticated parent-boundary
-execution checks call order and arguments with explicit child models. Neither
-these checks nor the separately pinned calibration leaves establish complete
-child-effect equivalence or live radio admission. See the
+execution checks call order and arguments with explicit child models. Compiled
+comparisons additionally execute actual archive/ROM children for combined
+calibration and the whole parent, including an RFPLL-enabled validation profile.
+They compare semantic state and ordered effects under modeled peripheral inputs
+and documented transport/wait projections; they do not establish RF quality,
+hardware timing or live radio admission. See the
 [tracking contract](src/tracking/README.md).
 
 ESP-IDF's [open orchestration](https://github.com/espressif/esp-idf/blob/c712a0dde385d659a1470a136251980d31a70bc1/components/esp_phy/src/phy_common.c)

@@ -6,6 +6,23 @@
 //! expires. Terminal markers do not shorten the measurement; a separate grace
 //! period admits markers but excludes late payload from throughput.
 
+/// One bounded delivery milestone per session. Invalid payloads and control
+/// markers cannot satisfy readiness for a maintenance workload.
+#[derive(Default)]
+pub struct DeliveryStart {
+    valid: u16,
+}
+
+impl DeliveryStart {
+    pub fn observe(&mut self, length_matches: bool, sequence: Option<i32>) -> bool {
+        if self.valid == 256 || !length_matches || !sequence.is_some_and(|n| n >= 0) {
+            return false;
+        }
+        self.valid += 1;
+        self.valid == 256
+    }
+}
+
 pub struct RxWindow {
     armed: u64,
     start: u64,

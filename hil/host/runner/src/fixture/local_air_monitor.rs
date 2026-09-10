@@ -233,7 +233,7 @@ impl LocalAirMonitorCapture {
     }
 }
 
-fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
+pub(super) fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
     let output = Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
@@ -280,7 +280,7 @@ pub(crate) fn doctor() -> Result<()> {
     Ok(())
 }
 
-fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidence> {
+pub(super) fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidence> {
     let output = Command::new("tshark")
         .args(["-r"])
         .arg(path)
@@ -651,7 +651,7 @@ fn helper_action(action: &str) -> Result<()> {
     Ok(())
 }
 
-fn dumpcap_captured(summary: &str) -> Result<u64> {
+pub(super) fn dumpcap_captured(summary: &str) -> Result<u64> {
     summary
         .lines()
         .find_map(|line| line.trim().strip_prefix("Packets captured:"))
@@ -661,7 +661,7 @@ fn dumpcap_captured(summary: &str) -> Result<u64> {
         .map_err(|error| format!("invalid independent captured packet count: {error}").into())
 }
 
-fn dumpcap_dropped(summary: &str) -> Result<u64> {
+pub(super) fn dumpcap_dropped(summary: &str) -> Result<u64> {
     let counts = summary
         .lines()
         .find_map(|line| {

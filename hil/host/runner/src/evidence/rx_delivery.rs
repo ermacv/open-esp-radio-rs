@@ -81,7 +81,7 @@ pub(crate) fn markdown(host_units: u64, evidence: RxDeliveryEvidence) -> String 
     let enqueued = evidence.network_enqueued;
     let consumer = evidence.udp_consumer;
     let ledger = evidence.consumer_ledger;
-    format!(
+    let mut report = format!(
         "## Typed RX delivery frontier\n\n\
          - Classification: `{}`; host→post-reorder defect: `{}`; before-MAC-sequence ordering: `{}`; post-reorder→enqueue defect: `{}`; enqueue→consumer defect: `{}`\n\
          - Data units host / post-reorder / enqueued / UDP consumer: `{}` / `{}` / `{}` / `{}`\n\
@@ -138,7 +138,14 @@ pub(crate) fn markdown(host_units: u64, evidence: RxDeliveryEvidence) -> String 
         post.data_after_terminal,
         enqueued.data_after_terminal,
         consumer.data_after_terminal,
-    )
+    );
+    if let Some(gap) = evidence.mac_order.first_forward_gap {
+        report.push_str(&format!(
+            "- First forward gap: UDP `{} → {}`, QoS TID `{}`, MAC sequence `{} → {}` (12-bit wrap applies).\n\n",
+            gap.previous_udp, gap.current_udp, gap.tid, gap.previous_mac, gap.current_mac,
+        ));
+    }
+    report
 }
 
 fn stage_matches_host(stage: RxSequenceStageEvidence, host_units: u64) -> bool {

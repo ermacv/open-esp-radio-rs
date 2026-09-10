@@ -1,6 +1,6 @@
-# HIL protocol v93
+# HIL protocol v119
 
-Host and firmware must both use version 93. Other versions are rejected
+Host and firmware must both use version 119. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
@@ -254,10 +254,23 @@ and nonzero correction with memory publication. The `rfpll-check` operation uses
 the retained sample and ordinary thermal threshold; `rfpll` explicitly uses zero
 threshold. Neither command fabricates a temperature or certifies RF lock.
 
-`rfpll-observed` additionally requires a dated sample no older than
-`STATION_RFPLL_SAMPLE_MAX_AGE_MICROS` after physical admission. Its scenario
+Both `rfpll` and `rfpll-observed` require a dated sample no older than
+`STATION_RFPLL_SAMPLE_MAX_AGE_MICROS` after physical admission. Each scenario
 first waits for a separate `temperature` pause completion and restoration;
 the target command itself does not implicitly acquire a new sample. RFPLL detail
 reports `sample_age_micros` from acquisition start at RFPLL entry. Missing or
-over-age detail fails this scenario. Temperature and RFPLL frames retain their
+over-age detail fails the scenario. Temperature and RFPLL frames retain their
 own request correlations and operation timings.
+
+`UdpRxStarted` reports the first 256 valid single-flow UDP datagrams consumed
+inside a session. It is correlated by boot/session and is distinct from
+`SessionReady`: readiness alone does not prove delivery.
+
+Transport and per-flow evidence optionally retain `rx_maximum_silence_micros`
+for a complete single-flow UDP receive window, including trailing silence.
+Missing observation is `None`, never inferred as zero from average throughput.
+Concurrent RX flow windows are not projected into one session continuity value.
+
+`StationPhyRxGain` carries disjoint RX gain executor intervals before the same
+request's pause completion. The host checks correlation, terminal counts and
+containment in the parent interval; missing detail invalidates timed evidence.

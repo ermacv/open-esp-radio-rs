@@ -1,5 +1,6 @@
+#[inline(never)]
 pub(super) fn phy_timing_evidence(
-    report: oer_esp32s31_phy::tracking::observation::Report,
+    report: &oer_esp32s31_phy::tracking::observation::Report,
 ) -> open_esp_radio_hil_protocol::PhyTimingEvidence {
     use oer_esp32s31_phy::tracking::observation::Operation;
     let timing = |operation| {
@@ -49,6 +50,30 @@ pub(super) fn phy_timing_evidence(
         tx_dc_pwdet: timing(Operation::TxDcPwdet),
         tx_gain_publication: timing(Operation::TxGainPublication),
         frequency_settle: timing(Operation::FrequencySettle),
+    }
+}
+
+#[inline(never)]
+fn rx_gain_evidence(
+    report: &oer_esp32s31_phy::tracking::observation::Report,
+) -> open_esp_radio_hil_protocol::PhyRxGainEvidence {
+    use oer_esp32s31_phy::tracking::observation::Operation;
+    let timing = |operation| {
+        let value = report.timing(operation);
+        open_esp_radio_hil_protocol::PhyOperationTiming {
+            started: value.started,
+            completed: value.completed,
+            failed: value.failed,
+            elapsed_micros: value.elapsed_micros,
+            maximum_micros: value.maximum_micros,
+        }
+    };
+    open_esp_radio_hil_protocol::PhyRxGainEvidence {
+        prepare: timing(Operation::RxGainPrepare),
+        dc: timing(Operation::RxGainDc),
+        publish: timing(Operation::RxGainPublish),
+        control: timing(Operation::RxGainControl),
+        advance: timing(Operation::RxGainAdvance),
     }
 }
 
@@ -204,7 +229,17 @@ pub(super) async fn run_station_pause(
     use open_esp_radio_hil_protocol::{StationPauseEvidence, StationPauseResult};
     #[cfg(feature = "driver-observation")]
     let timer_window = oer_esp32s31_embassy_runtime::timer_observation::Window::begin();
+    #[cfg(feature = "driver-observation")]
+    {
+        super::rx_qualification::MAINTENANCE_PHASE.store(1, core::sync::atomic::Ordering::Relaxed);
+        log::info!(
+            "ORX_MAINTENANCE request={} edge=requested at_us={}",
+            request_id,
+            embassy_time::Instant::now().as_micros()
+        );
+    }
     let mut tx_waits = None;
+    let mut rx_gain = None;
     let mut rfpll = None;
     let mut service = None;
     let result = if operation == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
@@ -221,6 +256,13 @@ pub(super) async fn run_station_pause(
         use open_esp_radio_hil_protocol::StationPauseOperation as Wire;
         let operation = match operation {
             Wire::Access => PauseOperation::Access,
+            Wire::Synthetic {
+                duration_micros,
+                notify_ap,
+            } => PauseOperation::Synthetic {
+                duration_micros,
+                notify_ap,
+            },
             Wire::Tracking => PauseOperation::Tracking,
             Wire::Calibration => PauseOperation::Calibration,
             Wire::Temperature => PauseOperation::Operation(PhyOperation::Temperature),
@@ -228,7 +270,10 @@ pub(super) async fn run_station_pause(
             Wire::WifiI2c => PauseOperation::Operation(PhyOperation::WifiI2c),
             Wire::CommonCalibration => PauseOperation::CommonCalibration,
             Wire::TxCalibration => PauseOperation::TxCalibration,
-            Wire::Rfpll => PauseOperation::Rfpll,
+            Wire::Rfpll => PauseOperation::Rfpll {
+                maximum_age_micros:
+                    open_esp_radio_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS,
+            },
             Wire::RfpllCheck => PauseOperation::Operation(PhyOperation::Rfpll),
             Wire::RfpllObserved => PauseOperation::ObservedOperation {
                 operation: PhyOperation::Rfpll,
@@ -241,8 +286,18 @@ pub(super) async fn run_station_pause(
             operation
         ))
     };
+    #[cfg(feature = "driver-observation")]
+    {
+        super::rx_qualification::MAINTENANCE_PHASE.store(2, core::sync::atomic::Ordering::Relaxed);
+        log::info!(
+            "ORX_MAINTENANCE request={} edge=terminal at_us={}",
+            request_id,
+            embassy_time::Instant::now().as_micros()
+        );
+    }
     let evidence = match result {
         Ok(report) => {
+            rx_gain = report.timings.as_ref().map(rx_gain_evidence);
             tx_waits = report
                 .timings
                 .map(|value| self::tx_wait_evidence(value.tx_waits));
@@ -251,7 +306,7 @@ pub(super) async fn run_station_pause(
                 .and_then(|value| value.rfpll)
                 .map(self::rfpll_evidence);
             StationPauseEvidence {
-                timings: report.timings.map(phy_timing_evidence),
+                timings: report.timings.as_ref().map(phy_timing_evidence),
                 tracking: report.tracking.map(|outcome| {
                     open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
                         inhibited: outcome.tracking_inhibited,
@@ -269,6 +324,8 @@ pub(super) async fn run_station_pause(
             tracking: None,
             result: match error {
                 PauseError::Unavailable => StationPauseResult::Unavailable,
+                PauseError::PeerNotification => StationPauseResult::PeerNotification,
+                PauseError::InvalidDuration => StationPauseResult::InvalidDuration,
                 PauseError::Busy => StationPauseResult::Busy,
                 PauseError::Interrupted => StationPauseResult::Interrupted,
                 PauseError::MacStop => StationPauseResult::MacStop,
@@ -292,6 +349,14 @@ pub(super) async fn run_station_pause(
     let timer = timer_window.map(|window| self::timer_evidence(window.finish()));
     #[cfg(not(feature = "driver-observation"))]
     let timer = None;
+    if let Some(detail) = rx_gain {
+        crate::console::publish_event_reliably(
+            0,
+            request_id,
+            open_esp_radio_hil_protocol::Event::StationPhyRxGain(detail),
+        )
+        .await;
+    }
     crate::console::complete_station_pause(request_id, evidence, tx_waits, timer, service, rfpll)
         .await;
 }

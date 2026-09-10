@@ -95,6 +95,8 @@ pub struct DecodedRxPhyObservation {
     /// Five-bit public RX-control summary. For HT, use [`Self::ht`]'s
     /// seven-bit format-specific MCS field; this byte cannot represent MCS32.
     pub rate: u8,
+    /// Copied format-specific signal words from the RX descriptor prefix.
+    pub signal_words: [u32; 2],
     pub ht: Option<HtRxObservation>,
     pub he_su: Option<HeSuRxObservation>,
 }
@@ -104,6 +106,7 @@ impl From<RxPhyInfo> for DecodedRxPhyObservation {
         Self {
             baseband_format: phy.baseband_format().raw(),
             rate: phy.rate,
+            signal_words: [phy.he_siga1, u32::from(phy.he_siga2)],
             ht: phy.ht_signal().map(Into::into),
             he_su: phy.he_su_signal().map(Into::into),
         }
@@ -118,6 +121,8 @@ pub enum ConnectedRxObservation<'frame> {
     },
     Ethernet {
         frame: RxObservedEthernetFrame<'frame>,
+        qos_sequence:
+            Option<oer_esp32s31_wifi_embassy::diagnostics::network::RxQosSequenceObservation>,
         s_mpdu: ReceiveEvidence<bool>,
         ampdu: ReceiveEvidence<bool>,
         phy: ReceiveEvidence<DecodedRxPhyObservation>,
@@ -132,9 +137,14 @@ impl<'frame> ConnectedRxObservation<'frame> {
                 s_mpdu: metadata.s_mpdu.into(),
             },
             ConnectedRxEvent::Ethernet {
-                frame, metadata, ..
+                frame,
+                metadata,
+                raw,
+                ..
             } => Self::Ethernet {
                 frame: frame.into(),
+                qos_sequence:
+                    oer_esp32s31_wifi_embassy::diagnostics::network::decode_public_qos_sequence(raw),
                 s_mpdu: metadata.s_mpdu.into(),
                 ampdu: metadata.ampdu.into(),
                 phy: if include_phy {

@@ -911,7 +911,10 @@ impl PhyState {
 
     /// Commit only references whose complete calibration branch reached its
     /// terminal restore edge.
-    pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
+    pub(crate) fn apply_calibration_tracking_outcome(
+        &mut self,
+        outcome: PhyCalibrationTrackingOutcome,
+    ) {
         let common = match (
             outcome.common_updated,
             outcome.dcode,

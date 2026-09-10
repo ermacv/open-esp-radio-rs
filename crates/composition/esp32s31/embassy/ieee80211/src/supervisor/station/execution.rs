@@ -199,7 +199,7 @@ pub(super) async fn wait_connected_datapath_completion(
     match select3(
         mailbox.wait_completed(),
         control.wait(),
-        select(super::pause_request::REQUESTS.wait(), wait_automatic(role)),
+        super::pause_request::REQUESTS.wait_next(wait_automatic(role)),
     )
     .await
     {

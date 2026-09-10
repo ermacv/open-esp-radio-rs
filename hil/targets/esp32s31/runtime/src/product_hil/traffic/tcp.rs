@@ -296,6 +296,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         )
         .await;
         let transport = TransportEvidence {
+            rx_maximum_silence_micros: None,
             rx_bytes: rx.bytes,
             tx_bytes: tx.bytes,
             rx_units: rx.units,

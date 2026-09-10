@@ -195,3 +195,69 @@ fn restore_failure_is_not_a_successful_owner_release() {
     );
     assert!(super::super::cleanup::require_healthy().is_err());
 }
+
+#[test]
+fn existing_ap_is_verified_without_mutation_even_on_stop_or_drop() {
+    let fake = Fake {
+        calls: Default::default(),
+        fail: "",
+        before: json!({"up": true, "ap_enabled": true, "options": {}, "pending": {}}),
+    };
+    let calls = fake.calls.clone();
+    let mut owner = AccessPoint::attach(
+        fake,
+        Profile {
+            ht40_above: false,
+            phy: PhyExpectation::He20,
+            channel: 13,
+        },
+        json!({}),
+    )
+    .unwrap();
+    assert!(owner.stop().is_err());
+    assert!(owner.restart().is_err());
+    owner.restore().unwrap();
+    drop(owner);
+    assert_eq!(*calls.borrow(), ["verify:true"]);
+}
+
+#[test]
+fn existing_ap_mismatch_never_falls_back_to_apply_or_restore() {
+    for failure in ["verify", "observe", ""] {
+        let fake = Fake {
+            calls: Default::default(),
+            fail: failure,
+            before: json!({"up": true, "ap_enabled": true, "options": {}, "pending": {}}),
+        };
+        let calls = fake.calls.clone();
+        // Fake observes HE20, so even successful verification must reject HT40.
+        assert!(
+            AccessPoint::attach(
+                fake,
+                Profile {
+                    ht40_above: false,
+                    phy: PhyExpectation::Ht40,
+                    channel: 13,
+                },
+                json!({})
+            )
+            .is_err()
+        );
+        assert_eq!(*calls.borrow(), ["verify:true"]);
+    }
+}
+
+#[test]
+fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
+    let profile = Profile {
+        ht40_above: false,
+        phy: PhyExpectation::Ht40,
+        channel: 13,
+    };
+    let mut observed = observation(PhyExpectation::Ht40);
+    observed.htmode = "HT40".into();
+    observed.geometry = "channel 13 (2472 MHz), width: 40 MHz, center1: 2462 MHz".into();
+    profile.verify(&observed).unwrap();
+    observed.geometry = "channel 13 (2472 MHz), width: 20 MHz, center1: 2472 MHz".into();
+    assert!(profile.verify(&observed).is_err());
+}

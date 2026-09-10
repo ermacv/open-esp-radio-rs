@@ -56,7 +56,8 @@ impl<'frame> RxNetworkDeliveryEvent<'frame> {
 }
 
 #[cfg(feature = "diagnostics")]
-fn decode_public_qos_sequence(raw: &[u8]) -> Option<RxQosSequenceObservation> {
+/// Decode the existing QoS identity without retaining RX storage.
+pub fn decode_public_qos_sequence(raw: &[u8]) -> Option<RxQosSequenceObservation> {
     const DATA_TYPE: u16 = 0x0008;
     const DATA_TYPE_MASK: u16 = 0x000c;
     const QOS_SUBTYPE: u16 = 0x0080;

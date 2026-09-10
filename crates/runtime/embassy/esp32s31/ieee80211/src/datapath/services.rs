@@ -319,6 +319,15 @@ impl<H, R, X> SingleRoleServices<H, R, X, NoDatapathControl> {
 }
 
 impl<H, R, X, C> SingleRoleServices<H, R, X, C> {
+    /// Split unique borrows for a finite control exchange at a paused boundary.
+    pub fn control_parts_mut(&mut self) -> (&mut H, &mut X, &mut C) {
+        (
+            &mut self.hardware,
+            &mut self.role.tx,
+            &mut self.role.control,
+        )
+    }
+
     /// Preserve hardware, TX and control even if the RX transition fails.
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn try_map_rx<T, E>(

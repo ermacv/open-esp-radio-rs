@@ -82,6 +82,7 @@ fn command_response_requires_boot_session_and_request_identity() {
 
 fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
     let transport = TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes: 0,
         tx_bytes: 0,
         rx_units: 0,

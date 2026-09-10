@@ -83,6 +83,7 @@ use open_esp_radio_hil_protocol::{
 
 fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> SessionEvidence {
     let transport = TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes,
         tx_bytes,
         rx_units,

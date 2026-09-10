@@ -36,3 +36,6 @@ mod progress_adapter;
 #[cfg(all(feature = "task-poll-telemetry", feature = "compat-network"))]
 #[path = "network/progress/smoltcp.rs"]
 mod progress_adapter;
+
+#[cfg(all(feature = "upstream-network", feature = "driver-observation"))]
+mod arp;

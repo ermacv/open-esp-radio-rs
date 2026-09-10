@@ -55,6 +55,10 @@ secondary_client_address = "10.43.0.3/24"
 # phys = ["ht20", "ht40", "he20"]
 # or `kind = "external"` with `phys = ["he20"]` for a FRITZ fixture.
 kind = "open-wrt"
+# Optional protected AP: verify existing identity/security/channel, never apply
+# or restore settings. Incompatible profiles fail; AP control, rate changes and
+# creation of a monitor on this router are forbidden. Default is false.
+# read_only = true
 # Stable UCI ownership; discovery also works when the netdev is absent.
 radio = "radio0"
 ap_section = "default_radio0"

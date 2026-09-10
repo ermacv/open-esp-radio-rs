@@ -28,16 +28,26 @@ pub enum PauseError {
     PhyTracking,
     MacRestoration,
     ReceivePolicyChanged,
+    PeerNotification,
+    InvalidDuration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PauseOperation {
     Access,
+    /// Diagnostic absence, with no PHY algorithm. PM notification is optional
+    /// for the matched control. This is not an automatic maintenance policy.
+    Synthetic {
+        duration_micros: u32,
+        notify_ap: bool,
+    },
     Tracking,
     Calibration,
     CommonCalibration,
     TxCalibration,
-    Rfpll,
+    Rfpll {
+        maximum_age_micros: u64,
+    },
     Operation(oer_esp32s31_phy::tracking::maintenance::Operation),
     /// Recheck the age of a completed sensor acquisition after RF admission.
     ObservedOperation {
@@ -50,7 +60,7 @@ pub enum PauseOperation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PauseReport {
     pub timings: Option<oer_esp32s31_phy::tracking::observation::Report>,
-    /// Physical stop/resume; excludes requester queuing.
+    /// Stop/resume plus optional PM exchanges; excludes requester queuing and prior TX drain.
     pub elapsed_micros: u64,
     pub tracking: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
 }
@@ -83,6 +93,10 @@ impl Requests {
     }
 
     pub async fn request(&self, operation: PauseOperation) -> Result<PauseReport, PauseError> {
+        if matches!(operation, PauseOperation::Synthetic { duration_micros, .. } if duration_micros == 0 || duration_micros > 200_000)
+        {
+            return Err(PauseError::InvalidDuration);
+        }
         let _client = self.client.try_lock().map_err(|_| PauseError::Busy)?;
         self.state.lock(|state| {
             let mut state = state.borrow_mut();
@@ -113,6 +127,16 @@ impl Requests {
 
     pub async fn wait(&self) -> PauseOperation {
         self.requested.wait().await
+    }
+
+    /// Explicit work wins when both sources are ready. The automatic future
+    /// may reserve service state when polled, so the losing source must not
+    /// be polled after an explicit request has been accepted.
+    pub async fn wait_next<T>(
+        &self,
+        automatic: impl core::future::Future<Output = T>,
+    ) -> embassy_futures::select::Either<PauseOperation, T> {
+        embassy_futures::select::select(self.wait(), automatic).await
     }
 
     pub fn finish(&self, result: Result<PauseReport, PauseError>) {

@@ -45,6 +45,16 @@ pub(crate) fn check_without_device(
                 super::local_air_monitor::check_without_device(config, &output)?;
             }
         }
+        if required.station_udp_rx_capture
+            && let Some(observer) = super::openwrt_air_monitor::Capture::start(
+                lab,
+                None,
+                std::time::Duration::from_secs(1),
+                &output,
+            )?
+        {
+            observer.finish()?;
+        }
         Ok(())
     });
     let records = cleanup.finish()?;

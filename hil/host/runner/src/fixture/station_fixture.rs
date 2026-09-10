@@ -1,6 +1,6 @@
 //! Uniform session evidence for a managed station access-point fixture.
 
-use std::{net::Ipv4Addr, time::Duration};
+use std::{net::SocketAddrV4, path::Path, time::Duration};
 
 use crate::{
     Result,
@@ -26,13 +26,15 @@ pub(crate) enum RxEvidence {
 impl RxCapture {
     pub(crate) fn start(
         fixture: &StationFixtureConfig,
-        target: Ipv4Addr,
-        port: u16,
+        endpoint: SocketAddrV4,
+        output: &Path,
         duration: Duration,
         phy: PhyExpectation,
         forced_guard_interval: HtGuardIntervalExpectation,
         maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Option<Self>> {
+        let target = *endpoint.ip();
+        let port = endpoint.port();
         match fixture {
             StationFixtureConfig::LocalLinux(config) => {
                 if forced_guard_interval != HtGuardIntervalExpectation::Any {
@@ -52,8 +54,8 @@ impl RxCapture {
             StationFixtureConfig::OpenWrt(config) => {
                 Ok(Some(Self::OpenWrt(Box::new(OpenWrtRxCapture::start(
                     config,
-                    target,
-                    port,
+                    endpoint,
+                    output,
                     duration,
                     phy,
                     forced_guard_interval,

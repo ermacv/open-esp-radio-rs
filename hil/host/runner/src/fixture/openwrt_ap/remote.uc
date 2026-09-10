@@ -48,6 +48,19 @@ if (request.operation == 'snapshot') {
     exit(0);
 }
 
+if (request.operation == 'verify') {
+    let active = checked(bus.call(object, 'get_status', {}), 'existing AP unavailable');
+    let wanted = request.options[section];
+    checked(active.status == 'ENABLED' && active.ssid == wanted.ssid, 'existing AP identity differs');
+    let defaults = { wmm: '1', ieee80211w: '0' };
+    for (let key in ['mode', 'ssid', 'key', 'encryption', 'wmm', 'ieee80211w']) {
+        let current = config.get('wireless', section, key) ?? defaults[key];
+        checked(current == wanted[key], 'existing AP settings differ: ' + key);
+    }
+    print(sprintf('%J\n', snapshot()));
+    exit(0);
+}
+
 if (request.operation == 'observe') {
     let status = checked(bus.call(object, 'get_status', {}), 'hostapd status unavailable');
     let phy = checked(bus.call('iwinfo', 'phyname', { section: radio }), 'cannot resolve wiphy').phyname;

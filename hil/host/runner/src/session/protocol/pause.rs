@@ -4,6 +4,7 @@ use open_esp_radio_hil_protocol::{Envelope, Event, PhyTxWaitEvidence};
 #[derive(serde::Serialize)]
 pub(crate) struct Report {
     pub evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
+    pub rx_gain: Option<open_esp_radio_hil_protocol::PhyRxGainEvidence>,
     pub tx_waits: Option<PhyTxWaitEvidence>,
     pub rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
     pub timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
@@ -78,3 +79,13 @@ fn detail<T>(
 
 #[cfg(test)]
 mod tests;
+
+pub(super) fn rx_gain(
+    messages: &[Envelope<Event>],
+    completion: &Envelope<Event>,
+) -> crate::Result<Option<open_esp_radio_hil_protocol::PhyRxGainEvidence>> {
+    detail(messages, completion, |event| match event {
+        Event::StationPhyRxGain(value) => Some(*value),
+        _ => None,
+    })
+}

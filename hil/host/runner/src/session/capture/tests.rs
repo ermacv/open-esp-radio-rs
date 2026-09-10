@@ -3,6 +3,73 @@ use crate::session::{error::ErrorKind, tests::hello};
 use std::io;
 
 #[test]
+fn rx_delivery_wait_ignores_other_sessions_and_requires_actual_data() {
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    let session = SessionHandle {
+        session_id: 9,
+        first_event: 1,
+        flow_ids: [Some(0), None],
+    };
+    for (sequence, id, event) in [
+        (1, 8, Event::UdpRxStarted { datagrams: 256 }),
+        (2, 9, Event::UdpRxStarted { datagrams: 255 }),
+        (
+            3,
+            9,
+            Event::SessionReady(open_esp_radio_hil_protocol::SessionReady {
+                direction: open_esp_radio_hil_protocol::Direction::Rx,
+                tx_block_ack_tid: None,
+            }),
+        ),
+        (
+            4,
+            9,
+            Event::Failed(open_esp_radio_hil_protocol::FailureCode::Network),
+        ),
+    ] {
+        input
+            .send(Ok(frame(Envelope::new(7, sequence, id, 0, event))))
+            .unwrap();
+    }
+    assert!(
+        capture
+            .wait_for_udp_rx_started(session, Duration::from_secs(2))
+            .unwrap_err()
+            .to_string()
+            .contains("failed: Network")
+    );
+}
+
+#[test]
+fn rx_delivery_event_wakes_the_session_waiter() {
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            1,
+            9,
+            0,
+            Event::UdpRxStarted { datagrams: 256 },
+        ))))
+        .unwrap();
+    let session = SessionHandle {
+        session_id: 9,
+        first_event: 1,
+        flow_ids: [Some(0), None],
+    };
+    assert_eq!(
+        capture
+            .wait_for_udp_rx_started(session, Duration::from_secs(2))
+            .unwrap(),
+        256
+    );
+}
+
+#[test]
 fn measurements_survive_link_failure_and_unwinding_capture() {
     let output = Output::new();
     let recorder = crate::evidence::measurements::Recorder::default();
@@ -16,6 +83,7 @@ fn measurements_survive_link_failure_and_unwinding_capture() {
             5,
             1,
             Event::Evidence(EvidenceRecord::Transport(TransportEvidence {
+                rx_maximum_silence_micros: None,
                 rx_bytes: 125,
                 tx_bytes: 0,
                 rx_units: 2,
@@ -611,6 +679,7 @@ fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
 fn result_events(rx_frames: u32) -> Vec<Event> {
     use open_esp_radio_hil_protocol::{ResultSummary, StackWatermark};
     let transport = TransportEvidence {
+        rx_maximum_silence_micros: None,
         rx_bytes: 8,
         tx_bytes: 0,
         rx_units: 2,

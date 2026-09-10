@@ -64,7 +64,11 @@ impl RemoteInterface {
         );
         if !self.create_interface {
             let controlled = capture_process::controlled(&program, ":");
-            let script = format!("set -eu; umask 077; mkdir {directory}; {controlled}");
+            // Bound the remote file while tcpdump is running, not merely
+            // when downloading it. Exceeding the limit terminates capture;
+            // the terminal status then rejects incomplete evidence.
+            let script =
+                format!("set -eu; ulimit -f 65536; umask 077; mkdir {directory}; {controlled}");
             return format!(
                 "LC_ALL=C timeout -s TERM {} sh -c {}",
                 lifetime.as_secs(),
@@ -115,7 +119,7 @@ impl RemoteInterface {
 }
 
 pub(super) struct RemoteCapture {
-    config: OpenWrtConfig,
+    ssh_target: String,
     remote: RemoteInterface,
     output: PathBuf,
     child: Option<capture_process::Capture>,
@@ -133,6 +137,9 @@ impl RemoteCapture {
         immediate: bool,
         duration: Duration,
     ) -> Result<Self> {
+        if config.read_only {
+            return Err("read-only OpenWrt fixture forbids creating monitors".into());
+        }
         let monitor = config
             .monitor_interface
             .clone()
@@ -142,7 +149,7 @@ impl RemoteCapture {
         let script = remote.start_script(config, filter, immediate, duration);
         // Own cleanup before starting the remote process or waiting for readiness.
         let mut owner = Self {
-            config: config.clone(),
+            ssh_target: config.ssh_target.clone(),
             remote,
             output,
             child: None,
@@ -152,6 +159,40 @@ impl RemoteCapture {
             format!("tcpdump: listening on {},", owner.remote.interface),
             duration.saturating_add(Duration::from_secs(120)),
         )?);
+        Ok(owner)
+    }
+
+    /// A dedicated idle PHY; never borrows or retunes another interface.
+    pub(super) fn start_independent(
+        config: &crate::lab::config::AirObserverConfig,
+        geometry: super::channel::Geometry,
+        filter: &str,
+        output: PathBuf,
+        duration: Duration,
+    ) -> Result<Self> {
+        let remote = RemoteInterface::new(config.interface.clone())?;
+        let script = remote.independent_script(config, geometry, filter, duration)?;
+        let mut owner = Self {
+            ssh_target: config.ssh_target.clone(),
+            remote,
+            output,
+            child: None,
+        };
+        owner.child = Some(capture_process::Capture::start(
+            &mut ssh_target(&owner.ssh_target, &script),
+            format!("tcpdump: listening on {},", owner.remote.interface),
+            duration.saturating_add(Duration::from_secs(120)),
+        )?);
+        let observed = ssh_target(
+            &owner.ssh_target,
+            &format!("iw dev {} info", owner.remote.interface),
+        )
+        .supervised_output()?;
+        if !observed.status.success()
+            || super::channel::Geometry::parse(std::str::from_utf8(&observed.stdout)?)? != geometry
+        {
+            return Err("independent monitor actual channel differs from the AP".into());
+        }
         Ok(owner)
     }
 
@@ -166,7 +207,7 @@ impl RemoteCapture {
         remote.create_interface = false;
         let script = remote.start_script(config, filter, true, duration);
         let mut owner = Self {
-            config: config.clone(),
+            ssh_target: config.ssh_target.clone(),
             remote,
             output,
             child: None,
@@ -195,13 +236,13 @@ impl RemoteCapture {
             .ok_or("OpenWrt packet capture omitted its packet count")?;
         let kernel_dropped = summary_value(&summary, "packets dropped by kernel")
             .ok_or("tcpdump omitted its drop count")?;
+        copy_remote(&self.ssh_target, &self.remote.capture(), &self.output)?;
         if kernel_dropped != 0 {
             return Err(crate::fixture::Error::new(format!(
                 "OpenWrt packet capture dropped {kernel_dropped} packets in its capture socket"
             ))
             .into());
         }
-        copy_remote(&self.config, &self.remote.capture(), &self.output)?;
         let size = fs::metadata(&self.output)?.len();
         if size == 0 || size > MAX_CAPTURE_BYTES {
             return Err(crate::fixture::Error::new(format!(
@@ -220,15 +261,15 @@ impl Drop for RemoteCapture {
             let cleanup = self.remote.cleanup_script();
             crate::fixture::cleanup::command(
                 "clean up OpenWrt capture",
-                &mut ssh(&self.config, &cleanup),
+                &mut ssh_target(&self.ssh_target, &cleanup),
             );
         });
     }
 }
 
-fn copy_remote(config: &OpenWrtConfig, remote: &str, local: &Path) -> Result<()> {
+fn copy_remote(target: &str, remote: &str, local: &Path) -> Result<()> {
     let file = File::create(local)?;
-    let status = ssh(config, &format!("cat {remote}"))
+    let status = ssh_target(target, &format!("cat {remote}"))
         .stdout(Stdio::from(file))
         .supervised_status()?;
     if !status.success() {
@@ -241,10 +282,14 @@ fn copy_remote(config: &OpenWrtConfig, remote: &str, local: &Path) -> Result<()>
 }
 
 pub(super) fn ssh(config: &OpenWrtConfig, script: &str) -> Command {
+    ssh_target(&config.ssh_target, script)
+}
+
+pub(super) fn ssh_target(target: &str, script: &str) -> Command {
     let mut command = Command::new("ssh");
     command
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
-        .arg(&config.ssh_target)
+        .arg(target)
         .arg(script);
     command
 }
@@ -257,3 +302,51 @@ fn summary_value(summary: &str, suffix: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests;
+
+impl RemoteInterface {
+    fn independent_script(
+        &self,
+        config: &crate::lab::config::AirObserverConfig,
+        geometry: super::channel::Geometry,
+        filter: &str,
+        duration: Duration,
+    ) -> Result<String> {
+        let interface = &self.interface;
+        let phy = &config.phy;
+        let directory = &self.directory;
+        let controlled = capture_process::controlled(
+            &format!(
+                "tcpdump -B 4096 -i {interface} -n -s 128 -U -w {} {}",
+                self.capture(),
+                capture_process::quote(filter)
+            ),
+            "cleanup",
+        );
+        let script = format!(
+            r#"set -eu
+command -v tcpdump >/dev/null
+iw phy {phy} info | grep -q '^[[:space:]]*\* monitor$'
+interfaces=$(iw dev | awk -v wanted={phy} '/phy#/ {{ p="phy" substr($0,5) }} /Interface/ && p==wanted {{ print $2 }}')
+if [ -n "$interfaces" ]; then echo 'independent observer PHY is not idle' >&2; exit 1; fi
+if iw dev {interface} info >/dev/null 2>&1; then echo 'observer interface already exists' >&2; exit 1; fi
+umask 077
+mkdir {directory}
+cleanup() {{ iw dev {interface} del >/dev/null 2>&1 || true; }}
+trap cleanup EXIT
+trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+iw phy {phy} interface add {interface} type monitor
+ip link set {interface} up
+iw dev {interface} set freq {frequency} {width}
+ulimit -f 131072
+{controlled}
+"#,
+            frequency = geometry.frequency,
+            width = geometry.iw_width()?
+        );
+        Ok(format!(
+            "LC_ALL=C timeout -s TERM {} sh -c {}",
+            duration.saturating_add(Duration::from_secs(120)).as_secs(),
+            capture_process::quote(&script)
+        ))
+    }
+}

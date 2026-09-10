@@ -37,6 +37,28 @@ fn config() -> Config {
 }
 
 #[test]
+fn unsupported_due_rfpll_suspends_other_work_until_the_policy_is_integrated() {
+    let mut input = snapshot();
+    input.wifi.as_mut().unwrap().power.update_required = true;
+    input.rfpll = Some(crate::tracking::rfpll::thermal::Request {
+        current_temperature: 35,
+        reference_temperature: 20,
+        current_channel: 13,
+        threshold_override: None,
+    });
+    assert_eq!(
+        config().inspect(input, 200, false),
+        Demand::Suspended(Suspension::RfpllUnsupported)
+    );
+    // Below the RFPLL threshold, unrelated due work remains selectable.
+    input.rfpll.as_mut().unwrap().current_temperature = 34;
+    assert_eq!(
+        config().inspect(input, 200, false),
+        Demand::Run(Operation::WifiPower)
+    );
+}
+
+#[test]
 fn unknown_or_stale_temperature_requires_observation_before_any_calibration() {
     let mut input = snapshot();
     input.wifi.as_mut().unwrap().power.update_required = true;

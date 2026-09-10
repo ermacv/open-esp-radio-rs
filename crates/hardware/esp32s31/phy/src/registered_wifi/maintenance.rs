@@ -31,7 +31,7 @@ impl RegisteredWifiPhy {
         let operation = match request {
             WifiPhyMaintenanceRequest::Operation(operation)
             | WifiPhyMaintenanceRequest::ObservedOperation { operation, .. } => Some(operation),
-            WifiPhyMaintenanceRequest::MeasureRfpll => {
+            WifiPhyMaintenanceRequest::MeasureRfpll { .. } => {
                 Some(crate::tracking::maintenance::Operation::Rfpll)
             }
             WifiPhyMaintenanceRequest::CalibrateCommon => {
@@ -62,9 +62,16 @@ impl RegisteredWifiPhy {
                     clients,
                 }));
             }
-            if let WifiPhyMaintenanceRequest::ObservedOperation {
-                maximum_age_micros, ..
-            } = request
+            let maximum_age = match request {
+                WifiPhyMaintenanceRequest::ObservedOperation {
+                    maximum_age_micros, ..
+                }
+                | WifiPhyMaintenanceRequest::MeasureRfpll { maximum_age_micros } => {
+                    Some(maximum_age_micros)
+                }
+                _ => None,
+            };
+            if let Some(maximum_age_micros) = maximum_age
                 && operation != crate::tracking::maintenance::Operation::Temperature
                 && !matches!(
                     registered
@@ -286,7 +293,7 @@ impl WifiPhyMaintenanceRequest {
         ) {
             policy.calibration_tracking_threshold = Some(0);
         }
-        if self == Self::MeasureRfpll {
+        if matches!(self, Self::MeasureRfpll { .. }) {
             policy.rfpll_cap_tracking_threshold = Some(0);
         }
         policy

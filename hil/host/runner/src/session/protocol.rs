@@ -384,6 +384,22 @@ impl SerialCapture {
         Ok(event)
     }
 
+    pub(crate) fn wait_for_udp_rx_started(
+        &self,
+        session: SessionHandle,
+        timeout: Duration,
+    ) -> Result<u64> {
+        let event = self
+            .wait_for_session_event(session, timeout, |message| {
+                matches!(message.body, Event::UdpRxStarted { datagrams: 256 })
+            })?
+            .ok_or("device did not confirm UDP delivery before maintenance")?;
+        let Event::UdpRxStarted { datagrams } = event.body else {
+            unreachable!()
+        };
+        Ok(datagrams)
+    }
+
     pub(crate) fn wait_for_session(
         &self,
         session: SessionHandle,
@@ -664,7 +680,12 @@ impl SerialCapture {
             state.messages.get(handle.first_event..).unwrap_or_default(),
             &event,
         )?;
+        let rx_gain = pause::rx_gain(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
         Ok(pause::Report {
+            rx_gain,
             rfpll,
             evidence,
             tx_waits: waits,

@@ -12,6 +12,86 @@ use std::{
 };
 
 #[test]
+fn simultaneous_explicit_request_leaves_automatic_observation_available() {
+    use embassy_futures::select::Either;
+    use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
+    let requests = Requests::new();
+    let _epoch = requests.open();
+    let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
+    requests.automatic.configure(Some(config));
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut explicit = std::pin::pin!(requests.request(PauseOperation::Tracking));
+    assert!(explicit.as_mut().poll(&mut cx).is_pending());
+    let automatic = || async {
+        assert!(requests.automatic.try_begin(config, Operation::Temperature));
+        Operation::Temperature
+    };
+    {
+        let mut next = std::pin::pin!(requests.wait_next(automatic()));
+        assert!(matches!(
+            next.as_mut().poll(&mut cx),
+            Poll::Ready(Either::First(PauseOperation::Tracking))
+        ));
+    }
+    assert_eq!(requests.automatic.snapshot(), (Some(config), true));
+    assert!(!matches!(
+        requests.automatic.status(),
+        pause_request::TrackingStatus::Pending(_)
+    ));
+    let report = PauseReport {
+        timings: None,
+        tracking: None,
+        elapsed_micros: 7,
+    };
+    requests.finish(Ok(report));
+    assert_eq!(explicit.as_mut().poll(&mut cx), Poll::Ready(Ok(report)));
+    // The losing observation was neither consumed nor left Pending: it can
+    // be selected on the next physical round trip.
+    let mut next = std::pin::pin!(requests.wait_next(automatic()));
+    assert!(matches!(
+        next.as_mut().poll(&mut cx),
+        Poll::Ready(Either::Second(Operation::Temperature))
+    ));
+    assert_eq!(requests.automatic.snapshot(), (Some(config), false));
+}
+
+#[test]
+fn explicit_request_after_automatic_selection_survives_until_next_round_trip() {
+    use embassy_futures::select::Either;
+    use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
+    let requests = Requests::new();
+    let _epoch = requests.open();
+    let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
+    requests.automatic.configure(Some(config));
+    let mut cx = Context::from_waker(Waker::noop());
+    {
+        let mut next = std::pin::pin!(requests.wait_next(async {
+            assert!(requests.automatic.try_begin(config, Operation::Temperature));
+            Operation::Temperature
+        }));
+        assert!(matches!(
+            next.as_mut().poll(&mut cx),
+            Poll::Ready(Either::Second(Operation::Temperature))
+        ));
+    }
+    let mut explicit = std::pin::pin!(requests.request(PauseOperation::Calibration));
+    assert!(explicit.as_mut().poll(&mut cx).is_pending());
+    requests
+        .automatic
+        .completed(Operation::Temperature, 10, None);
+    let mut next = std::pin::pin!(requests.wait_next(core::future::pending::<Operation>()));
+    assert!(matches!(
+        next.as_mut().poll(&mut cx),
+        Poll::Ready(Either::First(PauseOperation::Calibration))
+    ));
+    requests.finish(Err(PauseError::PhyTracking));
+    assert_eq!(
+        explicit.as_mut().poll(&mut cx),
+        Poll::Ready(Err(PauseError::PhyTracking))
+    );
+}
+
+#[test]
 fn cancellation_cannot_reuse_an_inflight_request_or_deliver_a_stale_completion() {
     let requests = Requests::new();
     let mut cx = Context::from_waker(Waker::noop());
@@ -178,4 +258,34 @@ fn automatic_selection_checks_current_configuration_and_epoch_end_releases_pendi
         pause_request::TrackingStatus::Failed(PauseError::PhyAdmission)
     );
     assert!(requests.automatic.measurements().failed);
+}
+
+#[test]
+fn invalid_hold_is_rejected_before_reserving_the_request_channel() {
+    let requests = Requests::new();
+    let _epoch = requests.open();
+    let mut cx = Context::from_waker(Waker::noop());
+    for duration_micros in [0, 200_001, u32::MAX] {
+        let mut request = std::pin::pin!(requests.request(PauseOperation::Synthetic {
+            duration_micros,
+            notify_ap: true
+        }));
+        assert_eq!(
+            request.as_mut().poll(&mut cx),
+            Poll::Ready(Err(PauseError::InvalidDuration))
+        );
+    }
+    let mut valid = std::pin::pin!(requests.request(PauseOperation::Synthetic {
+        duration_micros: 10_000,
+        notify_ap: true
+    }));
+    assert!(valid.as_mut().poll(&mut cx).is_pending());
+    let mut next = std::pin::pin!(requests.wait());
+    assert_eq!(
+        next.as_mut().poll(&mut cx),
+        Poll::Ready(PauseOperation::Synthetic {
+            duration_micros: 10_000,
+            notify_ap: true
+        })
+    );
 }

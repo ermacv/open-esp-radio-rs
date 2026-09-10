@@ -123,3 +123,53 @@ fn multi_flow_structure_rejects_missing_peer_or_direction() {
     missing_rx.flows[1].as_mut().unwrap().target_rx = None;
     assert!(!missing_rx.structurally_valid(1_472, true));
 }
+
+#[test]
+fn silence_keeps_single_rx_flow_scope_through_transport_projection() {
+    let one = FlowTransportEvidence {
+        flow_id: 0,
+        rx_maximum_silence_micros: Some(3_000_000),
+        rx_bytes: 1200,
+        tx_bytes: 0,
+        rx_units: 1,
+        tx_units: 0,
+        elapsed_micros: 12_000_000,
+        transport_errors: 0,
+    };
+    assert_eq!(
+        one.as_session_total().rx_maximum_silence_micros,
+        Some(3_000_000)
+    );
+    assert_eq!(
+        TransportEvidence::from_flows([Some(one), None]).rx_maximum_silence_micros,
+        Some(3_000_000)
+    );
+    let two = FlowTransportEvidence { flow_id: 1, ..one };
+    assert_eq!(
+        TransportEvidence::from_flows([Some(one), Some(two)]).rx_maximum_silence_micros,
+        None
+    );
+}
+
+#[test]
+fn missing_second_flow_observation_cannot_qualify_whole_session_continuity() {
+    let first = FlowTransportEvidence {
+        flow_id: 0,
+        rx_maximum_silence_micros: Some(0),
+        rx_bytes: 1200,
+        tx_bytes: 0,
+        rx_units: 1,
+        tx_units: 0,
+        elapsed_micros: 12_000_000,
+        transport_errors: 0,
+    };
+    let second = FlowTransportEvidence {
+        flow_id: 1,
+        rx_maximum_silence_micros: None,
+        ..first
+    };
+    assert_eq!(
+        TransportEvidence::from_flows([Some(first), Some(second)]).rx_maximum_silence_micros,
+        None
+    );
+}

@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 113;
+pub const PROTOCOL_VERSION: u16 = 119;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1125,6 +1125,11 @@ pub enum Command {
 #[serde(rename_all = "kebab-case")]
 pub enum StationPauseOperation {
     Access,
+    /// Matched pause control, bounded to 1..=200000 us by host and target.
+    Synthetic {
+        duration_micros: u32,
+        notify_ap: bool,
+    },
     Tracking,
     Calibration,
     Temperature,
@@ -1143,6 +1148,8 @@ pub enum StationPauseOperation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StationPauseResult {
     Resumed,
+    PeerNotification,
+    InvalidDuration,
     Unavailable,
     Busy,
     Interrupted,
@@ -1900,6 +1907,9 @@ pub enum FailureCode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TransportEvidence {
+    /// Complete observation-window silence, including its trailing interval.
+    /// Present only for a single measured UDP RX flow; never inferred from throughput.
+    pub rx_maximum_silence_micros: Option<u64>,
     pub rx_bytes: u64,
     pub tx_bytes: u64,
     pub rx_units: u64,
@@ -1915,6 +1925,7 @@ pub struct TransportEvidence {
 /// records and must never infer a peer split from the aggregate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FlowTransportEvidence {
+    pub rx_maximum_silence_micros: Option<u64>,
     pub flow_id: u8,
     pub rx_bytes: u64,
     pub tx_bytes: u64,
@@ -1927,6 +1938,7 @@ pub struct FlowTransportEvidence {
 impl FlowTransportEvidence {
     pub const fn from_session_total(flow_id: u8, total: TransportEvidence) -> Self {
         Self {
+            rx_maximum_silence_micros: total.rx_maximum_silence_micros,
             flow_id,
             rx_bytes: total.rx_bytes,
             tx_bytes: total.tx_bytes,
@@ -1939,6 +1951,7 @@ impl FlowTransportEvidence {
 
     pub const fn as_session_total(self) -> TransportEvidence {
         TransportEvidence {
+            rx_maximum_silence_micros: self.rx_maximum_silence_micros,
             rx_bytes: self.rx_bytes,
             tx_bytes: self.tx_bytes,
             rx_units: self.rx_units,
@@ -1951,8 +1964,16 @@ impl FlowTransportEvidence {
 
 impl TransportEvidence {
     pub fn from_flows(flows: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY]) -> Self {
+        // One missing flow observation must not masquerade as a complete
+        // session value. Multi-flow users consume per-flow evidence instead.
+        let mut active = flows.iter().flatten();
+        let first = active
+            .next()
+            .and_then(|flow| flow.rx_maximum_silence_micros);
+        let silence = if active.next().is_none() { first } else { None };
         flows.iter().flatten().copied().fold(
             Self {
+                rx_maximum_silence_micros: silence,
                 rx_bytes: 0,
                 tx_bytes: 0,
                 rx_units: 0,
@@ -2150,11 +2171,23 @@ pub struct RxConsumerLedgerEvidence {
 /// sequence/TID progression at the post-reorder frontier.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RxMacOrderEvidence {
+    /// First forward UDP gap with adjacent observations on the same QoS TID.
+    /// MAC values are 12-bit sequence numbers, not an inferred loss count.
+    pub first_forward_gap: Option<RxForwardGapEvidence>,
     pub backward_mac_backward: u32,
     pub backward_mac_same: u32,
     pub backward_mac_forward: u32,
     pub backward_mac_other_tid: u32,
     pub backward_mac_unavailable: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxForwardGapEvidence {
+    pub previous_udp: u32,
+    pub current_udp: u32,
+    pub tid: u8,
+    pub previous_mac: u16,
+    pub current_mac: u16,
 }
 
 /// Reorder decisions relevant to delivery loss during one session.
@@ -2325,6 +2358,11 @@ pub enum Event {
     /// The selected data-plane worker has consumed the session configuration
     /// and is ready for host traffic in this direction.
     SessionReady(SessionReady),
+    /// Single-flow UDP consumer reached its first 256 valid data packets.
+    /// Session-correlated delivery, distinct from socket readiness or host send.
+    UdpRxStarted {
+        datagrams: u64,
+    },
     Evidence(EvidenceRecord),
     Finished(Finished),
     Failed(FailureCode),
@@ -2332,6 +2370,7 @@ pub enum Event {
     StartupArtifact(StartupArtifactChunk),
     StationPauseCompleted(StationPauseEvidence),
     StationPhyTxWaits(crate::PhyTxWaitEvidence),
+    StationPhyRxGain(crate::PhyRxGainEvidence),
     StationRfpllObserved(crate::RfpllEvidence),
     StationTrackingService(crate::StationTrackingServiceEvidence),
     StationTimerObserved(crate::TimerWindowEvidence),

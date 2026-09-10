@@ -23,6 +23,7 @@ pub(crate) struct LabConfig {
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,
+    pub(crate) air_observer: Option<AirObserverConfig>,
 }
 
 #[derive(Deserialize)]
@@ -34,6 +35,7 @@ struct RawLabConfig {
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
+    air_observer: Option<AirObserverConfig>,
 }
 
 #[derive(Deserialize)]
@@ -142,6 +144,8 @@ enum RawStationFixtureConfig {
         phys: Vec<PhyExpectation>,
         #[serde(default)]
         independent_laptop_monitor: bool,
+        #[serde(default)]
+        read_only: bool,
     },
     External {
         phys: Vec<PhyExpectation>,
@@ -187,6 +191,16 @@ pub(crate) struct OpenWrtConfig {
     pub(crate) monitor_interface: Option<String>,
     pub(crate) phys: Vec<PhyExpectation>,
     pub(crate) independent_laptop_monitor: bool,
+    pub(crate) read_only: bool,
+}
+
+/// Dedicated idle OpenWrt radio used for independent over-the-air evidence.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AirObserverConfig {
+    pub(crate) ssh_target: String,
+    pub(crate) phy: String,
+    pub(crate) interface: String,
 }
 
 #[derive(Clone, Debug)]
@@ -205,6 +219,18 @@ impl LabConfig {
             .map_err(|error| format!("cannot read HIL lab config `{}`: {error}", path.display()))?;
         let mut raw: RawLabConfig = toml::from_str(&source)
             .map_err(|error| format!("invalid HIL lab config `{}`: {error}", path.display()))?;
+        if let Some(observer) = &raw.air_observer {
+            for (name, value) in [
+                ("air_observer.ssh_target", &observer.ssh_target),
+                ("air_observer.phy", &observer.phy),
+                ("air_observer.interface", &observer.interface),
+            ] {
+                validate_shell_token(name, value)?;
+            }
+            if !matches!(raw.station_fixture, RawStationFixtureConfig::OpenWrt { .. }) {
+                return Err("independent OpenWrt observer requires a managed OpenWrt AP".into());
+            }
+        }
         validate_identifier("lab.id", &raw.lab.id)?;
         validate_identifier("device.id", &raw.device.id)?;
         if raw.device.serial.as_os_str().is_empty() {
@@ -304,6 +330,7 @@ impl LabConfig {
                 monitor_interface,
                 phys,
                 independent_laptop_monitor: _,
+                read_only: _,
             } => {
                 if !(1..=13).contains(channel) {
                     return Err("OpenWrt channel must be in 1..=13".into());
@@ -356,6 +383,7 @@ impl LabConfig {
         };
         Ok(Self {
             path: path.to_owned(),
+            air_observer: raw.air_observer,
             cell_id: raw.lab.id,
             bluetooth_adapter: raw
                 .bluetooth
@@ -399,6 +427,7 @@ impl LabConfig {
                     monitor_interface,
                     phys,
                     independent_laptop_monitor,
+                    read_only,
                 } => StationFixtureConfig::OpenWrt(OpenWrtConfig {
                     ht40_above: channel <= 9,
                     radio,
@@ -410,6 +439,7 @@ impl LabConfig {
                     monitor_interface,
                     phys,
                     independent_laptop_monitor,
+                    read_only,
                 }),
                 RawStationFixtureConfig::External { phys } => {
                     StationFixtureConfig::External(ExternalConfig { phys })
@@ -472,6 +502,7 @@ impl LabConfig {
     pub(crate) fn for_test() -> Self {
         Self {
             path: PathBuf::from("hil/local.toml"),
+            air_observer: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
             device: DeviceConfig {
@@ -506,6 +537,7 @@ impl LabConfig {
                 monitor_interface: Some(String::from("open-radio-mon")),
                 phys: vec![PhyExpectation::Ht40],
                 independent_laptop_monitor: true,
+                read_only: false,
             }),
         }
     }

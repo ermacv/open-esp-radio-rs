@@ -17,8 +17,8 @@ pub use bluetooth::{
 pub use io::write_frame;
 mod phy;
 pub use phy::{
-    PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyTimingEvidence,
-    PhyTxWaitEvidence, PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence,
+    PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyRxGainEvidence,
+    PhyTimingEvidence, PhyTxWaitEvidence, PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence,
 };
 mod memory_benchmark;
 mod message;
@@ -52,8 +52,8 @@ pub use message::{
     InitializationConfiguration, Ipv4Endpoint, LinkHealth, NetworkCredentials,
     NetworkCredentialsError, NetworkInfo, NetworkIpv4Configuration, NetworkSchedulerEvidence,
     OperationStatus, PROTOCOL_VERSION, RadioEvidence, RejectReason, ResultSummary,
-    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence, RxRadioEvidence,
-    RxReorderDeliveryEvidence, RxSequenceStageEvidence, SESSION_FLOW_CAPACITY,
+    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
+    RxRadioEvidence, RxReorderDeliveryEvidence, RxSequenceStageEvidence, SESSION_FLOW_CAPACITY,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionFlowConfig,
     SessionLinkRequirements, SessionReady, SessionState, StackUsage, StackWatermark,
     StartupArtifactChunk, StartupArtifactChunkError, StartupArtifactDisposition,

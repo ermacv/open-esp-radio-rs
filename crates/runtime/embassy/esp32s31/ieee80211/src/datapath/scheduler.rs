@@ -23,6 +23,37 @@ where
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
+    /// Drive a finite control-only exchange while network admission stays shut.
+    /// RX, IRQ and terminal TX deadlines use the ordinary owner path. The
+    /// caller must retain this future through completion once TX has started;
+    /// an error retains the live transaction in this runner.
+    pub async fn run_control_exchange<F>(
+        &mut self,
+        mut step: F,
+    ) -> Result<Option<B::Exit>, B::Error>
+    where
+        F: FnMut(&mut B) -> Result<DatapathControlProgress<B::Exit>, B::Error>,
+    {
+        loop {
+            if self.active_tx_interface.is_some() {
+                self.drain_active_tx().await?;
+            }
+            self.discard_stale_tx_wakes();
+            match step(&mut self.services)? {
+                DatapathControlProgress::TxPending => {
+                    self.begin_active_tx(
+                        self.reported_active_tx_interface(),
+                        DatapathTxOrigin::Control,
+                    );
+                    self.drive_active_tx(false).await?;
+                }
+                DatapathControlProgress::More => {}
+                DatapathControlProgress::Idle => return Ok(None),
+                DatapathControlProgress::Exit(exit) => return Ok(Some(exit)),
+            }
+        }
+    }
+
     /// Run with independent, coalesced pause and sticky stop requests.
     /// Active TX drains through its ordinary IRQ/deadline path before the
     /// highest-priority request is acted on. Stop received while paused stays

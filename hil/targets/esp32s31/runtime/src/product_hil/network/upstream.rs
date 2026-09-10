@@ -15,9 +15,9 @@ pub(crate) struct Resources {
 }
 
 #[cfg(not(feature = "task-poll-telemetry"))]
-type NetworkDevice = checksum::Device<WifiNetworkDevice>;
+type NetworkDevice = ObservedDevice;
 #[cfg(feature = "task-poll-telemetry")]
-type NetworkDevice = progress::Device<checksum::Device<WifiNetworkDevice>>;
+type NetworkDevice = progress::Device<ObservedDevice>;
 
 impl Resources {
     pub const fn new() -> Self {
@@ -27,6 +27,11 @@ impl Resources {
         }
     }
 }
+
+#[cfg(feature = "driver-observation")]
+type ObservedDevice = super::arp::Device<checksum::Device<WifiNetworkDevice>>;
+#[cfg(not(feature = "driver-observation"))]
+type ObservedDevice = checksum::Device<WifiNetworkDevice>;
 
 pub(crate) fn new(
     device: WifiDevice,
@@ -40,6 +45,8 @@ pub(crate) fn new(
         settings.rx_checksum,
         settings.tx_udp_checksum,
     );
+    #[cfg(feature = "driver-observation")]
+    let driver = super::arp::Device::new(driver);
     #[cfg(feature = "task-poll-telemetry")]
     let driver = progress::Device::new(driver, observation::counters(_role));
     let iface = stack

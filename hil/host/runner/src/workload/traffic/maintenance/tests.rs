@@ -3,6 +3,42 @@ use open_esp_radio_hil_protocol::{
     StationPauseEvidence, StationPauseOperation, StationPauseResult, StationPhyTrackingEvidence,
 };
 
+fn parent_timing(common: bool, wifi: bool) -> open_esp_radio_hil_protocol::PhyTimingEvidence {
+    use open_esp_radio_hil_protocol::{PhyOperationTiming, PhyTimingEvidence};
+    let complete = PhyOperationTiming {
+        started: 1,
+        completed: 1,
+        elapsed_micros: 1,
+        maximum_micros: 1,
+        ..Default::default()
+    };
+    let absent = PhyOperationTiming::default();
+    PhyTimingEvidence {
+        wifi_i2c: complete,
+        wifi_power: complete,
+        calibration: complete,
+        temperature: complete,
+        dcode: if common { complete } else { absent },
+        rx_gain: if common { complete } else { absent },
+        channel_restore: if common { complete } else { absent },
+        tx_dc_pwdet: if wifi { complete } else { absent },
+        tx_gain_publication: if wifi { complete } else { absent },
+        dcode_polls: open_esp_radio_hil_protocol::PhyPollTiming {
+            polls: u32::from(common),
+            ..Default::default()
+        },
+        rx_gain_polls: open_esp_radio_hil_protocol::PhyPollTiming {
+            polls: u32::from(common),
+            ..Default::default()
+        },
+        tx_dc_pwdet_polls: open_esp_radio_hil_protocol::PhyPollTiming {
+            polls: u32::from(wifi),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 #[test]
 fn calibration_requires_success_and_both_committed_branches() {
     for result in [StationPauseResult::Resumed, StationPauseResult::PhyTracking] {
@@ -10,7 +46,7 @@ fn calibration_requires_success_and_both_committed_branches() {
             for common_calibrated in [false, true] {
                 for wifi_calibrated in [false, true] {
                     let evidence = StationPauseEvidence {
-                        timings: None,
+                        timings: Some(parent_timing(common_calibrated, wifi_calibrated)),
                         result,
                         elapsed_micros: 1,
                         tracking: Some(StationPhyTrackingEvidence {
@@ -33,6 +69,58 @@ fn calibration_requires_success_and_both_committed_branches() {
                     );
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flags() {
+    let evidence = StationPauseEvidence {
+        result: StationPauseResult::Resumed,
+        elapsed_micros: 20,
+        tracking: Some(StationPhyTrackingEvidence {
+            inhibited: false,
+            common_calibrated: true,
+            wifi_calibrated: true,
+            bluetooth_ieee802154_calibrated: false,
+        }),
+        timings: Some(parent_timing(true, true)),
+    };
+    for operation in [
+        StationPauseOperation::Tracking,
+        StationPauseOperation::Calibration,
+    ] {
+        assert!(validate_pause(operation, evidence).is_ok());
+        assert!(
+            validate_pause(
+                operation,
+                StationPauseEvidence {
+                    timings: None,
+                    ..evidence
+                }
+            )
+            .is_err()
+        );
+        for mutation in 0..7 {
+            let mut changed = evidence;
+            let timing = changed.timings.as_mut().unwrap();
+            match mutation {
+                0 => timing.temperature = Default::default(),
+                1 => {
+                    timing.wifi_power.started = 2;
+                    timing.wifi_power.completed = 2;
+                }
+                2 => timing.rfpll = timing.wifi_power,
+                3 => timing.bluetooth_ieee802154_power = timing.wifi_power,
+                4 => timing.channel_restore = Default::default(),
+                5 => timing.tx_gain_publication = Default::default(),
+                6 => changed.tracking.as_mut().unwrap().common_calibrated = false,
+                _ => unreachable!(),
+            }
+            assert!(
+                validate_pause(operation, changed).is_err(),
+                "accepted mutation {mutation}"
+            );
         }
     }
 }
@@ -217,6 +305,7 @@ fn rfpll_detail_cannot_be_missing_or_confuse_forced_work_with_thermal_skip() {
         correction: None,
     };
     let ran = RfpllEvidence {
+        sample_age_micros: Some(100),
         threshold: 0,
         correction: Some(RfpllCorrectionEvidence {
             initial_cap: 100,
@@ -277,6 +366,22 @@ fn observed_rfpll_rejects_missing_or_stale_sensor_age() {
             .is_ok(),
             valid
         );
+        let measured = open_esp_radio_hil_protocol::RfpllEvidence {
+            threshold: 0,
+            correction: Some(open_esp_radio_hil_protocol::RfpllCorrectionEvidence {
+                initial_cap: 100,
+                selected_cap: 101,
+                accepted_samples: 3,
+                entries_updated: 85,
+                restored_frequency_index: Some(11),
+            }),
+            ..detail
+        };
+        assert_eq!(
+            super::validate_rfpll(StationPauseOperation::Rfpll, Some(timings), Some(measured))
+                .is_ok(),
+            valid
+        );
         assert!(
             super::validate_rfpll(
                 StationPauseOperation::RfpllCheck,
@@ -327,5 +432,45 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
             }
         )
         .is_err()
+    );
+}
+
+#[test]
+fn synthetic_pause_requires_its_hold_and_cannot_hide_phy_work() {
+    let operation = StationPauseOperation::Synthetic {
+        duration_micros: 10_000,
+        notify_ap: true,
+    };
+    let mut evidence = StationPauseEvidence {
+        timings: None,
+        tracking: None,
+        result: open_esp_radio_hil_protocol::StationPauseResult::Resumed,
+        elapsed_micros: 9_999,
+    };
+    assert!(validate_pause(operation, evidence).is_err());
+    evidence.elapsed_micros = 10_500;
+    assert!(validate_pause(operation, evidence).is_ok());
+    evidence.tracking = Some(open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
+        inhibited: false,
+        common_calibrated: false,
+        wifi_calibrated: false,
+        bluetooth_ieee802154_calibrated: false,
+    });
+    assert!(validate_pause(operation, evidence).is_err());
+}
+
+#[test]
+fn rx_gain_detail_is_required_exactly_when_timing_is_available() {
+    use super::validate_rx_gain;
+    use open_esp_radio_hil_protocol::{PhyRxGainEvidence, PhyTimingEvidence};
+    assert!(validate_rx_gain(None, None).is_ok());
+    assert!(validate_rx_gain(Some(PhyTimingEvidence::default()), None).is_err());
+    assert!(validate_rx_gain(None, Some(PhyRxGainEvidence::default())).is_err());
+    assert!(
+        validate_rx_gain(
+            Some(PhyTimingEvidence::default()),
+            Some(PhyRxGainEvidence::default())
+        )
+        .is_ok()
     );
 }

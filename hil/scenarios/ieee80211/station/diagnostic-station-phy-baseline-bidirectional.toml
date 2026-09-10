@@ -1,0 +1,27 @@
+schema = 4
+id = "diagnostic-station-phy-baseline-bidirectional"
+description = "No PHY maintenance within a preserved station epoch during bidirectional UDP delivery"
+repetitions = 1
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "station", "pause", "udp", "ht40"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 12
+rx_rate_bps = 65000000
+tx_rate_bps = 65000000
+payload_bytes = 1200
+
+
+[criteria]
+maximum_rx_silence_ms = 250
+exact_delivery = false
+minimum_rx_bps = 10000000
+minimum_tx_bps = 10000000
+require_no_beacon_loss = true

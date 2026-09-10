@@ -292,6 +292,8 @@ pub struct Criteria {
     /// native 0..=255 BSS-load scale. This is deliberately a ceiling-scenario
     /// criterion rather than an inferred throughput failure.
     pub maximum_idle_channel_utilization_255: Option<u8>,
+    /// Maximum silence in the complete station UDP RX observation window.
+    pub maximum_rx_silence_ms: Option<u32>,
     pub maximum_lost: Option<u32>,
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,

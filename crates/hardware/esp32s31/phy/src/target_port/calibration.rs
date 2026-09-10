@@ -76,8 +76,9 @@ pub async fn rx_gain<D: PhyAsyncDelay, P>(
     mut child: PhyCalibrationRxGainTransition,
     platform: &mut P,
     registers: &mut impl SharedPhyContext,
+    observe: impl FnMut(crate::tracking::observation::Operation, crate::tracking::observation::Event),
 ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-    rx_gain_init::<D, _>(child.transition_mut(), platform, registers).await?;
+    rx_gain_init::<D, _>(child.transition_mut(), platform, registers, observe).await?;
     child
         .commit()
         .map_err(|_| PhyTargetPortError::UnexpectedBinding)
@@ -89,25 +90,74 @@ pub async fn rx_gain_init<D: PhyAsyncDelay, P>(
     child: &mut crate::rx::gain::PhyRxGainInitTransition,
     platform: &mut P,
     registers: &mut impl SharedPhyContext,
+    mut observe: impl FnMut(
+        crate::tracking::observation::Operation,
+        crate::tracking::observation::Event,
+    ),
 ) -> Result<(), PhyTargetPortError> {
-    use crate::rx::gain::{PhyRxGainInitAction, PhyRxGainInitExternalBinding};
+    use crate::tracking::observation::{Event, Operation};
     for _ in 0..RF_OPERATION_LIMIT {
-        let action = child.action();
-        if matches!(
-            action,
-            PhyRxGainInitAction::Complete(_) | PhyRxGainInitAction::Failed(_)
-        ) {
+        observe(Operation::RxGainPrepare, Event::Started);
+        let prepared = prepare_rx_gain(child);
+        observe(Operation::RxGainPrepare, terminal_event(&prepared));
+        let Some((binding, operation)) = prepared? else {
             return Ok(());
-        }
-        let binding = PhyRxGainInitExternalBinding::lower(action)
-            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        let completion =
-            TargetCompleter::<D>::complete_rx_gain(binding, platform, registers).await?;
-        child
-            .advance(completion)
-            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        };
+        observe(operation, Event::Started);
+        let completion = TargetCompleter::<D>::complete_rx_gain(binding, platform, registers).await;
+        observe(operation, terminal_event(&completion));
+        let completion = completion?;
+        observe(Operation::RxGainAdvance, Event::Started);
+        let advanced = advance_rx_gain(child, completion);
+        observe(Operation::RxGainAdvance, terminal_event(&advanced));
+        advanced?;
     }
     Err(PhyTargetPortError::RfOperationLimit)
+}
+
+// Keep synchronous action/state temporaries out of the async poll frame that
+// also calls the nested hardware executor. No ownership or rejection edge changes.
+#[inline(never)]
+fn prepare_rx_gain(
+    child: &crate::rx::gain::PhyRxGainInitTransition,
+) -> Result<
+    Option<(
+        crate::rx::gain::PhyRxGainInitExternalBinding,
+        crate::tracking::observation::Operation,
+    )>,
+    PhyTargetPortError,
+> {
+    use crate::rx::gain::{PhyRxGainInitAction, PhyRxGainInitExternalBinding};
+    use crate::tracking::observation::Operation;
+    let action = child.action();
+    let operation = match action {
+        PhyRxGainInitAction::Complete(_) | PhyRxGainInitAction::Failed(_) => return Ok(None),
+        PhyRxGainInitAction::Dc(_) => Operation::RxGainDc,
+        PhyRxGainInitAction::Publish(_) => Operation::RxGainPublish,
+        _ => Operation::RxGainControl,
+    };
+    let binding = PhyRxGainInitExternalBinding::lower(action)
+        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+    Ok(Some((binding, operation)))
+}
+
+#[inline(never)]
+fn advance_rx_gain(
+    child: &mut crate::rx::gain::PhyRxGainInitTransition,
+    completion: crate::rx::gain::PhyRxGainInitCompletion,
+) -> Result<(), PhyTargetPortError> {
+    child
+        .advance(completion)
+        .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+}
+
+fn terminal_event<T, E>(result: &Result<T, E>) -> crate::tracking::observation::Event {
+    use crate::tracking::observation::Event;
+    if result.is_ok() {
+        Event::Completed
+    } else {
+        Event::Failed
+    }
 }
 
 /// Execute the complete TX-DC/PWDET root, including measurement and restoration.

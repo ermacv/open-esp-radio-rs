@@ -25,4 +25,5 @@ pub mod scan;
 pub mod station;
 pub mod twt;
 
+pub mod absence;
 pub mod association;

@@ -375,6 +375,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             .await;
             let elapsed_micros = started.elapsed().as_micros().max(1);
             let transport = TransportEvidence {
+                rx_maximum_silence_micros: None,
                 rx_bytes: 0,
                 tx_bytes: bytes,
                 rx_units: 0,

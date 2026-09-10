@@ -46,6 +46,7 @@ mod tests {
             host(),
             &[],
             Some(TransportEvidence {
+                rx_maximum_silence_micros: None,
                 rx_bytes: 0,
                 tx_bytes: 15_360,
                 rx_units: 0,
@@ -74,6 +75,7 @@ mod tests {
             host(),
             &[burst],
             Some(TransportEvidence {
+                rx_maximum_silence_micros: None,
                 rx_units: 3,
                 rx_bytes: 480,
                 tx_units: 20,

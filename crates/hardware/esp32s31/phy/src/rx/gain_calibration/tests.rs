@@ -310,3 +310,115 @@ fn independent_wifi_radio_measurement_waits_for_low_level_publication() {
         .unwrap();
     assert!(matches!(transition.step, DcStep::CalibrateWifiRadio(_)));
 }
+
+#[test]
+fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
+    use crate::calibration::estimator::{PhyDcIqAction, PhyDcIqCompletion};
+    let pll = RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
+        crystal_selector: 0,
+        frequency_code: 0x9b4,
+        offset: 0,
+    });
+    let RfpllFrequencyAction::StartChannelSwitch {
+        frequency_index,
+        crystal_selector,
+    } = pll.action()
+    else {
+        panic!("channel start");
+    };
+    let pll_valid = PhyRxGainDcCompletion::Rfpll(RfpllFrequencyCompletion::ChannelSwitchStarted {
+        frequency_index,
+        crystal_selector,
+    });
+    let pll_invalid = PhyRxGainDcCompletion::Rfpll(RfpllFrequencyCompletion::DelayElapsed(0));
+    let i2c = MaskedI2cWriteTransition::new(analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE, 0);
+    let MaskedI2cWriteAction::ReadByte { address } = i2c.action() else {
+        panic!("I2C read");
+    };
+    let i2c_valid = PhyRxGainDcCompletion::I2c(MaskedI2cWriteCompletion::I2cReadCompleted {
+        address,
+        value: 0x5a,
+    });
+    let i2c_invalid =
+        PhyRxGainDcCompletion::I2c(MaskedI2cWriteCompletion::I2cWriteCompleted { address });
+    let minimum = PhyRxDcMinimumTransition::new(PhyRxGainDcTransition::reference_minimum_request(
+        PhyRxGainDcBank::Shared,
+        false,
+    ));
+    let PhyRxDcMinimumAction::DcIq(PhyDcIqAction::Configure(request)) = minimum.action() else {
+        panic!("estimator configure");
+    };
+    let minimum_valid = PhyRxGainDcCompletion::Minimum(PhyRxDcMinimumCompletion::DcIq(
+        PhyDcIqCompletion::Configured(request),
+    ));
+    let minimum_invalid = PhyRxGainDcCompletion::Minimum(PhyRxDcMinimumCompletion::DcIq(
+        PhyDcIqCompletion::ReadinessTimedOut(request),
+    ));
+    let calibration = PhyRxDcCalibrationTransition::new(RADIO);
+    let calibration_valid =
+        PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::ControlRestorePrepared);
+    let calibration_invalid =
+        PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::ControlRestored);
+    for (step, valid, invalid) in [
+        (DcStep::Rfpll(pll), pll_valid, pll_invalid),
+        (DcStep::WifiRfpll(pll), pll_valid, pll_invalid),
+        (DcStep::SharedI2c(i2c), i2c_valid, i2c_invalid),
+        (DcStep::SharedRestoreI2c(i2c), i2c_valid, i2c_invalid),
+        (
+            DcStep::ReferenceMinimum {
+                bank: PhyRxGainDcBank::Shared,
+                high: false,
+                transition: minimum,
+            },
+            minimum_valid,
+            minimum_invalid,
+        ),
+        (
+            DcStep::FineCalibration {
+                index: 2,
+                transition: calibration,
+            },
+            calibration_valid,
+            calibration_invalid,
+        ),
+        (
+            DcStep::CalibrateBaseband {
+                bank: PhyRxGainDcBank::Wifi,
+                index: 1,
+                transition: calibration,
+            },
+            calibration_valid,
+            calibration_invalid,
+        ),
+        (
+            DcStep::CalibrateWifiRadio(calibration),
+            calibration_valid,
+            calibration_invalid,
+        ),
+    ] {
+        let mut dc = PhyRxGainDcTransition::new(PhyRxGainDcParameters {
+            crystal_selector: 0,
+            pbus_rx_path_value: 0xbf,
+            rx_saturation_detected: false,
+        });
+        dc.step = step;
+        dc.wifi_index_dc = [[0x101, 0x102]; 8];
+        dc.shared_index_dc = [[0x121, 0x122]; 11];
+        dc.rxbb_dc_adjustments = [[3, 7]; 6];
+        let before = dc;
+        assert_eq!(
+            dc.advance(invalid),
+            Err(PhyRxGainDcTransitionError::WrongCompletion)
+        );
+        assert_eq!(dc, before);
+        dc.advance(valid).unwrap();
+        let accepted = dc;
+        // Replaying a formerly valid completion must preserve the advanced
+        // nested cursor as well as the already accumulated coefficient banks.
+        assert_eq!(
+            dc.advance(valid),
+            Err(PhyRxGainDcTransitionError::WrongCompletion)
+        );
+        assert_eq!(dc, accepted);
+    }
+}

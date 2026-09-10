@@ -754,6 +754,9 @@ enum InitStep {
 /// owned booleans. A successful DC outcome is held inside this transition
 /// until the enclosing `PhyState` commits it; no raw parameter pointer is
 /// exposed while hardware calibration is active.
+/// The DC child advances in place: it already preserves its full state when
+/// rejecting a completion. The root therefore retains coefficient storage
+/// across steps instead of copying the child around every accepted action.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainInitTransition {
     parameters: PhyRxGainInitParameters,
@@ -832,9 +835,8 @@ impl PhyRxGainInitTransition {
                 self.step = InitStep::Dc(PhyRxGainDcTransition::new(self.parameters.dc));
             }
             (InitStep::Dc(transition), PhyRxGainInitCompletion::Dc(completion)) => {
-                // Keep DC's transactional rejection boundary independent of the
-                // in-place table publisher below.
-                let mut transition = *transition;
+                // DC already commits only after its child accepts completion.
+                // Keep accumulated coefficients in their existing storage.
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion)?;
@@ -845,7 +847,7 @@ impl PhyRxGainInitTransition {
                     PhyRxGainDcAction::Failed(failure) => {
                         self.step = InitStep::RestoreDcControlAfterFailure(failure);
                     }
-                    _ => self.step = InitStep::Dc(transition),
+                    _ => {}
                 }
             }
             (

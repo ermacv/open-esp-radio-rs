@@ -205,25 +205,25 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
-    const fn path(self) -> u8 {
+    const fn path(&self) -> u8 {
         match self.request.stage {
             PhyRxDcCalibrationStage::Radio => 2,
             PhyRxDcCalibrationStage::Baseband => 1,
         }
     }
 
-    const fn max_iterations(self) -> u8 {
+    const fn max_iterations(&self) -> u8 {
         match self.request.stage {
             PhyRxDcCalibrationStage::Radio => 8,
             PhyRxDcCalibrationStage::Baseband => 12,
         }
     }
 
-    const fn measurement_identity(self, high: bool) -> u8 {
+    const fn measurement_identity(&self, high: bool) -> u8 {
         self.iteration.wrapping_mul(2).wrapping_add(high as u8)
     }
 
-    const fn minimum_request(self, high: bool) -> PhyRxDcMinimumRequest {
+    const fn minimum_request(&self, high: bool) -> PhyRxDcMinimumRequest {
         PhyRxDcMinimumRequest {
             measurement: self.measurement_identity(high),
             control: self.request.control,
@@ -235,7 +235,7 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
-    const fn current_force(self, selector: u8) -> PhyPbusForceTest {
+    const fn current_force(&self, selector: u8) -> PhyPbusForceTest {
         let value = if selector == 2 {
             self.current[0]
         } else {
@@ -244,14 +244,14 @@ impl PhyRxDcCalibrationTransition {
         PhyPbusForceTest::new(selector, self.path(), value)
     }
 
-    const fn cleanup_configuration(self, terminal: Terminal) -> [u16; 2] {
+    const fn cleanup_configuration(&self, terminal: Terminal) -> [u16; 2] {
         match terminal {
             Terminal::Complete(outcome) => outcome.configuration,
             Terminal::Failed(_) => self.initial,
         }
     }
 
-    pub const fn action(self) -> PhyRxDcCalibrationAction {
+    pub const fn action(&self) -> PhyRxDcCalibrationAction {
         match self.step {
             Step::PrepareControlRestore => PhyRxDcCalibrationAction::PrepareControlRestore,
             Step::ReadPbus => PhyRxDcCalibrationAction::ReadPbus {
@@ -267,7 +267,7 @@ impl PhyRxDcCalibrationTransition {
                 measurement: self.measurement_identity(high),
                 micros: 10,
             },
-            Step::Minimum { transition, .. } => {
+            Step::Minimum { ref transition, .. } => {
                 PhyRxDcCalibrationAction::Minimum(transition.action())
             }
             Step::CleanupI { terminal, .. } => PhyRxDcCalibrationAction::ForcePbus(
@@ -893,7 +893,7 @@ impl PhyRxGainDcTransition {
         }
     }
 
-    const fn outcome(self) -> PhyRxGainDcOutcome {
+    const fn outcome(&self) -> PhyRxGainDcOutcome {
         PhyRxGainDcOutcome {
             wifi_index_dc: self.wifi_index_dc,
             wifi_dc_base: self.wifi_dc_base,
@@ -902,7 +902,7 @@ impl PhyRxGainDcTransition {
         }
     }
 
-    const fn previous(self, bank: PhyRxGainDcBank, index: u8) -> [u16; 2] {
+    const fn previous(&self, bank: PhyRxGainDcBank, index: u8) -> [u16; 2] {
         if index == 0 {
             [0x100; 2]
         } else {
@@ -916,19 +916,19 @@ impl PhyRxGainDcTransition {
         }
     }
 
-    const fn baseband(self, bank: PhyRxGainDcBank, index: u8) -> [u16; 2] {
+    const fn baseband(&self, bank: PhyRxGainDcBank, index: u8) -> [u16; 2] {
         match bank {
             PhyRxGainDcBank::Wifi if index != 0 => self.wifi_dc_base,
             _ => [0x100; 2],
         }
     }
 
-    pub const fn action(self) -> PhyRxGainDcAction {
+    pub const fn action(&self) -> PhyRxGainDcAction {
         match self.step {
             DcStep::ConfigureRegisters | DcStep::WifiConfigureRegisters => {
                 PhyRxGainDcAction::ConfigureRegisters { enabled: true }
             }
-            DcStep::Rfpll(transition) | DcStep::WifiRfpll(transition) => {
+            DcStep::Rfpll(ref transition) | DcStep::WifiRfpll(ref transition) => {
                 PhyRxGainDcAction::Rfpll(transition.action())
             }
             DcStep::Debug | DcStep::WifiDebug => PhyRxGainDcAction::ConfigurePbusDebugMode,
@@ -951,7 +951,7 @@ impl PhyRxGainDcTransition {
                 bank: PhyRxGainDcBank::Shared,
                 transaction: PhyPbusForceTest::new(1, 1, value),
             },
-            DcStep::SharedI2c(transition) | DcStep::SharedRestoreI2c(transition) => {
+            DcStep::SharedI2c(ref transition) | DcStep::SharedRestoreI2c(ref transition) => {
                 PhyRxGainDcAction::I2c(transition.action())
             }
             DcStep::ReferenceSetup { bank, index } => PhyRxGainDcAction::ForcePbus {
@@ -966,7 +966,7 @@ impl PhyRxGainDcTransition {
                 },
                 micros: 10,
             },
-            DcStep::ReferenceMinimum { transition, .. } => {
+            DcStep::ReferenceMinimum { ref transition, .. } => {
                 PhyRxGainDcAction::Minimum(transition.action())
             }
             DcStep::ReferenceHigh { bank } => PhyRxGainDcAction::ForcePbus {
@@ -989,7 +989,7 @@ impl PhyRxGainDcTransition {
                 bank: PhyRxGainDcBank::Wifi,
                 transaction: PhyPbusForceTest::new(1, 2, fine_code(index)),
             },
-            DcStep::FineCalibration { transition, .. } => {
+            DcStep::FineCalibration { ref transition, .. } => {
                 PhyRxGainDcAction::Calibration(transition.action())
             }
             DcStep::PrepareWifiRadioLevel => PhyRxGainDcAction::ForcePbus {
@@ -1032,8 +1032,8 @@ impl PhyRxGainDcTransition {
                     self.parameters.pbus_rx_path_value,
                 ),
             },
-            DcStep::CalibrateBaseband { transition, .. }
-            | DcStep::CalibrateWifiRadio(transition) => {
+            DcStep::CalibrateBaseband { ref transition, .. }
+            | DcStep::CalibrateWifiRadio(ref transition) => {
                 PhyRxGainDcAction::Calibration(transition.action())
             }
             DcStep::RxOff { index, .. } => PhyRxGainDcAction::ForcePbus {
@@ -1160,6 +1160,9 @@ impl PhyRxGainDcTransition {
         DcStep::ClearRegisters(terminal)
     }
 
+    /// Rejected completions leave both the cursor and accumulated calibration
+    /// products unchanged. Fallible children advance a local cursor; publication
+    /// into this parent occurs only after acceptance, with no fallible tail.
     pub fn advance(
         &mut self,
         completion: PhyRxGainDcCompletion,

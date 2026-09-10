@@ -370,3 +370,51 @@ fn root_preserves_publish_failure_through_cleanup() {
         ))
     );
 }
+
+#[test]
+fn root_dc_rejection_preserves_state_and_accepted_nested_progress() {
+    use crate::analog::rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
+    let mut root = PhyRxGainInitTransition::new(init_parameters());
+    root.advance(PhyRxGainInitCompletion::DcControlRestorePrepared)
+        .unwrap();
+    let before = root;
+    assert_eq!(
+        root.advance(PhyRxGainInitCompletion::Dc(
+            PhyRxGainDcCompletion::RegistersConfigured { enabled: false }
+        )),
+        Err(PhyRxGainInitTransitionError::WrongCompletion)
+    );
+    assert_eq!(root, before);
+    root.advance(PhyRxGainInitCompletion::Dc(
+        PhyRxGainDcCompletion::RegistersConfigured { enabled: true },
+    ))
+    .unwrap();
+    let PhyRxGainInitAction::Dc(PhyRxGainDcAction::Rfpll(
+        RfpllFrequencyAction::StartChannelSwitch {
+            frequency_index,
+            crystal_selector,
+        },
+    )) = root.action()
+    else {
+        panic!("nested PLL start");
+    };
+    let completion = PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::Rfpll(
+        RfpllFrequencyCompletion::ChannelSwitchStarted {
+            frequency_index,
+            crystal_selector,
+        },
+    ));
+    root.advance(completion).unwrap();
+    let accepted = root;
+    assert_eq!(
+        root.advance(completion),
+        Err(PhyRxGainInitTransitionError::WrongCompletion)
+    );
+    assert_eq!(root, accepted);
+    assert!(matches!(
+        root.action(),
+        PhyRxGainInitAction::Dc(PhyRxGainDcAction::Rfpll(RfpllFrequencyAction::DelayMicros(
+            1
+        )))
+    ));
+}

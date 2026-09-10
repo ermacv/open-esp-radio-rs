@@ -87,6 +87,7 @@ pub struct Selection {
     integration: Integration,
     expected: String,
     _lease: WorkspaceLease,
+    _build: WorkspaceLease,
 }
 // Closing one descriptor does not release flock while a forked pre-exec
 // child still holds the shared open file description. Release ownership at
@@ -100,21 +101,50 @@ impl Drop for WorkspaceLease {
     }
 }
 
+fn workspace_lease_file(root: &Path, workspace: &Path, name: &str) -> Result<fs::File> {
+    let root = root.canonicalize()?;
+    let workspace = workspace.canonicalize()?;
+    let lease_dir = root
+        .join("target/network-build")
+        .join(workspace.strip_prefix(&root)?);
+    fs::create_dir_all(&lease_dir)?;
+    Ok(fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(lease_dir.join(name))?)
+}
+
+/// Read the original Cargo catalog after any temporary network selection is
+/// restored. Readers share the lease; only builds of this workspace exclude
+/// them. Keep this guard alive through Cargo metadata or the catalog snapshot.
+pub struct CatalogRead {
+    _lease: WorkspaceLease,
+}
+
+impl CatalogRead {
+    pub fn acquire(root: &Path, workspace: &Path) -> Result<Self> {
+        let file = workspace_lease_file(root, workspace, "workspace.lock")?;
+        FileExt::lock_shared(&file)?;
+        Ok(Self {
+            _lease: WorkspaceLease(file),
+        })
+    }
+}
+
 impl Selection {
     pub fn acquire(root: &Path, workspace: &Path, integration: Integration) -> Result<Self> {
-        let lease_dir = root
-            .join("target/network-build")
-            .join(workspace.strip_prefix(root)?);
-        fs::create_dir_all(&lease_dir)?;
-        let lease = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lease_dir.join("workspace.lock"))?;
-        lease
+        // Reject overlapping builds, but wait for catalog readers to finish.
+        // The separate gate keeps this distinction without polling or making
+        // unrelated workspace builds wait for one another.
+        let build = workspace_lease_file(root, workspace, "build.lock")?;
+        build
             .try_lock_exclusive()
             .map_err(|e| format!("another firmware build owns {}: {e}", workspace.display()))?;
+        let build = WorkspaceLease(build);
+        let lease = workspace_lease_file(root, workspace, "workspace.lock")?;
+        FileExt::lock_exclusive(&lease)?;
         let lease = WorkspaceLease(lease);
         let lock = workspace.join("Cargo.lock");
         let original = fs::read(&lock)?;
@@ -135,6 +165,7 @@ impl Selection {
             integration,
             expected: format!("git+{git}?rev={rev}#{rev}"),
             _lease: lease,
+            _build: build,
         })
     }
     pub fn validate(&self) -> Result<()> {

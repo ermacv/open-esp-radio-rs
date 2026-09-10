@@ -157,3 +157,66 @@ fn example_selection_is_explicit_and_rejects_conflicting_contracts() {
         Integration::for_example(None, &["owned-network".into(), "compat-network".into()]).is_err()
     );
 }
+
+fn catalog_fixture() -> (tempfile::TempDir, PathBuf) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let workspace = root.join("application");
+    fs::create_dir_all(&workspace).unwrap();
+    fs::create_dir_all(root.join(CONFIG).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(CONFIG),
+        include_str!("../../../../crates/network/dependencies/xarxa-patched.toml"),
+    )
+    .unwrap();
+    fs::write(workspace.join("Cargo.lock"), "original catalog").unwrap();
+    (directory, workspace)
+}
+
+#[test]
+fn catalog_readers_share_access_and_exclude_only_their_workspace_writer() {
+    let (directory, workspace) = catalog_fixture();
+    let root = directory.path();
+    let first = CatalogRead::acquire(root, &workspace).unwrap();
+    let second = CatalogRead::acquire(root, &workspace.join(".")).unwrap();
+    let probe = workspace_lease_file(root, &workspace, "workspace.lock").unwrap();
+    assert!(FileExt::try_lock_exclusive(&probe).is_err());
+    drop(first);
+    assert!(FileExt::try_lock_exclusive(&probe).is_err());
+
+    let other = root.join("other");
+    fs::create_dir(&other).unwrap();
+    fs::write(other.join("Cargo.lock"), "other catalog").unwrap();
+    Selection::acquire(root, &other, Integration::UpstreamXarxa).unwrap();
+
+    // A writer waits for the remaining reader using the OS lease. Completion
+    // is synchronized by ownership release, never by an assumed sleep time.
+    std::thread::scope(|scope| {
+        let writer = scope
+            .spawn(|| Selection::acquire(root, &workspace, Integration::UpstreamXarxa).unwrap());
+        drop(second);
+        drop(writer.join().unwrap());
+    });
+    FileExt::try_lock_exclusive(&probe).unwrap();
+    FileExt::unlock(&probe).unwrap();
+}
+
+#[test]
+fn concurrent_catalog_reader_observes_restoration_after_failed_build() {
+    let (directory, workspace) = catalog_fixture();
+    let root = directory.path();
+    let selection = Selection::acquire(root, &workspace, Integration::PatchedXarxa).unwrap();
+    fs::write(workspace.join("Cargo.lock"), "transient patched catalog").unwrap();
+    let probe = workspace_lease_file(root, &workspace, "workspace.lock").unwrap();
+    assert!(FileExt::try_lock_shared(&probe).is_err());
+    std::thread::scope(|scope| {
+        let reader = scope.spawn(|| {
+            let _read = CatalogRead::acquire(root, &workspace).unwrap();
+            fs::read_to_string(workspace.join("Cargo.lock")).unwrap()
+        });
+        drop(selection);
+        assert_eq!(reader.join().unwrap(), "original catalog");
+    });
+    FileExt::try_lock_exclusive(&probe).unwrap();
+    FileExt::unlock(&probe).unwrap();
+}

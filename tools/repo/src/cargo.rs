@@ -12,6 +12,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
+fn catalog_read(
+    context: &Context,
+    workspace: &Path,
+) -> Result<Option<oer_firmware::network::CatalogRead>> {
+    // Isolated graph probes live outside the repository and cannot participate
+    // in a repository firmware selection. Their private catalogs need no lease.
+    if workspace.starts_with(&context.root) {
+        Ok(Some(oer_firmware::network::CatalogRead::acquire(
+            &context.root,
+            workspace,
+        )?))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn workspace_manifest(context: &Context, manifest: &Path) -> Result<PathBuf> {
     let output = process::capture(
         context
@@ -45,6 +61,11 @@ fn document(
     locked: bool,
     no_deps: bool,
 ) -> Result<Value> {
+    let workspace = workspace_manifest(context, manifest)?;
+    let _catalog = catalog_read(
+        context,
+        workspace.parent().ok_or("workspace parent missing")?,
+    )?;
     let mut command = context.cargo();
     command
         .args(["metadata", "--format-version", "1", "--manifest-path"])
@@ -119,7 +140,10 @@ pub fn isolated_graph(
     let original: toml::Value = toml::from_str(&fs::read_to_string(&origin)?)?;
     let package: toml::Value = toml::from_str(&fs::read_to_string(&manifest)?)?;
     let name = string(package.get("package").and_then(|p| p.get("name")))?;
-    let lock_text = fs::read_to_string(origin_base.join("Cargo.lock"))?;
+    let lock_text = {
+        let _catalog = catalog_read(context, origin_base)?;
+        fs::read_to_string(origin_base.join("Cargo.lock"))?
+    };
     let lock: toml::Value = toml::from_str(&lock_text)?;
     let mut pins = BTreeSet::new();
     for entry in lock

@@ -76,3 +76,26 @@ fn git_worktree_discovery_uses_its_own_source_root() {
             .all(|p| p.starts_with(&context.root))
     );
 }
+
+#[test]
+fn metadata_reads_restored_catalog_after_concurrent_network_selection() {
+    let f = fixture();
+    f.write(
+        "crates/network/dependencies/xarxa-patched.toml",
+        include_str!("../../../crates/network/dependencies/xarxa-patched.toml"),
+    );
+    let selection = oer_firmware::network::Selection::acquire(
+        f.root(),
+        f.root(),
+        oer_firmware::network::Integration::PatchedXarxa,
+    )
+    .unwrap();
+    f.write("Cargo.lock", "incomplete patched build catalog");
+    std::thread::scope(|scope| {
+        let metadata = scope.spawn(|| {
+            oer_xtask::cargo::metadata(&f.context, &f.root().join("Cargo.toml"), &[], None, true)
+        });
+        drop(selection);
+        metadata.join().unwrap().unwrap();
+    });
+}

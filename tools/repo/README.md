@@ -77,6 +77,10 @@ owned-network choices.
 Different example workspaces can build concurrently. An overlapping build in
 the same workspace fails before changing its dependency lock catalog; the
 artifact lease separately protects the selected cache and output snapshot.
+Repository metadata checks and isolated graph catalog snapshots take shared
+read leases on the same workspace catalog. They wait for a patched build to
+restore the original lockfile; a build waits for existing readers. Waiting uses
+OS file locks. Readers and independent workspaces can still run concurrently.
 Successful bundles remain available for inspection, while failed partial bundles
 are removed. Flashing uses the completed bundle after releasing the build lease,
 so a later build cannot replace the selected image. The serial-device lease

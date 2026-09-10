@@ -1393,6 +1393,19 @@ where
                                 unreachable!("the awaited peripheral radio owner did not change")
                             };
                             match running.step_radio() {
+                                PeripheralConnectionActiveStep::Stopped { task, reason } => {
+                                    self.store_retained_state(
+                                        ControllerCommandPhase::Idle,
+                                        ControllerCommandState::Idle(task),
+                                    );
+                                    return self.retain_boundary(
+                                        ControllerCommandBoundary::IdleRestored(
+                                            ControllerIdleCompletion::PeripheralDisconnected {
+                                                reason,
+                                            },
+                                        ),
+                                    );
+                                }
                                 PeripheralConnectionActiveStep::Continue(running) => {
                                     self.store_retained_state(
                                         ControllerCommandPhase::PeripheralConnectionActive,

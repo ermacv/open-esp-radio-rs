@@ -638,6 +638,22 @@ impl ControllerSchedulerEpoch {
         self.project_raw_ticks(captured.wrapping_controller_ticks())
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn project_peripheral_event_start(
+        self,
+        window: crate::scheduler::SchedulerRawWindow,
+    ) -> u32 {
+        self.project_raw_ticks(window.start())
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn project_peripheral_receive_time(
+        self,
+        time: oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime,
+    ) -> u32 {
+        self.project_raw_ticks(time.wrapping_controller_ticks())
+    }
+
     /// Advance the raw anchor while preserving this sample's scheduler image.
     ///
     /// The Controller does this after every live task-run reference update.

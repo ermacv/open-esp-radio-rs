@@ -11,6 +11,7 @@ use core::fmt::{self, Write};
 pub enum BluetoothExecutionEvent {
     ConnectableAdvertisingRun,
     PeripheralRun,
+    PeripheralDisconnected { reason: u8 },
     Retry,
     Terminal,
 }
@@ -19,6 +20,8 @@ pub enum BluetoothExecutionEvent {
 pub struct BluetoothExecutionSnapshot {
     pub advertising_runs: u32,
     pub peripheral_runs: u32,
+    pub peripheral_disconnections: u32,
+    pub last_disconnect_reason: Option<u8>,
     pub retries: u32,
     pub terminal: bool,
     pub saturated: bool,
@@ -32,6 +35,8 @@ impl BluetoothExecutionSnapshot {
         Self {
             advertising_runs: 0,
             peripheral_runs: 0,
+            peripheral_disconnections: 0,
+            last_disconnect_reason: None,
             retries: 0,
             terminal: false,
             saturated: false,
@@ -53,6 +58,10 @@ impl BluetoothExecutionSnapshot {
         let counter = match event {
             BluetoothExecutionEvent::ConnectableAdvertisingRun => Some(&mut self.advertising_runs),
             BluetoothExecutionEvent::PeripheralRun => Some(&mut self.peripheral_runs),
+            BluetoothExecutionEvent::PeripheralDisconnected { reason } => {
+                self.last_disconnect_reason = Some(reason);
+                Some(&mut self.peripheral_disconnections)
+            }
             BluetoothExecutionEvent::Retry => Some(&mut self.retries),
             BluetoothExecutionEvent::Terminal => {
                 self.terminal = true;
@@ -109,6 +118,27 @@ pub fn snapshot() -> BluetoothExecutionSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn peer_disconnect_is_reusable_progress_and_retains_its_reason() {
+        let mut state = BluetoothExecutionSnapshot::new();
+        state.record(
+            BluetoothExecutionEvent::PeripheralDisconnected { reason: 0x15 },
+            format_args!("power off"),
+        );
+        assert!(!state.terminal);
+        assert_eq!(state.peripheral_disconnections, 1);
+        state.record(
+            BluetoothExecutionEvent::PeripheralRun,
+            format_args!("new connection"),
+        );
+        assert_eq!(state.last_disconnect_reason, Some(0x15));
+        state.record(
+            BluetoothExecutionEvent::PeripheralDisconnected { reason: 0x13 },
+            format_args!("remote user"),
+        );
+        assert_eq!(state.peripheral_disconnections, 2);
+        assert_eq!(state.last_disconnect_reason, Some(0x13));
+    }
     #[test]
     fn terminal_retains_first_reason_and_counters() {
         let mut state = BluetoothExecutionSnapshot::new();

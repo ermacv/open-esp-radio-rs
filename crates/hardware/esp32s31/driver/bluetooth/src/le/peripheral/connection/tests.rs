@@ -11,8 +11,8 @@ use oer_bluetooth_ll::connection::{
 use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceModelAddress, DirectionFindingWorkspaceStorage,
     NonScanningRxMemoryModelAddress, NonScanningRxMemoryStorage,
-    PeripheralConnectionDefaultTxPowerDbm, PeripheralConnectionIntervalTicks,
-    PeripheralConnectionMemoryGraphModelAddress, PeripheralConnectionMemoryGraphStorage,
+    PeripheralConnectionDefaultTxPowerDbm, PeripheralConnectionMemoryGraphModelAddress,
+    PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveTime,
     PeripheralConnectionSchedulerPriority,
 };
 
@@ -121,6 +121,21 @@ fn foreign_allocation_cannot_replace_the_checked_out_runtime_slot() {
 
     assert!(first.allocation_is_idle());
     assert!(second.allocation_is_idle());
+}
+
+#[test]
+fn retirement_admission_requires_both_identities_and_an_empty_slot() {
+    let mut first = runtime(0x2f00_9000);
+    let second = runtime(0x2f00_b000);
+    assert!(!first.can_restore_allocation(first.graph_identity, first.receive_identity));
+    let allocation = first.begin_event().unwrap();
+    assert!(first.can_restore_allocation(first.graph_identity, first.receive_identity));
+    assert!(!first.can_restore_allocation(second.graph_identity, first.receive_identity));
+    assert!(!first.can_restore_allocation(first.graph_identity, second.receive_identity));
+    first
+        .restore_idle(allocation)
+        .unwrap_or_else(|_| panic!("the exact allocation is accepted"));
+    assert!(!first.can_restore_allocation(first.graph_identity, first.receive_identity));
 }
 
 #[test]
@@ -258,7 +273,11 @@ fn first_event_projects_one_preparation_window_without_losing_ownership() {
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 9_000, scale);
     let config = SchedulerSoftwareConfig::reviewed_standalone();
-    let candidate = match prepared.project_scheduler_window(epoch, config) {
+    let candidate = match prepared.project_scheduler_window(
+        epoch,
+        config,
+        &ControllerTimeSample::for_validation(41_234),
+    ) {
         Ok(candidate) => candidate,
         Err(_) => panic!("the accepted first window has a non-empty raw projection"),
     };
@@ -319,7 +338,7 @@ fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
             ),
             Le1MPacketStartTiming::from_scheduler_micros(packet_start),
         )
-        .project_scheduler_window(epoch, config)
+        .project_scheduler_window(epoch, config, &ControllerTimeSample::for_validation(41_234))
         .unwrap_or_else(|_| panic!("the accepted packet projects a first-event window"));
     let first_window = first.requested_window();
     let (allocation, connection) = first.cancel();
@@ -329,7 +348,7 @@ fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
             connection,
             Le1MPacketStartTiming::from_scheduler_micros(packet_start),
         )
-        .project_scheduler_window(epoch, config)
+        .project_scheduler_window(epoch, config, &ControllerTimeSample::for_validation(41_234))
         .unwrap_or_else(|_| panic!("retrying the same packet keeps a valid window"));
 
     assert_eq!(retry.requested_window(), first_window);
@@ -364,7 +383,11 @@ fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
             ),
             Le1MPacketStartTiming::from_scheduler_micros(21_000),
         )
-        .project_scheduler_window(epoch, SchedulerSoftwareConfig::reviewed_standalone())
+        .project_scheduler_window(
+            epoch,
+            SchedulerSoftwareConfig::reviewed_standalone(),
+            &ControllerTimeSample::for_validation(41_234),
+        )
         .unwrap_or_else(|_| panic!("the first connection window projects"));
     let requested = candidate.requested_window();
     let resolved = SchedulerRawWindow::from_projected_scheduler_window(
@@ -397,11 +420,8 @@ fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
         super::LE_FIRST_EVENT_TIMING_GUARD_MICROS
     );
     assert_eq!(
-        prepared.interval(),
-        PeripheralConnectionIntervalTicks::new(
-            epoch.raw_duration_ticks_for_micros(request.timing().interval_micros())
-        )
-        .expect("a validated LE connection interval projects to non-zero ticks")
+        prepared.receive_time(),
+        PeripheralConnectionReceiveTime::from_controller_ticks(41_234)
     );
 
     let workspace_storage =

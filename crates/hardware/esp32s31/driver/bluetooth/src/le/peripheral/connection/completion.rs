@@ -315,11 +315,16 @@ enum PeripheralConnectionCaptureCompletion<T> {
 #[cfg(any(target_arch = "riscv32", test))]
 fn classify_peripheral_connection_capture<C, T>(
     capture: Option<C>,
+    received_packet: bool,
     normalize: impl FnOnce(C) -> Option<T>,
 ) -> PeripheralConnectionCaptureCompletion<T> {
     let Some(captured) = capture else {
         return PeripheralConnectionCaptureCompletion::Complete {
-            activity: LePeripheralConnectionEventPeerActivity::Missed,
+            activity: if received_packet {
+                LePeripheralConnectionEventPeerActivity::Observed
+            } else {
+                LePeripheralConnectionEventPeerActivity::Missed
+            },
             packet_start: None,
         };
     };
@@ -405,6 +410,22 @@ impl PeripheralConnectionCompletedEventRecurringRemainder {
 
 #[cfg(target_arch = "riscv32")]
 impl PeripheralConnectionCompletedEvent {
+    pub(crate) fn receive_time(
+        &self,
+    ) -> oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime {
+        self.graph.receive_time()
+    }
+
+    pub(crate) fn retire(
+        self,
+        runtime: &mut super::PeripheralConnectionRuntimeResources,
+    ) -> core::ops::ControlFlow<Self> {
+        match runtime.retire_active(self.graph) {
+            Ok(()) => core::ops::ControlFlow::Continue(()),
+            Err(graph) => core::ops::ControlFlow::Break(Self { graph, ..self }),
+        }
+    }
+
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
@@ -549,7 +570,7 @@ impl PeripheralConnectionRecycledEvent {
             PeripheralConnectionCapturedAnchorAvailability::Absent => None,
             PeripheralConnectionCapturedAnchorAvailability::Available(captured) => Some(captured),
         };
-        match classify_peripheral_connection_capture(capture, normalize) {
+        match classify_peripheral_connection_capture(capture, !self.batch.is_empty(), normalize) {
             PeripheralConnectionCaptureCompletion::Complete {
                 activity,
                 packet_start,

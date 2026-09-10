@@ -360,6 +360,19 @@ pub struct PeripheralConnectionSchedulerCompleted {
 
 #[cfg(target_arch = "riscv32")]
 impl PeripheralConnectionSchedulerCompleted {
+    pub(crate) fn receive_time(
+        &self,
+    ) -> oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime {
+        self.event.receive_time()
+    }
+
+    pub(crate) fn retire(
+        self,
+        runtime: &mut crate::le::peripheral::connection::PeripheralConnectionRuntimeResources,
+    ) -> ControlFlow<Self> {
+        self.event.retire(runtime).map_break(|event| Self { event })
+    }
+
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,

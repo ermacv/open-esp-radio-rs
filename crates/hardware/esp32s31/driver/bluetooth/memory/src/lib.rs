@@ -206,7 +206,7 @@ pub use peripheral_connection_memory::{
     BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
     PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionEventSpan, PeripheralConnectionIdentity, PeripheralConnectionIntervalTicks,
+    PeripheralConnectionEventSpan, PeripheralConnectionIdentity,
     PeripheralConnectionMemoryGraphActiveCpuOwned, PeripheralConnectionMemoryGraphBindError,
     PeripheralConnectionMemoryGraphBindFailure,
     PeripheralConnectionMemoryGraphCompletionObservation,
@@ -225,9 +225,10 @@ pub use peripheral_connection_memory::{
     PeripheralConnectionMemoryGraphRunning, PeripheralConnectionMemoryGraphRxExtracted,
     PeripheralConnectionMemoryGraphRxExtractionFailure, PeripheralConnectionMemoryGraphRxPublished,
     PeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
-    PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
-    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringReceiveWait,
+    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
+    PeripheralConnectionSchedulerWindow,
 };
 
 pub use rx_memory_list::RxMemoryListClass;

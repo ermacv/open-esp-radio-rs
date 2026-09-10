@@ -9,6 +9,8 @@ pub(crate) mod connection;
 pub(crate) mod first_hci;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod start;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod supervision;
 
 #[cfg(target_arch = "riscv32")]
 pub use connection::PeripheralConnectionPacketStartTiming;

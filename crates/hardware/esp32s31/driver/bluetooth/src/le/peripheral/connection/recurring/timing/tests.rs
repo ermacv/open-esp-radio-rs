@@ -60,6 +60,44 @@ fn phase(packet_start_micros: u32) -> PeripheralConnectionRecurringPhase {
     PeripheralConnectionRecurringPhase::from_nominal_anchor(crate::SchedulerInstant::from_image(
         packet_start_micros,
     ))
+    .correct_from_normalized_packet_start(
+        &PeripheralConnectionPacketStartTiming::from_scheduler_micros(packet_start_micros),
+    )
+}
+
+#[test]
+fn unknown_anchor_retains_win_size_until_a_real_capture() {
+    let request = request(24, 4);
+    let epoch = epoch(0);
+    let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let delta = LePeripheralConnectionEventDelta::new(1).unwrap();
+    let mut unknown = PeripheralConnectionRecurringPhase::from_nominal_anchor(
+        crate::SchedulerInstant::from_image(u32::MAX - 10_000),
+    );
+    for _ in 0..5 {
+        let wide = unknown
+            .plan(request, delta, epoch, config, software_policy())
+            .unwrap();
+        let actual = PeripheralConnectionPacketStartTiming::from_scheduler_micros(
+            unknown.nominal_anchor.image(),
+        );
+        let corrected = unknown
+            .correct_from_normalized_packet_start(&actual)
+            .plan(request, delta, epoch, config, software_policy())
+            .unwrap();
+        // Compare to the receive uncertainty rather than descriptor encodings.
+        assert!(
+            wide.receive_wait().total_micros() >= 2_500 + corrected.receive_wait().total_micros()
+        );
+        assert!(
+            wide.window().end().wrapping_sub(wide.window().start())
+                > corrected
+                    .window()
+                    .end()
+                    .wrapping_sub(corrected.window().start())
+        );
+        unknown = wide.proposed_phase;
+    }
 }
 
 #[test]

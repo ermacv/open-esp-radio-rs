@@ -122,16 +122,20 @@ impl PeripheralConnectionDataChannel {
     }
 }
 
-/// Non-empty raw Controller interval between connection events.
+/// Wrapping absolute Controller time of the latest valid connection reception.
+///
+/// The first event seeds this field with connection creation time. Hardware
+/// subsequently updates it independently of scheduler anchor capture and RX
+/// payload delivery. Zero is a valid timestamp at controller wrap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PeripheralConnectionIntervalTicks(u32);
+pub struct PeripheralConnectionReceiveTime(u32);
 
-impl PeripheralConnectionIntervalTicks {
-    pub const fn new(ticks: u32) -> Option<Self> {
-        if ticks == 0 { None } else { Some(Self(ticks)) }
+impl PeripheralConnectionReceiveTime {
+    pub const fn from_controller_ticks(ticks: u32) -> Self {
+        Self(ticks)
     }
 
-    const fn ticks(self) -> u32 {
+    pub const fn wrapping_controller_ticks(self) -> u32 {
         self.0
     }
 }
@@ -539,7 +543,7 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
     pub fn prepare_reviewed_first_event_fields(
         self,
         channel: PeripheralConnectionDataChannel,
-        interval: PeripheralConnectionIntervalTicks,
+        receive_time: PeripheralConnectionReceiveTime,
         event_span: PeripheralConnectionEventSpan,
         window: PeripheralConnectionSchedulerWindow,
         receive_wait: PeripheralConnectionReceiveWait,
@@ -550,7 +554,7 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
         let graph = self.storage.as_ref().get_ref();
         let input = PeripheralConnectionFirstEventCodecInput {
             channel,
-            interval,
+            receive_time,
             event_span,
             window,
             receive_wait,
@@ -568,7 +572,7 @@ impl PeripheralConnectionMemoryGraphReceivePrepared {
             binding: self.binding,
             pool: self.pool,
             channel,
-            interval,
+            receive_time,
             event_span,
             window,
             receive_wait,
@@ -602,7 +606,7 @@ pub struct PeripheralConnectionMemoryGraphEventFieldsPrepared {
     binding: PeripheralConnectionMemoryGraphBinding,
     pool: NonScanningRxMemoryCpuOwned,
     channel: PeripheralConnectionDataChannel,
-    interval: PeripheralConnectionIntervalTicks,
+    receive_time: PeripheralConnectionReceiveTime,
     event_span: PeripheralConnectionEventSpan,
     window: PeripheralConnectionSchedulerWindow,
     receive_wait: PeripheralConnectionReceiveWait,
@@ -615,8 +619,8 @@ impl PeripheralConnectionMemoryGraphEventFieldsPrepared {
         self.channel
     }
 
-    pub const fn interval(&self) -> PeripheralConnectionIntervalTicks {
-        self.interval
+    pub const fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.receive_time
     }
 
     pub const fn event_span(&self) -> PeripheralConnectionEventSpan {
@@ -682,8 +686,8 @@ impl PeripheralConnectionMemoryGraphDirectionFindingPrepared {
         self.prepared.channel()
     }
 
-    pub const fn interval(&self) -> PeripheralConnectionIntervalTicks {
-        self.prepared.interval()
+    pub const fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.prepared.receive_time()
     }
 
     pub const fn event_span(&self) -> PeripheralConnectionEventSpan {
@@ -785,7 +789,7 @@ impl PeripheralConnectionMemoryGraphPreparedEvent {
                     binding,
                     pool,
                     channel: _,
-                    interval: _,
+                    receive_time: _,
                     event_span: _,
                     window: _,
                     receive_wait: _,
@@ -1337,6 +1341,33 @@ pub struct PeripheralConnectionMemoryGraphActiveCpuOwned {
 }
 
 impl PeripheralConnectionMemoryGraphActiveCpuOwned {
+    /// Latest hardware receive time, observable only after RUN completion and unlink.
+    /// This remains the creation seed until a valid reception updates it. Empty
+    /// packets and duplicates need not appear in the delivered RX batch.
+    pub fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.storage.as_ref().get_ref().receive_time()
+    }
+
+    /// Retire a connection only after scheduler unlink and event reclamation.
+    /// No RUN owns these allocations. Pending TX payloads are cancelled and
+    /// the same graph and RX pool return to their allocation-time state.
+    pub fn retire(
+        mut self,
+    ) -> (
+        PeripheralConnectionMemoryGraphCpuOwned,
+        NonScanningRxMemoryCpuOwned,
+    ) {
+        self.storage.as_mut().initialize_graph(&self.binding);
+        self.pool.reinitialize_after_event();
+        (
+            PeripheralConnectionMemoryGraphCpuOwned {
+                storage: self.storage,
+                binding: self.binding,
+            },
+            self.pool,
+        )
+    }
+
     pub const fn identity(&self) -> PeripheralConnectionMemoryGraphIdentity {
         self.binding.identity()
     }

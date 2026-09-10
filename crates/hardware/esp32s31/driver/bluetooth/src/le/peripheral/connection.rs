@@ -23,11 +23,11 @@ use oer_bluetooth_ll::connection::{
 #[cfg(any(target_arch = "riscv32", test))]
 use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceLink, LeReceivedPdu, PeripheralConnectionDataChannel,
-    PeripheralConnectionEventSpan, PeripheralConnectionIntervalTicks,
-    PeripheralConnectionMemoryGraphDirectionFindingPrepared,
+    PeripheralConnectionEventSpan, PeripheralConnectionMemoryGraphDirectionFindingPrepared,
     PeripheralConnectionMemoryGraphEventFieldsPrepared,
-    PeripheralConnectionMemoryGraphSchedulerAdmissionPrepared, PeripheralConnectionReceiveWait,
-    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionMemoryGraphSchedulerAdmissionPrepared, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionSchedulerPriority,
+    PeripheralConnectionSchedulerWindow,
 };
 
 use oer_esp32s31_bluetooth_memory::{
@@ -633,14 +633,37 @@ impl PeripheralConnectionRuntimeResources {
         allocation: PeripheralConnectionRuntimeAllocation,
     ) -> Result<(), PeripheralConnectionRuntimeAllocation> {
         let (graph_identity, receive_identity) = allocation.identities();
-        if self.idle.is_some()
-            || graph_identity != self.graph_identity
-            || receive_identity != self.receive_identity
-        {
+        if !self.can_restore_allocation(graph_identity, receive_identity) {
             return Err(allocation);
         }
         self.idle = Some(allocation);
         Ok(())
+    }
+
+    /// Retire an unlinked connection while preserving foreign/busy owners on rejection.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn retire_active(
+        &mut self,
+        graph: oer_esp32s31_bluetooth_memory::PeripheralConnectionMemoryGraphActiveCpuOwned,
+    ) -> Result<(), oer_esp32s31_bluetooth_memory::PeripheralConnectionMemoryGraphActiveCpuOwned>
+    {
+        if !self.can_restore_allocation(graph.identity(), graph.receive_identity()) {
+            return Err(graph);
+        }
+        let (graph, receive_pool) = graph.retire();
+        self.idle = Some(PeripheralConnectionRuntimeAllocation {
+            graph,
+            receive_pool,
+        });
+        Ok(())
+    }
+
+    fn can_restore_allocation(
+        &self,
+        graph: PeripheralConnectionMemoryGraphIdentity,
+        receive: NonScanningRxMemoryIdentity,
+    ) -> bool {
+        self.idle.is_none() && graph == self.graph_identity && receive == self.receive_identity
     }
 
     /// Retire one accepted connection only for an explicit pre-publication Reset.
@@ -750,16 +773,14 @@ impl PeripheralConnectionFirstEventPrepared {
         self,
         epoch: ControllerSchedulerEpoch,
         config: SchedulerSoftwareConfig,
+        creation: &crate::controller::time::ControllerTimeSample,
     ) -> Result<PeripheralConnectionFirstEventCandidate, Self> {
         let Some(data_channel) = PeripheralConnectionDataChannel::new(self.event.channel().get())
         else {
             return Err(self);
         };
-        let interval_ticks =
-            epoch.raw_duration_ticks_for_micros(self.event.timing().interval_micros());
-        let Some(interval) = PeripheralConnectionIntervalTicks::new(interval_ticks) else {
-            return Err(self);
-        };
+        let receive_time =
+            PeripheralConnectionReceiveTime::from_controller_ticks(creation.raw_ticks());
         let Some(event_span_micros) = self
             .event
             .timing()
@@ -781,7 +802,7 @@ impl PeripheralConnectionFirstEventPrepared {
             prepared: self,
             requested_window,
             data_channel,
-            interval,
+            receive_time,
             event_span,
         })
     }
@@ -812,7 +833,7 @@ pub(crate) struct PeripheralConnectionFirstEventCandidate {
     prepared: PeripheralConnectionFirstEventPrepared,
     requested_window: SchedulerRawWindow,
     data_channel: PeripheralConnectionDataChannel,
-    interval: PeripheralConnectionIntervalTicks,
+    receive_time: PeripheralConnectionReceiveTime,
     event_span: PeripheralConnectionEventSpan,
 }
 
@@ -870,7 +891,7 @@ impl PeripheralConnectionFirstEventCandidate {
             prepared,
             requested_window,
             data_channel,
-            interval,
+            receive_time,
             event_span,
         } = self;
         let PeripheralConnectionFirstEventPrepared {
@@ -880,7 +901,7 @@ impl PeripheralConnectionFirstEventCandidate {
         } = prepared;
         let graph = graph.prepare_reviewed_first_event_fields(
             data_channel,
-            interval,
+            receive_time,
             event_span,
             window,
             receive_wait,
@@ -910,7 +931,7 @@ impl PeripheralConnectionFirstEventCandidate {
 /// Portable first event paired with the reviewed, resolved descriptor subset.
 ///
 /// This state is deliberately CPU-owned and unpublished. It proves that the
-/// identity, RX rotation, channel, interval, power, priority, complete receive
+/// identity, RX rotation, channel, creation time, power, priority, complete receive
 /// wait and resolved event reservation are present, but does not stand in for
 /// direction-finding workspace policy or scheduler admission semantics.
 #[cfg(any(target_arch = "riscv32", test))]
@@ -941,8 +962,8 @@ impl PeripheralConnectionFirstEventFieldsPrepared {
         self.graph.channel()
     }
 
-    pub(crate) const fn interval(&self) -> PeripheralConnectionIntervalTicks {
-        self.graph.interval()
+    pub(crate) const fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.graph.receive_time()
     }
 
     pub(crate) const fn default_tx_power(&self) -> PeripheralConnectionDefaultTxPowerDbm {
@@ -1028,8 +1049,8 @@ impl PeripheralConnectionFirstEventDirectionFindingPrepared {
         self.graph.channel()
     }
 
-    pub(crate) const fn interval(&self) -> PeripheralConnectionIntervalTicks {
-        self.graph.interval()
+    pub(crate) const fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.graph.receive_time()
     }
 
     pub(crate) const fn requested_window(&self) -> SchedulerRawWindow {

@@ -3,9 +3,14 @@
 //! Requires an explicit local-clock timing policy in the runtime configuration.
 //! Central feature requests and unsupported optional LLCP requests enter a
 //! bounded control-response queue. Active HCI commands, ACL delivery, mandatory
-//! connection updates and graceful teardown remain unavailable. Version exchange
-//! requires a caller-supplied Controller implementation identity.
-//! Any radio or unsupported mandatory-control transition seals its owners.
+//! connection updates and host-initiated teardown remain unavailable. Peer
+//! termination retires the unlinked graph and restores ordered idle HCI intake.
+//! An unanswered initial transmit window recurs with its full WinSize; six
+//! events without establishment retire the connection with reason `0x3e`.
+//! Established supervision uses the independent hardware valid-RX time and
+//! retires expired unlinked connections with reason `0x08`.
+//! Version exchange requires a caller-supplied Controller implementation identity.
+//! Any radio fault or unsupported mandatory-control transition seals its owners.
 
 #![forbid(unsafe_code)]
 
@@ -29,11 +34,17 @@ pub use radio::{PeripheralConnectionActiveFaultCause, PeripheralConnectionActive
 pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     order: Order<'a, radio::Radio<'a, S, N>>,
     control: oer_bluetooth_ll::control::LePeripheralControl,
+    supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
 }
 
 /// One finite radio transition; only `Published` represents a new scheduler RUN.
 #[must_use = "retain the returned session or sealed failure"]
 pub enum PeripheralConnectionActiveStep<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    /// Termination or failed establishment returned the ordered idle command owner.
+    Stopped {
+        task: crate::controller::ControllerIdleCommandTask<'a, S, N>,
+        reason: u8,
+    },
     Continue(PeripheralConnectionActiveSession<'a, S, N>),
     Published(PeripheralConnectionActiveSession<'a, S, N>),
     Fault(PeripheralConnectionActiveFault<'a, S, N>),
@@ -64,6 +75,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         Self {
             order: order.map_owner(|()| radio::Radio::Running(running)),
             control: oer_bluetooth_ll::control::LePeripheralControl::new(),
+            supervision: None,
         }
     }
 
@@ -76,17 +88,35 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         self.order.owner().wait()
     }
 
+    // Do not merge the affine radio transition's temporaries into the much
+    // larger controller dispatch future's stack frame.
+    #[inline(never)]
     pub fn step_radio(self) -> PeripheralConnectionActiveStep<'a, S, N> {
-        let Self { order, mut control } = self;
+        let Self {
+            order,
+            mut control,
+            mut supervision,
+        } = self;
         let (radio, order) = order.into_parts();
-        match radio.step(&mut control) {
+        let (radio, order) = match (radio, order) {
+            (radio::Radio::Stopped { task, reason }, Order::CommandReady(ready)) => {
+                return PeripheralConnectionActiveStep::Stopped {
+                    task: crate::controller::ControllerIdleCommandTask::from_parts(task, ready),
+                    reason,
+                };
+            }
+            pair => pair,
+        };
+        match radio.step(&mut control, &mut supervision) {
             radio::Step::Continue(radio) => PeripheralConnectionActiveStep::Continue(Self {
                 order: order.map_owner(|()| radio),
                 control,
+                supervision,
             }),
             radio::Step::Published(radio) => PeripheralConnectionActiveStep::Published(Self {
                 order: order.map_owner(|()| radio),
                 control,
+                supervision,
             }),
             radio::Step::Fault(radio) => {
                 PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
@@ -119,10 +149,15 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         self,
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
     ) -> Publication<Self> {
-        let Self { order, control } = self;
+        let Self {
+            order,
+            control,
+            supervision,
+        } = self;
         map_order_publication(order.try_publish_response(controller), |order| Self {
             order,
             control,
+            supervision,
         })
     }
 }

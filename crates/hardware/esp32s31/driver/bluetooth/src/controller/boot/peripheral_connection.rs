@@ -458,6 +458,37 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    pub(crate) fn peripheral_supervision_deadline(
+        &self,
+        completed: &crate::scheduler::PeripheralConnectionSchedulerCompleted,
+    ) -> Option<crate::le::peripheral::supervision::PeripheralSupervisionDeadline> {
+        if matches!(
+            completed.link_layer_completion().connection_state(),
+            oer_bluetooth_ll::connection::LePeripheralConnectionState::Created
+        ) {
+            return None;
+        }
+        let epoch = (*self.scheduler_epoch)?;
+        Some(
+            crate::le::peripheral::supervision::PeripheralSupervisionDeadline::new(
+                crate::SchedulerInstant::from_image(
+                    epoch.project_peripheral_receive_time(completed.receive_time()),
+                ),
+                completed
+                    .link_layer_completion()
+                    .timing()
+                    .supervision_timeout_micros(),
+            ),
+        )
+    }
+
+    pub(crate) fn retire_peripheral_connection(
+        &mut self,
+        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+    ) -> ControlFlow<crate::scheduler::PeripheralConnectionSchedulerCompleted> {
+        completed.retire(self.peripheral_connection_resources)
+    }
+
     pub(crate) fn process_peripheral_control(
         &mut self,
         completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
@@ -604,6 +635,20 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>
 {
+    pub(crate) fn check_peripheral_supervision(
+        &self,
+        deadline: crate::le::peripheral::supervision::PeripheralSupervisionDeadline,
+        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+    ) -> crate::le::peripheral::supervision::PeripheralSupervisionDecision {
+        deadline.decide(
+            crate::SchedulerInstant::from_image(self.epoch.project_without_reanchor(&self.sample)),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_start(admitted.raw_window()),
+            ),
+        )
+    }
+
     /// Apply this fresh sequence sample to one reserved connection recurrence.
     pub fn finish_peripheral_connection_recurring_event(
         self,
@@ -665,9 +710,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             sample,
         } = self;
         let (prepared, packet) = accepted.into_first_event_parts(packet_start);
-        let candidate = match prepared
-            .project_scheduler_window(epoch, controller.runtime.scheduler_config())
-        {
+        let candidate = match prepared.project_scheduler_window(
+            epoch,
+            controller.runtime.scheduler_config(),
+            &sample,
+        ) {
             Ok(candidate) => candidate,
             Err(prepared) => {
                 let (allocation, connection) = prepared.cancel();

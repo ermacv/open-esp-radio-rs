@@ -95,6 +95,22 @@ Version exchange queues at most one reply per connection and requires an
 explicit `with_version_information` identity in the connection runtime config.
 The HIL image uses development company value `0xffff`, Core 5.4, subversion 1;
 it does not report the vendor Controller identity.
-Mandatory connection updates, graceful peer termination and
-ACL delivery are not implemented by this responder; mandatory transitions enter
+Peer termination retires the connection after event completion and scheduler
+unlink. It cancels pending TX payloads, restores the exact graph and RX pool,
+and returns to idle command intake after any earlier HCI response is published.
+The actor reports the peer's reason through its idle completion boundary;
+Host-visible Connection/Disconnection Complete events remain unavailable.
+Before establishment, each missed event retains the entire initial transmit
+window plus clock widening. After six events without a peer packet, the closed
+connection retires with reason `0x3e` and restores idle command intake.
+Established-link supervision uses the hardware valid-RX timestamp, seeded
+with absolute creation time. Anchor capture and delivered RX count do not
+extend this deadline. A fresh controller-time check before the next RUN
+expires the connection with reason `0x08`; a reservation starting at or beyond
+the deadline waits without publication. Retirement releases that reservation
+and restores the unlinked allocation. Abrupt RF-loss and CRC-error behavior
+remain unqualified on hardware.
+
+Mandatory connection updates, host-initiated termination and ACL delivery are
+not implemented by this responder; unsupported mandatory transitions enter
 fail-stop ownership. This is not full LLCP or ACL qualification.

@@ -25,11 +25,11 @@ use super::{
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
     PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionEventSpan, PeripheralConnectionIdentity, PeripheralConnectionIntervalTicks,
+    PeripheralConnectionEventSpan, PeripheralConnectionIdentity,
     PeripheralConnectionMemoryGraphBindError, PeripheralConnectionMemoryGraphIdentity,
-    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
 };
 
 use vcell::VolatileCell;
@@ -51,7 +51,7 @@ const LINK_STATE_ROUNDED_POWER: usize = 1;
 const LINK_STATE_RX_PATH: usize = 2;
 const LINK_STATE_CONTROL_POLICY: usize = 3;
 const LINK_STATE_PACKET_FLAGS: usize = 0x14 / 4;
-const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
+const LINK_STATE_RECEIVE_TIME: usize = 0x18 / 4;
 const LINK_STATE_PACKET_HISTORY: usize = 0x1c / 4;
 const LINK_STATE_PACKET_CONTROL: usize = 0x20 / 4;
 const LINK_STATE_PACKET_SEQUENCE: usize = 0x30 / 4;
@@ -179,7 +179,7 @@ impl PeripheralConnectionLinkStateStorage {
         &self,
         receive_head: BluetoothControllerSramAddress,
         transmit_sentinel: ControllerSramLinkAddress,
-        interval: PeripheralConnectionIntervalTicks,
+        receive_time: PeripheralConnectionReceiveTime,
         event_span: PeripheralConnectionEventSpan,
         default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
         priority: PeripheralConnectionSchedulerPriority,
@@ -211,8 +211,14 @@ impl PeripheralConnectionLinkStateStorage {
         let current = self.words[LINK_STATE_ROUNDED_POWER].get();
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
-        self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
+        self.words[LINK_STATE_RECEIVE_TIME].set(receive_time.wrapping_controller_ticks());
         self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
+    }
+
+    fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        PeripheralConnectionReceiveTime::from_controller_ticks(
+            self.words[LINK_STATE_RECEIVE_TIME].get(),
+        )
     }
 
     fn prepare_recurring_event_profile(
@@ -521,7 +527,7 @@ pub(super) struct PeripheralConnectionMemoryGraphBinding {
 
 pub(super) struct PeripheralConnectionFirstEventCodecInput {
     pub(super) channel: PeripheralConnectionDataChannel,
-    pub(super) interval: PeripheralConnectionIntervalTicks,
+    pub(super) receive_time: PeripheralConnectionReceiveTime,
     pub(super) event_span: PeripheralConnectionEventSpan,
     pub(super) window: PeripheralConnectionSchedulerWindow,
     pub(super) receive_wait: PeripheralConnectionReceiveWait,
@@ -607,6 +613,15 @@ impl PeripheralConnectionMemoryGraphBinding {
 }
 
 impl PeripheralConnectionMemoryGraphStorage {
+    #[cfg(test)]
+    pub(super) fn model_controller_valid_receive(&self, time: PeripheralConnectionReceiveTime) {
+        self.link_state.words[LINK_STATE_RECEIVE_TIME].set(time.wrapping_controller_ticks());
+    }
+
+    pub(super) fn receive_time(&self) -> PeripheralConnectionReceiveTime {
+        self.link_state.receive_time()
+    }
+
     pub const fn new() -> Self {
         Self {
             link_state: PeripheralConnectionLinkStateStorage::new(),
@@ -827,7 +842,7 @@ impl PeripheralConnectionMemoryGraphStorage {
         self.link_state.prepare_event_profile(
             receive_head,
             binding.tx_sentinel,
-            input.interval,
+            input.receive_time,
             input.event_span,
             input.default_tx_power,
             input.priority,

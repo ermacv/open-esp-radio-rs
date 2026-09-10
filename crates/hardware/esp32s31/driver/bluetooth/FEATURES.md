@@ -127,7 +127,7 @@ remains outside the LE program.
 | Channel Selection Algorithm #2 | PARTIAL | Portable CSA#2 exists, but S31 connectable advertising marks local CSA#2 support unsupported and rejects requests requiring it. |
 | Peripheral latency | PARTIAL | Timing is validated and retained; live skip/recovery scheduling is not complete. |
 | Sleep Clock Accuracy / window widening | PARTIAL | Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned; arbitrary missed-event recovery is not established. |
-| Establishment / supervision timeout | ABSENT | Request timing validation is present, but no complete live timeout and disconnect owner exists. |
+| Establishment / supervision timeout | PARTIAL | Before establishment, contiguous events preserve the full transmit window plus clock widening. Six unanswered events retire the unlinked allocation and restore idle with reason `0x3e`. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08`. Abrupt RF loss and CRC-error behavior remain unqualified; Host HCI notification is absent. |
 | Missed-event recovery | ABSENT | No complete connection resynchronization and accumulated-uncertainty policy exists. |
 | LL Data PDU RX | PARTIAL | Lower peripheral RX extraction and buffer recycling exist without a reliable recurring ACL link. |
 | LL Data PDU TX | PARTIAL | One controller control-PDU payload is retained through publication and descriptor completion; its cursor survives reclamation. ACL TX and general queueing are absent. |
@@ -139,7 +139,7 @@ remains outside the LE program.
 | Feature Exchange | PARTIAL | Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with zero optional feature bits. Peripheral-initiated exchange and remote-feature HCI routing are absent. |
 | Version Exchange | PARTIAL | A peer request receives at most one queued reply using the configured Controller identity; no identity is inferred from the chip. Host-initiated version routing is absent. |
 | LE Ping | ABSENT | No ping procedure owner exists. |
-| Termination | ABSENT | No on-air termination transaction plus HCI disconnection lifecycle exists. |
+| Termination | PARTIAL | An accepted peer `LL_TERMINATE_IND` retires the unlinked connection and restores idle HCI intake. Host-initiated termination and HCI Disconnection Complete are absent. |
 | Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps and CSA progression exist. Dynamic assessment and map updates are absent. |
 | LE Channel Classification | ABSENT | No connected classification generation/report/update procedure exists. |
 
@@ -325,7 +325,7 @@ supply the local clock accuracy bound. The default configuration leaves it
 unset and stops with `TimingPolicyUnavailable` when recurrence is attempted.
 The actor responds to central feature requests through a bounded TX queue.
 It does not consume active HCI commands, deliver ACL data, implement general
-LLCP, or enforce supervision and missed-anchor recovery. A compiled lifecycle does not establish a successful over-air link.
+LLCP, or implement arbitrary missed-event recovery. Established supervision uses the hardware valid-RX timestamp and retires the unlinked owner with `0x08`; abrupt RF loss remains unqualified. A compiled lifecycle does not establish a successful over-air link.
 
 Lower recurrence requires a caller-owned local clock accuracy bound. Its
 software window widening does not establish arbitrary missed-event anchor

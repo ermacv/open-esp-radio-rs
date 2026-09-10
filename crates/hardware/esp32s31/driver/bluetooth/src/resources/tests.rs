@@ -10,11 +10,11 @@ use oer_esp32s31_bluetooth_memory::{
     PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanSchedulerAllocationConfig,
     PassiveScanSchedulerWindow, PassiveScanStartSelection, PeripheralConnectionDataChannel,
     PeripheralConnectionDefaultTxPowerDbm, PeripheralConnectionEventSpan,
-    PeripheralConnectionIdentity, PeripheralConnectionIntervalTicks,
-    PeripheralConnectionMemoryGraphModelAddress, PeripheralConnectionMemoryGraphPublicationError,
+    PeripheralConnectionIdentity, PeripheralConnectionMemoryGraphModelAddress,
+    PeripheralConnectionMemoryGraphPublicationError,
     PeripheralConnectionMemoryGraphPublicationPrepared, PeripheralConnectionMemoryGraphStorage,
-    PeripheralConnectionReceiveWait, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, RxMemoryListClass,
+    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow, RxMemoryListClass,
 };
 
 use oer_esp32s31_hal::{
@@ -100,8 +100,7 @@ fn peripheral_connection_publication_prepared() -> PeripheralConnectionMemoryGra
         .attach_receive_pool(receive_pool)
         .prepare_reviewed_first_event_fields(
             PeripheralConnectionDataChannel::new(0).expect("data channel zero is valid"),
-            PeripheralConnectionIntervalTicks::new(24_000)
-                .expect("the connection interval is nonzero"),
+            PeripheralConnectionReceiveTime::from_controller_ticks(24_000),
             PeripheralConnectionEventSpan::new(23_000).expect("the event span is nonempty"),
             PeripheralConnectionSchedulerWindow::new(100, 200)
                 .expect("the scheduler window is nonempty"),

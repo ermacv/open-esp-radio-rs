@@ -15,6 +15,10 @@ pub enum ControllerIdleCompletion {
     PassiveScanDisable,
     TestEnd,
     Reset,
+    /// Peer requested termination; radio resources and next-command authority are idle.
+    PeripheralDisconnected {
+        reason: u8,
+    },
 }
 
 /// Recoverable retry boundary while the complete owner remains in the actor.

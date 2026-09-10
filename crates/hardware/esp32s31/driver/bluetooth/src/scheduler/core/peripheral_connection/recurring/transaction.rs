@@ -111,22 +111,23 @@ fn prepare_recurring_protocol_proposal(
     PeripheralConnectionRecurringProtocolFailure,
     PeripheralConnectionRecurringProtocolCandidate,
 > {
-    // A missed first event leaves the connection in `Created`, so the peer's
-    // actual anchor is still unknown inside the initial WinSize interval. The
-    // reviewed software-widening profile is valid only after an actual packet
-    // start has established that reference; do not turn the earliest planned
-    // first-window instant into a fictitious anchor.
-    if packet_start.is_none()
-        && matches!(
-            completed.connection_state(),
-            LePeripheralConnectionState::Created
-        )
+    let error = if completed.establishment_failed() {
+        Some(PeripheralConnectionRecurringCandidateError::EstablishmentFailed)
+    } else if matches!(
+        completed.connection_state(),
+        LePeripheralConnectionState::Created
+    ) && delta.get() != 1
     {
+        Some(PeripheralConnectionRecurringCandidateError::EstablishmentEventSkipped)
+    } else {
+        None
+    };
+    if let Some(error) = error {
         return ControlFlow::Break(PeripheralConnectionRecurringProtocolFailure {
             completed,
             original_phase,
             delta,
-            error: PeripheralConnectionRecurringCandidateError::InitialAnchorUnavailable,
+            error,
         });
     }
     let provisional = completed.prepare_recurring_event(delta);
@@ -175,9 +176,10 @@ fn prepare_recurring_protocol_proposal(
 /// Why a completed chip event could not form a recurring candidate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionRecurringCandidateError {
-    /// No packet has established the peer-selected anchor inside the initial
-    /// transmit window, so the zero-uncertainty software profile is unsound.
-    InitialAnchorUnavailable,
+    /// Six connection events closed without establishing the connection.
+    EstablishmentFailed,
+    /// The Peripheral must listen in each event while the anchor is unknown.
+    EstablishmentEventSkipped,
     Timing(PeripheralConnectionRecurringTimingError),
 }
 

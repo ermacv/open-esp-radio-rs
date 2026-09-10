@@ -6,8 +6,9 @@ network feature. Its USB owner translates bounded DTM requests into typed HCI
 commands; radio execution remains in production crates. The same image exposes
 the bounded [peripheral diagnostic commands](../../protocol/README.md) for
 starting a single-channel connectable advertisement and observing execution.
-They require a fresh boot and host reset after the attempt; they do not qualify
-a connection or ACL traffic. See the
+They require a fresh boot. After an observed disconnect or failed establishment,
+advertising may restart without a board or HCI Reset; the host resets the board when the probe
+ends. These commands do not qualify a connection or ACL traffic. See the
 [Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
 
 The peripheral diagnostic explicitly configures software window widening with

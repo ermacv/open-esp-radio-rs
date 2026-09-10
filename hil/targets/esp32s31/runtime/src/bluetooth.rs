@@ -114,6 +114,7 @@ async fn task(
         decoder: FrameDecoder::new(),
         encoder: FrameEncoder::new(),
         peripheral_probe: false,
+        peripheral_closed_at_start: 0,
     };
     // Keep the radio actor's large ownership transitions out of the joined
     // console poll frame, including when diagnostic formatting changes inlining.
@@ -144,6 +145,7 @@ struct Console {
     decoder: FrameDecoder,
     encoder: FrameEncoder,
     peripheral_probe: bool,
+    peripheral_closed_at_start: u32,
 }
 
 impl Console {
@@ -294,17 +296,29 @@ impl Console {
                     })
                 }
                 Command::BluetoothPeripheral(operation) => {
+                    let execution = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
                     if operation == PeripheralOperation::StartAdvertising
-                        && (active || self.peripheral_probe)
+                        && (active
+                            || execution.terminal
+                            || execution.saturated
+                            || (self.peripheral_probe
+                                && execution.peripheral_disconnections
+                                    == self.peripheral_closed_at_start))
                     {
                         Event::Rejected(RejectReason::InvalidState)
                     } else {
                         let result = if operation == PeripheralOperation::Snapshot {
                             PeripheralResult::Snapshot
                         } else {
+                            let initialize = !self.peripheral_probe;
+                            self.peripheral_closed_at_start = execution.peripheral_disconnections;
                             self.peripheral_probe = true;
                             lease = Some(Instant::now() + Duration::from_secs(30));
-                            match with_timeout(Duration::from_secs(5), start_advertising(hci)).await
+                            match with_timeout(
+                                Duration::from_secs(5),
+                                start_advertising(hci, initialize),
+                            )
+                            .await
                             {
                                 Ok(Ok(address)) => PeripheralResult::Started { address },
                                 Ok(Err(result)) => result,
@@ -406,8 +420,15 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         let ll = oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot();
         write!(
             detail,
-            "ll rx={} drop={} ctrl={} queued={} done={} op={:?}",
-            ll.received, ll.discarded, ll.control, ll.queued, ll.completed, ll.last_opcode
+            "ll rx={} drop={} ctrl={} queued={} done={} op={:?} closed={} reason={:?}",
+            ll.received,
+            ll.discarded,
+            ll.control,
+            ll.queued,
+            ll.completed,
+            ll.last_opcode,
+            snapshot.peripheral_disconnections,
+            snapshot.last_disconnect_reason
         )
         .is_err()
     } else {
@@ -456,7 +477,7 @@ fn poll_pinned_future<F: core::future::Future>(
     future.poll(cx)
 }
 
-async fn start_advertising(hci: &Host) -> Result<[u8; 6], PeripheralResult> {
+async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], PeripheralResult> {
     use bt_hci::param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr};
     macro_rules! command {
         ($value:expr, $stage:expr) => {
@@ -467,7 +488,9 @@ async fn start_advertising(hci: &Host) -> Result<[u8; 6], PeripheralResult> {
                 })?
         };
     }
-    command!(Reset::new(), 0);
+    if initialize {
+        command!(Reset::new(), 0);
+    }
     let address = command!(ReadBdAddr::new(), 1);
     command!(
         LeSetAdvParams::new(

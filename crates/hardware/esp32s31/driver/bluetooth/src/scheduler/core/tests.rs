@@ -131,6 +131,7 @@ fn peripheral_connection_candidate() -> (
         .project_scheduler_window(
             epoch,
             crate::scheduler::SchedulerSoftwareConfig::reviewed_standalone(),
+            &ControllerTimeSample::for_validation(40_000),
         )
         .unwrap_or_else(|_| panic!("the fixed first connection window projects"));
 

@@ -27,8 +27,12 @@ HCI rejection stages are Reset (0), address read (1), parameters (2), data (3)
 and enable (4).
 
 The Bluetooth image advertises `bluetooth_peripheral` for this interface.
-One probe consumes the boot: DTM and another advertising start are rejected
-afterwards. Active LL Reset is not composed. The host ends the probe with a
+DTM is rejected once the peripheral probe starts. Another advertising start is
+accepted only after the previous connection has reported idle restoration;
+that restart omits HCI Reset. The diagnostic detail includes the cumulative
+closed-connection count and last disconnect reason (including `0x3e` for
+failed establishment). Active LL Reset is not composed.
+The host ends the probe with a
 board reset; after 30 seconds the target reports lease expiry and resets the
 whole board. A USB failure during the probe also resets the board. Neither
 path reports logical HCI quiescence. The default connection timing policy

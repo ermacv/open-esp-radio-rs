@@ -908,6 +908,10 @@ pub struct LePeripheralConnectionEventCompleted {
 }
 
 impl LePeripheralConnectionEventCompleted {
+    pub const fn timing(&self) -> LeConnectionTiming {
+        self.connection.request.timing()
+    }
+
     pub const fn event_counter(&self) -> u16 {
         self.event_counter
     }
@@ -922,6 +926,16 @@ impl LePeripheralConnectionEventCompleted {
 
     pub const fn connection_state(&self) -> LePeripheralConnectionState {
         self.connection.state
+    }
+
+    /// Whether six initial connection events have closed without a peer packet.
+    ///
+    /// Core Vol 6, Part B, 4.5.2 requires failed establishment after six events.
+    /// The backend must check this before scheduling another event; this is
+    /// distinct from the elapsed-time supervision of an established connection.
+    pub const fn establishment_failed(&self) -> bool {
+        matches!(self.connection.state, LePeripheralConnectionState::Created)
+            && self.event_counter >= 5
     }
 
     /// Preview a recurring event without advancing the retained LL owner.

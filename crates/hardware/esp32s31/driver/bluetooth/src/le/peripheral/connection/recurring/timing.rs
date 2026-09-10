@@ -1,6 +1,7 @@
 //! Pure recurring timing for one ESP32-S31 peripheral connection.
 //!
-//! A completed receive capture supplies the causal packet-start phase. This
+//! Until a receive capture supplies the causal packet-start phase, the entire
+//! initial transmit window remains uncertain and recurs at each interval. This
 //! module advances that phase only by a portable Link Layer event delta and
 //! forms semantic memory inputs for a future scheduler admission attempt. It
 //! neither samples `now()` nor publishes controller SRAM or MMIO.
@@ -102,7 +103,7 @@ impl PeripheralConnectionRecurringTimingPolicy {
     }
 }
 
-/// Nominal connection phase and its actual-packet widening reference.
+/// Nominal connection phase, anchor certainty, and clock-widening reference.
 ///
 /// Connection intervals have an exact integer-microsecond representation, so
 /// this source-owned phase carries no detached tick-conversion fraction or
@@ -113,6 +114,13 @@ impl PeripheralConnectionRecurringTimingPolicy {
 pub(crate) struct PeripheralConnectionRecurringPhase {
     nominal_anchor: SchedulerInstant,
     window_widening_reference: SchedulerInstant,
+    anchor: PeripheralConnectionAnchor,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PeripheralConnectionAnchor {
+    TransmitWindowStart,
+    PacketStart,
 }
 
 impl PeripheralConnectionRecurringPhase {
@@ -121,6 +129,7 @@ impl PeripheralConnectionRecurringPhase {
         Self {
             nominal_anchor,
             window_widening_reference: nominal_anchor,
+            anchor: PeripheralConnectionAnchor::TransmitWindowStart,
         }
     }
 
@@ -137,6 +146,7 @@ impl PeripheralConnectionRecurringPhase {
         Self {
             nominal_anchor: actual,
             window_widening_reference: actual,
+            anchor: PeripheralConnectionAnchor::PacketStart,
         }
     }
 
@@ -170,6 +180,15 @@ impl PeripheralConnectionRecurringPhase {
         };
 
         let interval_micros = request.timing().interval_micros();
+        // Before the first packet, the Central may choose any position within
+        // WinSize. Every subsequent transmit window retains that entire width
+        // (Core Vol 6, Part B, 4.5.5), in addition to clock widening.
+        let transmit_window_micros = match self.anchor {
+            PeripheralConnectionAnchor::TransmitWindowStart => {
+                u32::from(request.timing().window_size_units()) * 1_250
+            }
+            PeripheralConnectionAnchor::PacketStart => 0,
+        };
         let Some(anchor_advance_micros) = interval_micros.checked_mul(delta.get() as u32) else {
             return Err(
                 PeripheralConnectionRecurringTimingError::AnchorAdvanceOutsideForwardHalfRange,
@@ -218,6 +237,7 @@ impl PeripheralConnectionRecurringPhase {
         };
         let Some(receive_wait_micros) = LE_RECURRING_FIXED_GUARD_MICROS
             .checked_add(double_window_widening)
+            .and_then(|total| total.checked_add(transmit_window_micros))
             .and_then(|total| total.checked_add(LE_RECURRING_RECEIVE_CPU_TIME_TAIL_MICROS))
         else {
             return Err(PeripheralConnectionRecurringTimingError::ReceiveWaitUnrepresentable);
@@ -249,8 +269,9 @@ impl PeripheralConnectionRecurringPhase {
         };
         let window_start =
             SchedulerInstant::from_image(proposed_anchor.image().wrapping_sub(window_start_offset));
-        let Some(window_end_offset) =
-            LE_1M_RECURRING_EVENT_MICROS.checked_add(window_widening_micros)
+        let Some(window_end_offset) = LE_1M_RECURRING_EVENT_MICROS
+            .checked_add(window_widening_micros)
+            .and_then(|total| total.checked_add(transmit_window_micros))
         else {
             return Err(PeripheralConnectionRecurringTimingError::SchedulerWindowUnrepresentable);
         };
@@ -272,6 +293,7 @@ impl PeripheralConnectionRecurringPhase {
             proposed_phase: Self {
                 nominal_anchor: proposed_anchor,
                 window_widening_reference: self.window_widening_reference,
+                anchor: self.anchor,
             },
             proposed_anchor,
             window,

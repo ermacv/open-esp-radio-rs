@@ -100,6 +100,12 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
 ) -> CommandBoundaryAction {
     use crate::diagnostics::{BluetoothExecutionEvent as Observed, record};
     match boundary {
+        ControllerCommandBoundary::IdleRestored(
+            oer_esp32s31_bluetooth_embassy::controller::ControllerIdleCompletion::PeripheralDisconnected { reason },
+        ) => record(
+            Observed::PeripheralDisconnected { reason: *reason },
+            format_args!("peripheral disconnected: {reason}"),
+        ),
         ControllerCommandBoundary::LegacyConnectableAdvertisingActive => record(
             Observed::ConnectableAdvertisingRun,
             format_args!(

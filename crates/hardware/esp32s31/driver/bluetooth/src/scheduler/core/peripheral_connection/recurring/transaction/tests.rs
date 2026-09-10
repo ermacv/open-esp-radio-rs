@@ -67,6 +67,9 @@ fn phase(packet_start_micros: u32) -> PeripheralConnectionRecurringPhase {
     PeripheralConnectionRecurringPhase::from_nominal_anchor(crate::SchedulerInstant::from_image(
         packet_start_micros,
     ))
+    .correct_from_normalized_packet_start(
+        &PeripheralConnectionPacketStartTiming::from_scheduler_micros(packet_start_micros),
+    )
 }
 
 fn completed_event(request: LeLegacyConnectionRequest) -> LePeripheralConnectionEventCompleted {
@@ -90,30 +93,93 @@ fn missed_first_event(request: LeLegacyConnectionRequest) -> LePeripheralConnect
 }
 
 #[test]
-fn missed_first_event_cannot_invent_an_anchor_for_recurrence() {
-    let request = request(24, 4);
-    let original_phase = phase(10_000);
-    let delta = LePeripheralConnectionEventDelta::new(1).unwrap();
-    let expected_completed = missed_first_event(request);
+fn six_unanswered_events_preserve_the_window_and_end_establishment() {
+    for algorithm_two in [false, true] {
+        let request = request_with_channel_selection(24, 4, algorithm_two);
+        let mut current_phase = PeripheralConnectionRecurringPhase::from_nominal_anchor(
+            crate::SchedulerInstant::from_image(u32::MAX - 20_000),
+        );
+        let mut completed = missed_first_event(request);
+        for counter in 0..6 {
+            assert_eq!(completed.event_counter(), counter);
+            assert_eq!(completed.establishment_failed(), counter == 5);
+            let result = prepare_recurring_protocol_proposal(
+                completed,
+                current_phase,
+                None,
+                LePeripheralConnectionEventDelta::new(1).unwrap(),
+                epoch(0),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            );
+            if counter == 5 {
+                let ControlFlow::Break(failure) = result else {
+                    panic!("failed establishment must not publish a seventh event");
+                };
+                assert_eq!(
+                    failure.error,
+                    PeripheralConnectionRecurringCandidateError::EstablishmentFailed
+                );
+                assert_eq!(failure.original_phase, current_phase);
+                assert_eq!(failure.completed.event_counter(), 5);
+                break;
+            }
+            let ControlFlow::Continue(candidate) = result else {
+                panic!("an unanswered initial event must retain the whole transmit window");
+            };
+            assert_eq!(candidate.event_counter(), counter + 1);
+            assert!(candidate.proposal.receive_wait.total_micros() >= 2_500);
+            // Cancellation preserves the exact phase and LL completion; retry
+            // advances neither the counter nor the widening reference twice.
+            let proposal = candidate.proposal;
+            let (restored, restored_phase, delta) = candidate.cancel();
+            assert_eq!(restored_phase, current_phase);
+            assert_eq!(restored.event_counter(), counter);
+            let ControlFlow::Continue(retry) = prepare_recurring_protocol_proposal(
+                restored,
+                restored_phase,
+                None,
+                delta,
+                epoch(0),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            ) else {
+                panic!("the unchanged candidate remains admissible")
+            };
+            assert_eq!(retry.proposal, proposal);
+            current_phase = retry.proposal.proposed_phase;
+            completed = retry
+                .provisional
+                .commit()
+                .into_submitted()
+                .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        }
+    }
+}
+
+#[test]
+fn establishment_cannot_skip_a_receive_window() {
+    let completed = missed_first_event(request(24, 4));
+    let original_phase = PeripheralConnectionRecurringPhase::from_nominal_anchor(
+        crate::SchedulerInstant::from_image(10_000),
+    );
     let ControlFlow::Break(failure) = prepare_recurring_protocol_proposal(
-        missed_first_event(request),
+        completed,
         original_phase,
         None,
-        delta,
+        LePeripheralConnectionEventDelta::new(2).unwrap(),
         epoch(0),
         SchedulerSoftwareConfig::reviewed_standalone(),
         software_policy(),
     ) else {
-        panic!("the first peer-selected anchor has not been observed");
+        panic!("establishment must listen in every event")
     };
-
-    assert_eq!(failure.completed, expected_completed);
-    assert_eq!(failure.original_phase, original_phase);
-    assert_eq!(failure.delta, delta);
     assert_eq!(
         failure.error,
-        PeripheralConnectionRecurringCandidateError::InitialAnchorUnavailable
+        PeripheralConnectionRecurringCandidateError::EstablishmentEventSkipped
     );
+    assert_eq!(failure.completed.event_counter(), 0);
+    assert_eq!(failure.original_phase, original_phase);
 }
 
 #[test]

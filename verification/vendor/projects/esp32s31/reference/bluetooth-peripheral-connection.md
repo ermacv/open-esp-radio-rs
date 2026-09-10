@@ -122,7 +122,7 @@ semantic values and performs these positional transforms privately:
 | link state `+0x04` | signed default TX power | shared S31 five-bit rounded-power projection |
 | link state `+0x08` | owned initialized RX pool | stores the compressed packetless predecessor and initial unconsumed receive sentinel |
 | link state `+0x0c` | S31 baseline control policy | installs the duplicated value 2 and makes that policy active |
-| link state `+0x18` | negotiated connection interval | interval converted as a duration into raw controller ticks |
+| link state `+0x18` | absolute connection creation time, then hardware valid-RX time | positional epoch conversion to controller ticks; preserved between events and read after unlink |
 | link state `+0x14`, `+0x1c`, `+0x20`, `+0x30` | new unencrypted connection | clears packet history/control state and installs the recovered initial sequence profile |
 | link state `+0x2c` | CRCInit | preserves the low 24-bit CRC seed and marks that context ready |
 | link state `+0x50` | powered epoch's opaque global workspace link plus S31 common-radio policy | retains the default value 3, stores the compressed `workspace + 8` endpoint, clears the separate four-bit mode and marks the direction-finding configuration ready |
@@ -346,12 +346,13 @@ window ends at `proposed - preparation + 5,154 + accumulated + widening`,
 without either the start-only 10-microsecond guard or the initial-only
 61-microsecond allowance.
 
-The first source-owned recurrence slice is intentionally narrower than that
-full state space. It admits only software widening immediately after the
-actual-anchor correction, where the accumulated anchor uncertainty is known
-to be zero. There is not yet a typed chip source for a later nonzero
-accumulation or for the automatic-widening mode, so either state must fail
-closed rather than entering timing as an unreviewed integer or raw mode flag.
+The source-owned recurrence admits software clock widening with no detached
+accumulated vendor guard. Before an actual packet establishes the anchor, its
+typed phase retains the complete `CONNECT_IND` WinSize in both the receive wait
+and reservation end, as required by Core Vol 6, Part B, 4.5.5. Each unanswered
+window advances by one interval without replacing the widening reference. A
+normalized packet replaces the uncertain window with an actual anchor. Other
+nonzero vendor accumulation and automatic widening remain unavailable.
 
 ### Distinct event-span and captured-anchor fields
 
@@ -370,7 +371,7 @@ fresh time sample or epoch reanchor. An unavailable epoch returns the complete
 unchanged recycled owner. The transition retains status, RX batch, memory and
 the in-flight portable LL event without interpreting or advancing any of them.
 
-The first completion must correct the recurring phase from the captured
+The first completion with a capture corrects the recurring phase from the
 packet-start. On the software window-widening path, the actual start replaces
 the committed anchor, the proposed anchor moves by the same delta, the
 fractional residual and accumulated guard reset, and the actual start becomes
@@ -410,3 +411,50 @@ scheduler transition. The portable control responder owns LLCP payload bytes.
 These contracts are a bounded implementation of the reviewed append and tail
 reclamation paths. They do not establish equivalence with the vendor's dynamic
 queue, priority insertion or encryption paths.
+
+Peer termination and failed establishment use the completed, unlinked event owner.
+The latter follows the six-event limit in Core Vol 6, Part B, 4.5.2; a peer
+packet in the sixth event establishes the connection before that decision.
+An accepted RX packet also establishes the connection when a capture is absent,
+without manufacturing a timestamp; the timing phase retains the full WinSize
+until an actual capture corrects it. Unestablished recurrence cannot skip an
+intervening receive window. The
+resulting internal disconnect reason is `0x3e`. Established-link supervision
+uses the independent link-state receive timestamp and an elapsed-time deadline;
+expiry retires with `0x08`. Retirement first
+checks that the destination runtime is vacant and retains both allocation
+identities. Rejection returns the unchanged completed owner. Success resets
+the private graph and RX pool, cancels outstanding control payloads and restores
+the original runtime allocation. Pending HCI response order remains retained
+until publication; only then can the Controller accept another idle command.
+This covers the bounded private-pool lifetime, not the vendor's full connection
+timer, handle, ACL-credit or HCI disconnection lifecycle.
+
+
+### Valid-RX time and established supervision
+
+The memory input `PeripheralConnectionReceiveTime` is an absolute wrapping
+controller timestamp, including zero at wrap. It is seeded from the borrowed
+live first-admission sample. Initial scheduler admission still consumes the
+original sample authority. Recurrence preserves this field; only the reclaimed
+CPU owner exposes the hardware value after completion and unlink.
+
+The reviewed current `r_ble_lll_conn_reset_link_state` body reads software
+connection creation time and applies `r_sched_timer_convertTimeToTicks` before
+writing link state `+0x18`. The completion recycle path applies
+`r_sched_timer_convertTimeToUs` to that field and compares it with its saved
+receive reference. A changed receive reference resets the supervision callout,
+independently of the scheduler anchor-capture branch. The reviewed timeout
+callback selects `0x3e` before establishment and `0x08` after establishment.
+Anchor capture may establish the connection without refreshing valid-RX time;
+the delivered RX batch is not an exhaustive record of empty or duplicate packets.
+
+The composed Rust path derives the deadline from this hardware timestamp and
+the negotiated supervision timeout, using the retained epoch without PHY
+packet-start correction. Before sequence publication it compares a fresh
+current sample with the deadline. Expiry cancels the unpublished recurring
+reservation and retires the exact completed owner. A reservation beginning at
+or beyond the deadline waits for expiry without publishing RUN. A RUN that
+started earlier closes through the existing completion/unlink path before the
+next decision. These source contracts do not qualify CRC-error or abrupt-loss
+behavior, nor establish linked semantic equivalence with the vendor callout.

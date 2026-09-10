@@ -267,13 +267,13 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTracking<P, MT, SC
         let result = {
             let (task, platform) = controller.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
-            run_target_bluetooth_phy_param_tracking::<P, D, O>(
+            let mut tracking = core::pin::pin!(run_target_bluetooth_phy_param_tracking::<P, D, O>(
                 platform,
                 &mut shared_phy,
                 tracking,
                 observer,
-            )
-            .await
+            ));
+            core::future::poll_fn(|cx| poll_tracking(tracking.as_mut(), cx)).await
         };
         match result {
             Ok(success) => {
@@ -293,6 +293,17 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTracking<P, MT, SC
             }),
         }
     }
+}
+
+// Keep the lower PHY poll's calibration temporaries separate from the outer
+// Controller ownership transfer. Pinning retains the same future and cancellation
+// contract; this boundary needs neither allocation nor a larger stack allowance.
+#[inline(never)]
+fn poll_tracking<F: core::future::Future>(
+    tracking: core::pin::Pin<&mut F>,
+    cx: &mut core::task::Context<'_>,
+) -> core::task::Poll<F::Output> {
+    tracking.poll(cx)
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyRegistered<P, MT, SC> {

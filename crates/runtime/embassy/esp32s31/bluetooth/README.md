@@ -23,6 +23,11 @@ all owners in a terminal boundary. See the driver's
 [peripheral timing limits](../../../../hardware/esp32s31/driver/bluetooth/FEATURES.md#peripheral-timing-limits)
 for the required clock bound and unsupported link behavior.
 
+Peer termination, six events without establishment (`0x3e`), or established
+supervision expiry (`0x08`) restore the connection allocations after unlink and return `IdleRestored(PeripheralDisconnected { reason })`. Pending HCI
+responses retain their order before idle command intake resumes. This actor
+boundary is diagnostic evidence, not a Host Disconnection Complete event.
+
 Connectable advertising also reports progress at the first and recurring RUN
 publication. Publishing an HCI response does not duplicate that observation.
 The actor retains the most recent reclaimed no-connection item status for

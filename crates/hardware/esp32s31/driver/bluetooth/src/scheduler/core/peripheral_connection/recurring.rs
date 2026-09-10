@@ -74,6 +74,12 @@ pub struct PeripheralConnectionRecurringPreSequence {
     reservation: SchedulerWindowReservation<SchedulerRecurringReserved>,
 }
 
+impl PeripheralConnectionRecurringPreSequence {
+    pub(crate) const fn raw_window(&self) -> SchedulerRawWindow {
+        self.candidate.raw_window()
+    }
+}
+
 /// Why one recurring connection event could not reach a sequence-ready image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionRecurringEventPreparationError {

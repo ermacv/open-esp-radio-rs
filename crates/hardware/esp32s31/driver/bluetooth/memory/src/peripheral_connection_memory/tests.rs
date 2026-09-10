@@ -13,13 +13,14 @@ use oer_esp32s31_hal::bluetooth::{
 use super::{
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
     PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionEventSpan, PeripheralConnectionIdentity, PeripheralConnectionIntervalTicks,
+    PeripheralConnectionEventSpan, PeripheralConnectionIdentity,
     PeripheralConnectionMemoryGraphBindError, PeripheralConnectionMemoryGraphCompletionObservation,
     PeripheralConnectionMemoryGraphCompletionObserved, PeripheralConnectionMemoryGraphModelAddress,
     PeripheralConnectionMemoryGraphRecycleError, PeripheralConnectionMemoryGraphRunning,
-    PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
-    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringReceiveWait,
+    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
+    PeripheralConnectionSchedulerWindow,
 };
 
 fn storage() -> &'static mut PeripheralConnectionMemoryGraphStorage {
@@ -65,8 +66,7 @@ fn completed_graph(
         .attach_receive_pool(receive_pool)
         .prepare_reviewed_first_event_fields(
             PeripheralConnectionDataChannel::new(0).expect("data channel zero is valid"),
-            PeripheralConnectionIntervalTicks::new(24_000)
-                .expect("the connection interval is nonzero"),
+            PeripheralConnectionReceiveTime::from_controller_ticks(24_000),
             event_span,
             PeripheralConnectionSchedulerWindow::new(100, 200)
                 .expect("the scheduler window is nonempty"),
@@ -708,6 +708,44 @@ fn oversized_control_payload_leaves_empty_queue_reusable() {
 }
 
 #[test]
+fn retirement_cancels_pending_tx_and_reuses_the_same_allocations() {
+    let mut active = active_graph(0x2f00_9000);
+    let graph_identity = active.identity();
+    let receive_identity = active.receive_identity();
+    assert!(
+        active
+            .enqueue_control_transmission(&[9, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap()
+    );
+    let current = active.pool.current_cursor();
+    let next = active
+        .pool
+        .model_controller_receive_after_current(current, &[3, 2, 2, 0x13]);
+    active
+        .storage
+        .as_ref()
+        .get_ref()
+        .model_advance_receive_current(next);
+    active.restore_after_event();
+    let (graph, pool) = active.retire();
+    assert_eq!(graph.identity(), graph_identity);
+    assert_eq!(pool.identity(), receive_identity);
+    assert!(graph.has_empty_receive_queue());
+    assert!(graph.has_empty_transmit_queue());
+    assert!(graph.has_recovered_scheduler_pool());
+    assert!(pool.is_initialized());
+    assert!(pool.extract_completed_rx_batch().unwrap().is_empty());
+    let next = graph
+        .prepare_identity(PeripheralConnectionIdentity::new(
+            [0x12, 0x34, 0x56, 0x78],
+            [0x12, 0x34, 0x56],
+        ))
+        .attach_receive_pool(pool);
+    assert!(next.receive_pool_is_initialized());
+    let (_graph, _pool) = next.cancel();
+}
+
+#[test]
 fn recurring_rx_retains_private_cursor_and_rotates_its_successor() {
     let mut owner = active_graph(0x2f00_4000);
     let first = [3, 9, 8, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -750,4 +788,71 @@ fn recurring_rx_retains_private_cursor_and_rotates_its_successor() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn receive_time_survives_empty_rx_recycle_and_recurring_cancellation() {
+    let mut active = active_graph(0x2f02_1000);
+    assert_eq!(
+        active.receive_time(),
+        PeripheralConnectionReceiveTime::from_controller_ticks(24_000)
+    );
+    // A valid empty/duplicate reception may update time without delivering a PDU.
+    // The model supplies that hardware observation, not CRC acceptance logic.
+    for ticks in [u32::MAX - 10, 0, 150_000] {
+        let time = PeripheralConnectionReceiveTime::from_controller_ticks(ticks);
+        active
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_controller_valid_receive(time);
+        active.restore_after_event();
+        assert_eq!(active.receive_time(), time);
+        assert!(
+            active
+                .pool
+                .extract_completed_connection_rx_batch()
+                .unwrap()
+                .is_empty()
+        );
+        let next = active.prepare_reviewed_recurring_event_fields(
+            PeripheralConnectionDataChannel::new(12).unwrap(),
+            PeripheralConnectionEventSpan::new(40_000).unwrap(),
+            PeripheralConnectionSchedulerWindow::new(100_000, 120_000).unwrap(),
+            PeripheralConnectionRecurringReceiveWait::new(1_000).unwrap(),
+            PeripheralConnectionSchedulerPriority::FIRST_EVENT,
+            92,
+        );
+        active = next.cancel();
+        assert_eq!(active.receive_time(), time);
+        active.restore_after_event();
+        assert_eq!(active.receive_time(), time);
+    }
+}
+
+#[test]
+fn anchor_capture_alone_leaves_creation_receive_time_unchanged() {
+    let completed = completed_graph(
+        0x2f02_5000,
+        PeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+        PeripheralConnectionCapturedAnchorAvailability::Available(
+            PeripheralConnectionCapturedAnchorTime::from_controller_sram_word(800_000),
+        ),
+    );
+    let address = completed.scheduler_item_address();
+    let (active, batch, _, _) = completed
+        .prepare_recycle_after_software_list_removal(removal_ready(
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            address,
+        ))
+        .unwrap_or_else(|_| panic!("matching unlink"))
+        .extract_received()
+        .unwrap_or_else(|_| panic!("empty RX"))
+        .commit()
+        .into_parts();
+    assert!(batch.is_empty());
+    assert_eq!(
+        active.receive_time(),
+        PeripheralConnectionReceiveTime::from_controller_ticks(24_000)
+    );
 }

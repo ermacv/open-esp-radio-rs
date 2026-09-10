@@ -34,6 +34,37 @@ fn complete_missed(connection: LePeripheralConnection) -> LePeripheralConnection
 }
 
 #[test]
+fn establishment_expires_after_six_misses_but_a_packet_in_event_six_establishes() {
+    for last_activity in [
+        LePeripheralConnectionEventPeerActivity::Missed,
+        LePeripheralConnectionEventPeerActivity::Observed,
+    ] {
+        let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+        let mut connection = LePeripheralConnection::from_request(
+            request,
+            LeChannelSelectionAlgorithm::AlgorithmTwo,
+        );
+        for counter in 0..6 {
+            let activity = if counter == 5 {
+                last_activity
+            } else {
+                LePeripheralConnectionEventPeerActivity::Missed
+            };
+            let completed = connection
+                .prepare_event()
+                .into_submitted()
+                .complete(activity);
+            assert_eq!(completed.event_counter(), counter);
+            assert_eq!(
+                completed.establishment_failed(),
+                counter == 5 && last_activity == LePeripheralConnectionEventPeerActivity::Missed
+            );
+            connection = completed.into_connection();
+        }
+    }
+}
+
+#[test]
 fn complete_connect_ind_becomes_semantic_peripheral_input() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
 

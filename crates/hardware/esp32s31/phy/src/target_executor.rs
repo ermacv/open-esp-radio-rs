@@ -5,6 +5,8 @@
 //! injected through [`PhyAsyncDelay`], so neither Embassy nor an RTOS becomes a
 //! dependency of the PHY crate.
 
+use crate::executor::wait::Kind;
+
 use core::future::Future;
 
 use crate::{
@@ -60,23 +62,129 @@ use crate::{
 
 use oer_esp32s31_hal::owner::SharedPhyAccess;
 
-/// Executor-independent asynchronous delay used by target PHY operations.
+/// Execute one complete rev0 PBus force command with the vendor's direct
+/// status polling shape. The finite observation ceiling is OER's fail-closed
+/// extension; no executor edge exists inside this transaction.
+#[cfg(target_arch = "riscv32")]
+#[inline]
+pub(crate) fn force_pbus_direct(
+    registers: &mut impl SharedPhyAccess,
+    transaction: crate::analog::pbus::PhyPbusForceTest,
+) -> bool {
+    oer_esp32s31_hal::phy::pbus::start_force_test(
+        registers,
+        transaction.selector(),
+        transaction.path(),
+        transaction.value(),
+    );
+    crate::executor::wait::poll::bounded::<core::convert::Infallible>(|| {
+        Ok(oer_esp32s31_hal::phy::pbus::try_finish_force_test(registers).is_ok())
+    })
+    .unwrap_or_else(|never| match never {})
+}
+
+/// Complete one byte read through the PHY analog-I2C host without creating a
+/// transition or an async completion for each busy observation.
+#[cfg(target_arch = "riscv32")]
+#[inline]
+pub(crate) fn read_i2c_direct(
+    registers: &mut impl SharedPhyAccess,
+    address: oer_esp32s31_hal::phy::i2c::PhyI2cAddress,
+) -> Result<u8, PhyTargetPortError> {
+    let started = crate::executor::wait::poll::bounded::<core::convert::Infallible>(|| {
+        Ok(crate::analog::i2c::try_start_read(registers, address).is_ok())
+    })
+    .unwrap_or_else(|never| match never {});
+    if !started {
+        return Err(PhyTargetPortError::HardwareEdgeTimedOut);
+    }
+    for _ in 0..HARDWARE_EDGE_LIMIT {
+        match crate::analog::i2c::try_finish_read(registers, address) {
+            Ok(value) => return Ok(value),
+            Err(crate::analog::i2c::PhyI2cError::Busy) => {}
+        }
+    }
+    Err(PhyTargetPortError::HardwareEdgeTimedOut)
+}
+
+/// Complete one byte write through the PHY analog-I2C host using the same
+/// direct busy polling as the vendor leaf.
+#[cfg(target_arch = "riscv32")]
+#[inline]
+pub(crate) fn write_i2c_direct(
+    registers: &mut impl SharedPhyAccess,
+    address: oer_esp32s31_hal::phy::i2c::PhyI2cAddress,
+    value: u8,
+) -> Result<(), PhyTargetPortError> {
+    let started = crate::executor::wait::poll::bounded::<core::convert::Infallible>(|| {
+        Ok(crate::analog::i2c::try_start_write(registers, address, value).is_ok())
+    })
+    .unwrap_or_else(|never| match never {});
+    if !started {
+        return Err(PhyTargetPortError::HardwareEdgeTimedOut);
+    }
+    let completed = crate::executor::wait::poll::bounded::<core::convert::Infallible>(|| {
+        Ok(crate::analog::i2c::try_finish_write(registers, address).is_ok())
+    })
+    .unwrap_or_else(|never| match never {});
+    if completed {
+        Ok(())
+    } else {
+        Err(PhyTargetPortError::HardwareEdgeTimedOut)
+    }
+}
+
+/// Read, replace and write one reviewed analog-I2C field as one blocking
+/// vendor-shaped operation.
+#[cfg(target_arch = "riscv32")]
+#[inline]
+pub(crate) fn write_i2c_field_direct(
+    registers: &mut impl SharedPhyAccess,
+    field: oer_esp32s31_hal::phy::i2c::PhyI2cField,
+    value: u8,
+) -> Result<(), PhyTargetPortError> {
+    let current = read_i2c_direct(registers, field.address())?;
+    write_i2c_direct(registers, field.address(), field.replace(current, value))
+}
+
+/// Blocking clock used inside one already-admitted PHY hardware transaction.
 ///
-/// The delay has no borrowed state. Hardware integrations can therefore use a
-/// zero-sized implementation backed by an executor timer or a dedicated
-/// hardware timer without storing an executor object in the radio owner.
+/// Short analog settles are part of the transaction itself. They must not arm
+/// an executor timer or return `Pending`: the radio cannot do useful work in
+/// the interval and the vendor implementation uses the same blocking model.
+pub trait PhyShortDelay {
+    /// Largest minimum settle that the backend can complete synchronously.
+    const MAX_MICROS: u32;
+
+    /// Complete a short minimum settle without constructing a future.
+    /// False means that the requested interval is outside the implementation's
+    /// proven blocking range.
+    fn settle_micros(micros: u32) -> bool;
+}
+
+/// Executor-independent delay for scheduling and long hardware waits.
+///
+/// The async half remains at orchestration boundaries. Hot RX/TX calibration
+/// code depends on [`PhyShortDelay`] directly and does not poll this future.
 pub trait PhyAsyncDelay {
+    /// Blocking clock used by hot hardware transactions owned by this target.
+    type ShortDelay: PhyShortDelay;
+
     /// Monotonic clock shared with the tracking scheduler, when available.
     /// None preserves explicit unknown sample age for untimed backends.
     fn now_micros() -> Option<u64> {
         None
     }
 
-    fn after_micros(micros: u64) -> impl Future<Output = ()>;
+    /// Minimum delay selected by the caller. A settle represents an explicit
+    /// hardware interval and may finish synchronously. Bus/completion backoff
+    /// is executor policy, not evidence of a vendor-required sampling delay.
+    fn after_micros(kind: Kind, micros: u64) -> impl Future<Output = ()>;
 
     /// Optional measurement against the timer's own deadline. Unsupported
     /// backends say so explicitly; they still execute their original delay.
     fn after_micros_observed(
+        kind: Kind,
         micros: u64,
         enabled: bool,
         mut observe: impl FnMut(crate::executor::wait::Event),
@@ -84,7 +192,15 @@ pub trait PhyAsyncDelay {
         if enabled {
             observe(crate::executor::wait::Event::Unsupported);
         }
-        Self::after_micros(micros)
+        Self::after_micros(kind, micros)
+    }
+}
+
+impl PhyShortDelay for oer_esp32s31_hal::phy::delay::RomShortDelay {
+    const MAX_MICROS: u32 = oer_esp32s31_hal::phy::delay::RomShortDelay::MAX_MICROS;
+
+    fn settle_micros(micros: u32) -> bool {
+        oer_esp32s31_hal::phy::delay::RomShortDelay::settle_micros(micros)
     }
 }
 
@@ -113,11 +229,11 @@ pub async fn complete_final_i2c<D: PhyAsyncDelay>(
         match binding.action() {
             PhyColdI2cAction::StartRead { .. } => match binding.start_target(registers) {
                 Ok(()) => {}
-                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
                 Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
             },
             PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
-                D::after_micros(1).await;
+                D::after_micros(Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -180,6 +296,40 @@ macro_rules! define_i2c_executor {
     };
 }
 
+/// RX gain I2C command loop, using the immediate status observations in rev0
+/// phy_chip_i2c_readReg_org / phy_chip_i2c_writeReg. No settle is specified
+/// between command publication and status reads. Preserve the old total edge
+/// budget (including publication and terminal recognition), not a new deadline.
+pub fn complete_rx_gain_i2c(
+    mut binding: MaskedI2cWriteBinding,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<MaskedI2cWriteCompletion, PhyTargetPortError> {
+    let completed = crate::executor::wait::poll::bounded(|| {
+        match binding.action() {
+            PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
+                match binding.start_target(registers) {
+                    Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
+                    Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+                }
+            }
+            PhyColdI2cAction::AwaitReadCompletionEdge { .. }
+            | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
+                binding
+                    .observe_target_edge(registers)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            }
+            PhyColdI2cAction::Complete(_) => return Ok(true),
+        }
+        Ok(false)
+    })?;
+    if !completed {
+        return Err(PhyTargetPortError::HardwareEdgeTimedOut);
+    }
+    binding
+        .into_completion()
+        .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+}
+
 macro_rules! define_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
@@ -192,13 +342,13 @@ macro_rules! define_pbus_executor {
                     started = true;
                     break;
                 }
-                D::after_micros(1).await;
+                D::after_micros(Kind::BusBusy, 1).await;
             }
             if !started {
                 return Err(PhyTargetPortError::HardwareEdgeTimedOut);
             }
             for _ in 0..HARDWARE_EDGE_LIMIT {
-                D::after_micros(1).await;
+                D::after_micros(Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -258,6 +408,39 @@ macro_rules! define_timeout_pbus_executor {
     };
 }
 
+// RX gain uses the direct rev0 phy_pbus_force_test completion loop
+// (command 0x2f82424e, status 0x2f824256). There is no intervening settle.
+// Keep the same finite per-phase attempt bound and parent timeout completion.
+macro_rules! define_direct_timeout_pbus_executor {
+    ($function:ident, $binding:ty, $completion:ty) => {
+        pub fn $function(
+            mut binding: $binding,
+            registers: &mut impl SharedPhyAccess,
+        ) -> Result<$completion, PhyTargetPortError> {
+            use crate::executor::wait::poll::bounded;
+            let started = bounded::<core::convert::Infallible>(|| {
+                Ok(binding.start_target(registers).is_ok())
+            })
+            .unwrap_or_else(|never| match never {});
+            if !started {
+                return Ok(binding.into_timeout_completion());
+            }
+            let completed = bounded(|| {
+                binding
+                    .observe_target_edge(registers)
+                    .map(|edge| edge == PhyPbusHardwareObservation::EdgeConsumed)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+            })?;
+            if !completed {
+                return Ok(binding.into_timeout_completion());
+            }
+            binding
+                .into_completion()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+        }
+    };
+}
+
 define_i2c_executor!(
     complete_rfpll_i2c,
     RfpllFrequencyI2cBinding,
@@ -286,11 +469,11 @@ pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
         match binding.action() {
             PhyBluetoothI2cAction::StartCommand => match binding.start_target(registers) {
                 Ok(()) => {}
-                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
                 Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
             },
             PhyBluetoothI2cAction::AwaitCompletionEdge => {
-                D::after_micros(1).await;
+                D::after_micros(Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::HardwareInvariant)?
@@ -317,12 +500,12 @@ pub async fn complete_i2c_configuration<D: PhyAsyncDelay>(
             oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::StartCommand => {
                 match binding.start_target(registers) {
                     Ok(()) => {}
-                    Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                    Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
                     Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
                 }
             }
             oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::AwaitCompletionEdge => {
-                D::after_micros(1).await;
+                D::after_micros(Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::HardwareInvariant)?
@@ -410,17 +593,17 @@ define_timeout_pbus_executor!(
     PhyRxSaturationPbusBinding,
     PhyRxSaturationCompletion
 );
-define_timeout_pbus_executor!(
+define_direct_timeout_pbus_executor!(
     complete_rx_dc_calibration_pbus,
     PhyRxDcCalibrationPbusBinding,
     PhyRxDcCalibrationCompletion
 );
-define_timeout_pbus_executor!(
+define_direct_timeout_pbus_executor!(
     complete_rx_gain_dc_pbus,
     PhyRxGainDcPbusBinding,
     PhyRxGainDcCompletion
 );
-define_timeout_pbus_executor!(
+define_direct_timeout_pbus_executor!(
     complete_rx_gain_publish_pbus,
     PhyRxGainPublishPbusBinding,
     PhyRxGainPublishCompletion

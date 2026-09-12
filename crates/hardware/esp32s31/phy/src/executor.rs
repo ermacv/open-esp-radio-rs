@@ -22,10 +22,12 @@ const PARAM_TRACKING_PARENT_EDGE_LIMIT: u8 = 16;
 /// Async completion boundary for one identity-bound PHY hardware operation.
 ///
 /// Implementations must consume the binding exactly once. MMIO-only bindings
-/// may return `Ready` after their finite register sequence. Timer, readiness,
-/// and measurement bindings must become ready from a Rust-owned timer or
-/// interrupt event; they must not busy-wait, call an RTOS primitive, allocate,
-/// or invoke a vendor/ROM radio parent.
+/// may return `Ready` after their finite register sequence. Settling and
+/// readiness execution follows the target timing contract: bounded direct
+/// observations and short synchronous settles may complete in the current
+/// poll; longer waits use a Rust-owned timer or interrupt. No implementation
+/// may use an unbounded polling loop, allocate, or invoke a vendor/ROM radio
+/// parent. Hardware ownership remains retained across either wait mechanism.
 ///
 /// The returned future is an associated, statically dispatched type. No
 /// `Box`, trait object, or allocator is required by this interface.

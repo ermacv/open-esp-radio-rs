@@ -89,6 +89,14 @@ impl PhyTargetObserver for Observer<'_> {
         self.0.borrow_mut().observe_dcode_pll_lock(locked);
     }
 
+    #[inline(never)]
+    fn rx_gain_execution(
+        &mut self,
+        execution: oer_esp32s31_phy::tracking::observation::RxGainExecution,
+    ) {
+        self.0.borrow_mut().observe_rx_gain_execution(execution);
+    }
+
     // Keep diagnostic clock/accounting locals out of the large PHY poll frame.
     #[inline(never)]
     fn tracking_operation(

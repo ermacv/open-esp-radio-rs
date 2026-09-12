@@ -5,6 +5,11 @@
 //! `phy_set_rx_gain_table(0x985, 0)`. RX-DC and RX-IQ calibration remain
 //! separate typed predecessors; this publisher accepts only copied outcomes.
 
+#![cfg_attr(
+    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+    allow(unsafe_code)
+)]
+
 use crate::{
     analog::pbus::PhyPbusForceTest,
     calibration::baseband::{
@@ -18,6 +23,17 @@ use crate::{
 };
 
 const PBUS_RX_ON_COUNT: u8 = 7;
+
+/// Fixed gain encodings depend only on the hardware bank. They are generated
+/// once at compile time; measured DC corrections remain in each PHY owner.
+const fn generated_table(bank: PhyRxGainBank) -> &'static PhyGeneratedRxGainTable {
+    static WIFI: PhyGeneratedRxGainTable = generate_phy_rx_gain_table(PhyRxGainBank::Wifi);
+    static SHARED: PhyGeneratedRxGainTable = generate_phy_rx_gain_table(PhyRxGainBank::Shared);
+    match bank {
+        PhyRxGainBank::Wifi => &WIFI,
+        PhyRxGainBank::Shared => &SHARED,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainClock {
@@ -199,8 +215,6 @@ const fn after_work_mode(bank: PhyRxGainBank, failure: Option<PhyRxGainPublishFa
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainPublishTransition {
     parameters: PhyRxGainMemoryParameters,
-    wifi: PhyGeneratedRxGainTable,
-    shared: PhyGeneratedRxGainTable,
     step: Step,
 }
 
@@ -208,19 +222,14 @@ impl PhyRxGainPublishTransition {
     pub fn new(parameters: PhyRxGainMemoryParameters) -> Self {
         Self {
             parameters,
-            wifi: generate_phy_rx_gain_table(PhyRxGainBank::Wifi),
-            shared: generate_phy_rx_gain_table(PhyRxGainBank::Shared),
             step: Step::Debug(PhyRxGainBank::Wifi),
         }
     }
 
-    const fn table(&self, bank: PhyRxGainBank) -> &PhyGeneratedRxGainTable {
-        match bank {
-            PhyRxGainBank::Wifi => &self.wifi,
-            PhyRxGainBank::Shared => &self.shared,
-        }
-    }
-
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn action(&self) -> PhyRxGainPublishAction {
         match self.step {
             Step::Debug(bank) => PhyRxGainPublishAction::ConfigurePbusDebugMode { bank },
@@ -244,9 +253,9 @@ impl PhyRxGainPublishTransition {
             Step::Entries { bank, index } => PhyRxGainPublishAction::ProgramEntry {
                 bank,
                 entry: phy_generated_rx_gain_memory_entry(
-                    self.parameters,
+                    &self.parameters,
                     bank,
-                    self.table(bank),
+                    generated_table(bank),
                     index,
                 ),
             },
@@ -266,13 +275,17 @@ impl PhyRxGainPublishTransition {
                 PhyRxGainPublishAction::ClearPbusWorkModePulse { bank }
             }
             Step::Complete => PhyRxGainPublishAction::Complete(PhyRxGainPublishOutcome {
-                wifi_entries: self.wifi.last_index + 1,
-                shared_entries: self.shared.last_index + 1,
+                wifi_entries: generated_table(PhyRxGainBank::Wifi).last_index + 1,
+                shared_entries: generated_table(PhyRxGainBank::Shared).last_index + 1,
             }),
             Step::Failed(failure) => PhyRxGainPublishAction::Failed(failure),
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainPublishCompletion,
@@ -373,13 +386,13 @@ impl PhyRxGainPublishTransition {
             ) if bank == completed_bank
                 && entry
                     == phy_generated_rx_gain_memory_entry(
-                        self.parameters,
+                        &self.parameters,
                         bank,
-                        self.table(bank),
+                        generated_table(bank),
                         index,
                     ) =>
             {
-                if index == self.table(bank).last_index {
+                if index == generated_table(bank).last_index {
                     Step::Clock {
                         bank,
                         clock: PhyRxGainClock::Rx,
@@ -711,7 +724,7 @@ pub enum PhyRxGainInitAction {
     Publish(PhyRxGainPublishAction),
     ConfigureLimits { wifi_last_index: u8 },
     EnableIqCorrection,
-    Complete(PhyRxGainInitOutcome),
+    Complete,
     Failed(PhyRxGainInitFailure),
 }
 
@@ -767,10 +780,211 @@ pub struct PhyRxGainInitTransition {
     generated_tables: bool,
 }
 
+/// Coarse execution regions; coefficient products remain in the transition.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Phase {
+    Control,
+    Dc,
+    Publish,
+}
+
 impl PhyRxGainInitTransition {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn direct_dc_parameters(&self) -> Option<PhyRxGainDcParameters> {
+        matches!(self.step, InitStep::PrepareDcControlRestore).then_some(self.parameters.dc)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn commit_direct_dc(
+        &mut self,
+        result: Result<PhyRxGainDcOutcome, PhyRxGainDcFailure>,
+    ) -> Result<(), PhyRxGainInitTransitionError> {
+        if !matches!(self.step, InitStep::PrepareDcControlRestore) {
+            return Err(PhyRxGainInitTransitionError::WrongCompletion);
+        }
+        match result {
+            Ok(outcome) => {
+                self.dc_outcome = Some(outcome);
+                self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
+                    self.memory_with_dc(outcome),
+                ));
+            }
+            Err(failure) => {
+                self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(failure));
+            }
+        }
+        Ok(())
+    }
+
+    /// Publish both complete RX gain-memory banks and the root tail as one
+    /// blocking production transaction. Host verification keeps the granular
+    /// publisher transition, but firmware does not route every table entry
+    /// through the action/binding ABI.
+    #[cfg(target_arch = "riscv32")]
+    #[cfg_attr(
+        feature = "rx-gain-hot-sram",
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
+    )]
+    #[inline(never)]
+    pub(crate) fn execute_publish_target_direct<D: crate::target_executor::PhyShortDelay>(
+        &mut self,
+        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
+    ) -> Result<bool, crate::target_executor::PhyTargetPortError> {
+        let parameters = match &self.step {
+            InitStep::Publish(transition) => transition.parameters,
+            _ => return Ok(false),
+        };
+        let mut failure = None;
+        for bank in [PhyRxGainBank::Wifi, PhyRxGainBank::Shared] {
+            oer_esp32s31_hal::phy::pbus::configure_debug_mode(registers);
+            for index in 0..PBUS_RX_ON_COUNT {
+                let transaction = pbus_rx_on(index, parameters.parameter_002);
+                if !crate::target_executor::force_pbus_direct(registers, transaction) {
+                    failure = Some(PhyRxGainPublishFailure::PbusTimedOut { bank, transaction });
+                    break;
+                }
+            }
+            if failure.is_none() {
+                oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, true);
+                oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, true);
+                let table = generated_table(bank);
+                for index in 0..=table.last_index {
+                    let entry = phy_generated_rx_gain_memory_entry(&parameters, bank, table, index);
+                    oer_esp32s31_hal::phy::memory::program_gain_memory_entry(registers, entry);
+                }
+                oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, false);
+                oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, false);
+                for index in 0..PBUS_RX_ON_COUNT {
+                    let transaction = pbus_rx_on(index, parameters.parameter_002);
+                    if !crate::target_executor::force_pbus_direct(registers, transaction) {
+                        failure = Some(PhyRxGainPublishFailure::PbusTimedOut { bank, transaction });
+                        break;
+                    }
+                }
+            }
+            if oer_esp32s31_hal::phy::pbus::configure_work_mode(registers) {
+                if !D::settle_micros(1) {
+                    return Err(
+                        crate::target_executor::PhyTargetPortError::HardwareCapabilityUnavailable,
+                    );
+                }
+                oer_esp32s31_hal::phy::agc::configure_pbus_work_mode_pulse(registers);
+                if !D::settle_micros(2) {
+                    return Err(
+                        crate::target_executor::PhyTargetPortError::HardwareCapabilityUnavailable,
+                    );
+                }
+                oer_esp32s31_hal::phy::agc::clear_pbus_work_mode_pulse(registers);
+            }
+            if failure.is_some() {
+                break;
+            }
+        }
+
+        if let Some(failure) = failure {
+            self.step = InitStep::Failed(PhyRxGainInitFailure::Publish(failure));
+            return Ok(true);
+        }
+        self.wifi_last_index = generated_table(PhyRxGainBank::Wifi).last_index;
+        self.shared_last_index = generated_table(PhyRxGainBank::Shared).last_index;
+        oer_esp32s31_hal::phy::agc::configure_rx_gain_limits(registers, self.wifi_last_index);
+        oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
+        self.step = InitStep::Complete;
+        Ok(true)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[cfg_attr(
+        feature = "rx-gain-hot-sram",
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
+    )]
+    pub(crate) fn execute_tail_target_direct(
+        &mut self,
+        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> bool {
+        if !matches!(self.step, InitStep::Limits) {
+            return false;
+        }
+        oer_esp32s31_hal::phy::agc::configure_rx_gain_limits(registers, self.wifi_last_index);
+        oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
+        self.step = InitStep::Complete;
+        true
+    }
+
+    /// Inspect terminal state without placing the retained coefficient product
+    /// in every hot-path action value.
+    pub fn terminal(&self) -> Option<Result<PhyRxGainInitOutcome, PhyRxGainInitFailure>> {
+        match self.step {
+            InitStep::Complete => Some(Ok(PhyRxGainInitOutcome {
+                dc: self.dc_outcome,
+                generated_tables: self.generated_tables,
+                wifi_last_index: self.wifi_last_index,
+                shared_last_index: self.shared_last_index,
+            })),
+            InitStep::Failed(failure) => Some(Err(failure)),
+            _ => None,
+        }
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn phase(&self) -> Option<Phase> {
+        match &self.step {
+            InitStep::Complete | InitStep::Failed(_) => None,
+            InitStep::Dc(_) => Some(Phase::Dc),
+            InitStep::Publish(_) => Some(Phase::Publish),
+            _ => Some(Phase::Control),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn minimum_mut(
+        &mut self,
+    ) -> Option<&mut crate::rx::dc_offset::PhyRxDcMinimumTransition> {
+        match &mut self.step {
+            InitStep::Dc(transition) => transition.minimum_mut(),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
+    pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxGainInitTransitionError> {
+        match &mut self.step {
+            InitStep::Dc(transition) => transition
+                .finish_minimum()
+                .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion),
+            _ => Err(PhyRxGainInitTransitionError::WrongCompletion),
+        }
+    }
+
+    /// Lower only the live cursor. Completed coefficient products stay in this
+    /// owner until the caller requests the terminal action.
+    #[cfg(test)]
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
+    pub(crate) fn prepare_external(
+        &self,
+    ) -> Result<Option<PhyRxGainInitExternalBinding>, PhyRxGainExternalBindingError> {
+        match self.step {
+            InitStep::Complete | InitStep::Failed(_) => Ok(None),
+            InitStep::Dc(ref transition) => transition
+                .lower_external()
+                .map(PhyRxGainInitExternalBinding::Dc)
+                .map(Some)
+                .map_err(|_| PhyRxGainExternalBindingError::UnsupportedAction),
+            _ => PhyRxGainInitExternalBinding::lower(self.action()).map(Some),
+        }
+    }
+
     pub fn new(parameters: PhyRxGainInitParameters) -> Self {
-        let wifi_last_index = generate_phy_rx_gain_table(PhyRxGainBank::Wifi).last_index;
-        let shared_last_index = generate_phy_rx_gain_table(PhyRxGainBank::Shared).last_index;
+        let wifi_last_index = generated_table(PhyRxGainBank::Wifi).last_index;
+        let shared_last_index = generated_table(PhyRxGainBank::Shared).last_index;
         let step = if parameters.tables_initialized {
             InitStep::Limits
         } else if parameters.dc_calibrated {
@@ -801,6 +1015,10 @@ impl PhyRxGainInitTransition {
         memory
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn action(&self) -> PhyRxGainInitAction {
         match self.step {
             InitStep::PrepareDcControlRestore => PhyRxGainInitAction::PrepareDcControlRestore,
@@ -813,16 +1031,15 @@ impl PhyRxGainInitTransition {
                 wifi_last_index: self.wifi_last_index,
             },
             InitStep::IqCorrection => PhyRxGainInitAction::EnableIqCorrection,
-            InitStep::Complete => PhyRxGainInitAction::Complete(PhyRxGainInitOutcome {
-                dc: self.dc_outcome,
-                generated_tables: self.generated_tables,
-                wifi_last_index: self.wifi_last_index,
-                shared_last_index: self.shared_last_index,
-            }),
+            InitStep::Complete => PhyRxGainInitAction::Complete,
             InitStep::Failed(failure) => PhyRxGainInitAction::Failed(failure),
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainInitCompletion,
@@ -840,11 +1057,11 @@ impl PhyRxGainInitTransition {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxGainDcAction::Complete(outcome) => {
+                match transition.terminal() {
+                    Some(Ok(outcome)) => {
                         self.step = InitStep::RestoreDcControl { outcome };
                     }
-                    PhyRxGainDcAction::Failed(failure) => {
+                    Some(Err(failure)) => {
                         self.step = InitStep::RestoreDcControlAfterFailure(failure);
                     }
                     _ => {}
@@ -913,25 +1130,44 @@ pub enum PhyRxGainInitHardwareInvariant {
     RestoreNotPending,
 }
 
-/// Non-cloneable identity token for the three direct-MMIO root operations.
+// Compact operation identity; coefficient products stay in the transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InitMmio {
+    PrepareDcControlRestore,
+    RestoreDcControl,
+    ConfigureLimits { wifi_last_index: u8 },
+    EnableIqCorrection,
+}
+
+/// Non-cloneable identity token for the direct-MMIO root operations.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxGainInitMmioBinding {
-    action: PhyRxGainInitAction,
+    operation: InitMmio,
 }
 
 impl PhyRxGainInitMmioBinding {
     pub fn new(action: PhyRxGainInitAction) -> Result<Self, PhyRxGainInitBindingError> {
-        match action {
-            PhyRxGainInitAction::PrepareDcControlRestore
-            | PhyRxGainInitAction::RestoreDcControl
-            | PhyRxGainInitAction::ConfigureLimits { .. }
-            | PhyRxGainInitAction::EnableIqCorrection => Ok(Self { action }),
-            _ => Err(PhyRxGainInitBindingError::NotDirectMmio),
-        }
+        let operation = match action {
+            PhyRxGainInitAction::PrepareDcControlRestore => InitMmio::PrepareDcControlRestore,
+            PhyRxGainInitAction::RestoreDcControl => InitMmio::RestoreDcControl,
+            PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
+                InitMmio::ConfigureLimits { wifi_last_index }
+            }
+            PhyRxGainInitAction::EnableIqCorrection => InitMmio::EnableIqCorrection,
+            _ => return Err(PhyRxGainInitBindingError::NotDirectMmio),
+        };
+        Ok(Self { operation })
     }
 
     pub const fn action(&self) -> PhyRxGainInitAction {
-        self.action
+        match self.operation {
+            InitMmio::PrepareDcControlRestore => PhyRxGainInitAction::PrepareDcControlRestore,
+            InitMmio::RestoreDcControl => PhyRxGainInitAction::RestoreDcControl,
+            InitMmio::ConfigureLimits { wifi_last_index } => {
+                PhyRxGainInitAction::ConfigureLimits { wifi_last_index }
+            }
+            InitMmio::EnableIqCorrection => PhyRxGainInitAction::EnableIqCorrection,
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -939,8 +1175,8 @@ impl PhyRxGainInitMmioBinding {
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
     ) -> Result<PhyRxGainInitCompletion, PhyRxGainInitHardwareInvariant> {
-        match self.action {
-            PhyRxGainInitAction::PrepareDcControlRestore => {
+        match self.operation {
+            InitMmio::PrepareDcControlRestore => {
                 oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers).map_err(
                     |error| match error {
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
@@ -953,20 +1189,19 @@ impl PhyRxGainInitMmioBinding {
                 )?;
                 Ok(PhyRxGainInitCompletion::DcControlRestorePrepared)
             }
-            PhyRxGainInitAction::RestoreDcControl => {
+            InitMmio::RestoreDcControl => {
                 oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
                     .map_err(|_| PhyRxGainInitHardwareInvariant::RestoreNotPending)?;
                 Ok(PhyRxGainInitCompletion::DcControlRestored)
             }
-            PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
+            InitMmio::ConfigureLimits { wifi_last_index } => {
                 oer_esp32s31_hal::phy::agc::configure_rx_gain_limits(registers, wifi_last_index);
                 Ok(PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index })
             }
-            PhyRxGainInitAction::EnableIqCorrection => {
+            InitMmio::EnableIqCorrection => {
                 oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
                 Ok(PhyRxGainInitCompletion::IqCorrectionEnabled)
             }
-            _ => unreachable!(),
         }
     }
 }
@@ -981,9 +1216,6 @@ pub enum PhyRxGainInitExternalBinding {
 
 impl PhyRxGainInitExternalBinding {
     pub fn lower(action: PhyRxGainInitAction) -> Result<Self, PhyRxGainExternalBindingError> {
-        if let Ok(binding) = PhyRxGainInitMmioBinding::new(action) {
-            return Ok(Self::Mmio(binding));
-        }
         match action {
             PhyRxGainInitAction::Dc(action) => {
                 crate::rx::gain_calibration::PhyRxGainDcExternalBinding::lower(action)
@@ -993,7 +1225,9 @@ impl PhyRxGainInitExternalBinding {
             PhyRxGainInitAction::Publish(action) => {
                 PhyRxGainPublishExternalBinding::lower(action).map(Self::Publish)
             }
-            _ => Err(PhyRxGainExternalBindingError::UnsupportedAction),
+            _ => PhyRxGainInitMmioBinding::new(action)
+                .map(Self::Mmio)
+                .map_err(|_| PhyRxGainExternalBindingError::UnsupportedAction),
         }
     }
 }

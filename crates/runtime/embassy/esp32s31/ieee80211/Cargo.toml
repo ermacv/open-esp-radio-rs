@@ -39,6 +39,9 @@ oer-esp32s31-wifi-ap = { path = "../../../../hardware/esp32s31/driver/ieee80211/
 xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
 
 [features]
+# Place the direct source-owned RX-gain transaction in internal SRAM for A/B
+# measurement. The recovered graph and short ROM settles remain unchanged.
+phy-rx-hot-sram = ["oer-esp32s31-phy/rx-gain-hot-sram"]
 default = ["owned-network"]
 # Optimized Xarxa/Embassy owner glue. The radio-native policy and physical
 # materialization boundary compile without this feature for compatibility and

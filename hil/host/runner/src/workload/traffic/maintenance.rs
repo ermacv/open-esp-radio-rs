@@ -20,6 +20,9 @@ pub(crate) fn run(
     progress: serde_json::Value,
 ) -> Result<()> {
     use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    let features = capture
+        .request_capabilities(Duration::from_secs(5))?
+        .features;
     if matches!(operation, Op::Rfpll | Op::RfpllObserved) {
         // Completion and checked restoration of acquisition are
         // the prerequisite event, not a host delay or a fabricated
@@ -59,6 +62,7 @@ pub(crate) fn run(
             "evidence": evidence,
             "tx_waits": tx_waits,
             "rx_gain": report.rx_gain,
+            "phy_rx_hot_sram": features.phy_rx_hot_sram,
             "timer": timer,
             "service": service,
             "rfpll": rfpll,

@@ -1,8 +1,8 @@
 schema = 4
-id = "diagnostic-station-phy-rxcal-delivery-rx"
-description = "Common-calibration root/poll timing without per-edge RX observation or PM during RX UDP delivery"
+id = "diagnostic-station-phy-rxcal-hot-sram-delivery-rx"
+description = "Common-calibration timing with RX-gain state decisions in SRAM and the same short-settle policy"
 repetitions = 1
-image = "diagnostic-rx-delivery"
+image = "diagnostic-rx-delivery-phy-hot-sram"
 isolation = "reset"
 data_plane = "split-radio-network"
 tags = ["diagnostic", "station", "pause", "udp", "ht40"]

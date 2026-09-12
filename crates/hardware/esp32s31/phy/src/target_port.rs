@@ -1,8 +1,13 @@
 //! Complete ESP32-S31 target port for the recovered PHY transitions.
 //!
 //! This module owns the target-side composition of the individual PHY state
-//! machines. Applications inject only an asynchronous delay and an optional
-//! observer; they must not reconstruct the recovered hardware contract.
+//! machines. Runtime RX/TX calibration executes synchronously after physical
+//! admission; asynchronous time remains available to longer registration,
+//! tracking and lifecycle edges. Applications inject timing capabilities and
+//! an optional observer; they must not reconstruct the recovered hardware
+//! contract.
+
+use crate::executor::wait::Kind;
 
 use core::marker::PhantomData;
 
@@ -75,15 +80,16 @@ use crate::{
     },
     state::{PhyCalibrationCache, PhyState, client::PhyPendingTracking},
     target_executor::{
-        PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
-        complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_i2c_configuration,
-        complete_masked_i2c, complete_rfpll_i2c, complete_rx_dc_calibration_pbus,
-        complete_rx_dco_pbus, complete_rx_gain_dc_pbus, complete_rx_gain_publish_pbus,
-        complete_rx_saturation_pbus, complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c,
-        complete_rxiq_gain_pbus, complete_rxiq_init_i2c, complete_rxiq_init_pbus,
-        complete_temperature_i2c, complete_tx_calibration_environment_pbus,
-        complete_tx_dc_pwdet_pbus, complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c,
-        complete_txiq_init_i2c, complete_txiq_pbus,
+        PhyAsyncDelay, PhyShortDelay, PhyTargetPortError, complete_bluetooth_i2c,
+        complete_bluetooth_pbus, complete_channel_i2c, complete_dcode_i2c, complete_final_i2c,
+        complete_i2c_configuration, complete_masked_i2c, complete_rfpll_i2c,
+        complete_rx_dc_calibration_pbus, complete_rx_dco_pbus, complete_rx_gain_dc_pbus,
+        complete_rx_gain_i2c, complete_rx_gain_publish_pbus, complete_rx_saturation_pbus,
+        complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c, complete_rxiq_gain_pbus,
+        complete_rxiq_init_i2c, complete_rxiq_init_pbus, complete_temperature_i2c,
+        complete_tx_calibration_environment_pbus, complete_tx_dc_pwdet_pbus,
+        complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c, complete_txiq_init_i2c,
+        complete_txiq_pbus,
     },
     tracking::{
         calibration::{
@@ -183,6 +189,10 @@ pub trait PhyTargetObserver {
     }
 
     fn dcode_pll_lock(&mut self, _locked: bool) {}
+
+    /// Emitted once after a terminally successful RX-gain child. The child
+    /// performs no diagnostic clock reads while accumulating these counts.
+    fn rx_gain_execution(&mut self, _execution: crate::tracking::observation::RxGainExecution) {}
 
     fn tracking_operation(
         &mut self,
@@ -819,8 +829,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
     ) -> Result<RfpllFrequencyCompletion, PhyTargetPortError> {
-        Self::complete_rfpll_with(binding, platform, registers, |_, micros| {
-            D::after_micros(micros)
+        Self::complete_rfpll_with(binding, platform, registers, |kind, micros| {
+            D::after_micros(kind, micros)
         })
         .await
     }
@@ -866,7 +876,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 complete_tx_calibration_environment_pbus::<D>(binding, registers).await
             }
             PhyTxCalibrationEnvironmentExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
         }
@@ -876,7 +886,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         binding: PhyToneSarExternalBinding,
         registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyToneSarCompletion, PhyTargetPortError> {
-        Self::complete_tone_sar_with(binding, registers, |_, micros| D::after_micros(micros)).await
+        Self::complete_tone_sar_with(binding, registers, |_, micros| {
+            D::after_micros(Kind::Settle, micros)
+        })
+        .await
     }
 
     async fn complete_tone_sar_with<F: core::future::Future<Output = ()>>(
@@ -905,8 +918,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     ) -> Result<PhyTemperatureCompletion, PhyTargetPortError> {
         match binding {
             PhyTemperatureExternalBinding::I2c(binding) => {
-                complete_temperature_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_temperature_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyTemperatureExternalBinding::Sample(binding) => Ok(binding.execute_target(registers)),
         }
@@ -942,7 +957,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rfpll(binding, platform, registers).await?,
             )),
             PhyTxPowerExternalBinding::I2c(binding) => {
-                complete_tx_power_i2c(binding, registers, |_, micros| D::after_micros(micros)).await
+                complete_tx_power_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyTxPowerExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyTxPowerExternalBinding::ToneSar(binding) => {
@@ -975,8 +993,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 ))
             }
             PhyBluetoothTxPowerExternalBinding::Pbus(binding) => {
-                complete_bluetooth_pbus(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_bluetooth_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyBluetoothTxPowerExternalBinding::ReadPbus(binding) => {
                 Ok(binding.execute_target(registers))
@@ -1050,8 +1070,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyTxCapSearchExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyTxCapSearchExternalBinding::I2c(binding) => Ok(PhyTxCapSearchCompletion::I2c(
-                complete_masked_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await?,
+                complete_masked_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await?,
             )),
             PhyTxCapSearchExternalBinding::ToneSar(binding) => {
                 let completion = Self::complete_tone_sar(binding, registers).await?;
@@ -1073,8 +1095,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rfpll(binding, platform, registers).await?,
             )),
             PhyTxCapExternalBinding::I2c(binding) => Ok(PhyTxCapCompletion::I2c(
-                complete_masked_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await?,
+                complete_masked_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await?,
             )),
             PhyTxCapExternalBinding::Attenuation(binding) => Ok(PhyTxCapCompletion::Attenuation(
                 Self::complete_power_attenuation(binding, registers).await?,
@@ -1092,7 +1116,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     ) -> Result<PhyTxDcPwdetSearchCompletion, PhyTargetPortError> {
         use crate::executor::wait::{Kind, tx::Scope};
         let delay = |scope, kind, micros| {
-            D::after_micros_observed(micros, O::OBSERVE_DELAYS, move |event| {
+            D::after_micros_observed(kind, micros, O::OBSERVE_DELAYS, move |event| {
                 observer.borrow_mut().tx_wait(scope, kind, event)
             })
         };
@@ -1147,7 +1171,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     ) -> Result<PhyTxDcPwdetCompletion, PhyTargetPortError> {
         use crate::executor::wait::{Kind, tx::Scope};
         let delay = |scope, kind, micros| {
-            D::after_micros_observed(micros, O::OBSERVE_DELAYS, move |event| {
+            D::after_micros_observed(kind, micros, O::OBSERVE_DELAYS, move |event| {
                 observer.borrow_mut().tx_wait(scope, kind, event)
             })
         };
@@ -1224,7 +1248,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyTxIqMisPowerExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyTxIqMisPowerExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyTxIqMisPowerExternalBinding::LinearPower(binding) => {
@@ -1254,8 +1278,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     ) -> Result<PhyTxIqLoopbackCompletion, PhyTargetPortError> {
         match binding {
             PhyTxIqLoopbackExternalBinding::I2c(binding) => Ok(PhyTxIqLoopbackCompletion::I2c(
-                complete_masked_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await?,
+                complete_masked_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await?,
             )),
             PhyTxIqLoopbackExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
         }
@@ -1276,7 +1302,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 ))
             }
             PhyTxIqCalibrationExternalBinding::Pbus(binding) => {
-                complete_txiq_pbus(binding, registers, |_, micros| D::after_micros(micros)).await
+                complete_txiq_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyTxIqCalibrationExternalBinding::Environment(binding) => {
                 Ok(PhyTxIqCalibrationCompletion::Environment(
@@ -1306,8 +1335,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rfpll(binding, platform, registers).await?,
             )),
             PhyTxIqInitExternalBinding::I2c(binding) => {
-                complete_txiq_init_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_txiq_init_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyTxIqInitExternalBinding::Calibration(binding) => {
                 Ok(PhyTxIqInitCompletion::Calibration(
@@ -1329,17 +1360,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyDcIqExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyDcIqExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
-            PhyDcIqExternalBinding::Readiness(binding) => {
-                if binding.samples() >= HARDWARE_EDGE_LIMIT {
-                    Ok(binding.into_timeout_completion())
-                } else {
-                    D::after_micros(1).await;
-                    Ok(binding.execute_target(registers))
-                }
-            }
+            PhyDcIqExternalBinding::Readiness(binding) => Ok(binding
+                .observe_with(HARDWARE_EDGE_LIMIT, || {
+                    crate::calibration::estimator::sample_readiness_target(registers)
+                })),
         }
     }
 
@@ -1352,10 +1379,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 .execute_target(registers)
                 .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyRxDcoExternalBinding::Pbus(binding) => {
-                complete_rx_dco_pbus(binding, registers, |_, micros| D::after_micros(micros)).await
+                complete_rx_dco_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxDcoExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyRxDcoExternalBinding::DcIq(binding) => Ok(PhyRxDcoCompletion::DcIq(
@@ -1371,14 +1401,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyRxIqEstimatorExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyRxIqEstimatorExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyRxIqEstimatorExternalBinding::Readiness(binding) => {
                 if binding.samples() >= HARDWARE_EDGE_LIMIT {
                     Ok(binding.into_timeout_completion())
                 } else {
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::Completion, 1).await;
                     Ok(binding.execute_target(registers))
                 }
             }
@@ -1435,16 +1465,20 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     ) -> Result<PhyRxIqGainCompletion, PhyTargetPortError> {
         match binding {
             PhyRxIqGainExternalBinding::Pbus(binding) => {
-                complete_rxiq_gain_pbus(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rxiq_gain_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxIqGainExternalBinding::I2c(binding) => {
-                complete_rxiq_gain_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rxiq_gain_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxIqGainExternalBinding::AdjustTx(binding) => Ok(PhyRxIqGainCompletion::AdjustTx(
-                complete_rxiq_adjusted_tx_i2c(binding, registers, |_, micros| {
-                    D::after_micros(micros)
+                complete_rxiq_adjusted_tx_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
                 })
                 .await?,
             )),
@@ -1471,13 +1505,17 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rfpll(binding, platform, registers).await?,
             )),
             PhyRxIqInitExternalBinding::I2c(binding) => {
-                complete_rxiq_init_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rxiq_init_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxIqInitExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyRxIqInitExternalBinding::Pbus(binding) => {
-                complete_rxiq_init_pbus(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rxiq_init_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxIqInitExternalBinding::Loopback(binding) => Ok(PhyRxIqInitCompletion::Loopback(
                 Self::complete_txiq_loopback(binding, platform, registers).await?,
@@ -1486,7 +1524,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rxiq_gain(binding, platform, registers).await?,
             )),
             PhyRxIqInitExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
         }
@@ -1499,11 +1537,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyRxSaturationExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyRxSaturationExternalBinding::Pbus(binding) => {
-                complete_rx_saturation_pbus(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rx_saturation_pbus(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyRxSaturationExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyRxSaturationExternalBinding::Sample(binding) => {
@@ -1532,13 +1572,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 .execute_target(registers)
                 .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyRxDcCalibrationExternalBinding::Pbus(binding) => {
-                complete_rx_dc_calibration_pbus(binding, registers, |_, micros| {
-                    D::after_micros(micros)
-                })
-                .await
+                complete_rx_dc_calibration_pbus(binding, registers)
             }
             PhyRxDcCalibrationExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyRxDcCalibrationExternalBinding::Minimum(binding) => {
@@ -1560,12 +1597,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rfpll(binding, platform, registers).await?,
             )),
             PhyRxGainDcExternalBinding::Pbus(binding) => {
-                complete_rx_gain_dc_pbus(binding, registers, |_, micros| D::after_micros(micros))
-                    .await
+                complete_rx_gain_dc_pbus(binding, registers)
             }
             PhyRxGainDcExternalBinding::I2c(binding) => Ok(PhyRxGainDcCompletion::I2c(
-                complete_masked_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await?,
+                complete_rx_gain_i2c(binding, registers)?,
             )),
             PhyRxGainDcExternalBinding::Calibration(binding) => {
                 Ok(PhyRxGainDcCompletion::Calibration(
@@ -1576,7 +1611,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_rx_dc_minimum(binding, registers).await?,
             )),
             PhyRxGainDcExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
         }
@@ -1589,13 +1624,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyRxGainPublishExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyRxGainPublishExternalBinding::Pbus(binding) => {
-                complete_rx_gain_publish_pbus(binding, registers, |_, micros| {
-                    D::after_micros(micros)
-                })
-                .await
+                complete_rx_gain_publish_pbus(binding, registers)
             }
             PhyRxGainPublishExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
         }
@@ -1641,11 +1673,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 ))
             }
             PhyChipChannelExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyChipChannelExternalBinding::I2c(binding) => {
-                complete_channel_i2c(binding, registers, |_, micros| D::after_micros(micros)).await
+                complete_channel_i2c(binding, registers, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyChipChannelExternalBinding::TxGain(binding) => {
                 let request = binding.request();
@@ -1676,8 +1711,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             PhyChipChannelExternalBinding::Temperature(binding) => {
                 Ok(PhyChipChannelCompletion::Temperature(match binding {
                     PhyTemperatureExternalBinding::I2c(binding) => {
-                        complete_temperature_i2c(binding, channel, |_, micros| {
-                            D::after_micros(micros)
+                        complete_temperature_i2c(binding, channel, |kind, micros| {
+                            D::after_micros(kind, micros)
                         })
                         .await?
                     }
@@ -1687,11 +1722,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 }))
             }
             PhyChipChannelExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyChipChannelExternalBinding::I2c(binding) => {
-                complete_channel_i2c(binding, channel, |_, micros| D::after_micros(micros)).await
+                complete_channel_i2c(binding, channel, |kind, micros| {
+                    D::after_micros(kind, micros)
+                })
+                .await
             }
             PhyChipChannelExternalBinding::TxGain(binding) => {
                 let request = binding.request();
@@ -1750,17 +1788,17 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         observer: &mut O,
     ) -> Result<(), PhyTargetPortError> {
         channel.request_mac_stop();
-        D::after_micros(MAC_CHANNEL_SETTLE_US).await;
+        D::after_micros(Kind::Settle, MAC_CHANNEL_SETTLE_US).await;
         for _ in 0..RF_OPERATION_LIMIT {
             if channel.mac_active_state() == 0 {
-                D::after_micros(MAC_CHANNEL_IDLE_SETTLE_US).await;
+                D::after_micros(Kind::Settle, MAC_CHANNEL_IDLE_SETTLE_US).await;
                 Self::select_channel_hal(state, channel_or_frequency, cbw, channel, observer)
                     .await?;
                 let regdma_link = channel.restart_mac();
                 observer.mac_channel_restarted(channel_or_frequency, cbw, regdma_link);
                 return Ok(());
             }
-            D::after_micros(1).await;
+            D::after_micros(Kind::Completion, 1).await;
         }
         Err(PhyTargetPortError::HardwareEdgeTimedOut)
     }
@@ -1788,7 +1826,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyTxDcExternalBinding::Ready(binding) => Ok(binding.execute_target(registers)),
             PhyTxDcExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyTxDcExternalBinding::Pbus(mut binding) => {
@@ -1798,13 +1836,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                         started = true;
                         break;
                     }
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::BusBusy, 1).await;
                 }
                 if !started {
                     return Err(PhyTargetPortError::HardwareEdgeTimedOut);
                 }
                 for _ in 0..HARDWARE_EDGE_LIMIT {
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::Completion, 1).await;
                     match binding
                         .observe_target_edge(registers)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -1843,7 +1881,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyPwdetExternalBinding::Ready(binding) => Ok(binding.execute_target(registers)),
             PhyPwdetExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
             }
             PhyPwdetExternalBinding::Pbus(mut binding) => {
@@ -1853,13 +1891,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                         started = true;
                         break;
                     }
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::BusBusy, 1).await;
                 }
                 if !started {
                     return Err(PhyTargetPortError::HardwareEdgeTimedOut);
                 }
                 for _ in 0..HARDWARE_EDGE_LIMIT {
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::Completion, 1).await;
                     match binding
                         .sample_target_once(registers)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -1910,7 +1948,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     binding,
                     platform,
                     registers,
-                    |_, _, micros| D::after_micros(micros),
+                    |_, kind, micros| D::after_micros(kind, micros),
                     |_| {},
                 )
                 .await?,
@@ -1963,13 +2001,15 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                         | PhyColdI2cAction::StartWrite { .. } => {
                             match binding.start_target(registers) {
                                 Ok(()) => {}
-                                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                                Err(PhyColdI2cError::BusyAtStart) => {
+                                    D::after_micros(Kind::BusBusy, 1).await
+                                }
                                 Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
                             }
                         }
                         PhyColdI2cAction::AwaitReadCompletionEdge { .. }
                         | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                            D::after_micros(1).await;
+                            D::after_micros(Kind::Completion, 1).await;
                             match binding
                                 .observe_target_edge(registers)
                                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -2043,7 +2083,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding),
                     PhyColdObservationRequest::ObserveDcIqReadiness { .. }
                     | PhyColdObservationRequest::ObserveSignalPowerReadiness { .. } => {
-                        D::after_micros(1).await;
+                        D::after_micros(Kind::Completion, 1).await;
                         binding
                             .execute_target(registers)
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)
@@ -2058,7 +2098,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     .start_target(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
                 for _ in 0..HARDWARE_EDGE_LIMIT {
-                    D::after_micros(1).await;
+                    D::after_micros(Kind::Completion, 1).await;
                     match binding
                         .observe_target_edge(registers)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -2074,7 +2114,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Err(PhyTargetPortError::HardwareEdgeTimedOut)
             }
             PhyColdExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 binding
                     .into_elapsed_completion()
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)
@@ -2082,7 +2122,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn run_calibration_force_txrx(
+    fn run_calibration_force_txrx(
         mut child: PhyCalibrationForceTxRxTransition,
         registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
@@ -2097,7 +2137,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let completion = match binding {
                 PhyForceTxRxExternalBinding::Mmio(binding) => binding.execute_target(registers),
                 PhyForceTxRxExternalBinding::Timer(binding) => {
-                    D::after_micros(u64::from(binding.micros())).await;
+                    if !D::ShortDelay::settle_micros(binding.micros()) {
+                        return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                    }
                     binding.into_completion()
                 }
             };
@@ -2108,12 +2150,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         Err(PhyTargetPortError::RfOperationLimit)
     }
 
-    async fn run_calibration_tx_dc_pwdet<O: PhyTargetObserver>(
+    fn run_calibration_tx_dc_pwdet<O: PhyTargetObserver>(
         mut child: PhyCalibrationTxDcPwdetTransition,
         registers: &mut impl SharedPhyContext,
         observer: &core::cell::RefCell<&mut O>,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        calibration::tx_dc_pwdet_init::<D, _>(child.transition_mut(), registers, observer).await?;
+        calibration::tx_dc_pwdet_init::<D, _>(child.transition_mut(), registers, observer)?;
         child
             .commit()
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)
@@ -2194,9 +2236,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion =
-                complete_masked_i2c(binding, registers, |_, micros| D::after_micros(micros))
-                    .await?;
+            let completion = complete_masked_i2c(binding, registers, |kind, micros| {
+                D::after_micros(kind, micros)
+            })
+            .await?;
             child
                 .advance(PhyWifiI2cTrackingCompletion::MaskedWrite(completion))
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2294,75 +2337,62 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
     ) -> Result<PhyCalibrationTrackingCompletion, Self::Error> {
         self.observer.operation_started();
         let completion = match transition.action() {
-            PhyCalibrationTrackingAction::ClearPbus => {
-                calibration::clear_pbus::<D, _>(
-                    transition
-                        .begin_pbus_clear()
-                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                    self.registers,
-                    &mut *self.observer,
-                )
-                .await?
-            }
+            PhyCalibrationTrackingAction::ClearPbus => calibration::clear_pbus::<D::ShortDelay, _>(
+                transition
+                    .begin_pbus_clear()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                self.registers,
+                &mut *self.observer,
+            )?,
             PhyCalibrationTrackingAction::CalibrateDcode => {
-                let observer = core::cell::RefCell::new(&mut *self.observer);
-                let observer = &observer;
-                crate::tracking::observation::observe_polls(
-                    calibration::dcode::<D, _, _>(
-                        transition
-                            .begin_dcode()
-                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                        self.platform,
-                        self.registers,
-                        |scope, kind, micros| {
-                            D::after_micros_observed(micros, O::OBSERVE_DELAYS, move |event| {
-                                observer.borrow_mut().dcode_wait(scope, kind, event)
-                            })
-                        },
-                        |locked| observer.borrow_mut().dcode_pll_lock(locked),
-                    ),
-                    |event| {
-                        observer.borrow_mut().tracking_operation(
-                            crate::tracking::observation::Operation::Dcode,
-                            event,
-                        )
-                    },
-                )
-                .await?
+                use crate::tracking::observation::{Event, Operation};
+                self.observer
+                    .tracking_operation(Operation::Dcode, Event::PollStarted);
+                let result = calibration::dcode::<D::ShortDelay, _>(
+                    transition
+                        .begin_dcode()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                    |locked| self.observer.dcode_pll_lock(locked),
+                );
+                self.observer
+                    .tracking_operation(Operation::Dcode, Event::PollReady);
+                result?
             }
             PhyCalibrationTrackingAction::RecalibrateRxGain => {
+                use crate::tracking::observation::{Event, Operation};
                 let observer = core::cell::RefCell::new(&mut *self.observer);
-                let observer = &observer;
-                crate::tracking::observation::observe_polls(
-                    calibration::rx_gain::<D, _>(
-                        transition
-                            .begin_rx_gain_recalibration()
-                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                        self.platform,
-                        self.registers,
-                        |operation, event| {
-                            observer.borrow_mut().tracking_operation(operation, event)
-                        },
-                    ),
-                    |event| {
-                        observer.borrow_mut().tracking_operation(
-                            crate::tracking::observation::Operation::RxGain,
-                            event,
-                        )
+                observer
+                    .borrow_mut()
+                    .tracking_operation(Operation::RxGain, Event::PollStarted);
+                let result = calibration::rx_gain::<D, _>(
+                    transition
+                        .begin_rx_gain_recalibration()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                    |operation, event| {
+                        if operation.is_rx_gain_region() {
+                            observer.borrow_mut().tracking_operation(operation, event);
+                        }
                     },
-                )
-                .await?
+                    |execution| observer.borrow_mut().rx_gain_execution(execution),
+                );
+                observer
+                    .borrow_mut()
+                    .tracking_operation(Operation::RxGain, Event::PollReady);
+                result?
             }
             PhyCalibrationTrackingAction::RestoreChipChannel { .. } => {
-                calibration::channel::<D, _, _>(
+                calibration::channel::<D::ShortDelay, _, _>(
                     transition
                         .begin_channel_restore()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                     self.platform,
                     self.registers,
                     &mut *self.observer,
-                )
-                .await?
+                )?
             }
             PhyCalibrationTrackingAction::ForceTxRxOff { .. } => {
                 TargetCompleter::<D>::run_calibration_force_txrx(
@@ -2370,28 +2400,25 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                         .begin_force_txrx()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                     self.registers,
-                )
-                .await?
+                )?
             }
             PhyCalibrationTrackingAction::CalibrateTxDcPwdet { .. } => {
+                use crate::tracking::observation::{Event, Operation};
                 let observer = core::cell::RefCell::new(&mut *self.observer);
-                let observer = &observer;
-                crate::tracking::observation::observe_polls(
-                    TargetCompleter::<D>::run_calibration_tx_dc_pwdet(
-                        transition
-                            .begin_tx_dc_pwdet()
-                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                        self.registers,
-                        observer,
-                    ),
-                    |event| {
-                        observer.borrow_mut().tracking_operation(
-                            crate::tracking::observation::Operation::TxDcPwdet,
-                            event,
-                        )
-                    },
-                )
-                .await?
+                observer
+                    .borrow_mut()
+                    .tracking_operation(Operation::TxDcPwdet, Event::PollStarted);
+                let result = TargetCompleter::<D>::run_calibration_tx_dc_pwdet(
+                    transition
+                        .begin_tx_dc_pwdet()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.registers,
+                    &observer,
+                );
+                observer
+                    .borrow_mut()
+                    .tracking_operation(Operation::TxDcPwdet, Event::PollReady);
+                result?
             }
             PhyCalibrationTrackingAction::PublishWifiTxGain { .. }
             | PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain => transition
@@ -2399,7 +2426,9 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
                 .execute_target(self.registers),
             PhyCalibrationTrackingAction::AwaitSoftwareFrequencySettle => {
-                D::after_micros(2).await;
+                if !D::ShortDelay::settle_micros(2) {
+                    return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                }
                 oer_esp32s31_hal::phy::frequency::observe_software_frequency_boundary(
                     self.registers,
                 );
@@ -2685,7 +2714,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyR
                 ))
             }
             PhyRegisterExternalBinding::Timer(binding) => {
-                D::after_micros(u64::from(binding.micros())).await;
+                D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 self.counters.delays += 1;
                 Ok(binding.into_completion())
             }

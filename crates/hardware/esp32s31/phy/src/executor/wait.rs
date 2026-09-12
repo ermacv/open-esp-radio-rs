@@ -1,11 +1,19 @@
-//! Delay evidence scoped to individual runtime calibration operations.
+//! Hardware wait reasons and scoped runtime calibration delay evidence.
 
 pub mod tx;
 
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod poll;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {
+    /// Executor backoff before retrying hardware-bus admission.
+    /// This classification does not establish a vendor-required interval.
     BusBusy,
+    /// Executor backoff before the next completion/readiness observation.
+    /// A completion predicate alone does not require a delay before sampling.
     Completion,
+    /// Minimum settling interval after a hardware state change.
     Settle,
 }
 

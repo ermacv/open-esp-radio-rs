@@ -70,11 +70,14 @@ pub use state::{
     PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
 };
 pub use tx::power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
-/// Shared one-microsecond sampling bound used by every target executor and by
-/// host-side qualification of the same typed timeout contract.
+/// Shared finite observation/attempt bound used by target executors and host
+/// checks of typed timeout paths. This is not a microsecond duration: direct
+/// readiness sampling and timer-backed bus retries have different costs.
 pub const HARDWARE_EDGE_LIMIT: u16 = 10_000;
 #[cfg(target_arch = "riscv32")]
-pub use target_executor::{PhyAsyncDelay, PhyTargetPortError};
+pub use oer_esp32s31_hal::phy::delay::RomShortDelay;
+#[cfg(target_arch = "riscv32")]
+pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters,

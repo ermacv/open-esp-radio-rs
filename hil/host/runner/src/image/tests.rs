@@ -99,7 +99,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 15);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 16);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -299,4 +299,49 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
             .contains("open-radio-hil")
     );
     assert!(!ImageClass::BluetoothDtm.requires_driver_observation());
+}
+
+#[test]
+fn rx_hot_sram_image_is_the_delivery_control_with_one_placement_change() {
+    let mut features = FeatureCapabilities {
+        udp: true,
+        tcp: true,
+        rx: true,
+        tx: true,
+        bidirectional: true,
+        runtime_initialization: true,
+        runtime_configuration: true,
+        structured_evidence: true,
+        udp_multi_flow: true,
+        startup_artifact: true,
+        station_epoch_control: true,
+        station_pause: true,
+        wifi_role_control: true,
+        wifi_access_point: true,
+        simultaneous_station_access_point: true,
+        wifi_monitor_capture: true,
+        station_lifecycle_events: true,
+        driver_observation_evidence: true,
+        rx_delivery_evidence: true,
+        phy_rx_hot_sram: true,
+        psram_task_stack: true,
+        data_plane_placement: true,
+        timebase_probe: true,
+        ..FeatureCapabilities::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::DiagnosticRxDeliveryPhyHotSram)
+    );
+    assert!(
+        ImageClass::DiagnosticRxDeliveryPhyHotSram
+            .runtime_features()
+            .split(',')
+            .any(|feature| feature == "phy-rx-hot-sram")
+    );
+    features.phy_rx_hot_sram = false;
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::DiagnosticRxDelivery)
+    );
 }

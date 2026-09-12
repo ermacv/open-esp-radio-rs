@@ -1,5 +1,16 @@
 use super::*;
 
+fn rx_execution() -> PhyRxGainExecutionEvidence {
+    PhyRxGainExecutionEvidence {
+        minimum_searches: 121,
+        minimum_operations: 191,
+        outer_operations: 58,
+        settle_1us: 100,
+        settle_2us: 1,
+        settle_10us: 121,
+    }
+}
+
 #[test]
 fn rx_gain_detail_rejects_orphan_incomplete_and_overlapping_evidence() {
     let stage = PhyOperationTiming {
@@ -10,7 +21,7 @@ fn rx_gain_detail_rejects_orphan_incomplete_and_overlapping_evidence() {
         ..Default::default()
     };
     let mut evidence = PhyRxGainEvidence {
-        dc: stage,
+        dc_phase: stage,
         ..Default::default()
     };
     assert!(!evidence.fits(PhyOperationTiming::default()));
@@ -19,14 +30,15 @@ fn rx_gain_detail_rejects_orphan_incomplete_and_overlapping_evidence() {
         maximum_micros: 100,
         ..stage
     };
-    evidence.advance = stage;
+    evidence.execution = Some(rx_execution());
+    evidence.control_phase = stage;
     assert!(evidence.fits(operation));
-    evidence.publish = stage;
+    evidence.publish_phase = stage;
     assert!(!evidence.fits(operation));
-    evidence.publish = PhyOperationTiming::default();
-    evidence.advance.completed = 0;
+    evidence.publish_phase = PhyOperationTiming::default();
+    evidence.control_phase.completed = 0;
     assert!(!evidence.fits(operation));
-    evidence.advance = PhyOperationTiming {
+    evidence.control_phase = PhyOperationTiming {
         elapsed_micros: u32::MAX,
         ..stage
     };
@@ -258,4 +270,27 @@ fn tx_waits_must_fit_active_operation_without_overflow() {
     ] {
         assert!(!invalid.fits(operation));
     }
+}
+
+#[test]
+fn rx_regions_validate_disjoint_phases() {
+    let timing = |us| PhyOperationTiming {
+        started: 1,
+        completed: 1,
+        elapsed_micros: us,
+        maximum_micros: us,
+        ..Default::default()
+    };
+    let mut evidence = PhyRxGainEvidence {
+        execution: Some(rx_execution()),
+        dc_phase: timing(70),
+        publish_phase: timing(20),
+        control_phase: timing(5),
+    };
+    assert!(evidence.fits(timing(100)));
+    evidence.publish_phase = timing(30);
+    assert!(!evidence.fits(timing(100)));
+    evidence.publish_phase = timing(20);
+    evidence.dc_phase.completed = 0;
+    assert!(!evidence.fits(timing(100)));
 }

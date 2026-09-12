@@ -198,3 +198,285 @@ fn external_lowering_separates_mmio_timer_readiness_and_terminal() {
         Err(PhyDcIqBindingError::UnsupportedAction)
     ));
 }
+
+#[test]
+fn readiness_samples_directly_on_first_retry_and_last_allowed_observation() {
+    for samples in [0, 1, crate::HARDWARE_EDGE_LIMIT - 1] {
+        for ready in [false, true] {
+            let binding = PhyDcIqReadinessBinding::new(PhyDcIqAction::AwaitReadinessEdge {
+                request: REQUEST,
+                readiness_activity_edges: 0,
+                readiness_samples: samples,
+            })
+            .unwrap();
+            let mut reads = 0;
+            let snapshot = PhyDcIqReadinessSnapshot {
+                ready,
+                activity: true,
+            };
+            let completion = binding.observe_with(crate::HARDWARE_EDGE_LIMIT, || {
+                reads += 1;
+                snapshot
+            });
+            assert_eq!(reads, 1);
+            assert_eq!(
+                completion,
+                PhyDcIqCompletion::ReadinessObserved {
+                    request: REQUEST,
+                    snapshot,
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn exhausted_readiness_does_not_touch_hardware() {
+    for samples in [crate::HARDWARE_EDGE_LIMIT, crate::HARDWARE_EDGE_LIMIT + 1] {
+        let binding = PhyDcIqReadinessBinding::new(PhyDcIqAction::AwaitReadinessEdge {
+            request: REQUEST,
+            readiness_activity_edges: 2,
+            readiness_samples: samples,
+        })
+        .unwrap();
+        assert_eq!(
+            binding.observe_with(crate::HARDWARE_EDGE_LIMIT, || panic!(
+                "exhausted probe must not read"
+            )),
+            PhyDcIqCompletion::ReadinessTimedOut(REQUEST),
+        );
+    }
+}
+
+#[test]
+fn readiness_batch_runs_the_rom_shaped_poll_loop_and_commits_once() {
+    let mut transition = PhyDcIqEstimateTransition::new(REQUEST);
+    reach_readiness(&mut transition);
+    let PhyDcIqExternalBinding::Readiness(binding) =
+        PhyDcIqExternalBinding::lower(transition.action()).unwrap()
+    else {
+        panic!("expected readiness binding");
+    };
+    let mut snapshots = [
+        PhyDcIqReadinessSnapshot {
+            ready: false,
+            activity: false,
+        },
+        PhyDcIqReadinessSnapshot {
+            ready: false,
+            activity: true,
+        },
+        PhyDcIqReadinessSnapshot {
+            ready: true,
+            activity: true,
+        },
+    ]
+    .into_iter();
+    let (completion, operations) = binding.observe_until_ready_with(
+        crate::HARDWARE_EDGE_LIMIT,
+        &mut snapshots,
+        |snapshots| snapshots.next().expect("bounded sample"),
+        |_| PhyDcIqAccumulatorSnapshot {
+            i: 0,
+            q: 0,
+            power: 0,
+        },
+    );
+    assert_eq!(operations, 4);
+    assert!(snapshots.next().is_none());
+    transition.advance(completion).unwrap();
+    finish_disable_tail(&mut transition);
+    let PhyDcIqAction::Complete(outcome) = transition.action() else {
+        panic!("DC/IQ transition did not complete");
+    };
+    assert_eq!(outcome.readiness_activity_edges, 1);
+}
+
+#[test]
+fn readiness_batch_stops_at_the_existing_total_sample_bound() {
+    let binding = PhyDcIqReadinessBinding::new(PhyDcIqAction::AwaitReadinessEdge {
+        request: REQUEST,
+        readiness_activity_edges: 7,
+        readiness_samples: crate::HARDWARE_EDGE_LIMIT - 2,
+    })
+    .unwrap();
+    let mut reads = 0;
+    let (completion, operations) = binding.observe_until_ready_with(
+        crate::HARDWARE_EDGE_LIMIT,
+        &mut reads,
+        |reads| {
+            *reads += 1;
+            PhyDcIqReadinessSnapshot {
+                ready: false,
+                activity: *reads == 2,
+            }
+        },
+        |_| panic!("accumulators must not be read before readiness"),
+    );
+    assert_eq!(reads, 2);
+    assert_eq!(operations, 2);
+    let PhyDcIqCompletion::ReadinessBatchObserved(batch) = completion else {
+        panic!("expected batched readiness completion");
+    };
+    assert_eq!(batch.observations, 2);
+    assert_eq!(batch.activity_edges, 1);
+    assert!(!batch.ready);
+    assert_eq!(batch.accumulators, None);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetEvent {
+    Configure(u16),
+    Enable(PhyDcIqEnablePhase, bool),
+    Settle(u32),
+    Readiness,
+    Accumulators,
+}
+
+#[derive(Debug)]
+struct TargetContext {
+    events: std::vec::Vec<TargetEvent>,
+    readiness: std::vec::Vec<PhyDcIqReadinessSnapshot>,
+    next_readiness: usize,
+    accumulators: PhyDcIqAccumulatorSnapshot,
+}
+
+fn execute_target_estimator(
+    transition: &PhyDcIqEstimateTransition,
+    maximum_samples: u16,
+    context: &mut TargetContext,
+) -> PhyDcIqTargetCompletion {
+    transition
+        .lower_target_transaction()
+        .unwrap()
+        .execute_with(
+            maximum_samples,
+            context,
+            |context, control| context.events.push(TargetEvent::Configure(control)),
+            |context, phase, enabled| {
+                context.events.push(TargetEvent::Enable(phase, enabled));
+            },
+            |context, micros| {
+                context.events.push(TargetEvent::Settle(micros));
+                Ok::<_, ()>(())
+            },
+            |context| {
+                context.events.push(TargetEvent::Readiness);
+                let snapshot = context.readiness[context.next_readiness];
+                context.next_readiness += 1;
+                snapshot
+            },
+            |context| {
+                context.events.push(TargetEvent::Accumulators);
+                context.accumulators
+            },
+        )
+        .unwrap()
+}
+
+#[test]
+fn target_transaction_preserves_the_complete_rom_estimator_envelope() {
+    let mut transition = PhyDcIqEstimateTransition::new(REQUEST);
+    let accumulators = PhyDcIqAccumulatorSnapshot {
+        i: 4001 * 64 * 2,
+        q: -(4001 * 64 * 3),
+        power: 4001 * 32,
+    };
+    let mut context = TargetContext {
+        events: std::vec::Vec::new(),
+        readiness: std::vec![
+            PhyDcIqReadinessSnapshot {
+                ready: false,
+                activity: false,
+            },
+            PhyDcIqReadinessSnapshot {
+                ready: false,
+                activity: true,
+            },
+            PhyDcIqReadinessSnapshot {
+                ready: true,
+                activity: true,
+            },
+        ],
+        next_readiness: 0,
+        accumulators,
+    };
+
+    let completion = execute_target_estimator(&transition, 8, &mut context);
+    assert_eq!(completion.operations(), 11);
+    assert_eq!(
+        context.events,
+        std::vec![
+            TargetEvent::Configure(REQUEST.control),
+            TargetEvent::Enable(PhyDcIqEnablePhase::Start, true),
+            TargetEvent::Settle(1),
+            TargetEvent::Enable(PhyDcIqEnablePhase::Measurement, true),
+            TargetEvent::Readiness,
+            TargetEvent::Readiness,
+            TargetEvent::Readiness,
+            TargetEvent::Accumulators,
+            TargetEvent::Enable(PhyDcIqEnablePhase::Measurement, false),
+            TargetEvent::Settle(1),
+            TargetEvent::Enable(PhyDcIqEnablePhase::Start, false),
+        ]
+    );
+
+    transition.advance_target_transaction(completion).unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyDcIqAction::Complete(PhyDcIqEstimateOutcome {
+            request: REQUEST,
+            estimate: calculate_dc_iq_estimate(REQUEST, accumulators),
+            readiness_activity_edges: 1,
+        })
+    );
+    assert_eq!(
+        transition.lower_target_transaction(),
+        Err(PhyDcIqBindingError::UnsupportedAction)
+    );
+}
+
+#[test]
+fn target_transaction_timeout_still_executes_the_complete_disable_tail() {
+    let mut transition = PhyDcIqEstimateTransition::new(REQUEST);
+    let mut context = TargetContext {
+        events: std::vec::Vec::new(),
+        readiness: std::vec![
+            PhyDcIqReadinessSnapshot {
+                ready: false,
+                activity: true,
+            },
+            PhyDcIqReadinessSnapshot {
+                ready: false,
+                activity: true,
+            },
+        ],
+        next_readiness: 0,
+        accumulators: PhyDcIqAccumulatorSnapshot {
+            i: 0,
+            q: 0,
+            power: 0,
+        },
+    };
+
+    let completion = execute_target_estimator(&transition, 2, &mut context);
+    assert_eq!(completion.operations(), 9);
+    assert!(!context.events.contains(&TargetEvent::Accumulators));
+    assert_eq!(
+        &context.events[context.events.len() - 3..],
+        &[
+            TargetEvent::Enable(PhyDcIqEnablePhase::Measurement, false),
+            TargetEvent::Settle(1),
+            TargetEvent::Enable(PhyDcIqEnablePhase::Start, false),
+        ]
+    );
+
+    transition.advance_target_transaction(completion).unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyDcIqAction::Failed(PhyDcIqFailure::ReadinessTimedOut {
+            request: REQUEST,
+            readiness_activity_edges: 2,
+        })
+    );
+}

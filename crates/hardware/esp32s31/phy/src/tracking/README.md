@@ -301,15 +301,12 @@ labelled requested hardware delay or CPU idle time. The recorder
 and HIL validator reject malformed intervals instead of accepting them as a
 successful measurement. Other operations have no poll breakdown.
 
-RX gain additionally records disjoint stages inside each executor step:
-`RxGainPrepare` selects and lowers an action; `RxGainDc`, `RxGainPublish` and
-`RxGainControl` execute the respective action classes; `RxGainAdvance` accepts
-the completion and advances semantic state. Execution includes any nested
-hardware waits. Preparation and advancement are synchronous intervals, still
-including interrupts and observation overhead. Their sum is bounded by the
-outer RX gain interval; construction, loop and observer overhead remain in the
-residual. These observations neither change the hardware sequence nor shorten
-its required waits. HIL rejects incomplete or out-of-parent detail intervals.
+Production RX gain executes as one direct blocking transaction under the
+exclusive PHY owner. It records disjoint DC, publication and control phases,
+plus clock-free search and settle counts. The event-driven transition remains
+the host semantic model and vendor-comparison boundary; firmware does not lower
+each hot edge through the async action/binding/advance path. HIL rejects
+incomplete, overlapping or out-of-parent phase intervals.
 
 The Wi-Fi Embassy adapter interprets `PhyAsyncDelay` as a minimum elapsed
 duration. It captures an absolute deadline when creating the delay and checks

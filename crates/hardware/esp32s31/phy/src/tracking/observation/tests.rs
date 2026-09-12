@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn coarse_rx_observation_contains_only_phase_boundaries() {
+    for operation in [
+        Operation::RxGainControlPhase,
+        Operation::RxGainDcPhase,
+        Operation::RxGainPublishPhase,
+    ] {
+        assert!(operation.is_rx_gain_region(), "{operation:?}");
+    }
+}
+
+#[test]
+fn rx_execution_summary_is_single_and_scoped_to_the_active_child() {
+    let execution = RxGainExecution {
+        minimum_searches: 121,
+        minimum_operations: 191,
+        outer_operations: 58,
+        settle_1us: 700,
+        settle_2us: 1,
+        settle_10us: 121,
+    };
+    let mut outside = Recorder::default();
+    outside.observe_rx_gain_execution(execution);
+    assert!(outside.report().invalid);
+
+    let mut recorder = Recorder::default();
+    recorder.observe(Operation::RxGain, Event::Started, 1);
+    recorder.observe_rx_gain_execution(execution);
+    recorder.observe(Operation::RxGain, Event::Completed, 2);
+    assert_eq!(recorder.report().rx_gain_execution, Some(execution));
+    assert!(!recorder.report().invalid);
+    recorder.observe_rx_gain_execution(execution);
+    assert!(recorder.report().invalid);
+}
+
+#[test]
 fn nested_work_keeps_parent_inclusive_time_and_failed_attempts() {
     let mut recorder = Recorder::default();
     recorder.observe(Operation::Calibration, Event::Started, 100);

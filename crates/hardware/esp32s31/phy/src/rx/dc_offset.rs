@@ -7,6 +7,11 @@
 //! child is another Rust-owned transition, so the ROM hardware-ready spin and
 //! synchronous delays are absent from the complete reachable graph.
 
+#![cfg_attr(
+    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+    allow(unsafe_code)
+)]
+
 use crate::{
     analog::pbus::PhyPbusForceTest,
     calibration::estimator::{
@@ -154,7 +159,163 @@ pub struct PhyRxDcMinimumTransition {
     readiness_activity_edges: u16,
 }
 
+/// One complete ROM-shaped `phy_rxdc_est_min` transaction. The estimator
+/// retry loop and selector stay below the RX calibration cursor.
+#[derive(Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct PhyRxDcMinimumTargetTransaction {
+    request: PhyRxDcMinimumRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct PhyRxDcMinimumTargetCompletion {
+    terminal: Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure>,
+    operations: u32,
+    estimators: u8,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl PhyRxDcMinimumTargetCompletion {
+    pub(crate) const fn operations(&self) -> u32 {
+        self.operations
+    }
+
+    pub(crate) const fn estimators(&self) -> u8 {
+        self.estimators
+    }
+
+    pub(crate) const fn into_terminal(
+        self,
+    ) -> Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure> {
+        self.terminal
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl PhyRxDcMinimumTargetTransaction {
+    pub(crate) const fn new(request: PhyRxDcMinimumRequest) -> Self {
+        Self { request }
+    }
+
+    #[inline]
+    pub(crate) fn execute_target<D: crate::target_executor::PhyShortDelay>(
+        self,
+        maximum_operations: u32,
+        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> Result<Option<PhyRxDcMinimumTargetCompletion>, crate::target_executor::PhyTargetPortError>
+    {
+        self.execute_with(maximum_operations, |estimator, maximum_samples| {
+            estimator.execute_with(
+                maximum_samples.min(crate::HARDWARE_EDGE_LIMIT),
+                registers,
+                |registers, control| {
+                    crate::calibration::estimator::configure_target(registers, control);
+                },
+                |registers, phase, enabled| {
+                    crate::calibration::estimator::set_enable_target(registers, phase, enabled);
+                },
+                |_, micros| {
+                    if micros <= D::MAX_MICROS && D::settle_micros(micros) {
+                        Ok(())
+                    } else {
+                        Err(crate::target_executor::PhyTargetPortError::HardwareCapabilityUnavailable)
+                    }
+                },
+                |registers| crate::calibration::estimator::sample_readiness_target(registers),
+                |registers| crate::calibration::estimator::read_accumulators_target(registers),
+            )
+        })
+    }
+
+    /// Execute all estimator attempts behind one typed target transaction.
+    /// None means the shared operation budget cannot admit another complete
+    /// estimator envelope, so hardware is left untouched.
+    pub(crate) fn execute_with<E>(
+        self,
+        maximum_operations: u32,
+        mut execute: impl FnMut(
+            crate::calibration::estimator::PhyDcIqTargetTransaction,
+            u16,
+        )
+            -> Result<crate::calibration::estimator::PhyDcIqTargetCompletion, E>,
+    ) -> Result<Option<PhyRxDcMinimumTargetCompletion>, E> {
+        let mut operations = 0_u32;
+        let mut estimators = 0_u8;
+        let mut best = PhyDcIqEstimate {
+            i: 0,
+            q: 0,
+            power: 100,
+        };
+        let mut minimum_power = 100;
+        let mut readiness_activity_edges = 0_u16;
+        loop {
+            let available = maximum_operations.saturating_sub(operations);
+            if available <= 8 {
+                return Ok(None);
+            }
+            let allowance = u16::try_from(
+                available
+                    .saturating_sub(8)
+                    .min(u32::from(u16::MAX))
+                    .min(u32::from(crate::HARDWARE_EDGE_LIMIT)),
+            )
+            .expect("bounded estimator allowance fits u16");
+            let request = PhyRxDcMinimumTransition::estimate_request(self.request, estimators);
+            let completion = execute(
+                crate::calibration::estimator::PhyDcIqTargetTransaction::new(request),
+                allowance,
+            )?;
+            operations = operations.saturating_add(u32::from(completion.operations()));
+            estimators += 1;
+            let outcome = match completion.into_terminal() {
+                Ok(outcome) => outcome,
+                Err(failure) => {
+                    return Ok(Some(PhyRxDcMinimumTargetCompletion {
+                        terminal: Err(PhyRxDcMinimumFailure::DcIq(failure)),
+                        operations,
+                        estimators,
+                    }));
+                }
+            };
+            readiness_activity_edges =
+                readiness_activity_edges.wrapping_add(outcome.readiness_activity_edges);
+            if outcome.estimate.power < minimum_power
+                && (outcome.readiness_activity_edges == 0 || self.request.rx_saturation_detected)
+            {
+                best = outcome.estimate;
+                minimum_power = outcome.estimate.power;
+            }
+
+            let complete = minimum_power < 36 || (estimators >= 3 && minimum_power < 48);
+            if complete || estimators == RX_DC_MINIMUM_MAX_ATTEMPTS {
+                if !complete {
+                    best.power = 0x38;
+                }
+                return Ok(Some(PhyRxDcMinimumTargetCompletion {
+                    terminal: Ok(PhyRxDcMinimumOutcome {
+                        request: self.request,
+                        estimate: best,
+                        attempts: estimators,
+                        readiness_activity_edges,
+                    }),
+                    operations,
+                    estimators,
+                }));
+            }
+        }
+    }
+}
+
 impl PhyRxDcMinimumTransition {
+    pub(crate) fn terminal(&self) -> Option<Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure>> {
+        match self.step {
+            PhyRxDcMinimumStep::Complete(outcome) => Some(Ok(outcome)),
+            PhyRxDcMinimumStep::Failed(failure) => Some(Err(failure)),
+            _ => None,
+        }
+    }
+
     pub const fn new(request: PhyRxDcMinimumRequest) -> Self {
         Self {
             request,
@@ -184,9 +345,13 @@ impl PhyRxDcMinimumTransition {
         }
     }
 
-    pub const fn action(self) -> PhyRxDcMinimumAction {
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
+    pub const fn action(&self) -> PhyRxDcMinimumAction {
         match self.step {
-            PhyRxDcMinimumStep::Measure(transition) => {
+            PhyRxDcMinimumStep::Measure(ref transition) => {
                 PhyRxDcMinimumAction::DcIq(transition.action())
             }
             PhyRxDcMinimumStep::Complete(outcome) => PhyRxDcMinimumAction::Complete(outcome),
@@ -239,13 +404,17 @@ impl PhyRxDcMinimumTransition {
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(
         &mut self,
         completion: PhyRxDcMinimumCompletion,
     ) -> Result<(), PhyRxDcMinimumTransitionError> {
-        match (self.step, completion) {
+        match (&mut self.step, completion) {
             (
-                PhyRxDcMinimumStep::Measure(mut transition),
+                PhyRxDcMinimumStep::Measure(transition),
                 PhyRxDcMinimumCompletion::DcIq(completion),
             ) => {
                 transition
@@ -257,7 +426,7 @@ impl PhyRxDcMinimumTransition {
                         self.step =
                             PhyRxDcMinimumStep::Failed(PhyRxDcMinimumFailure::DcIq(failure));
                     }
-                    _ => self.step = PhyRxDcMinimumStep::Measure(transition),
+                    _ => {}
                 }
             }
             (PhyRxDcMinimumStep::Complete(_), _) | (PhyRxDcMinimumStep::Failed(_), _) => {

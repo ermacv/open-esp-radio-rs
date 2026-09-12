@@ -18,7 +18,8 @@ pub use io::write_frame;
 mod phy;
 pub use phy::{
     PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyRxGainEvidence,
-    PhyTimingEvidence, PhyTxWaitEvidence, PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence,
+    PhyRxGainExecutionEvidence, PhyTimingEvidence, PhyTxWaitEvidence, PhyWaitTiming,
+    RfpllCorrectionEvidence, RfpllEvidence,
 };
 mod memory_benchmark;
 mod message;

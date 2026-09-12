@@ -8,10 +8,17 @@ use core::future::{Future, ready};
 struct ProductionTraceDelay;
 
 impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
-    fn after_micros(micros: u64) -> impl Future<Output = ()> {
+    type ShortDelay = oer_esp32s31_phy::RomShortDelay;
+
+
+    fn after_micros(
+        _kind: oer_esp32s31_phy::executor::wait::Kind,
+        micros: u64,
+    ) -> impl Future<Output = ()> {
         super::ets_delay_us(micros as u32);
         ready(())
     }
+
 }
 
 /// Complete production search, including typed I2C transactions and settling.
@@ -237,9 +244,11 @@ pub extern "C" fn open_phy_calibration_trace_tx_dc_pwdet(
     let mut radio =
         oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
     let mut observer = NoopPhyTargetObserver;
-    match embassy_futures::block_on(calibration::tx_dc_pwdet_init::<ProductionTraceDelay, _>(
-        &mut child, radio.phy_hal_mut(), &core::cell::RefCell::new(&mut observer),
-    )) {
+    match calibration::tx_dc_pwdet_init::<ProductionTraceDelay, _>(
+        &mut child,
+        radio.phy_hal_mut(),
+        &core::cell::RefCell::new(&mut observer),
+    ) {
         Ok(()) => {},
         Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
         Err(oer_esp32s31_phy::PhyTargetPortError::RfOperationLimit) => return 6,
@@ -284,11 +293,10 @@ pub extern "C" fn open_phy_calibration_trace_pbus_clear() -> u32 {
         return 1;
     };
     let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
-    let result =
-        embassy_futures::block_on(oer_esp32s31_phy::target_port::calibration::clear_pbus::<
-            ProductionTraceDelay,
-            _,
-        >(child, registers, &mut observer));
+    let result = oer_esp32s31_phy::target_port::calibration::clear_pbus::<
+        <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+        _,
+    >(child, registers, &mut observer);
     // Distinguish an actual bounded hardware timeout from a binding or
     // executor failure, so the fault scenario cannot accept either by mistake.
     let completion = match result {
@@ -314,7 +322,6 @@ pub extern "C" fn open_phy_calibration_trace_dcode(
     output: &mut [u8; 8],
 ) -> u32 {
     use oer_esp32s31_phy::{
-        target_executor::PhyAsyncDelay,
         target_port::{NoopPhyTargetObserver, calibration},
         tracking::{calibration::*, parameters::PhyParamTrackRequest},
     };
@@ -336,22 +343,24 @@ pub extern "C" fn open_phy_calibration_trace_dcode(
         },
     );
     let mut observer = NoopPhyTargetObserver;
-    let result = embassy_futures::block_on(async {
+    let result = (|| {
         let child = parent.begin_pbus_clear().map_err(|_| 1u32)?;
-        let completion =
-            calibration::clear_pbus::<ProductionTraceDelay, _>(child, registers, &mut observer)
-                .await
-                .map_err(|_| 2u32)?;
+        let completion = calibration::clear_pbus::<
+            <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+            _,
+        >(child, registers, &mut observer)
+        .map_err(|_| 2u32)?;
         parent.advance(completion).map_err(|_| 3u32)?;
         let child = parent.begin_dcode().map_err(|_| 4u32)?;
-        let completion = calibration::dcode::<ProductionTraceDelay, _, _>(
+        let completion = calibration::dcode::<
+            <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+            _,
+        >(
             child,
             &mut (),
             registers,
-            |_, _, micros| ProductionTraceDelay::after_micros(micros),
             |_| {},
         )
-        .await
         .map_err(|error| match error {
             oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut => 5u32,
             _ => 9u32,
@@ -369,7 +378,7 @@ pub extern "C" fn open_phy_calibration_trace_dcode(
         parent.advance(completion).map_err(|_| 8u32)?;
         *output = codes;
         Ok::<(), u32>(())
-    });
+    })();
     result.err().unwrap_or(0)
 }
 
@@ -407,19 +416,22 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
             wifi_auxiliary: input[52],
         },
     });
-    match embassy_futures::block_on(
-        oer_esp32s31_phy::target_port::calibration::rx_gain_init::<ProductionTraceDelay, _>(
+    match oer_esp32s31_phy::target_port::calibration::rx_gain_init::<
+        oer_esp32s31_phy::RomShortDelay,
+        _,
+    >(
             &mut child,
             &mut (),
             radio.phy_hal_mut(),
             |_, _| {},
-        ),
-    ) {
+            |_| {},
+        ) {
         Ok(()) => {}
         Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
+        Err(oer_esp32s31_phy::PhyTargetPortError::RfOperationLimit) => return 5,
         Err(_) => return 3,
     }
-    let PhyRxGainInitAction::Complete(result) = child.action() else {
+    let Some(Ok(result)) = child.terminal() else {
         return 4;
     };
     output[..52].copy_from_slice(&input[..52]);

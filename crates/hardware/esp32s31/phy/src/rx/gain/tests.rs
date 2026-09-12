@@ -99,7 +99,10 @@ fn recalibration_publishes_fresh_rxbb_corrections_only_in_wifi_bank() {
                 PhyRxGainInitAction::EnableIqCorrection => root
                     .advance(PhyRxGainInitCompletion::IqCorrectionEnabled)
                     .unwrap(),
-                PhyRxGainInitAction::Complete(result) => {
+                PhyRxGainInitAction::Complete => {
+                    let Some(Ok(result)) = root.terminal() else {
+                        panic!("complete root did not retain its outcome");
+                    };
                     assert_eq!(result.dc, Some(outcome));
                     return entries;
                 }
@@ -249,7 +252,12 @@ fn publish_root(parameters: PhyRxGainInitParameters) -> (PhyRxGainInitOutcome, u
                 PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index }
             }
             PhyRxGainInitAction::EnableIqCorrection => PhyRxGainInitCompletion::IqCorrectionEnabled,
-            PhyRxGainInitAction::Complete(outcome) => return (outcome, steps),
+            PhyRxGainInitAction::Complete => {
+                let Some(Ok(outcome)) = root.terminal() else {
+                    panic!("complete root did not retain its outcome");
+                };
+                return (outcome, steps);
+            }
             other => panic!("unexpected publish-only action: {other:?}"),
         };
         core::hint::black_box(&mut root)
@@ -417,4 +425,254 @@ fn root_dc_rejection_preserves_state_and_accepted_nested_progress() {
             1
         )))
     ));
+}
+
+#[test]
+fn cursor_lowering_keeps_terminal_products_out_of_hardware_admission() {
+    let mut root = PhyRxGainInitTransition::new(init_parameters());
+    assert_eq!(
+        root.prepare_external(),
+        PhyRxGainInitExternalBinding::lower(root.action()).map(Some)
+    );
+    root.advance(PhyRxGainInitCompletion::DcControlRestorePrepared)
+        .unwrap();
+    assert_eq!(
+        root.prepare_external(),
+        PhyRxGainInitExternalBinding::lower(root.action()).map(Some)
+    );
+    root.step = InitStep::Complete;
+    let before = root;
+    assert_eq!(root.prepare_external(), Ok(None));
+    assert_eq!(root, before);
+    root.step = InitStep::Failed(PhyRxGainInitFailure::Dc(PhyRxGainDcFailure::Pbus {
+        bank: crate::rx::gain_calibration::PhyRxGainDcBank::Wifi,
+        transaction: crate::analog::pbus::PhyPbusForceTest::new(2, 1, 0x100),
+    }));
+    assert_eq!(root.prepare_external(), Ok(None));
+}
+
+/// Drive the real cold prefix with successful hardware observations, stopping
+/// at the first borrowed estimator. No test-only state construction bypasses
+/// the parent's preparation or RF/clock sequence.
+fn root_at_minimum() -> PhyRxGainInitTransition {
+    use crate::analog::{
+        i2c::{MaskedI2cWriteAction as I, MaskedI2cWriteCompletion as IC},
+        rfpll::{RfpllFrequencyAction as R, RfpllFrequencyCompletion as RC},
+    };
+    let mut root = PhyRxGainInitTransition::new(init_parameters());
+    for _ in 0..100 {
+        if root.minimum_mut().is_some() {
+            return root;
+        }
+        let before = root;
+        assert_eq!(
+            root.finish_minimum(),
+            Err(PhyRxGainInitTransitionError::WrongCompletion)
+        );
+        assert_eq!(root, before);
+        let completion = match root.action() {
+            PhyRxGainInitAction::PrepareDcControlRestore => {
+                PhyRxGainInitCompletion::DcControlRestorePrepared
+            }
+            PhyRxGainInitAction::Dc(action) => PhyRxGainInitCompletion::Dc(match action {
+                PhyRxGainDcAction::ConfigureRegisters { enabled } => {
+                    PhyRxGainDcCompletion::RegistersConfigured { enabled }
+                }
+                PhyRxGainDcAction::Rfpll(action) => PhyRxGainDcCompletion::Rfpll(match action {
+                    R::StartChannelSwitch {
+                        frequency_index,
+                        crystal_selector,
+                    } => RC::ChannelSwitchStarted {
+                        frequency_index,
+                        crystal_selector,
+                    },
+                    R::ClearChannelSwitch => RC::ChannelSwitchCleared,
+                    R::ReadChannelReady { .. } => RC::ChannelReadyObserved { ready: true },
+                    R::ConfigureNrx { frequency_mhz } => RC::NrxConfigured { frequency_mhz },
+                    R::DelayMicros(micros) => RC::DelayElapsed(micros),
+                    other => panic!("unexpected channel prefix {other:?}"),
+                }),
+                PhyRxGainDcAction::ConfigurePbusDebugMode => {
+                    PhyRxGainDcCompletion::PbusDebugModeConfigured
+                }
+                PhyRxGainDcAction::ForcePbus { bank, transaction } => {
+                    PhyRxGainDcCompletion::PbusCompleted { bank, transaction }
+                }
+                PhyRxGainDcAction::ConfigureClock { clock, enabled } => {
+                    PhyRxGainDcCompletion::ClockConfigured { clock, enabled }
+                }
+                PhyRxGainDcAction::ReadPbus { selector, path } => PhyRxGainDcCompletion::PbusRead {
+                    selector,
+                    path,
+                    value: 0,
+                },
+                PhyRxGainDcAction::I2c(action) => PhyRxGainDcCompletion::I2c(match action {
+                    I::ReadByte { address } => IC::I2cReadCompleted { address, value: 0 },
+                    I::WriteByte { address, .. } => IC::I2cWriteCompleted { address },
+                    other => panic!("unexpected I2C prefix {other:?}"),
+                }),
+                PhyRxGainDcAction::DelayMicros { phase, micros } => {
+                    PhyRxGainDcCompletion::DelayElapsed { phase, micros }
+                }
+                other => panic!("unexpected DC prefix {other:?}"),
+            }),
+            other => panic!("unexpected root prefix {other:?}"),
+        };
+        root.advance(completion).unwrap();
+    }
+    panic!("prefix did not reach minimum");
+}
+
+#[test]
+fn root_borrowed_minimum_commits_only_terminal_results_and_preserves_failure_cleanup() {
+    use crate::{
+        calibration::estimator::{
+            PhyDcIqAccumulatorSnapshot, PhyDcIqAction as A, PhyDcIqCompletion as C,
+            PhyDcIqReadinessSnapshot,
+        },
+        rx::dc_offset::{PhyRxDcMinimumAction, PhyRxDcMinimumCompletion},
+    };
+    for timeout in [false, true] {
+        let mut fused = root_at_minimum();
+        let mut stepwise = fused;
+        for _ in 0..1000 {
+            let before = fused;
+            assert_eq!(
+                fused.finish_minimum(),
+                Err(PhyRxGainInitTransitionError::WrongCompletion)
+            );
+            assert_eq!(fused, before);
+            let PhyRxDcMinimumAction::DcIq(action) = fused.minimum_mut().unwrap().action() else {
+                panic!("pending estimator expected")
+            };
+            let completion = PhyRxDcMinimumCompletion::DcIq(match action {
+                A::Configure(request) => C::Configured(request),
+                A::SetEnable {
+                    request,
+                    phase,
+                    enabled,
+                } => C::EnableSet {
+                    request,
+                    phase,
+                    enabled,
+                },
+                A::DelayMicros {
+                    request,
+                    phase,
+                    micros,
+                } => C::DelayElapsed {
+                    request,
+                    phase,
+                    micros,
+                },
+                A::AwaitReadinessEdge { request, .. } if timeout => C::ReadinessTimedOut(request),
+                A::AwaitReadinessEdge { request, .. } => C::ReadinessObserved {
+                    request,
+                    snapshot: PhyDcIqReadinessSnapshot {
+                        ready: true,
+                        activity: false,
+                    },
+                },
+                A::ReadAccumulators(request) => C::AccumulatorsRead {
+                    request,
+                    snapshot: PhyDcIqAccumulatorSnapshot {
+                        i: 0,
+                        q: 0,
+                        power: 0,
+                    },
+                },
+                other => panic!("unexpected estimator action {other:?}"),
+            });
+            stepwise
+                .advance(PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::Minimum(
+                    completion,
+                )))
+                .unwrap();
+            fused.minimum_mut().unwrap().advance(completion).unwrap();
+            if fused.minimum_mut().unwrap().terminal().is_some() {
+                fused.finish_minimum().unwrap();
+                assert_eq!(fused, stepwise, "root must retain the same results/cleanup");
+                let accepted = fused;
+                assert_eq!(
+                    fused.finish_minimum(),
+                    Err(PhyRxGainInitTransitionError::WrongCompletion)
+                );
+                assert_eq!(fused, accepted);
+                assert!(
+                    fused.dc_outcome.is_none(),
+                    "one minimum is not a complete gain calibration"
+                );
+                break;
+            }
+            assert_eq!(fused, stepwise);
+        }
+        assert!(
+            fused.minimum_mut().is_none(),
+            "bounded estimator must finish"
+        );
+        if timeout {
+            // An estimator failure must still drain the DC clock/PBus cleanup
+            // and outer control restoration before exposing the terminal error.
+            for _ in 0..20 {
+                let completion = match fused.action() {
+                    PhyRxGainInitAction::Dc(PhyRxGainDcAction::ConfigureClock {
+                        clock,
+                        enabled,
+                    }) => PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::ClockConfigured {
+                        clock,
+                        enabled,
+                    }),
+                    PhyRxGainInitAction::Dc(PhyRxGainDcAction::ConfigurePbusWorkMode) => {
+                        PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::PbusWorkModeConfigured {
+                            settle_required: false,
+                        })
+                    }
+                    PhyRxGainInitAction::Dc(PhyRxGainDcAction::ForcePbus { bank, transaction }) => {
+                        PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::PbusCompleted {
+                            bank,
+                            transaction,
+                        })
+                    }
+                    PhyRxGainInitAction::Dc(PhyRxGainDcAction::ConfigureRegisters { enabled }) => {
+                        PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::RegistersConfigured {
+                            enabled,
+                        })
+                    }
+                    PhyRxGainInitAction::RestoreDcControl => {
+                        PhyRxGainInitCompletion::DcControlRestored
+                    }
+                    PhyRxGainInitAction::Failed(PhyRxGainInitFailure::Dc(_)) => break,
+                    other => panic!("unexpected failure cleanup {other:?}"),
+                };
+                fused.advance(completion).unwrap();
+                stepwise.advance(completion).unwrap();
+                assert_eq!(fused, stepwise);
+            }
+            assert!(matches!(
+                fused.action(),
+                PhyRxGainInitAction::Failed(PhyRxGainInitFailure::Dc(_))
+            ));
+        }
+    }
+}
+
+#[test]
+fn coarse_regions_follow_owned_children_without_advancing_them() {
+    let mut root = PhyRxGainInitTransition::new(init_parameters());
+    assert_eq!(root.phase(), Some(Phase::Control));
+    let before = root;
+    assert!(
+        root.advance(PhyRxGainInitCompletion::IqCorrectionEnabled)
+            .is_err()
+    );
+    assert_eq!(root, before);
+    root.advance(PhyRxGainInitCompletion::DcControlRestorePrepared)
+        .unwrap();
+    assert_eq!(root.phase(), Some(Phase::Dc));
+    let minimum = root_at_minimum();
+    assert_eq!(minimum.phase(), Some(Phase::Dc));
+    let mut parameters = init_parameters();
+    parameters.dc_calibrated = true;
+    let root = PhyRxGainInitTransition::new(parameters);
+    assert_eq!(root.phase(), Some(Phase::Publish));
 }

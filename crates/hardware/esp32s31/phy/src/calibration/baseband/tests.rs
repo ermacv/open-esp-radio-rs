@@ -39,7 +39,7 @@ fn rx_gain_memory_entry_uses_only_copied_owner_state() {
     };
     let table = generate_phy_rx_gain_table(PhyRxGainBank::Wifi);
     assert_eq!(
-        phy_generated_rx_gain_memory_entry(parameters, PhyRxGainBank::Wifi, &table, 0),
+        phy_generated_rx_gain_memory_entry(&parameters, PhyRxGainBank::Wifi, &table, 0),
         PhyGainMemoryEntry::generated_receive(0, [11, 22], [3, 4], 5, table.words[0], 7, 0xbf,)
     );
 }

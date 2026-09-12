@@ -1,9 +1,11 @@
 //! Embassy time bindings for the hardware ports used by this adapter.
 //!
-//! PHY settling waits use absolute deadlines. Already elapsed waits complete
-//! directly; future deadlines retain Embassy timer wake registration. These
-//! waits impose no separate cooperative execution budget and do not change
-//! the one-megahertz validation policy owned by Bluetooth composition.
+//! The direct RX-gain transaction uses the ESP32-S31 ROM `ets_delay_us` loop for
+//! its recovered short hardware settles and polls bounded readiness directly,
+//! matching the vendor execution shape. Other PHY waits use absolute deadlines:
+//! already elapsed waits complete directly and future deadlines retain Embassy
+//! timer wake registration. Neither path changes the one-megahertz validation
+//! policy owned by Bluetooth composition.
 
 mod delay;
 

@@ -1421,9 +1421,19 @@ pub(super) fn station_unchanged_since_in(
     let subsequent = messages
         .get(first_event..)
         .ok_or("station lifecycle cursor exceeds captured events")?;
+    let boot_id = latest_boot_id_in(&messages[..first_event])
+        .filter(|boot_id| *boot_id != 0)
+        .ok_or("station lifecycle cursor has no established boot identity")?;
     for message in subsequent {
+        if message.boot_id != boot_id {
+            return Err("device rebooted during station pause workload".into());
+        }
         match &message.body {
-            Event::Hello(_) => return Err("device rebooted during station pause workload".into()),
+            // GetCapabilities replies use Hello too. Only a solicited reply
+            // from the established boot can occur inside an unchanged epoch.
+            Event::Hello(_) if message.request_id == 0 => {
+                return Err("device restarted its greeting during station pause workload".into());
+            }
             Event::StationLifecycle(event) => {
                 return Err(format!("station changed during pause workload: {event:?}").into());
             }

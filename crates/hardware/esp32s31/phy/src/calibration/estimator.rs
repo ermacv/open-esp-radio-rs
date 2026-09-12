@@ -12,6 +12,11 @@
 //! register ordering and arithmetic as caller-driven actions. It can advance
 //! only from externally delivered readiness/timer completions.
 
+#![cfg_attr(
+    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+    allow(unsafe_code)
+)]
+
 /// Split one packed DC value exactly as pinned archive `get_dc_value`.
 #[inline]
 pub fn get_dc_value(output: &mut [u16; 2], value: u32) {
@@ -153,6 +158,15 @@ pub enum PhyDcIqAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyDcIqReadinessBatch {
+    request: PhyDcIqEstimateRequest,
+    observations: u16,
+    activity_edges: u16,
+    ready: bool,
+    accumulators: Option<PhyDcIqAccumulatorSnapshot>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyDcIqCompletion {
     Configured(PhyDcIqEstimateRequest),
     EnableSet {
@@ -169,6 +183,9 @@ pub enum PhyDcIqCompletion {
         request: PhyDcIqEstimateRequest,
         snapshot: PhyDcIqReadinessSnapshot,
     },
+    /// One uninterrupted, bounded execution of the ROM-shaped readiness
+    /// polling loop. The private payload can only be minted by its binding.
+    ReadinessBatchObserved(PhyDcIqReadinessBatch),
     ReadinessTimedOut(PhyDcIqEstimateRequest),
     AccumulatorsRead {
         request: PhyDcIqEstimateRequest,
@@ -186,6 +203,110 @@ pub enum PhyDcIqTransitionError {
 enum PhyDcIqTerminal {
     Complete(PhyDcIqEstimateOutcome),
     Failed(PhyDcIqFailure),
+}
+
+/// One complete ROM-shaped estimator transaction lowered only from its
+/// initial state. The target executor keeps the register sequence, both
+/// one-microsecond settles and the readiness loop inside this narrow value;
+/// the state transition is committed once after hardware cleanup.
+#[derive(Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct PhyDcIqTargetTransaction {
+    request: PhyDcIqEstimateRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct PhyDcIqTargetCompletion {
+    request: PhyDcIqEstimateRequest,
+    terminal: PhyDcIqTerminal,
+    operations: u16,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl PhyDcIqTargetCompletion {
+    pub(crate) const fn operations(&self) -> u16 {
+        self.operations
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn into_terminal(self) -> Result<PhyDcIqEstimateOutcome, PhyDcIqFailure> {
+        match self.terminal {
+            PhyDcIqTerminal::Complete(outcome) => Ok(outcome),
+            PhyDcIqTerminal::Failed(failure) => Err(failure),
+        }
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl PhyDcIqTargetTransaction {
+    pub(crate) const fn new(request: PhyDcIqEstimateRequest) -> Self {
+        Self { request }
+    }
+
+    /// Execute the exact complete `phy_dc_iq_est` hardware envelope.
+    ///
+    /// The ready register and three accumulators remain adjacent, as in ROM.
+    /// A finite readiness bound is the sole intentional safety extension. A
+    /// timeout still executes measurement-disable, settle and start-disable
+    /// before returning its typed failure completion.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub(crate) fn execute_with<C, E>(
+        self,
+        maximum_samples: u16,
+        context: &mut C,
+        mut configure: impl FnMut(&mut C, u16),
+        mut set_enable: impl FnMut(&mut C, PhyDcIqEnablePhase, bool),
+        mut settle: impl FnMut(&mut C, u32) -> Result<(), E>,
+        mut read: impl FnMut(&mut C) -> PhyDcIqReadinessSnapshot,
+        mut read_accumulators: impl FnMut(&mut C) -> PhyDcIqAccumulatorSnapshot,
+    ) -> Result<PhyDcIqTargetCompletion, E> {
+        configure(context, self.request.control);
+        set_enable(context, PhyDcIqEnablePhase::Start, true);
+        settle(context, 1)?;
+        set_enable(context, PhyDcIqEnablePhase::Measurement, true);
+
+        let mut observations = 0_u16;
+        let mut activity_edges = 0_u16;
+        let terminal = loop {
+            if observations == maximum_samples {
+                break PhyDcIqTerminal::Failed(PhyDcIqFailure::ReadinessTimedOut {
+                    request: self.request,
+                    readiness_activity_edges: activity_edges,
+                });
+            }
+            let snapshot = read(context);
+            observations += 1;
+            if snapshot.ready {
+                let accumulators = read_accumulators(context);
+                break PhyDcIqTerminal::Complete(PhyDcIqEstimateOutcome {
+                    request: self.request,
+                    estimate: calculate_dc_iq_estimate(self.request, accumulators),
+                    readiness_activity_edges: activity_edges,
+                });
+            }
+            if snapshot.activity {
+                activity_edges = activity_edges.wrapping_add(1);
+            }
+        };
+
+        set_enable(context, PhyDcIqEnablePhase::Measurement, false);
+        settle(context, 1)?;
+        set_enable(context, PhyDcIqEnablePhase::Start, false);
+        let accumulator_read = u16::from(matches!(terminal, PhyDcIqTerminal::Complete(_)));
+        Ok(PhyDcIqTargetCompletion {
+            request: self.request,
+            terminal,
+            // Configure, start-enable, first settle, measurement-enable,
+            // readiness reads, optional accumulator read, measurement-disable,
+            // second settle and start-disable.
+            operations: observations
+                .saturating_add(accumulator_read)
+                .saturating_add(7),
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -276,7 +397,39 @@ impl PhyDcIqEstimateTransition {
         }
     }
 
-    pub const fn action(self) -> PhyDcIqAction {
+    #[cfg(test)]
+    pub(crate) fn lower_target_transaction(
+        &self,
+    ) -> Result<PhyDcIqTargetTransaction, PhyDcIqBindingError> {
+        if !matches!(self.step, PhyDcIqStep::Configure) {
+            return Err(PhyDcIqBindingError::UnsupportedAction);
+        }
+        Ok(PhyDcIqTargetTransaction::new(self.request))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn advance_target_transaction(
+        &mut self,
+        completion: PhyDcIqTargetCompletion,
+    ) -> Result<(), PhyDcIqTransitionError> {
+        if !matches!(self.step, PhyDcIqStep::Configure) {
+            return Err(PhyDcIqTransitionError::WrongCompletion);
+        }
+        if completion.request != self.request {
+            return Err(PhyDcIqTransitionError::WrongCompletion);
+        }
+        self.step = match completion.terminal {
+            PhyDcIqTerminal::Complete(outcome) => PhyDcIqStep::Complete(outcome),
+            PhyDcIqTerminal::Failed(failure) => PhyDcIqStep::Failed(failure),
+        };
+        Ok(())
+    }
+
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
+    pub const fn action(&self) -> PhyDcIqAction {
         match self.step {
             PhyDcIqStep::Configure => PhyDcIqAction::Configure(self.request),
             PhyDcIqStep::EnableStart => PhyDcIqAction::SetEnable {
@@ -320,6 +473,10 @@ impl PhyDcIqEstimateTransition {
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(&mut self, completion: PhyDcIqCompletion) -> Result<(), PhyDcIqTransitionError> {
         self.step = match (self.step, completion) {
             (PhyDcIqStep::Configure, PhyDcIqCompletion::Configured(request))
@@ -377,6 +534,26 @@ impl PhyDcIqEstimateTransition {
                     self.readiness_activity_edges = self.readiness_activity_edges.wrapping_add(1);
                 }
                 PhyDcIqStep::AwaitReadiness
+            }
+            (PhyDcIqStep::AwaitReadiness, PhyDcIqCompletion::ReadinessBatchObserved(batch))
+                if batch.request == self.request
+                    && batch.observations != 0
+                    && batch.ready == batch.accumulators.is_some() =>
+            {
+                self.readiness_samples = self.readiness_samples.saturating_add(batch.observations);
+                self.readiness_activity_edges = self
+                    .readiness_activity_edges
+                    .wrapping_add(batch.activity_edges);
+                match batch.accumulators {
+                    Some(snapshot) => PhyDcIqStep::DisableMeasurement(PhyDcIqTerminal::Complete(
+                        PhyDcIqEstimateOutcome {
+                            request: self.request,
+                            estimate: calculate_dc_iq_estimate(self.request, snapshot),
+                            readiness_activity_edges: self.readiness_activity_edges,
+                        },
+                    )),
+                    None => PhyDcIqStep::AwaitReadiness,
+                }
             }
             (PhyDcIqStep::AwaitReadiness, PhyDcIqCompletion::ReadinessTimedOut(request))
                 if request == self.request =>
@@ -510,6 +687,87 @@ impl PhyDcIqReadinessBinding {
             } => readiness_samples,
             _ => unreachable!(),
         }
+    }
+
+    /// Rev0 ROM phy_iq_est_enable reads ready immediately after enabling the
+    /// measurement (0x2f828a54 -> 0x2f828a5c). Its 1-us start settle precedes
+    /// that enable. The retry loop also samples directly, without a delay.
+    /// The finite sample bound is retained; it is not an elapsed-time budget.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn observe_with(
+        self,
+        maximum_samples: u16,
+        read: impl FnOnce() -> PhyDcIqReadinessSnapshot,
+    ) -> PhyDcIqCompletion {
+        if self.samples() >= maximum_samples {
+            return self.into_timeout_completion();
+        }
+        let PhyDcIqAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        PhyDcIqCompletion::ReadinessObserved {
+            request,
+            snapshot: read(),
+        }
+    }
+
+    /// Execute the complete ROM-shaped direct polling loop behind one typed
+    /// binding. `maximum_samples` is a total per-estimator bound, so callers
+    /// can reduce it to preserve an enclosing operation budget. The returned
+    /// charge includes the accumulator-read edge when readiness is observed.
+    #[cfg(test)]
+    pub(crate) fn observe_until_ready_with<C>(
+        self,
+        maximum_samples: u16,
+        context: &mut C,
+        mut read: impl FnMut(&mut C) -> PhyDcIqReadinessSnapshot,
+        mut read_accumulators: impl FnMut(&mut C) -> PhyDcIqAccumulatorSnapshot,
+    ) -> (PhyDcIqCompletion, u16) {
+        let initial_samples = self.samples();
+        if initial_samples >= maximum_samples {
+            return (self.into_timeout_completion(), 0);
+        }
+        let PhyDcIqAction::AwaitReadinessEdge { request, .. } = self.action else {
+            unreachable!();
+        };
+        let allowance = maximum_samples - initial_samples;
+        let mut remaining = allowance;
+        let mut activity_edges = 0_u16;
+        loop {
+            let snapshot = read(context);
+            remaining -= 1;
+            if snapshot.ready {
+                let observations = allowance - remaining;
+                let batch = PhyDcIqReadinessBatch {
+                    request,
+                    observations,
+                    activity_edges,
+                    ready: true,
+                    // ROM reads all three accumulators immediately after the
+                    // ready-return epilogue. Keep that temporal boundary in
+                    // the same typed hardware transaction.
+                    accumulators: Some(read_accumulators(context)),
+                };
+                return (
+                    PhyDcIqCompletion::ReadinessBatchObserved(batch),
+                    observations.saturating_add(1),
+                );
+            }
+            if snapshot.activity {
+                activity_edges = activity_edges.wrapping_add(1);
+            }
+            if remaining == 0 {
+                break;
+            }
+        }
+        let batch = PhyDcIqReadinessBatch {
+            request,
+            observations: allowance,
+            activity_edges,
+            ready: false,
+            accumulators: None,
+        };
+        (PhyDcIqCompletion::ReadinessBatchObserved(batch), allowance)
     }
 
     #[cfg(target_arch = "riscv32")]

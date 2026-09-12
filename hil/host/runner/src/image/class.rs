@@ -17,13 +17,14 @@ pub enum ImageClass {
     DiagnosticCore0RxCoarse,
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
+    DiagnosticRxDeliveryPhyHotSram,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     DiagnosticMemoryBenchmark,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::BluetoothDtm,
         Self::BootSmoke,
         Self::Performance,
@@ -36,6 +37,7 @@ impl ImageClass {
         Self::DiagnosticCore0RxCoarse,
         Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
+        Self::DiagnosticRxDeliveryPhyHotSram,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticMemoryBenchmark,
@@ -55,6 +57,7 @@ impl ImageClass {
             Self::DiagnosticCore0RxCoarse => "diagnostic-core0-rx-coarse",
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
+            Self::DiagnosticRxDeliveryPhyHotSram => "diagnostic-rx-delivery-phy-hot-sram",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
@@ -90,6 +93,9 @@ impl ImageClass {
             Self::DiagnosticCore0RxCycles => {
                 "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
             }
+            Self::DiagnosticRxDeliveryPhyHotSram => {
+                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,phy-rx-hot-sram,code-psram,profile-psram-data"
+            }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
@@ -119,6 +125,7 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCoarse
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
+            | Self::DiagnosticRxDeliveryPhyHotSram
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent => "psram-code-psram-data-psram-stack",

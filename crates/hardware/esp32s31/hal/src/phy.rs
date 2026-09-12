@@ -7,6 +7,8 @@ pub mod analog_i2c;
 pub mod baseband;
 
 pub mod clock;
+#[cfg(target_arch = "riscv32")]
+pub mod delay;
 
 pub mod frequency;
 

@@ -557,3 +557,17 @@ capacity event after measurements; no USB wait enters packet processing.
 These observations do not generate replies, reserve packet storage or change
 stack backpressure. Pair them with `host-wire.pcapng` to distinguish neighbor
 resolution stalls from radio delivery pauses.
+
+## PHY RX timing profiles
+
+`diagnostic-station-phy-rxcal-delivery-rx` uses ordinary diagnostic RX delivery
+with whole-child, one-poll execution and disjoint DC, publication and control
+phase timing. The direct transaction uses the same short ROM delays and bounded
+status polling as the recovered vendor graph. Run it through
+`cargo hil run <scenario> --network patched-xarxa`; router preparation, capture,
+image selection and cleanup are part of the run.
+
+`diagnostic-station-phy-rxcal-hot-sram-delivery-rx` is the paired placement
+experiment. It places the direct source-owned RX-gain transaction in internal
+SRAM without changing the graph, waits, workload or evidence contract. Compare
+it with the ordinary profile to isolate code placement after timing parity.

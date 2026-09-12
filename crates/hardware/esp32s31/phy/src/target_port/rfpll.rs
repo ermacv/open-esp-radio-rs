@@ -5,6 +5,8 @@
 //! `maintain` includes the current frequency-control entry and restoration;
 //! `search` and `correct` are children requiring that boundary from the caller.
 
+use crate::executor::wait::Kind;
+
 use oer_esp32s31_hal::owner::SharedPhyAccess;
 
 use crate::{
@@ -29,7 +31,10 @@ async fn i2c<D: PhyAsyncDelay>(
 ) -> Result<I2cCompletion, PhyTargetPortError> {
     let binding =
         RfpllFrequencyI2cBinding::new(action).map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-    complete_rfpll_i2c(binding, registers, |_, micros| D::after_micros(micros)).await
+    complete_rfpll_i2c(binding, registers, |kind, micros| {
+        D::after_micros(kind, micros)
+    })
+    .await
 }
 
 async fn complete<D: PhyAsyncDelay>(
@@ -96,7 +101,7 @@ async fn complete<D: PhyAsyncDelay>(
             Ok(Completion::CapWritten(requested))
         }
         Action::DelayMicros(micros) => {
-            D::after_micros(u64::from(micros)).await;
+            D::after_micros(Kind::Settle, u64::from(micros)).await;
             Ok(Completion::DelayElapsed(micros))
         }
         Action::ReadStatus => {
@@ -220,7 +225,7 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
             Completion::SoftwareControlSelected
         }
         Action::Settle => {
-            D::after_micros(2).await;
+            D::after_micros(Kind::Settle, 2).await;
             Completion::Settled
         }
         Action::ObserveBoundary => {

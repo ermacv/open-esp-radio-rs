@@ -119,15 +119,15 @@ sequenceDiagram
     participant A as HAL and IRQ owner
     participant P as Registered PHY
     S->>W: Explicit maintenance request
-    W->>W: Stop selection; drain active TX
-    W->>A: Stop MAC; pause RX; detach IRQ
+    W->>W: Stop selection<br/> drain active TX
+    W->>A: Stop MAC<br/> pause RX<br/> detach IRQ
     A->>A: Withdraw exact register arena owner
     A-->>S: Checked exclusive access
-    S->>P: Consume PHY and access; re-evaluate due work
-    P->>P: Run selected finite children; commit results
+    S->>P: Consume PHY and access<br/> re-evaluate due work
+    P->>P: Run selected finite children<br/> commit results
     P-->>S: Return same access type and outcome
-    S->>A: Restore MAC stop; verify receive policy and release
-    A->>W: Republish same arena; resume RX and IRQ
+    S->>A: Restore MAC stop<br/> verify receive policy and release
+    A->>W: Republish same arena<br/> resume RX and IRQ
     W-->>S: Operational epoch restored
     Note over S,P: Failure after consuming execution retains an unusable epoch
 ```
@@ -144,11 +144,57 @@ it does not change stored policy, fabricate a temperature or advance the due
 time. Its outcome distinguishes actual committed common and class calibration
 from a call that selected no work.
 
+The production RX-gain and TXDC/PWDET paths execute as direct blocking
+transactions under the already-acquired exclusive PHY owner. Required 1–20 us
+hardware settles use the ESP32-S31 ROM `ets_delay_us` primitive used by the
+recovered vendor graph; bounded PBus, I2C, DC/IQ and SAR readiness reads poll
+directly. Interrupts remain enabled and the physical owner remains held until
+terminal restoration. The complete common/Wi-Fi runtime calibration graph
+runs in one caller poll without a timer suspension. Longer registration,
+tracking and lifecycle operations may still express waits through
+`PhyAsyncDelay` and `executor::wait::Kind`.
+
+RX gain PBus completion matches the rev0 ROM command loop while retaining
+bounded attempts and typed timeout failure. Its I2C commands use direct status
+reads with the same edge budget, and DC/IQ readiness samples directly on first
+and subsequent attempts. The finite observation bounds are correctness limits,
+not elapsed-time guarantees.
+
+Timing qualification must cover the complete action-to-hardware path, including
+executor-added waits, readiness retries, failure cleanup and the selected
+runtime adapter. Every wait of at most 100 us requires hot-path classification,
+with waits of at most 20 us reviewed first. Record the required minimum,
+first-read placement, retry predicate and bound, implementation mechanism, and
+measured elapsed time separately. Include variable-duration waits whose range
+can enter this interval. A compiled semantic comparison alone does not qualify
+these timing properties. Vendor references must include the linked firmware
+and its ROM callees: ESP-IDF can override archive leaves, including the I2C
+critical-section hooks. Code-placement comparisons require an aligned wait
+baseline first.
+
 CPU waiting time, RF exclusion and unavailable packet service are different
 quantities. Async hardware waits can release the CPU while the radio remains
 unavailable. The current executor uses bounded hardware observations where
 there is no owned completion interrupt. Moving those observations to a timer
 does not make a long calibration harmless to traffic.
+
+The event-driven RX-gain transitions remain executable semantic models for host
+tests and vendor comparison. Production calls the same source-owned arithmetic
+and finite hardware primitives directly, without creating an async boundary or
+moving a large action enum at each hot edge. Nested work consumes the same root
+operation budget; exhaustion cannot produce a complete coefficient set, and
+failure retains the recovered cleanup and outer-control restoration sequence.
+
+The fixed bank encodings are generated at compile time and shared as read-only
+data. Measured DC coefficients remain in the individual transition, and entry
+encoding borrows them. Terminal products are inspected separately from hardware
+admission. Compile-time budgets cover both retained transitions and the compact
+external bindings that cross executor call boundaries.
+
+RX diagnostics record only the root interval, its single-poll execution, three
+disjoint direct phases and clock-free path counts. They do not install callbacks
+inside the minimum-search loop. Search traces and elapsed HIL timing remain
+separate measurement scopes.
 
 ## Restoration and failure
 
@@ -187,3 +233,23 @@ calls a binary parameter-tracking function from a periodic task timer and on
 eligible PHY enable. Its result flags describe selected branches, not a
 hardware quiet-window contract. The library's grant-hook names alone are not
 evidence that the final firmware acquired exclusive RF access.
+
+RX gain diagnostics retain coarse DC, table-publication and control/restoration
+regions without per-edge timing. Minimum-search intervals are nested in the DC
+region, including accepted estimator steps and waits. The three region totals
+are disjoint; minimum and fine-step totals must not be added to them. Observer
+clock reads occur at region boundaries, so these remain instrumented durations,
+not pure CPU costs. Early executor errors close active intervals as failed;
+cancellation leaves incomplete evidence and does not release hardware ownership.
+
+Coarse RX diagnostics additionally sample one in sixteen minimum invocations and
+non-minimum DC executor steps, starting with the first. These sampled intervals
+separate prepare/advance from MMIO, minimum settle and readiness execution.
+Readiness time includes its timer and suspension, not just a register read.
+Sampling is deterministic and may correlate with the search sequence; counts and
+scoped maxima accompany totals, which are not whole-calibration costs.
+
+The DC/IQ executor probes readiness immediately after measurement enable, as in
+rev0 ROM phy_iq_est_enable. The required 1-us start/stop settles are unchanged.
+Only a previously unready result incurs the existing 1-us asynchronous completion
+backoff. The observation limit and timeout disable tail remain unchanged.

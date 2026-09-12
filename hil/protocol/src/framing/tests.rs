@@ -1616,11 +1616,17 @@ fn maximum_rx_gain_detail_fits_separate_frame_and_round_trips() {
         u64::MAX,
         u32::MAX,
         Event::StationPhyRxGain(crate::PhyRxGainEvidence {
-            prepare: timing,
-            dc: timing,
-            publish: timing,
-            control: timing,
-            advance: timing,
+            execution: Some(crate::PhyRxGainExecutionEvidence {
+                minimum_searches: u32::MAX,
+                minimum_operations: u32::MAX,
+                outer_operations: u32::MAX,
+                settle_1us: u32::MAX,
+                settle_2us: u32::MAX,
+                settle_10us: u32::MAX,
+            }),
+            dc_phase: timing,
+            publish_phase: timing,
+            control_phase: timing,
         }),
     );
     let mut encoder = FrameEncoder::new();

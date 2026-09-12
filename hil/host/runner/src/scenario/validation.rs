@@ -214,6 +214,7 @@ impl Scenario {
                     | ImageClass::DiagnosticTaskResidence
                     | ImageClass::DiagnosticTaskPoll
                     | ImageClass::DiagnosticRxDelivery
+                    | ImageClass::DiagnosticRxDeliveryPhyHotSram
                     | ImageClass::DiagnosticCore0RxCoarse
                     | ImageClass::DiagnosticCore0RxCycles
             ) || !matches!(

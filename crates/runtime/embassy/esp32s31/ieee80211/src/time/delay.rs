@@ -6,6 +6,41 @@ use core::{
 
 use embassy_time::Instant;
 
+/// Only minimum hardware settles may spend this bounded interval in a poll.
+/// Readiness retries retain their original timer cadence, regardless of size.
+pub(super) const fn synchronous_settle(
+    kind: oer_esp32s31_phy::executor::wait::Kind,
+    micros: u64,
+    limit: u64,
+) -> bool {
+    matches!(kind, oer_esp32s31_phy::executor::wait::Kind::Settle) && micros != 0 && micros <= limit
+}
+
+pub(super) enum HardwareDelay<F, C, S> {
+    Timer(Deadline<F, C>),
+    /// The target primitive owns the calibrated cycle deadline.
+    Settle {
+        micros: u32,
+        delay: S,
+    },
+}
+
+impl<F: Future<Output = ()> + Unpin, C: Fn() -> Instant + Unpin, S: FnMut(u32) + Unpin> Future
+    for HardwareDelay<F, C, S>
+{
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        match self.get_mut() {
+            Self::Timer(timer) => Pin::new(timer).poll(cx),
+            Self::Settle { micros, delay } => {
+                delay(*micros);
+                Poll::Ready(())
+            }
+        }
+    }
+}
+
 // PHY delays express a minimum settling time, not an executor yield. Embassy's
 // Timer deliberately yields once even if already expired. Check the absolute
 // deadline before polling it; future deadlines still use its ordinary wake

@@ -205,3 +205,64 @@ fn disabled_delay_measurement_has_no_observation_clock_or_callback() {
             .is_ready()
     );
 }
+
+#[test]
+fn short_settle_never_selects_readiness_or_zero_or_long_waits() {
+    use oer_esp32s31_phy::executor::wait::Kind;
+    for micros in [0, 1, 2, 5, 10, 20, 21, 100, u64::MAX] {
+        assert!(!synchronous_settle(Kind::BusBusy, micros, 20));
+        assert!(!synchronous_settle(Kind::Completion, micros, 20));
+        assert!(!synchronous_settle(Kind::Settle, micros, 0));
+        assert_eq!(
+            synchronous_settle(Kind::Settle, micros, 20),
+            (1..=20).contains(&micros)
+        );
+    }
+}
+
+#[test]
+fn synchronous_settle_invokes_the_target_delay_once_without_timer_or_wake() {
+    for micros in [1, 2, 5, 10, 20] {
+        let calls = Cell::new(0);
+        let requested = Cell::new(0);
+        let mut delay: HardwareDelay<core::future::Pending<()>, fn() -> Instant, _> =
+            HardwareDelay::Settle {
+                micros,
+                delay: |value| {
+                    calls.set(calls.get() + 1);
+                    requested.set(value);
+                },
+            };
+        let notifications = Arc::new(Notifications::default());
+        let waker = Waker::from(notifications.clone());
+        assert!(
+            Pin::new(&mut delay)
+                .poll(&mut Context::from_waker(&waker))
+                .is_ready()
+        );
+        assert_eq!(calls.get(), 1);
+        assert_eq!(requested.get(), micros);
+        assert_eq!(notifications.0.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[test]
+fn timer_branch_still_yields_and_keeps_its_deadline() {
+    let polls = Cell::new(0);
+    let registered = RefCell::new(None);
+    let now = Cell::new(100);
+    let mut delay: HardwareDelay<_, _, fn(u32)> = HardwareDelay::Timer(Deadline {
+        deadline: Instant::from_ticks(110),
+        timer: Alarm {
+            polls: &polls,
+            waker: &registered,
+        },
+        now: || Instant::from_ticks(now.get()),
+    });
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(Pin::new(&mut delay).poll(&mut cx).is_pending());
+    assert_eq!(polls.get(), 1);
+    now.set(110);
+    assert!(Pin::new(&mut delay).poll(&mut cx).is_ready());
+    assert_eq!(polls.get(), 1);
+}

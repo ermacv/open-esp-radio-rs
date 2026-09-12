@@ -16,6 +16,8 @@ chip = "esp32s31"
 # intentionally alternatives. Repository audits compile every declared
 # profile independently instead of constructing an invalid all-feature union.
 supported-feature-profiles = [
+    "upstream-network,diagnostics",
+    "upstream-network,diagnostics,phy-rx-hot-sram",
     "upstream-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
     "owned-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
     "compat-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
@@ -67,6 +69,8 @@ oer-esp32s31-wifi-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [features]
+# Experimental direct RX-gain transaction SRAM placement for the RXCAL A/B profile.
+phy-rx-hot-sram = ["oer-esp32s31-wifi-embassy/phy-rx-hot-sram"]
 default = ["owned-network"]
 upstream-network = [
     "dep:oer-xarxa-upstream",

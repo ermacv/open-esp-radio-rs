@@ -432,8 +432,11 @@ fn execute_workload_inner(
                 criteria: selected.criteria.clone(),
                 expected_link: selected.link,
                 require_driver_observation: selected.image.requires_driver_observation(),
-                require_rx_delivery_evidence: selected.image
-                    == crate::image::ImageClass::DiagnosticRxDelivery,
+                require_rx_delivery_evidence: matches!(
+                    selected.image,
+                    crate::image::ImageClass::DiagnosticRxDelivery
+                        | crate::image::ImageClass::DiagnosticRxDeliveryPhyHotSram
+                ),
                 capture_independent_laptop_air_monitor: selected
                     .evidence
                     .independent_laptop_air_monitor,

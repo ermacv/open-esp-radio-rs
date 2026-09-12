@@ -4,6 +4,7 @@ use open_radio_vendor_models_esp32s31::execution_model::MemoryRange;
 
 const INPUT: u32 = 0x3ffe_1000;
 const OUTPUT: u32 = 0x3ffe_2000;
+const MAX_PRODUCTION_STEP_MULTIPLIER: u64 = 2;
 
 pub(super) fn map() -> MmioMap {
     MmioMap {
@@ -143,22 +144,8 @@ fn inputs(
 }
 
 pub(super) fn effects(events: Vec<ExecutionEvent>, flags: u8) -> Vec<ExecutionEvent> {
-    let mut events = dcode::effects(events).into_iter().peekable();
     let mut result = Vec::new();
-    while let Some(event) = events.next() {
-        // Only polling cadence is outside the effect projection; estimator
-        // enable/disable settling remains observable.
-        if matches!(event, ExecutionEvent::DelayMicros(1))
-            && matches!(
-                events.peek(),
-                Some(ExecutionEvent::Read {
-                    address: 0x2010_047c,
-                    ..
-                })
-            )
-        {
-            continue;
-        }
+    for event in dcode::effects(events) {
         // The vendor snapshots outer DC control even when DC is skipped.
         if flags != 0
             && matches!(
@@ -253,6 +240,12 @@ fn compare_roots(guard_flags: &[u8], samples: &[i32]) {
                         let v = run(&vendor, "phy_set_rx_gain_table", v);
                         let r = run(&rust, rust_entry, r);
                         assert_eq!(r.return_value, 0, "production root failed {context}");
+                        assert!(
+                            r.steps <= v.steps.saturating_mul(MAX_PRODUCTION_STEP_MULTIPLIER),
+                            "DIFF RX gain execution cost {context}: vendor_steps={}, production_steps={}, maximum_multiplier={MAX_PRODUCTION_STEP_MULTIPLIER}",
+                            v.steps,
+                            r.steps,
+                        );
                         if let Some(directory) = std::env::var_os("OER_PHY_TRACE_DIR") {
                             for (name, result) in [("vendor", &v), ("production", &r)] {
                                 let trace = result
@@ -315,8 +308,10 @@ fn compare_roots(guard_flags: &[u8], samples: &[i32]) {
                         }
                         assert_eq!(expected.len(), actual.len(), "DIFF effects {context}");
                         println!(
-                            "MATCH RX gain state and effects {context}: {} effects",
-                            actual.len()
+                            "MATCH RX gain state and effects {context}: {} effects, vendor_steps={}, production_steps={}",
+                            actual.len(),
+                            v.steps,
+                            r.steps,
                         );
                     }
                 }
@@ -411,4 +406,121 @@ fn compiled_rx_gain_failed_channel_does_not_publish_coefficients() {
         );
         println!("MATCH bounded RX channel failure retains unpublished output fill={fill:x}");
     }
+}
+
+#[test]
+#[ignore = "requires fresh production probe; run through blobray-run"]
+fn compiled_rx_gain_minimum_failure_and_shared_budget_do_not_publish_coefficients() {
+    let probe = input("OER_PHY_PROBE", None);
+    let entry = "open_phy_calibration_trace_rx_gain";
+    let rust = image(&probe, None, entry);
+    for slow_successful_minima in [false, true] {
+        for fill in [0x5a, 0xa5] {
+            let mut s = scenario(fill, false);
+            s.max_steps = 200_000_000;
+            calibration_inputs(&mut s, fill, 0, 0);
+            s.device_models
+                .retain(|model| model.descriptor().range.start != 0x2010_047c);
+            // Each slow estimator becomes ready below its own timeout. The
+            // enclosing operation budget must still span successive minima.
+            let values = if slow_successful_minima {
+                (0..20)
+                    .flat_map(|_| core::iter::repeat_n(0, 9_000).chain([0x10000]))
+                    .collect()
+            } else {
+                vec![0; 10_000]
+            };
+            s.device_models
+                .push(Arc::new(DeviceModelSpec::SequenceRead {
+                    id: "rx-estimator-readiness".into(),
+                    address: 0x2010_047c,
+                    width: 32,
+                    values,
+                }));
+            // The not-ready branch also samples PBus estimator activity.
+            // This profile models an idle input independently of READY.
+            s.device_models
+                .push(Arc::new(DeviceModelSpec::ConstantRead {
+                    id: "rx-estimator-activity".into(),
+                    address: 0x2010_08d0,
+                    width: 32,
+                    value: 0,
+                }));
+            let values = parameters(17);
+            put(&mut s, INPUT, values.iter().flat_map(|v| v.to_le_bytes()));
+            put(&mut s, OUTPUT, [0xa5; 108]);
+            s.observed_memory = vec![MemoryRange {
+                start: OUTPUT,
+                length: 108,
+            }];
+            s.arguments = vec![INPUT, 0, 0, 0xbf, OUTPUT];
+            let result = execution::execute(&rust, &map(), entry, s)
+                .expect("execute production minimum timeout / shared budget exhaustion");
+            assert_eq!(
+                result.return_value,
+                if slow_successful_minima { 5 } else { 4 }
+            );
+            assert!(
+                result.memory_changes.is_empty(),
+                "failed root published coefficients"
+            );
+            assert!(
+                !result.events.iter().any(|event| matches!(
+                    event,
+                    ExecutionEvent::Write {
+                        address: 0x2010_0844,
+                        ..
+                    }
+                )),
+                "failed root published gain memory"
+            );
+            let ready = result
+                .events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        ExecutionEvent::Read {
+                            address: 0x2010_047c,
+                            value: 0x10000,
+                            ..
+                        }
+                    )
+                })
+                .count();
+            if slow_successful_minima {
+                assert!(
+                    ready > 1,
+                    "must cross multiple successful minimum boundaries"
+                );
+                assert!(
+                    ready < 20,
+                    "shared budget must stop before the input sequence ends"
+                );
+            } else {
+                assert_eq!(ready, 0);
+            }
+            println!(
+                "MATCH bounded RX minimum failure slow={slow_successful_minima} fill={fill:x} completed_estimators={ready}; output unpublished"
+            );
+        }
+    }
+}
+
+#[test]
+fn readiness_wait_is_visible_to_rx_effect_comparison() {
+    let read = ExecutionEvent::Read {
+        width: 4,
+        address: 0x2010_047c,
+        region: "baseband".into(),
+        register: None,
+        value: 0,
+    };
+    let direct = effects(vec![read.clone()], 0);
+    let delayed = effects(vec![ExecutionEvent::DelayMicros(1), read], 0);
+    assert_ne!(
+        direct, delayed,
+        "an added readiness wait must not disappear from comparison"
+    );
+    assert!(delayed.contains(&ExecutionEvent::DelayMicros(1)));
 }

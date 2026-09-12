@@ -92,9 +92,14 @@ const fn shared_rx_mixer_digital_gain(index: usize) -> u8 {
 ///
 /// The two hardware-clock/PBus wrappers around the reference loop are
 /// sequenced by its caller. This function contains the entire per-entry
-/// arithmetic and every former `phy_param` dependency as an owned value.
+/// arithmetic and borrows all calibration inputs from their owning PHY epoch.
+#[cfg_attr(
+    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+    allow(unsafe_code),
+    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+)]
 pub fn phy_generated_rx_gain_memory_entry(
-    parameters: PhyRxGainMemoryParameters,
+    parameters: &PhyRxGainMemoryParameters,
     bank: PhyRxGainBank,
     table: &PhyGeneratedRxGainTable,
     index: u8,
@@ -154,7 +159,7 @@ pub fn phy_generated_rx_gain_memory_entry(
 /// values and is intentionally absent. The S31 cold parent uses fixed table
 /// objects, so exposing the bank rather than five aliasable raw pointers also
 /// makes every input and bound explicit.
-pub fn generate_phy_rx_gain_table(bank: PhyRxGainBank) -> PhyGeneratedRxGainTable {
+pub const fn generate_phy_rx_gain_table(bank: PhyRxGainBank) -> PhyGeneratedRxGainTable {
     let (maximum_gain, entry_count) = match bank {
         PhyRxGainBank::Wifi => (0x1c_u8, PHY_RX_GAIN_BASE_BANK_0.len()),
         PhyRxGainBank::Shared => (0x12_u8, PHY_RX_GAIN_BASE_BANK_1.len()),
@@ -196,8 +201,7 @@ pub fn generate_phy_rx_gain_table(bank: PhyRxGainBank) -> PhyGeneratedRxGainTabl
             PhyRxGainBank::Shared => PHY_RX_GAIN_BASE_BANK_1[source_index],
         };
         let low = PHY_RX_GAIN_LOW_FIELD[(gain / 6) as usize] & 0x0fff;
-        words[output_index] =
-            u32::from(base) * 0x1000 + u32::from(low) * 0x10 + u32::from(gain % 6);
+        words[output_index] = base as u32 * 0x1000 + low as u32 * 0x10 + (gain % 6) as u32;
         if maximum_gain < gain || output_index + 1 == PHY_WIFI_RX_GAIN_GENERATED_CAPACITY {
             return PhyGeneratedRxGainTable {
                 words,
@@ -1079,7 +1083,10 @@ impl PhyBbInitTransition {
                 action => PhyBbInitLocalStep::External(PhyBbInitAction::RxSaturation(action)),
             },
             PhyBbInitStep::RxGain(transition) => match transition.action() {
-                crate::rx::gain::PhyRxGainInitAction::Complete(outcome) => {
+                crate::rx::gain::PhyRxGainInitAction::Complete => {
+                    let Some(Ok(outcome)) = transition.terminal() else {
+                        unreachable!("complete RX gain action must retain a successful outcome")
+                    };
                     self.state.apply_rx_gain_init_outcome(outcome);
                     self.step = PhyBbInitStep::RxSaturationFinalize;
                     PhyBbInitLocalStep::StateAdvanced

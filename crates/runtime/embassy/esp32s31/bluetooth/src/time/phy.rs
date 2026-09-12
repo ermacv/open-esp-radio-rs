@@ -68,11 +68,13 @@ impl EmbassyPhyTime {
 
 #[cfg(target_arch = "riscv32")]
 impl oer_esp32s31_phy::PhyAsyncDelay for EmbassyPhyTime {
+    type ShortDelay = oer_esp32s31_phy::RomShortDelay;
+
     fn now_micros() -> Option<u64> {
         Some(embassy_time::Instant::now().as_micros())
     }
 
-    async fn after_micros(micros: u64) {
+    async fn after_micros(_kind: oer_esp32s31_phy::executor::wait::Kind, micros: u64) {
         if Self::validate_delay(micros).is_err() {
             core::future::pending::<()>().await;
         }

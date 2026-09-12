@@ -98,24 +98,53 @@ impl PhyTimingEvidence {
     }
 }
 
-/// Disjoint executor stages nested in RX gain, sent before pause completion.
+/// Disjoint regions of the direct blocking RX-gain transaction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PhyRxGainExecutionEvidence {
+    pub minimum_searches: u32,
+    pub minimum_operations: u32,
+    pub outer_operations: u32,
+    pub settle_1us: u32,
+    pub settle_2us: u32,
+    pub settle_10us: u32,
+}
+
+impl PhyRxGainExecutionEvidence {
+    fn is_valid(self) -> bool {
+        let Some(operations) = self.minimum_operations.checked_add(self.outer_operations) else {
+            return false;
+        };
+        self.minimum_searches != 0
+            && self.minimum_searches <= self.minimum_operations
+            && self.outer_operations != 0
+            && self
+                .settle_1us
+                .checked_add(self.settle_2us)
+                .and_then(|total| total.checked_add(self.settle_10us))
+                .is_some_and(|settles| settles <= operations)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyRxGainEvidence {
-    pub prepare: PhyOperationTiming,
-    pub dc: PhyOperationTiming,
-    pub publish: PhyOperationTiming,
-    pub control: PhyOperationTiming,
-    pub advance: PhyOperationTiming,
+    /// Clock-free counters emitted once without callbacks in the hot search loop.
+    pub execution: Option<PhyRxGainExecutionEvidence>,
+    pub dc_phase: PhyOperationTiming,
+    pub publish_phase: PhyOperationTiming,
+    pub control_phase: PhyOperationTiming,
 }
 impl PhyRxGainEvidence {
     pub fn fits(self, operation: PhyOperationTiming) -> bool {
-        let details = [
-            self.prepare,
-            self.dc,
-            self.publish,
-            self.control,
-            self.advance,
-        ];
+        let phases = [self.dc_phase, self.publish_phase, self.control_phase];
+        let execution_fits = match (operation.started, self.execution) {
+            (0, None) => true,
+            (1, Some(execution)) => execution.is_valid(),
+            _ => false,
+        };
+        execution_fits && self.stages_fit(operation, &phases)
+    }
+
+    fn stages_fit(self, operation: PhyOperationTiming, details: &[PhyOperationTiming]) -> bool {
         details.iter().all(|entry| {
             entry.started == entry.completed
                 && entry.failed == 0

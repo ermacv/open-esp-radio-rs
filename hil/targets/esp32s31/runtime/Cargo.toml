@@ -8,6 +8,9 @@ publish.workspace = true
 build = "build.rs"
 
 [features]
+# Experimental direct RX-gain transaction SRAM placement for an otherwise
+# identical diagnostic image.
+phy-rx-hot-sram = ["oer-esp32s31-embassy-wifi/phy-rx-hot-sram"]
 default = ["code-psram", "profile-psram-data"]
 code-flash = []
 code-psram = []

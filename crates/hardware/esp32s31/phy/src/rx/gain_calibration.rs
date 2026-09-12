@@ -6,6 +6,11 @@
 //! commands, ten-microsecond intervals, and DC/IQ readiness are explicit
 //! caller-driven actions.
 
+#![cfg_attr(
+    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+    allow(unsafe_code)
+)]
+
 use crate::{
     analog::{
         i2c::{
@@ -186,7 +191,305 @@ pub struct PhyRxDcCalibrationTransition {
     readiness_activity_edges: u16,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct PhyRxDcCalibrationTargetStats {
+    pub minimum_searches: u32,
+    pub minimum_operations: u32,
+    pub settle_1us: u32,
+    pub settle_10us: u32,
+}
+
+#[cfg(target_arch = "riscv32")]
+fn execute_minimum_target<D: crate::target_executor::PhyShortDelay>(
+    request: PhyRxDcMinimumRequest,
+    registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    stats: &mut PhyRxDcCalibrationTargetStats,
+) -> Result<
+    Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure>,
+    crate::target_executor::PhyTargetPortError,
+> {
+    let completion = crate::rx::dc_offset::PhyRxDcMinimumTargetTransaction::new(request)
+        .execute_target::<D>(u32::MAX, registers)?
+        .ok_or(crate::target_executor::PhyTargetPortError::RfOperationLimit)?;
+    stats.minimum_searches += 1;
+    stats.minimum_operations += completion.operations();
+    stats.settle_1us += 2 * u32::from(completion.estimators());
+    Ok(completion.into_terminal())
+}
+
 impl PhyRxDcCalibrationTransition {
+    /// Execute the complete current-vendor one-step RX-DC routine as one
+    /// blocking target transaction. The event-driven transition remains the
+    /// executable host model; production does not dispatch its individual
+    /// actions through an async executor.
+    #[cfg(target_arch = "riscv32")]
+    #[cfg_attr(
+        feature = "rx-gain-hot-sram",
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
+    )]
+    #[inline(never)]
+    pub(crate) fn execute_target_direct<D: crate::target_executor::PhyShortDelay>(
+        &mut self,
+        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
+    ) -> Result<PhyRxDcCalibrationTargetStats, crate::target_executor::PhyTargetPortError> {
+        use crate::target_executor::{PhyTargetPortError, force_pbus_direct};
+
+        if !matches!(self.step, Step::PrepareControlRestore) {
+            return Err(PhyTargetPortError::UnexpectedBinding);
+        }
+        oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers)
+            .map_err(|_| PhyTargetPortError::HardwareInvariant)?;
+
+        let population = oer_esp32s31_hal::phy::pbus::read_result(registers, 1, 2)
+            .ok_or(PhyTargetPortError::HardwareInvariant)? as u8
+            & 0x3f;
+        let population = population.count_ones() as u8;
+        let threshold = match self.request.stage {
+            PhyRxDcCalibrationStage::Radio => i32::from(population.max(2) - 1),
+            PhyRxDcCalibrationStage::Baseband if self.request.shared_radio => 6,
+            PhyRxDcCalibrationStage::Baseband => 1,
+        };
+        let path = match self.request.stage {
+            PhyRxDcCalibrationStage::Radio => 2,
+            PhyRxDcCalibrationStage::Baseband => 1,
+        };
+        let maximum_iterations = match self.request.stage {
+            PhyRxDcCalibrationStage::Radio => 8,
+            PhyRxDcCalibrationStage::Baseband => 12,
+        };
+        let initial = self.request.initial;
+        let mut current = initial;
+        let mut iteration = 0_u8;
+        let mut readiness_activity_edges = 0_u16;
+        let mut stats = PhyRxDcCalibrationTargetStats::default();
+
+        let terminal = loop {
+            let force_i = PhyPbusForceTest::new(2, path, current[0]);
+            if !force_pbus_direct(registers, force_i) {
+                break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(force_i));
+            }
+            let force_q = PhyPbusForceTest::new(3, path, current[1]);
+            if !force_pbus_direct(registers, force_q) {
+                break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(force_q));
+            }
+
+            let (low, low_activity_edges) = if self.request.stage
+                == PhyRxDcCalibrationStage::Baseband
+            {
+                let level = PhyPbusForceTest::new(1, 2, 0);
+                if !force_pbus_direct(registers, level) {
+                    break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(level));
+                }
+                if !D::settle_micros(10) {
+                    return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                }
+                stats.settle_10us += 1;
+                match execute_minimum_target::<D>(
+                    Self::minimum_request_at(self.request, iteration, false),
+                    registers,
+                    &mut stats,
+                )? {
+                    Ok(outcome) => (outcome.estimate, outcome.readiness_activity_edges),
+                    Err(failure) => {
+                        break Terminal::Failed(PhyRxDcCalibrationFailure::Minimum(failure));
+                    }
+                }
+            } else {
+                (
+                    crate::calibration::estimator::PhyDcIqEstimate {
+                        i: 0,
+                        q: 0,
+                        power: 0,
+                    },
+                    0,
+                )
+            };
+
+            let measurement = if self.request.stage == PhyRxDcCalibrationStage::Baseband {
+                let level = PhyPbusForceTest::new(1, 2, 0x20);
+                if !force_pbus_direct(registers, level) {
+                    break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(level));
+                }
+                if !D::settle_micros(10) {
+                    return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                }
+                stats.settle_10us += 1;
+                match execute_minimum_target::<D>(
+                    Self::minimum_request_at(self.request, iteration, true),
+                    registers,
+                    &mut stats,
+                )? {
+                    Ok(outcome) => outcome,
+                    Err(failure) => {
+                        break Terminal::Failed(PhyRxDcCalibrationFailure::Minimum(failure));
+                    }
+                }
+            } else {
+                if !D::settle_micros(10) {
+                    return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                }
+                stats.settle_10us += 1;
+                match execute_minimum_target::<D>(
+                    Self::minimum_request_at(self.request, iteration, false),
+                    registers,
+                    &mut stats,
+                )? {
+                    Ok(outcome) => outcome,
+                    Err(failure) => {
+                        break Terminal::Failed(PhyRxDcCalibrationFailure::Minimum(failure));
+                    }
+                }
+            };
+
+            readiness_activity_edges = readiness_activity_edges
+                .wrapping_add(low_activity_edges)
+                .wrapping_add(measurement.readiness_activity_edges);
+            let (delta_i, delta_q, power, shift) = match self.request.stage {
+                PhyRxDcCalibrationStage::Radio => (
+                    measurement.estimate.i,
+                    measurement.estimate.q,
+                    measurement.estimate.power,
+                    population.max(2) - 2,
+                ),
+                PhyRxDcCalibrationStage::Baseband => (
+                    measurement
+                        .estimate
+                        .i
+                        .wrapping_sub(low.i)
+                        .wrapping_sub(i32::from(self.request.reference_delta[0])),
+                    measurement
+                        .estimate
+                        .q
+                        .wrapping_sub(low.q)
+                        .wrapping_sub(i32::from(self.request.reference_delta[1])),
+                    measurement.estimate.power.max(low.power),
+                    if self.request.shared_radio {
+                        3
+                    } else if iteration >= 2 {
+                        1
+                    } else {
+                        0
+                    },
+                ),
+            };
+
+            let mut correction_i = rx_dc_calibration_correction(delta_i, low.i, threshold, shift);
+            let mut correction_q = rx_dc_calibration_correction(delta_q, low.q, threshold, shift);
+            if self.request.stage == PhyRxDcCalibrationStage::Baseband {
+                if power >= 45 {
+                    correction_i = 0;
+                    correction_q = 0;
+                }
+                if !self.request.shared_radio && self.request.gain_index > 1 {
+                    correction_i = saturate_signed_5(correction_i);
+                    correction_q = saturate_signed_5(correction_q);
+                }
+            }
+
+            let converged = delta_i.wrapping_abs() <= threshold
+                && delta_q.wrapping_abs() <= threshold
+                && power < 46;
+            if !converged {
+                if delta_i.wrapping_abs() > threshold {
+                    current[0] = saturate_9bit(i32::from(current[0]).wrapping_sub(correction_i));
+                }
+                if delta_q.wrapping_abs() > threshold {
+                    current[1] = saturate_9bit(i32::from(current[1]).wrapping_sub(correction_q));
+                }
+            }
+            iteration += 1;
+            if converged || iteration == maximum_iterations {
+                let configuration =
+                    if !converged && self.request.stage == PhyRxDcCalibrationStage::Baseband {
+                        initial
+                    } else {
+                        current
+                    };
+                break Terminal::Complete(PhyRxDcCalibrationOutcome {
+                    request: self.request,
+                    configuration,
+                    iterations: iteration,
+                    converged,
+                    readiness_activity_edges,
+                });
+            }
+        };
+
+        let cleanup = match terminal {
+            Terminal::Complete(outcome) => outcome.configuration,
+            Terminal::Failed(_) => initial,
+        };
+        let _ = force_pbus_direct(registers, PhyPbusForceTest::new(2, path, cleanup[0]));
+        let _ = force_pbus_direct(registers, PhyPbusForceTest::new(3, path, cleanup[1]));
+        oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
+            .map_err(|_| PhyTargetPortError::HardwareInvariant)?;
+
+        self.initial = initial;
+        self.current = current;
+        self.population = population;
+        self.threshold = threshold;
+        self.iteration = iteration;
+        self.readiness_activity_edges = readiness_activity_edges;
+        self.step = match terminal {
+            Terminal::Complete(outcome) => Step::Complete(outcome),
+            Terminal::Failed(failure) => Step::Failed(failure),
+        };
+        Ok(stats)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn minimum_mut(&mut self) -> Option<&mut PhyRxDcMinimumTransition> {
+        match &mut self.step {
+            Step::Minimum { transition, .. } => Some(transition),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
+    pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxDcCalibrationTransitionError> {
+        let Step::Minimum {
+            high,
+            ref transition,
+        } = self.step
+        else {
+            return Err(PhyRxDcCalibrationTransitionError::WrongCompletion);
+        };
+        match transition.terminal() {
+            Some(Ok(outcome)) => self.accept_measurement(high, outcome),
+            Some(Err(failure)) => self.fail(PhyRxDcCalibrationFailure::Minimum(failure)),
+            None => return Err(PhyRxDcCalibrationTransitionError::WrongCompletion),
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lower_external(
+        &self,
+    ) -> Result<PhyRxDcCalibrationExternalBinding, PhyRxGainCalibrationBindingError> {
+        if let Step::Minimum { ref transition, .. } = self.step {
+            return crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(transition.action())
+                .map(PhyRxDcCalibrationExternalBinding::Minimum)
+                .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction);
+        }
+        PhyRxDcCalibrationExternalBinding::lower(self.action())
+    }
+
+    /// Inspect completion without constructing a nested hardware action.
+    pub(crate) fn terminal(
+        &self,
+    ) -> Option<Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>> {
+        match self.step {
+            Step::Complete(outcome) => Some(Ok(outcome)),
+            Step::Failed(failure) => Some(Err(failure)),
+            _ => None,
+        }
+    }
+
     pub const fn new(request: PhyRxDcCalibrationRequest) -> Self {
         Self {
             request,
@@ -224,14 +527,22 @@ impl PhyRxDcCalibrationTransition {
     }
 
     const fn minimum_request(&self, high: bool) -> PhyRxDcMinimumRequest {
+        Self::minimum_request_at(self.request, self.iteration, high)
+    }
+
+    const fn minimum_request_at(
+        request: PhyRxDcCalibrationRequest,
+        iteration: u8,
+        high: bool,
+    ) -> PhyRxDcMinimumRequest {
         PhyRxDcMinimumRequest {
-            measurement: self.measurement_identity(high),
-            control: self.request.control,
+            measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),
+            control: request.control,
             // The archive passes zero as the fourth `phy_rxdc_est_min`
             // argument. ROM forwards that fourth argument to
             // `phy_dc_iq_est`; its second argument is unused.
             mode: 0,
-            rx_saturation_detected: self.request.rx_saturation_detected,
+            rx_saturation_detected: request.rx_saturation_detected,
         }
     }
 
@@ -251,6 +562,10 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub const fn action(&self) -> PhyRxDcCalibrationAction {
         match self.step {
             Step::PrepareControlRestore => PhyRxDcCalibrationAction::PrepareControlRestore,
@@ -290,6 +605,10 @@ impl PhyRxDcCalibrationTransition {
         self.begin_cleanup(Terminal::Failed(failure));
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     fn accept_measurement(&mut self, high: bool, outcome: PhyRxDcMinimumOutcome) {
         self.readiness_activity_edges = self
             .readiness_activity_edges
@@ -384,10 +703,34 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(
         &mut self,
         completion: PhyRxDcCalibrationCompletion,
     ) -> Result<(), PhyRxDcCalibrationTransitionError> {
+        // Child rejection is transactional. Keep its cursor in the parent instead
+        // of copying the nested transition for every hardware completion.
+        if let (
+            &mut Step::Minimum {
+                high,
+                ref mut transition,
+            },
+            PhyRxDcCalibrationCompletion::Minimum(completion),
+        ) = (&mut self.step, completion)
+        {
+            transition
+                .advance(completion)
+                .map_err(|_| PhyRxDcCalibrationTransitionError::WrongCompletion)?;
+            match transition.terminal() {
+                Some(Ok(outcome)) => self.accept_measurement(high, outcome),
+                Some(Err(failure)) => self.fail(PhyRxDcCalibrationFailure::Minimum(failure)),
+                None => {}
+            }
+            return Ok(());
+        }
         match (self.step, completion) {
             (Step::PrepareControlRestore, PhyRxDcCalibrationCompletion::ControlRestorePrepared) => {
                 self.step = Step::ReadPbus;
@@ -444,28 +787,7 @@ impl PhyRxDcCalibrationTransition {
                     transition: PhyRxDcMinimumTransition::new(self.minimum_request(high)),
                 };
             }
-            (
-                Step::Minimum {
-                    high,
-                    mut transition,
-                },
-                PhyRxDcCalibrationCompletion::Minimum(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxDcCalibrationTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxDcMinimumAction::Complete(outcome) => {
-                        self.accept_measurement(high, outcome);
-                    }
-                    PhyRxDcMinimumAction::Failed(failure) => {
-                        self.fail(PhyRxDcCalibrationFailure::Minimum(failure));
-                    }
-                    _ => {
-                        self.step = Step::Minimum { high, transition };
-                    }
-                }
-            }
+
             (
                 Step::ForceI | Step::ForceQ | Step::ForceRadioLevel { .. },
                 PhyRxDcCalibrationCompletion::PbusForceTimedOut(transaction),
@@ -515,8 +837,8 @@ impl PhyRxDcCalibrationTransition {
 // in vendor `phy_rx_cal.o`.  The final shared entries select the extended
 // 0x027f and 0x017f gain encodings; truncating them to 0x007f skips four
 // calibration points later consumed by the RX gain-memory setup.
-const WIFI_CALIBRATION_GAIN: [u16; 8] = [0x40, 0x41, 0x43, 0x6e, 0x78, 0x79, 0x7b, 0x7f];
-const SHARED_CALIBRATION_GAIN: [u16; 11] = [
+pub(crate) const WIFI_CALIBRATION_GAIN: [u16; 8] = [0x40, 0x41, 0x43, 0x6e, 0x78, 0x79, 0x7b, 0x7f];
+pub(crate) const SHARED_CALIBRATION_GAIN: [u16; 11] = [
     0x40, 0x41, 0x42, 0x43, 0x6e, 0x78, 0x79, 0x7b, 0x027f, 0x017f, 0x007f,
 ];
 const RX_ON_COUNT: u8 = 7;
@@ -598,7 +920,7 @@ pub enum PhyRxGainDcAction {
     },
     ConfigurePbusWorkModePulse,
     ClearPbusWorkModePulse,
-    Complete(PhyRxGainDcOutcome),
+    Complete,
     Failed(PhyRxGainDcFailure),
 }
 
@@ -755,7 +1077,7 @@ enum DcStep {
     Failed(PhyRxGainDcFailure),
 }
 
-const fn rx_on(index: u8, pbus_rx_path_value: u8) -> PhyPbusForceTest {
+pub(crate) const fn rx_on(index: u8, pbus_rx_path_value: u8) -> PhyPbusForceTest {
     match index {
         0 => PhyPbusForceTest::new(4, 1, 0),
         1 => PhyPbusForceTest::new(4, 2, 1),
@@ -767,7 +1089,7 @@ const fn rx_on(index: u8, pbus_rx_path_value: u8) -> PhyPbusForceTest {
     }
 }
 
-const fn rx_off(index: u8) -> PhyPbusForceTest {
+pub(crate) const fn rx_off(index: u8) -> PhyPbusForceTest {
     match index {
         0 => PhyPbusForceTest::new(0, 1, 0),
         1 => PhyPbusForceTest::new(1, 1, 0),
@@ -775,7 +1097,7 @@ const fn rx_off(index: u8) -> PhyPbusForceTest {
     }
 }
 
-const fn reference_setup(index: u8) -> PhyPbusForceTest {
+pub(crate) const fn reference_setup(index: u8) -> PhyPbusForceTest {
     match index {
         0 => PhyPbusForceTest::new(0, 1, 0),
         1 => PhyPbusForceTest::new(2, 1, 0x100),
@@ -786,7 +1108,7 @@ const fn reference_setup(index: u8) -> PhyPbusForceTest {
     }
 }
 
-const fn fine_setup(index: u8) -> PhyPbusForceTest {
+pub(crate) const fn fine_setup(index: u8) -> PhyPbusForceTest {
     match index {
         0 => PhyPbusForceTest::new(0, 1, 0),
         1 => PhyPbusForceTest::new(2, 1, 0x100),
@@ -796,7 +1118,7 @@ const fn fine_setup(index: u8) -> PhyPbusForceTest {
     }
 }
 
-const fn fine_code(index: u8) -> u16 {
+pub(crate) const fn fine_code(index: u8) -> u16 {
     [0x00, 0x20, 0x30, 0x38, 0x3c, 0x3e][index as usize]
 }
 
@@ -817,7 +1139,7 @@ const fn gain(bank: PhyRxGainDcBank, index: u8) -> u16 {
 /// Expand complete ROM `phy_pbus_set_rxgain`, size 92, into its three
 /// independently completed PBus commands. The final command's former
 /// `phy_param[0x002]` dependency is an explicit Rust-owned input.
-const fn set_rx_gain_transaction(
+pub(crate) const fn set_rx_gain_transaction(
     encoded_gain: u32,
     pbus_rx_path_value: u8,
     transaction: u8,
@@ -851,7 +1173,10 @@ const fn shared_mixer_dgain(index: u8) -> u8 {
     }
 }
 
-const fn shared_mixer_dgain_transaction(index: u8, pbus_rx_path_value: u8) -> PhyPbusForceTest {
+pub(crate) const fn shared_mixer_dgain_transaction(
+    index: u8,
+    pbus_rx_path_value: u8,
+) -> PhyPbusForceTest {
     PhyPbusForceTest::new(
         0,
         2,
@@ -874,6 +1199,146 @@ pub struct PhyRxGainDcTransition {
 }
 
 impl PhyRxGainDcTransition {
+    pub(crate) fn finish_calibration(&mut self) -> Result<(), PhyRxGainDcTransitionError> {
+        enum Finished {
+            Fine(
+                u8,
+                Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>,
+            ),
+            Baseband(
+                PhyRxGainDcBank,
+                u8,
+                Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>,
+            ),
+            WifiRadio(Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>),
+        }
+
+        let finished = match &self.step {
+            DcStep::FineCalibration { index, transition } => Finished::Fine(
+                *index,
+                transition
+                    .terminal()
+                    .ok_or(PhyRxGainDcTransitionError::WrongCompletion)?,
+            ),
+            DcStep::CalibrateBaseband {
+                bank,
+                index,
+                transition,
+            } => Finished::Baseband(
+                *bank,
+                *index,
+                transition
+                    .terminal()
+                    .ok_or(PhyRxGainDcTransitionError::WrongCompletion)?,
+            ),
+            DcStep::CalibrateWifiRadio(transition) => Finished::WifiRadio(
+                transition
+                    .terminal()
+                    .ok_or(PhyRxGainDcTransitionError::WrongCompletion)?,
+            ),
+            _ => return Err(PhyRxGainDcTransitionError::WrongCompletion),
+        };
+
+        match finished {
+            Finished::Fine(index, Ok(outcome)) => {
+                self.fine_current = outcome.configuration;
+                if index == 0 {
+                    self.fine_base = outcome.configuration;
+                    self.rxbb_dc_adjustments[0] = [0; 2];
+                } else {
+                    self.rxbb_dc_adjustments[index as usize] = [
+                        outcome.configuration[0].wrapping_sub(self.fine_base[0]),
+                        outcome.configuration[1].wrapping_sub(self.fine_base[1]),
+                    ];
+                }
+                self.step = if index == 5 {
+                    DcStep::ReferenceSetup {
+                        bank: PhyRxGainDcBank::Wifi,
+                        index: 0,
+                    }
+                } else {
+                    DcStep::FineCode { index: index + 1 }
+                };
+            }
+            Finished::Baseband(bank, index, Ok(outcome)) => {
+                self.store_calibration(bank, index, outcome);
+            }
+            Finished::WifiRadio(Ok(outcome)) => {
+                self.wifi_dc_base = outcome.configuration;
+                self.next_gain(PhyRxGainDcBank::Wifi, 0);
+            }
+            Finished::Fine(_, Err(failure))
+            | Finished::Baseband(_, _, Err(failure))
+            | Finished::WifiRadio(Err(failure)) => {
+                self.fail(PhyRxGainDcFailure::Calibration(failure));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn minimum_mut(&mut self) -> Option<&mut PhyRxDcMinimumTransition> {
+        match &mut self.step {
+            DcStep::ReferenceMinimum { transition, .. } => Some(transition),
+            DcStep::FineCalibration { transition, .. }
+            | DcStep::CalibrateBaseband { transition, .. }
+            | DcStep::CalibrateWifiRadio(transition) => transition.minimum_mut(),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxGainDcTransitionError> {
+        match &mut self.step {
+            &mut DcStep::ReferenceMinimum {
+                bank,
+                high,
+                ref transition,
+            } => {
+                match transition.terminal() {
+                    Some(Ok(outcome)) => self.accept_reference(bank, high, outcome),
+                    Some(Err(failure)) => self.fail(PhyRxGainDcFailure::Minimum(failure)),
+                    None => return Err(PhyRxGainDcTransitionError::WrongCompletion),
+                }
+                Ok(())
+            }
+            DcStep::FineCalibration { transition, .. }
+            | DcStep::CalibrateBaseband { transition, .. }
+            | DcStep::CalibrateWifiRadio(transition) => transition
+                .finish_minimum()
+                .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion),
+            _ => Err(PhyRxGainDcTransitionError::WrongCompletion),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lower_external(
+        &self,
+    ) -> Result<PhyRxGainDcExternalBinding, PhyRxGainCalibrationBindingError> {
+        match self.step {
+            DcStep::FineCalibration { ref transition, .. }
+            | DcStep::CalibrateBaseband { ref transition, .. }
+            | DcStep::CalibrateWifiRadio(ref transition) => transition
+                .lower_external()
+                .map(PhyRxGainDcExternalBinding::Calibration),
+            DcStep::ReferenceMinimum { ref transition, .. } => {
+                crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(transition.action())
+                    .map(PhyRxGainDcExternalBinding::Minimum)
+                    .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction)
+            }
+            _ => PhyRxGainDcExternalBinding::lower(self.action()),
+        }
+    }
+
+    /// Inspect completion without constructing a nested hardware action.
+    pub(crate) fn terminal(&self) -> Option<Result<PhyRxGainDcOutcome, PhyRxGainDcFailure>> {
+        match self.step {
+            DcStep::Complete => Some(Ok(self.outcome())),
+            DcStep::Failed(failure) => Some(Err(failure)),
+            _ => None,
+        }
+    }
+
     pub const fn new(parameters: PhyRxGainDcParameters) -> Self {
         Self {
             parameters,
@@ -923,6 +1388,10 @@ impl PhyRxGainDcTransition {
         }
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub const fn action(&self) -> PhyRxGainDcAction {
         match self.step {
             DcStep::ConfigureRegisters | DcStep::WifiConfigureRegisters => {
@@ -1052,7 +1521,7 @@ impl PhyRxGainDcTransition {
             },
             DcStep::WorkModePulseClear(_) => PhyRxGainDcAction::ClearPbusWorkModePulse,
             DcStep::ClearRegisters(_) => PhyRxGainDcAction::ConfigureRegisters { enabled: false },
-            DcStep::Complete => PhyRxGainDcAction::Complete(self.outcome()),
+            DcStep::Complete => PhyRxGainDcAction::Complete,
             DcStep::Failed(failure) => PhyRxGainDcAction::Failed(failure),
         }
     }
@@ -1069,6 +1538,10 @@ impl PhyRxGainDcTransition {
         self.cleanup(DcTerminal::Failed(failure));
     }
 
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     fn store_calibration(
         &mut self,
         bank: PhyRxGainDcBank,
@@ -1161,12 +1634,57 @@ impl PhyRxGainDcTransition {
     }
 
     /// Rejected completions leave both the cursor and accumulated calibration
-    /// products unchanged. Fallible children advance a local cursor; publication
-    /// into this parent occurs only after acceptance, with no fallible tail.
+    /// products unchanged. Nested search cursors advance in place and retain their own rejection
+    /// guarantees; coefficient publication follows only a terminal child.
+    #[cfg_attr(
+        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
+        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
+    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainDcCompletion,
     ) -> Result<(), PhyRxGainDcTransitionError> {
+        // Child rejection is transactional. Keep its cursor in the parent instead
+        // of copying the nested transition for every hardware completion.
+        match (&mut self.step, completion) {
+            (
+                &mut DcStep::ReferenceMinimum {
+                    bank,
+                    high,
+                    ref mut transition,
+                },
+                PhyRxGainDcCompletion::Minimum(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
+                match transition.terminal() {
+                    Some(Ok(outcome)) => {
+                        self.accept_reference(bank, high, outcome);
+                    }
+                    Some(Err(failure)) => {
+                        self.fail(PhyRxGainDcFailure::Minimum(failure));
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+            (
+                DcStep::FineCalibration { transition, .. }
+                | DcStep::CalibrateBaseband { transition, .. }
+                | DcStep::CalibrateWifiRadio(transition),
+                PhyRxGainDcCompletion::Calibration(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
+                if transition.terminal().is_some() {
+                    self.finish_calibration()?;
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
         match (self.step, completion) {
             (
                 DcStep::ConfigureRegisters,
@@ -1334,33 +1852,7 @@ impl PhyRxGainDcTransition {
                     )),
                 };
             }
-            (
-                DcStep::ReferenceMinimum {
-                    bank,
-                    high,
-                    mut transition,
-                },
-                PhyRxGainDcCompletion::Minimum(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxDcMinimumAction::Complete(outcome) => {
-                        self.accept_reference(bank, high, outcome);
-                    }
-                    PhyRxDcMinimumAction::Failed(failure) => {
-                        self.fail(PhyRxGainDcFailure::Minimum(failure));
-                    }
-                    _ => {
-                        self.step = DcStep::ReferenceMinimum {
-                            bank,
-                            high,
-                            transition,
-                        };
-                    }
-                }
-            }
+
             (
                 DcStep::ReferenceHigh { bank },
                 PhyRxGainDcCompletion::PbusCompleted {
@@ -1403,43 +1895,7 @@ impl PhyRxGainDcTransition {
                     }),
                 };
             }
-            (
-                DcStep::FineCalibration {
-                    index,
-                    mut transition,
-                },
-                PhyRxGainDcCompletion::Calibration(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxDcCalibrationAction::Complete(outcome) => {
-                        self.fine_current = outcome.configuration;
-                        if index == 0 {
-                            self.fine_base = outcome.configuration;
-                            self.rxbb_dc_adjustments[0] = [0; 2];
-                        } else {
-                            self.rxbb_dc_adjustments[index as usize] = [
-                                outcome.configuration[0].wrapping_sub(self.fine_base[0]),
-                                outcome.configuration[1].wrapping_sub(self.fine_base[1]),
-                            ];
-                        }
-                        self.step = if index == 5 {
-                            DcStep::ReferenceSetup {
-                                bank: PhyRxGainDcBank::Wifi,
-                                index: 0,
-                            }
-                        } else {
-                            DcStep::FineCode { index: index + 1 }
-                        };
-                    }
-                    PhyRxDcCalibrationAction::Failed(failure) => {
-                        self.fail(PhyRxGainDcFailure::Calibration(failure));
-                    }
-                    _ => self.step = DcStep::FineCalibration { index, transition },
-                }
-            }
+
             (
                 DcStep::SetupRadioI { bank, index },
                 PhyRxGainDcCompletion::PbusCompleted {
@@ -1530,33 +1986,7 @@ impl PhyRxGainDcTransition {
             {
                 self.step = self.baseband_calibration_step(PhyRxGainDcBank::Shared, index);
             }
-            (
-                DcStep::CalibrateBaseband {
-                    bank,
-                    index,
-                    mut transition,
-                },
-                PhyRxGainDcCompletion::Calibration(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxDcCalibrationAction::Complete(outcome) => {
-                        self.store_calibration(bank, index, outcome);
-                    }
-                    PhyRxDcCalibrationAction::Failed(failure) => {
-                        self.fail(PhyRxGainDcFailure::Calibration(failure));
-                    }
-                    _ => {
-                        self.step = DcStep::CalibrateBaseband {
-                            bank,
-                            index,
-                            transition,
-                        };
-                    }
-                }
-            }
+
             (
                 DcStep::PrepareWifiRadioLevel,
                 PhyRxGainDcCompletion::PbusCompleted {
@@ -1588,24 +2018,7 @@ impl PhyRxGainDcTransition {
                     transaction,
                 });
             }
-            (
-                DcStep::CalibrateWifiRadio(mut transition),
-                PhyRxGainDcCompletion::Calibration(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    PhyRxDcCalibrationAction::Complete(outcome) => {
-                        self.wifi_dc_base = outcome.configuration;
-                        self.next_gain(PhyRxGainDcBank::Wifi, 0);
-                    }
-                    PhyRxDcCalibrationAction::Failed(failure) => {
-                        self.fail(PhyRxGainDcFailure::Calibration(failure));
-                    }
-                    _ => self.step = DcStep::CalibrateWifiRadio(transition),
-                }
-            }
+
             (DcStep::SharedRestoreI2c(mut transition), PhyRxGainDcCompletion::I2c(completion)) => {
                 transition
                     .advance(completion)
@@ -1818,25 +2231,46 @@ pub enum PhyRxDcCalibrationHardwareInvariant {
     RestoreNotPending,
 }
 
+// Compact operation identity; coefficient products stay in the transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CalibrationMmio {
+    PrepareControlRestore,
+    ReadPbus { selector: u8, path: u8 },
+    RestoreControl,
+}
+
 /// Non-cloneable token for one direct MMIO edge of
 /// `phy_pbus_rx_dco_cal_1step`.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxDcCalibrationMmioBinding {
-    action: PhyRxDcCalibrationAction,
+    operation: CalibrationMmio,
 }
 
 impl PhyRxDcCalibrationMmioBinding {
     pub fn new(action: PhyRxDcCalibrationAction) -> Result<Self, PhyRxGainCalibrationBindingError> {
-        match action {
-            PhyRxDcCalibrationAction::PrepareControlRestore
-            | PhyRxDcCalibrationAction::ReadPbus { .. }
-            | PhyRxDcCalibrationAction::RestoreControl => Ok(Self { action }),
-            _ => Err(PhyRxGainCalibrationBindingError::NotDirectMmio),
-        }
+        let operation = match action {
+            PhyRxDcCalibrationAction::PrepareControlRestore => {
+                CalibrationMmio::PrepareControlRestore
+            }
+            PhyRxDcCalibrationAction::ReadPbus { selector, path } => {
+                CalibrationMmio::ReadPbus { selector, path }
+            }
+            PhyRxDcCalibrationAction::RestoreControl => CalibrationMmio::RestoreControl,
+            _ => return Err(PhyRxGainCalibrationBindingError::NotDirectMmio),
+        };
+        Ok(Self { operation })
     }
 
     pub const fn action(&self) -> PhyRxDcCalibrationAction {
-        self.action
+        match self.operation {
+            CalibrationMmio::PrepareControlRestore => {
+                PhyRxDcCalibrationAction::PrepareControlRestore
+            }
+            CalibrationMmio::ReadPbus { selector, path } => {
+                PhyRxDcCalibrationAction::ReadPbus { selector, path }
+            }
+            CalibrationMmio::RestoreControl => PhyRxDcCalibrationAction::RestoreControl,
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1844,8 +2278,8 @@ impl PhyRxDcCalibrationMmioBinding {
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
     ) -> Result<PhyRxDcCalibrationCompletion, PhyRxDcCalibrationHardwareInvariant> {
-        match self.action {
-            PhyRxDcCalibrationAction::PrepareControlRestore => {
+        match self.operation {
+            CalibrationMmio::PrepareControlRestore => {
                 oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers).map_err(
                     |error| match error {
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
@@ -1858,7 +2292,7 @@ impl PhyRxDcCalibrationMmioBinding {
                 )?;
                 Ok(PhyRxDcCalibrationCompletion::ControlRestorePrepared)
             }
-            PhyRxDcCalibrationAction::ReadPbus { selector, path } => {
+            CalibrationMmio::ReadPbus { selector, path } => {
                 Ok(PhyRxDcCalibrationCompletion::PbusRead {
                     selector,
                     path,
@@ -1873,14 +2307,33 @@ impl PhyRxDcCalibrationMmioBinding {
                     },
                 })
             }
-            PhyRxDcCalibrationAction::RestoreControl => {
+            CalibrationMmio::RestoreControl => {
                 oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
                     .map_err(|_| PhyRxDcCalibrationHardwareInvariant::RestoreNotPending)?;
                 Ok(PhyRxDcCalibrationCompletion::ControlRestored)
             }
-            _ => unreachable!(),
         }
     }
+}
+
+// Compact operation identity; coefficient products stay in the transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DcMmio {
+    ConfigureRegisters {
+        enabled: bool,
+    },
+    ConfigurePbusDebugMode,
+    ConfigureClock {
+        clock: PhyRxGainDcClock,
+        enabled: bool,
+    },
+    ReadPbus {
+        selector: u8,
+        path: u8,
+    },
+    ConfigurePbusWorkMode,
+    ConfigurePbusWorkModePulse,
+    ClearPbusWorkModePulse,
 }
 
 /// Non-cloneable token for one direct MMIO edge of the composed RX-DC gain
@@ -1888,25 +2341,42 @@ impl PhyRxDcCalibrationMmioBinding {
 /// estimator observations retain their separate executor bindings.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxGainDcMmioBinding {
-    action: PhyRxGainDcAction,
+    operation: DcMmio,
 }
 
 impl PhyRxGainDcMmioBinding {
     pub fn new(action: PhyRxGainDcAction) -> Result<Self, PhyRxGainCalibrationBindingError> {
-        match action {
-            PhyRxGainDcAction::ConfigureRegisters { .. }
-            | PhyRxGainDcAction::ConfigurePbusDebugMode
-            | PhyRxGainDcAction::ConfigureClock { .. }
-            | PhyRxGainDcAction::ReadPbus { .. }
-            | PhyRxGainDcAction::ConfigurePbusWorkMode
-            | PhyRxGainDcAction::ConfigurePbusWorkModePulse
-            | PhyRxGainDcAction::ClearPbusWorkModePulse => Ok(Self { action }),
-            _ => Err(PhyRxGainCalibrationBindingError::NotDirectMmio),
-        }
+        let operation = match action {
+            PhyRxGainDcAction::ConfigureRegisters { enabled } => {
+                DcMmio::ConfigureRegisters { enabled }
+            }
+            PhyRxGainDcAction::ConfigurePbusDebugMode => DcMmio::ConfigurePbusDebugMode,
+            PhyRxGainDcAction::ConfigureClock { clock, enabled } => {
+                DcMmio::ConfigureClock { clock, enabled }
+            }
+            PhyRxGainDcAction::ReadPbus { selector, path } => DcMmio::ReadPbus { selector, path },
+            PhyRxGainDcAction::ConfigurePbusWorkMode => DcMmio::ConfigurePbusWorkMode,
+            PhyRxGainDcAction::ConfigurePbusWorkModePulse => DcMmio::ConfigurePbusWorkModePulse,
+            PhyRxGainDcAction::ClearPbusWorkModePulse => DcMmio::ClearPbusWorkModePulse,
+            _ => return Err(PhyRxGainCalibrationBindingError::NotDirectMmio),
+        };
+        Ok(Self { operation })
     }
 
     pub const fn action(&self) -> PhyRxGainDcAction {
-        self.action
+        match self.operation {
+            DcMmio::ConfigureRegisters { enabled } => {
+                PhyRxGainDcAction::ConfigureRegisters { enabled }
+            }
+            DcMmio::ConfigurePbusDebugMode => PhyRxGainDcAction::ConfigurePbusDebugMode,
+            DcMmio::ConfigureClock { clock, enabled } => {
+                PhyRxGainDcAction::ConfigureClock { clock, enabled }
+            }
+            DcMmio::ReadPbus { selector, path } => PhyRxGainDcAction::ReadPbus { selector, path },
+            DcMmio::ConfigurePbusWorkMode => PhyRxGainDcAction::ConfigurePbusWorkMode,
+            DcMmio::ConfigurePbusWorkModePulse => PhyRxGainDcAction::ConfigurePbusWorkModePulse,
+            DcMmio::ClearPbusWorkModePulse => PhyRxGainDcAction::ClearPbusWorkModePulse,
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1914,16 +2384,16 @@ impl PhyRxGainDcMmioBinding {
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
     ) -> PhyRxGainDcCompletion {
-        match self.action {
-            PhyRxGainDcAction::ConfigureRegisters { enabled } => {
+        match self.operation {
+            DcMmio::ConfigureRegisters { enabled } => {
                 crate::hardware::configure_phy_rx_gain_dc_registers(registers, enabled);
                 PhyRxGainDcCompletion::RegistersConfigured { enabled }
             }
-            PhyRxGainDcAction::ConfigurePbusDebugMode => {
+            DcMmio::ConfigurePbusDebugMode => {
                 oer_esp32s31_hal::phy::pbus::configure_debug_mode(registers);
                 PhyRxGainDcCompletion::PbusDebugModeConfigured
             }
-            PhyRxGainDcAction::ConfigureClock { clock, enabled } => {
+            DcMmio::ConfigureClock { clock, enabled } => {
                 match clock {
                     PhyRxGainDcClock::Rx => {
                         oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, enabled)
@@ -1934,7 +2404,7 @@ impl PhyRxGainDcMmioBinding {
                 }
                 PhyRxGainDcCompletion::ClockConfigured { clock, enabled }
             }
-            PhyRxGainDcAction::ReadPbus { selector, path } => PhyRxGainDcCompletion::PbusRead {
+            DcMmio::ReadPbus { selector, path } => PhyRxGainDcCompletion::PbusRead {
                 selector,
                 path,
                 value: {
@@ -1947,20 +2417,17 @@ impl PhyRxGainDcMmioBinding {
                     u32::from(result.unwrap_or(0))
                 },
             },
-            PhyRxGainDcAction::ConfigurePbusWorkMode => {
-                PhyRxGainDcCompletion::PbusWorkModeConfigured {
-                    settle_required: oer_esp32s31_hal::phy::pbus::configure_work_mode(registers),
-                }
-            }
-            PhyRxGainDcAction::ConfigurePbusWorkModePulse => {
+            DcMmio::ConfigurePbusWorkMode => PhyRxGainDcCompletion::PbusWorkModeConfigured {
+                settle_required: oer_esp32s31_hal::phy::pbus::configure_work_mode(registers),
+            },
+            DcMmio::ConfigurePbusWorkModePulse => {
                 oer_esp32s31_hal::phy::agc::configure_pbus_work_mode_pulse(registers);
                 PhyRxGainDcCompletion::PbusWorkModePulseConfigured
             }
-            PhyRxGainDcAction::ClearPbusWorkModePulse => {
+            DcMmio::ClearPbusWorkModePulse => {
                 oer_esp32s31_hal::phy::agc::clear_pbus_work_mode_pulse(registers);
                 PhyRxGainDcCompletion::PbusWorkModePulseCleared
             }
-            _ => unreachable!(),
         }
     }
 }
@@ -2078,6 +2545,11 @@ impl PhyRxDcCalibrationExternalBinding {
     pub fn lower(
         action: PhyRxDcCalibrationAction,
     ) -> Result<Self, PhyRxGainCalibrationBindingError> {
+        if let PhyRxDcCalibrationAction::Minimum(action) = action {
+            return crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(action)
+                .map(Self::Minimum)
+                .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction);
+        }
         if let Ok(binding) = PhyRxDcCalibrationMmioBinding::new(action) {
             return Ok(Self::Mmio(binding));
         }
@@ -2087,11 +2559,7 @@ impl PhyRxDcCalibrationExternalBinding {
         if let Ok(binding) = PhyRxDcCalibrationTimerBinding::new(action) {
             return Ok(Self::Timer(binding));
         }
-        if let PhyRxDcCalibrationAction::Minimum(action) = action {
-            return crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(action)
-                .map(Self::Minimum)
-                .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction);
-        }
+
         Err(PhyRxGainCalibrationBindingError::UnsupportedAction)
     }
 }
@@ -2212,6 +2680,17 @@ pub enum PhyRxGainDcExternalBinding {
 
 impl PhyRxGainDcExternalBinding {
     pub fn lower(action: PhyRxGainDcAction) -> Result<Self, PhyRxGainCalibrationBindingError> {
+        match action {
+            PhyRxGainDcAction::Calibration(action) => {
+                return PhyRxDcCalibrationExternalBinding::lower(action).map(Self::Calibration);
+            }
+            PhyRxGainDcAction::Minimum(action) => {
+                return crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(action)
+                    .map(Self::Minimum)
+                    .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction);
+            }
+            _ => {}
+        }
         if let Ok(binding) = PhyRxGainDcMmioBinding::new(action) {
             return Ok(Self::Mmio(binding));
         }
@@ -2232,14 +2711,7 @@ impl PhyRxGainDcExternalBinding {
                     .map(Self::I2c)
                     .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction)
             }
-            PhyRxGainDcAction::Calibration(action) => {
-                PhyRxDcCalibrationExternalBinding::lower(action).map(Self::Calibration)
-            }
-            PhyRxGainDcAction::Minimum(action) => {
-                crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(action)
-                    .map(Self::Minimum)
-                    .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction)
-            }
+
             _ => Err(PhyRxGainCalibrationBindingError::UnsupportedAction),
         }
     }

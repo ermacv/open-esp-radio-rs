@@ -29,17 +29,28 @@ pub enum Operation {
     TxDcPwdet,
     TxGainPublication,
     FrequencySettle,
-    RxGainPrepare,
-    RxGainDc,
-    RxGainPublish,
-    RxGainControl,
-    RxGainAdvance,
+    RxGainDcPhase,
+    RxGainPublishPhase,
+    RxGainControlPhase,
 }
 
-pub const OPERATION_COUNT: usize = 19;
+pub const OPERATION_COUNT: usize = 17;
 const POLLED_COUNT: usize = 3;
 
 impl Operation {
+    /// Coarse phase boundaries independent of intrusive per-edge timing.
+    ///
+    /// Minimum searches and sampled inner/outer edges belong exclusively to
+    /// the explicit RX-step profile. Even a start/terminal timestamp pair per
+    /// minimum materially perturbs the calibration path it is meant to time.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn is_rx_gain_region(self) -> bool {
+        matches!(
+            self,
+            Self::RxGainDcPhase | Self::RxGainPublishPhase | Self::RxGainControlPhase
+        )
+    }
+
     const fn poll_index(self) -> Option<usize> {
         match self {
             Self::Dcode => Some(0),
@@ -121,15 +132,46 @@ pub struct Timing {
     pub maximum_micros: u32,
 }
 
+/// Clock-free execution counts published once after an RX-gain child.
+///
+/// These counters describe the variable hardware search path without placing
+/// timestamp callbacks in its hot loop. `minimum_operations` counts estimator
+/// actions across every minimum search; `outer_operations` counts the remaining
+/// RX-gain root actions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RxGainExecution {
+    pub minimum_searches: u32,
+    pub minimum_operations: u32,
+    pub outer_operations: u32,
+    pub settle_1us: u32,
+    pub settle_2us: u32,
+    pub settle_10us: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Report {
     pub rfpll: Option<super::rfpll::Observation>,
     pub timings: [Timing; OPERATION_COUNT],
     pub polls: [PollTiming; POLLED_COUNT],
+    pub rx_gain_execution: Option<RxGainExecution>,
     /// Clock reversal, overflow or malformed observations invalidate timing.
     pub invalid: bool,
     pub dcode_waits: wait::Report,
     pub tx_waits: wait::tx::Report,
+}
+
+impl Default for Report {
+    fn default() -> Self {
+        Self {
+            rfpll: None,
+            timings: [Timing::default(); OPERATION_COUNT],
+            polls: [PollTiming::default(); POLLED_COUNT],
+            rx_gain_execution: None,
+            invalid: false,
+            dcode_waits: Default::default(),
+            tx_waits: Default::default(),
+        }
+    }
 }
 
 impl Report {
@@ -147,11 +189,11 @@ impl Report {
 
 /// One serialized tracking invocation; different operation kinds may nest.
 /// The caller owns the monotonic clock and decides where this storage lives.
-#[derive(Default)]
 pub struct Recorder {
     rfpll: Option<super::rfpll::Observation>,
     timings: [Timing; OPERATION_COUNT],
     polls: [PollTiming; POLLED_COUNT],
+    rx_gain_execution: Option<RxGainExecution>,
     invalid: bool,
     active: [Option<u64>; OPERATION_COUNT],
     active_poll: [Option<u64>; POLLED_COUNT],
@@ -162,7 +204,34 @@ pub struct Recorder {
     tx_wait: wait::tx::Recorder,
 }
 
+impl Default for Recorder {
+    fn default() -> Self {
+        Self {
+            rfpll: None,
+            timings: [Timing::default(); OPERATION_COUNT],
+            polls: [PollTiming::default(); POLLED_COUNT],
+            rx_gain_execution: None,
+            invalid: false,
+            active: [None; OPERATION_COUNT],
+            active_poll: [None; POLLED_COUNT],
+            pending_since: [None; POLLED_COUNT],
+            poll_ready: [false; POLLED_COUNT],
+            last_observed: None,
+            wait: Default::default(),
+            tx_wait: Default::default(),
+        }
+    }
+}
+
 impl Recorder {
+    pub fn observe_rx_gain_execution(&mut self, execution: RxGainExecution) {
+        if self.active[Operation::RxGain as usize].is_none() || self.rx_gain_execution.is_some() {
+            self.invalid = true;
+            return;
+        }
+        self.rx_gain_execution = Some(execution);
+    }
+
     pub fn observe_rfpll(&mut self, observation: super::rfpll::Observation) {
         if self.active[Operation::Rfpll as usize].is_none() || self.rfpll.is_some() {
             self.invalid = true;
@@ -343,6 +412,7 @@ impl Recorder {
             rfpll: self.rfpll,
             timings: self.timings,
             polls: self.polls,
+            rx_gain_execution: self.rx_gain_execution,
             dcode_waits: self.wait.report(),
             tx_waits: self.tx_wait.report(),
             invalid: self.invalid || !self.wait.is_complete() || !self.tx_wait.is_complete(),
@@ -351,7 +421,7 @@ impl Recorder {
 }
 
 /// Observe existing polls without scheduling another poll or changing a waker.
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(test)]
 pub(crate) fn observe_polls<F: core::future::Future, O: FnMut(Event)>(
     future: F,
     observe: O,
@@ -359,7 +429,7 @@ pub(crate) fn observe_polls<F: core::future::Future, O: FnMut(Event)>(
     Observed { future, observe }
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(test)]
 pin_project_lite::pin_project! {
     /// Store the child directly, without another async state machine or a
     /// separately pinned local. Projection preserves its pinning and drop.
@@ -370,7 +440,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(test)]
 impl<F: core::future::Future, O: FnMut(Event)> core::future::Future for Observed<F, O> {
     type Output = F::Output;
 

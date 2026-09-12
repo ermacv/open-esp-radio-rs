@@ -69,11 +69,19 @@ fn rx_gain_evidence(
         }
     };
     open_esp_radio_hil_protocol::PhyRxGainEvidence {
-        prepare: timing(Operation::RxGainPrepare),
-        dc: timing(Operation::RxGainDc),
-        publish: timing(Operation::RxGainPublish),
-        control: timing(Operation::RxGainControl),
-        advance: timing(Operation::RxGainAdvance),
+        execution: report.rx_gain_execution.map(|execution| {
+            open_esp_radio_hil_protocol::PhyRxGainExecutionEvidence {
+                minimum_searches: execution.minimum_searches,
+                minimum_operations: execution.minimum_operations,
+                outer_operations: execution.outer_operations,
+                settle_1us: execution.settle_1us,
+                settle_2us: execution.settle_2us,
+                settle_10us: execution.settle_10us,
+            }
+        }),
+        dc_phase: timing(Operation::RxGainDcPhase),
+        publish_phase: timing(Operation::RxGainPublishPhase),
+        control_phase: timing(Operation::RxGainControlPhase),
     }
 }
 

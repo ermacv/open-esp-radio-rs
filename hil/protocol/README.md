@@ -1,7 +1,11 @@
-# HIL protocol v119
+# HIL protocol v126
 
-Host and firmware must both use version 119. Other versions are rejected
+Host and firmware must both use version 126. Other versions are rejected
 before interpreting their command and evidence layouts.
+
+`phy_rx_hot_sram` identifies the paired placement experiment. It requires the
+RX-delivery diagnostic image and moves the direct RX-gain transaction into
+internal SRAM without changing its graph or ROM short-delay policy.
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
 GDMA copy from SRAM/PSRAM into SRAM. A request specifies 1..=4096 payload bytes
@@ -278,3 +282,17 @@ Concurrent RX flow windows are not projected into one session continuity value.
 `StationPhyRxGain` carries disjoint RX gain executor intervals before the same
 request's pause completion. The host checks correlation, terminal counts and
 containment in the parent interval; missing detail invalidates timed evidence.
+
+RX gain detail carries disjoint DC, publication and control region timings even
+without per-edge timing. Minimum-search timings are nested in the DC region;
+they must not be added to region totals. Fine prepare/external/advance timings
+remain optional and form a separate decomposition. Region time includes waits,
+interrupts and observer overhead, and does not identify pure CPU time.
+
+RX detail also samples the first and every sixteenth subsequent minimum call
+and non-minimum DC executor step. Sampled minimum preparation, MMIO, settle,
+readiness and advancement are disjoint inside minimum_sample; outer preparation,
+execution and advancement are disjoint inside outer_sample. These counts/times
+cover only the selected calls, not the whole calibration or a random sample.
+Timing includes observer overhead and waits. Do not extrapolate sample totals as
+measured whole-operation cost. All region totals remain complete.

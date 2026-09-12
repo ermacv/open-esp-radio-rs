@@ -474,3 +474,59 @@ fn rx_gain_detail_is_required_exactly_when_timing_is_available() {
         .is_ok()
     );
 }
+
+#[test]
+fn rx_gain_phases_must_be_complete_and_fit_the_parent() {
+    use super::validate_rx_gain;
+    use open_esp_radio_hil_protocol::{
+        PhyOperationTiming, PhyRxGainEvidence, PhyRxGainExecutionEvidence, PhyTimingEvidence,
+    };
+    let timing = PhyTimingEvidence {
+        rx_gain: PhyOperationTiming {
+            started: 1,
+            completed: 1,
+            elapsed_micros: 100,
+            maximum_micros: 100,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let execution = Some(PhyRxGainExecutionEvidence {
+        minimum_searches: 121,
+        minimum_operations: 191,
+        outer_operations: 58,
+        settle_1us: 100,
+        settle_2us: 1,
+        settle_10us: 121,
+    });
+    let evidence = PhyRxGainEvidence {
+        execution,
+        dc_phase: PhyOperationTiming {
+            started: 1,
+            completed: 1,
+            elapsed_micros: 80,
+            maximum_micros: 80,
+            ..Default::default()
+        },
+        publish_phase: PhyOperationTiming {
+            started: 1,
+            completed: 1,
+            elapsed_micros: 15,
+            maximum_micros: 15,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(validate_rx_gain(Some(timing), Some(evidence)).is_ok());
+    let invalid = PhyRxGainEvidence {
+        control_phase: PhyOperationTiming {
+            started: 1,
+            completed: 1,
+            elapsed_micros: 6,
+            maximum_micros: 6,
+            ..Default::default()
+        },
+        ..evidence
+    };
+    assert!(validate_rx_gain(Some(timing), Some(invalid)).is_err());
+}

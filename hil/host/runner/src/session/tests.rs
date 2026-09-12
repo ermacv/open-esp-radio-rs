@@ -53,6 +53,7 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 station_lifecycle_events: true,
                 driver_observation_evidence: true,
                 rx_delivery_evidence: true,
+                phy_rx_hot_sram: false,
                 task_poll_evidence: false,
                 tx_architecture_probe: false,
                 core0_rx_cycle_evidence: false,
@@ -431,4 +432,20 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
     ));
     assert!(station_unchanged_since_in(&events, cursor).is_err());
     assert!(station_unchanged_since_in(&events, events.len() + 1).is_err());
+}
+
+#[test]
+fn pause_accepts_capability_reply_only_in_the_established_boot() {
+    use super::protocol::station_unchanged_since_in;
+    let mut reply = hello(7, 2);
+    reply.request_id = 11;
+    let mut events = vec![hello(7, 0), reply];
+    assert!(station_unchanged_since_in(&events, 1).is_ok());
+    events[1].boot_id = 8;
+    assert!(station_unchanged_since_in(&events, 1).is_err());
+    events[1] = hello(7, 2);
+    assert!(station_unchanged_since_in(&events, 1).is_err());
+    events[1] = Envelope::new(8, 2, 1, 11, Event::Accepted);
+    assert!(station_unchanged_since_in(&events, 1).is_err());
+    assert!(station_unchanged_since_in(&events, 0).is_err());
 }

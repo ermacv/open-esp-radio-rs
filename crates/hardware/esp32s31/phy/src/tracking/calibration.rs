@@ -1033,10 +1033,9 @@ impl PhyCalibrationRxGainTransition {
         reason = "the pending variant must return the non-allocating linear table owner"
     )]
     pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
-        let result = match self.child.action() {
-            crate::rx::gain::PhyRxGainInitAction::Complete(outcome) => Ok(outcome),
-            crate::rx::gain::PhyRxGainInitAction::Failed(failure) => Err(failure),
-            _ => return Err(self),
+        let result = match self.child.terminal() {
+            Some(result) => result,
+            None => return Err(self),
         };
         Ok(PhyCalibrationTrackingCompletion::RxGainRecalibrated(
             PhyCalibrationRxGainCompletion { result },

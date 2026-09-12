@@ -36,6 +36,7 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: !cfg!(feature = "memory-benchmark"),
             driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
+            phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
             tx_architecture_probe: cfg!(feature = "tx-architecture-probes"),
             core0_rx_cycle_evidence: cfg!(any(

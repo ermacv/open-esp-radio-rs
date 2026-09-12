@@ -359,7 +359,40 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
         PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::ControlRestorePrepared);
     let calibration_invalid =
         PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::ControlRestored);
+    let mut nested = calibration;
+    nested.step = Step::Minimum {
+        high: false,
+        transition: minimum,
+    };
+    let nested_valid = PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::Minimum(
+        PhyRxDcMinimumCompletion::DcIq(PhyDcIqCompletion::Configured(request)),
+    ));
+    let nested_invalid = PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::Minimum(
+        PhyRxDcMinimumCompletion::DcIq(PhyDcIqCompletion::ReadinessTimedOut(request)),
+    ));
     for (step, valid, invalid) in [
+        (
+            DcStep::FineCalibration {
+                index: 2,
+                transition: nested,
+            },
+            nested_valid,
+            nested_invalid,
+        ),
+        (
+            DcStep::CalibrateBaseband {
+                bank: PhyRxGainDcBank::Wifi,
+                index: 1,
+                transition: nested,
+            },
+            nested_valid,
+            nested_invalid,
+        ),
+        (
+            DcStep::CalibrateWifiRadio(nested),
+            nested_valid,
+            nested_invalid,
+        ),
         (DcStep::Rfpll(pll), pll_valid, pll_invalid),
         (DcStep::WifiRfpll(pll), pll_valid, pll_invalid),
         (DcStep::SharedI2c(i2c), i2c_valid, i2c_invalid),
@@ -405,6 +438,10 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
         dc.wifi_index_dc = [[0x101, 0x102]; 8];
         dc.shared_index_dc = [[0x121, 0x122]; 11];
         dc.rxbb_dc_adjustments = [[3, 7]; 6];
+        assert_eq!(
+            dc.lower_external(),
+            PhyRxGainDcExternalBinding::lower(dc.action())
+        );
         let before = dc;
         assert_eq!(
             dc.advance(invalid),
@@ -412,6 +449,10 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
         );
         assert_eq!(dc, before);
         dc.advance(valid).unwrap();
+        assert_eq!(
+            dc.lower_external(),
+            PhyRxGainDcExternalBinding::lower(dc.action())
+        );
         let accepted = dc;
         // Replaying a formerly valid completion must preserve the advanced
         // nested cursor as well as the already accumulated coefficient banks.
@@ -420,5 +461,137 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
             Err(PhyRxGainDcTransitionError::WrongCompletion)
         );
         assert_eq!(dc, accepted);
+    }
+}
+
+#[test]
+fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
+    use crate::calibration::estimator::{
+        PhyDcIqAccumulatorSnapshot, PhyDcIqAction, PhyDcIqCompletion, PhyDcIqReadinessSnapshot,
+    };
+    for timeout in [false, true] {
+        for high in [false, true] {
+            let minimum = PhyRxDcMinimumTransition::new(
+                PhyRxGainDcTransition::reference_minimum_request(PhyRxGainDcBank::Shared, high),
+            );
+            let mut calibration = PhyRxDcCalibrationTransition::new(RADIO);
+            calibration.step = Step::Minimum {
+                high,
+                transition: minimum,
+            };
+            for step in [
+                DcStep::ReferenceMinimum {
+                    bank: PhyRxGainDcBank::Shared,
+                    high,
+                    transition: minimum,
+                },
+                DcStep::ReferenceMinimum {
+                    bank: PhyRxGainDcBank::Wifi,
+                    high,
+                    transition: minimum,
+                },
+                DcStep::FineCalibration {
+                    index: 2,
+                    transition: calibration,
+                },
+                DcStep::CalibrateBaseband {
+                    bank: PhyRxGainDcBank::Wifi,
+                    index: 1,
+                    transition: calibration,
+                },
+                DcStep::CalibrateWifiRadio(calibration),
+            ] {
+                let mut fused = PhyRxGainDcTransition::new(PhyRxGainDcParameters {
+                    crystal_selector: 0,
+                    pbus_rx_path_value: 0xbf,
+                    rx_saturation_detected: false,
+                });
+                fused.step = step;
+                fused.wifi_index_dc = [[0x101, 0x102]; 8];
+                fused.shared_index_dc = [[0x121, 0x122]; 11];
+                let mut stepwise = fused;
+                for _ in 0..1000 {
+                    let before = fused;
+                    assert!(fused.finish_minimum().is_err());
+                    assert_eq!(fused, before, "early commit must not change any state");
+                    let action = fused.minimum_mut().unwrap().action();
+                    assert_eq!(stepwise.minimum_mut().unwrap().action(), action);
+                    let PhyRxDcMinimumAction::DcIq(action) = action else {
+                        panic!("pending estimator")
+                    };
+                    let completion = PhyRxDcMinimumCompletion::DcIq(match action {
+                        PhyDcIqAction::Configure(request) => PhyDcIqCompletion::Configured(request),
+                        PhyDcIqAction::SetEnable {
+                            request,
+                            phase,
+                            enabled,
+                        } => PhyDcIqCompletion::EnableSet {
+                            request,
+                            phase,
+                            enabled,
+                        },
+                        PhyDcIqAction::DelayMicros {
+                            request,
+                            phase,
+                            micros,
+                        } => PhyDcIqCompletion::DelayElapsed {
+                            request,
+                            phase,
+                            micros,
+                        },
+                        PhyDcIqAction::AwaitReadinessEdge { request, .. } if timeout => {
+                            PhyDcIqCompletion::ReadinessTimedOut(request)
+                        }
+                        PhyDcIqAction::AwaitReadinessEdge { request, .. } => {
+                            PhyDcIqCompletion::ReadinessObserved {
+                                request,
+                                snapshot: PhyDcIqReadinessSnapshot {
+                                    ready: true,
+                                    activity: false,
+                                },
+                            }
+                        }
+                        PhyDcIqAction::ReadAccumulators(request) => {
+                            PhyDcIqCompletion::AccumulatorsRead {
+                                request,
+                                snapshot: PhyDcIqAccumulatorSnapshot {
+                                    i: 0,
+                                    q: 0,
+                                    power: 0,
+                                },
+                            }
+                        }
+                        other => panic!("unexpected action {other:?}"),
+                    });
+                    let parent_completion = match step {
+                        DcStep::ReferenceMinimum { .. } => {
+                            PhyRxGainDcCompletion::Minimum(completion)
+                        }
+                        _ => PhyRxGainDcCompletion::Calibration(
+                            PhyRxDcCalibrationCompletion::Minimum(completion),
+                        ),
+                    };
+                    stepwise.advance(parent_completion).unwrap();
+                    fused.minimum_mut().unwrap().advance(completion).unwrap();
+                    if fused.minimum_mut().unwrap().terminal().is_some() {
+                        fused.finish_minimum().unwrap();
+                        assert_eq!(
+                            fused, stepwise,
+                            "terminal publication and cleanup must match"
+                        );
+                        assert!(fused.minimum_mut().is_none());
+                        let terminal = fused;
+                        assert!(fused.finish_minimum().is_err());
+                        assert_eq!(fused, terminal, "replayed commit must preserve cleanup");
+                        break;
+                    }
+                    assert_eq!(
+                        fused, stepwise,
+                        "intermediate actions and retained products must match"
+                    );
+                }
+                assert!(fused.minimum_mut().is_none(), "bounded minimum must finish");
+            }
+        }
     }
 }

@@ -44,6 +44,12 @@ pub(crate) fn classify_flashed_capabilities(
         };
         return (*features == expected).then_some(ImageClass::BluetoothDtm);
     }
+    if features.phy_rx_hot_sram {
+        let mut control = *features;
+        control.phy_rx_hot_sram = false;
+        return (classify_flashed_capabilities(&control) == Some(ImageClass::DiagnosticRxDelivery))
+            .then_some(ImageClass::DiagnosticRxDeliveryPhyHotSram);
+    }
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
         task_poll: features.task_poll_evidence,
@@ -824,6 +830,7 @@ fn audit_radio_observers<'a>(
             | ImageClass::DiagnosticTaskPoll
             | ImageClass::DiagnosticCore0RxCycles
             | ImageClass::DiagnosticRxDelivery
+            | ImageClass::DiagnosticRxDeliveryPhyHotSram
     );
     let range = critical.ok_or("missing critical data for HIL radio observers")?;
     let symbols: Vec<_> = symbols.collect();

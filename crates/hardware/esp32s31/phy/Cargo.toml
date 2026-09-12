@@ -10,14 +10,17 @@ description = "Allocation-free Rust ESP32-S31 PHY state machines"
 [features]
 default = []
 validation-probes = []
+# Experimental placement discriminator for the direct RX-gain transaction.
+# It changes code placement only; the recovered algorithm and waits are shared.
+rx-gain-hot-sram = []
 # Retain value-only RF measurements in registration and role start reports.
 registration-diagnostics = []
 
 [dependencies]
-pin-project-lite = "0.2.17"
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]
+pin-project-lite = "0.2.17"
 oer-esp32s31-hal = { path = "../hal", features = ["validation-probes"] }
 
 [lints]

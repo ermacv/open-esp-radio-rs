@@ -260,6 +260,56 @@ fn rx_dc_minimum_requires_three_attempts_between_36_and_47() {
 }
 
 #[test]
+fn direct_minimum_does_not_start_an_estimator_without_a_complete_budget() {
+    let mut called = false;
+    let result: Result<Option<PhyRxDcMinimumTargetCompletion>, ()> =
+        PhyRxDcMinimumTargetTransaction::new(MINIMUM_REQUEST).execute_with(
+            u32::from(crate::HARDWARE_EDGE_LIMIT) + 7,
+            |_, _| {
+                called = true;
+                panic!("an inadmissible estimator touched hardware")
+            },
+        );
+
+    assert_eq!(result, Ok(None));
+    assert!(!called);
+}
+
+#[test]
+fn direct_minimum_admits_the_exact_complete_estimator_budget() {
+    let mut allowance = 0;
+    let result: Result<Option<PhyRxDcMinimumTargetCompletion>, ()> =
+        PhyRxDcMinimumTargetTransaction::new(MINIMUM_REQUEST).execute_with(
+            u32::from(crate::HARDWARE_EDGE_LIMIT) + 8,
+            |estimator, maximum_samples| {
+                allowance = maximum_samples;
+                estimator.execute_with(
+                    maximum_samples,
+                    &mut (),
+                    |_, _| {},
+                    |_, _, _| {},
+                    |_, _| Ok(()),
+                    |_| PhyDcIqReadinessSnapshot {
+                        ready: true,
+                        activity: false,
+                    },
+                    |_| PhyDcIqAccumulatorSnapshot {
+                        i: 0,
+                        q: 0,
+                        power: 0,
+                    },
+                )
+            },
+        );
+
+    let completion = result.unwrap().expect("exact budget admits estimator");
+    assert_eq!(allowance, crate::HARDWARE_EDGE_LIMIT);
+    assert_eq!(completion.operations(), 9);
+    assert_eq!(completion.estimators(), 1);
+    assert!(completion.into_terminal().is_ok());
+}
+
+#[test]
 fn rx_dc_minimum_accepts_a_clean_attempt_after_prior_activity() {
     let mut transition = PhyRxDcMinimumTransition::new(MINIMUM_REQUEST);
     transition.accept_outcome(minimum_outcome(0, 20, 1));

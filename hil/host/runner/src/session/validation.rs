@@ -48,10 +48,13 @@ impl SessionEvidence {
             return Err(format!("inconsistent typed RX A-MPDU provenance: {rx:?}").into());
         }
         if expected_format == 2 {
+            // An HT association may briefly receive legacy OFDM data while
+            // the AP rate controller recovers after a radio pause. Legacy
+            // containment is protocol-proven false; only a positive A-MPDU
+            // claim must remain sourced from the HT-SIG aggregation bit.
             if rx.hardware_ampdu_datagrams == 0
                 || rx.ampdu_datagrams == 0
                 || rx.protocol_ampdu_datagrams != 0
-                || rx.protocol_not_ampdu_datagrams != 0
                 || rx.ampdu_unavailable_datagrams != 0
             {
                 return Err(format!("invalid typed HT A-MPDU provenance: {rx:?}").into());

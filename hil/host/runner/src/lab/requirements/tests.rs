@@ -46,6 +46,7 @@ fn system_and_ieee802154_diagnostics_do_not_need_a_network() {
 fn udp_evidence_and_optional_observer_have_distinct_owners() {
     let mut scenario = scenario(Workload::Udp {
         station_pause: None,
+        station_pause_after_millis: None,
         direction: Direction::Rx,
         duration_seconds: 1,
         rx_rate_bps: Some(1000),

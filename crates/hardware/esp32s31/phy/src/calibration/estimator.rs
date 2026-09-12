@@ -229,7 +229,7 @@ impl PhyDcIqTargetCompletion {
         self.operations
     }
 
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn into_terminal(self) -> Result<PhyDcIqEstimateOutcome, PhyDcIqFailure> {
         match self.terminal {
             PhyDcIqTerminal::Complete(outcome) => Ok(outcome),

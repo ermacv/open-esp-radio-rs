@@ -469,9 +469,8 @@ pub(crate) fn validate_ht40_rx_vector(
 ) -> Result<()> {
     let long_total = u64::from(radio.ht40_long_gi_frames);
     let short_total = u64::from(radio.ht40_short_gi_frames);
-    let vector_total = long_total
-        .saturating_add(short_total)
-        .saturating_add(u64::from(radio.ht_invalid_frames));
+    let ht40_total = long_total.saturating_add(short_total);
+    let vector_total = ht40_total.saturating_add(u64::from(radio.ht_invalid_frames));
     let observed_udp = u64::from(radio.s_mpdu_datagrams)
         .saturating_add(u64::from(radio.not_s_mpdu_datagrams))
         .saturating_add(u64::from(radio.s_mpdu_unavailable_datagrams));
@@ -481,12 +480,8 @@ pub(crate) fn validate_ht40_rx_vector(
         )
         .into());
     }
-    if radio.ht_invalid_frames != 0 {
-        return Err(format!(
-            "HT RX did not remain inside MCS0..7/40 MHz: invalid={}",
-            radio.ht_invalid_frames,
-        )
-        .into());
+    if ht40_total == 0 {
+        return Err("HT40 RX interval did not contain an HT40 benchmark vector".into());
     }
     if let Some(minimum_mcs) = minimum_mcs {
         if minimum_mcs != 7 {
@@ -495,10 +490,10 @@ pub(crate) fn validate_ht40_rx_vector(
             )
             .into());
         }
-        if radio.ht40_below_mcs7_frames != 0 {
+        if radio.ht40_below_mcs7_frames != 0 || radio.ht_invalid_frames != 0 {
             return Err(format!(
-                "HT40 RX used a vector below MCS7: below={}",
-                radio.ht40_below_mcs7_frames,
+                "HT40 RX did not remain at MCS7: below={} non_ht40={}",
+                radio.ht40_below_mcs7_frames, radio.ht_invalid_frames,
             )
             .into());
         }
@@ -595,11 +590,6 @@ impl RxAmpduEvidence {
     pub(super) fn hardware_observed_datagrams(self) -> u64 {
         self.hardware_ampdu_datagrams
             .saturating_add(self.hardware_not_ampdu_datagrams)
-    }
-
-    pub(super) fn protocol_validated_datagrams(self) -> u64 {
-        self.protocol_ampdu_datagrams
-            .saturating_add(self.protocol_not_ampdu_datagrams)
     }
 }
 

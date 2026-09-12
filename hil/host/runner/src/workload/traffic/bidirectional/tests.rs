@@ -87,6 +87,7 @@ fn ht40_rx_vector_gate_covers_the_complete_interval_and_guard_policy() {
     radio.ht40_below_mcs7_frames = 0;
     radio.ht40_long_gi_frames = 99;
     radio.ht_invalid_frames = 1;
+    validate_ht40_rx_vector(&radio, None, HtGuardIntervalExpectation::Any).unwrap();
     assert!(validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).is_err());
 
     radio.ht_invalid_frames = 0;
@@ -94,6 +95,10 @@ fn ht40_rx_vector_gate_covers_the_complete_interval_and_guard_policy() {
         validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).is_err(),
         "missing one vector must fail instead of being treated as sampling",
     );
+
+    radio.ht40_long_gi_frames = 0;
+    radio.ht_invalid_frames = 100;
+    assert!(validate_ht40_rx_vector(&radio, None, HtGuardIntervalExpectation::Any).is_err());
 }
 
 #[test]
@@ -412,13 +417,24 @@ fn parses_current_production_rx_benchmark_evidence() {
         ampdu_datagrams: 4_500,
         not_ampdu_datagrams: 500,
         hardware_ampdu_datagrams: 4_500,
-        hardware_not_ampdu_datagrams: 500,
+        hardware_not_ampdu_datagrams: 498,
+        protocol_not_ampdu_datagrams: 2,
         ..RxAmpduEvidence::default()
     };
     assert_eq!(
         qualify_rx_report(&report, 2).unwrap().ampdu.ampdu_datagrams,
         4_500
     );
+    report.rx_ampdu[0].protocol_ampdu_datagrams = 1;
+    report.rx_ampdu[0].hardware_ampdu_datagrams = 4_499;
+    assert!(
+        qualify_rx_report(&report, 2)
+            .unwrap_err()
+            .to_string()
+            .contains("did not remain hardware-sourced")
+    );
+    report.rx_ampdu[0].protocol_ampdu_datagrams = 0;
+    report.rx_ampdu[0].hardware_ampdu_datagrams = 4_500;
     report.rx_ampdu[0].unavailable_datagrams = 1;
     assert!(
         qualify_rx_report(&report, 2)

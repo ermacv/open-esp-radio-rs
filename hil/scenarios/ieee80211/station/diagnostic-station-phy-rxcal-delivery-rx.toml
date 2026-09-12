@@ -1,11 +1,11 @@
 schema = 4
 id = "diagnostic-station-phy-rxcal-delivery-rx"
 description = "Common-calibration root/poll timing without per-edge RX observation or PM during RX UDP delivery"
-repetitions = 1
+repetitions = 3
 image = "diagnostic-rx-delivery"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "station", "pause", "udp", "ht40"]
+tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40"]
 
 [link]
 phy = "ht40"
@@ -20,5 +20,6 @@ station_pause = "common-calibration"
 
 [criteria]
 exact_delivery = false
-minimum_rx_bps = 10000000
+minimum_rx_bps = 60000000
+maximum_rx_silence_ms = 50
 require_no_beacon_loss = true

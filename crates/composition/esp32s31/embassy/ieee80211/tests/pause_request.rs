@@ -39,6 +39,7 @@ fn simultaneous_explicit_request_leaves_automatic_observation_available() {
         pause_request::TrackingStatus::Pending(_)
     ));
     let report = PauseReport {
+        #[cfg(feature = "diagnostics")]
         timings: None,
         tracking: None,
         elapsed_micros: 7,
@@ -121,6 +122,7 @@ fn cancellation_cannot_reuse_an_inflight_request_or_deliver_a_stale_completion()
         Poll::Ready(Err(PauseError::Busy))
     );
     requests.finish(Ok(PauseReport {
+        #[cfg(feature = "diagnostics")]
         timings: None,
         tracking: None,
         elapsed_micros: 17,
@@ -288,4 +290,34 @@ fn invalid_hold_is_rejected_before_reserving_the_request_channel() {
             notify_ap: true
         })
     );
+}
+
+#[cfg(not(feature = "diagnostics"))]
+#[test]
+fn operational_pause_report_excludes_the_diagnostic_snapshot_layout() {
+    assert!(
+        core::mem::size_of::<PauseReport>() <= 128,
+        "the production completion signal must not retain PHY diagnostic storage"
+    );
+
+    let mut report = PauseReport {
+        tracking: None,
+        elapsed_micros: 1,
+    };
+    assert!(report.timings().is_none());
+    report.discard_timings();
+    assert!(report.timings().is_none());
+}
+
+#[cfg(feature = "diagnostics")]
+#[test]
+fn diagnostic_pause_report_exposes_and_discards_its_snapshot() {
+    let mut report = PauseReport {
+        timings: Some(Default::default()),
+        tracking: None,
+        elapsed_micros: 1,
+    };
+    assert!(report.timings().is_some());
+    report.discard_timings();
+    assert!(report.timings().is_none());
 }

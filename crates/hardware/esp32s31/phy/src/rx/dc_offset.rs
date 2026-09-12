@@ -159,23 +159,90 @@ pub struct PhyRxDcMinimumTransition {
     readiness_activity_edges: u16,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PhyRxDcMinimumPolicyState {
+    attempts: u8,
+    best: PhyDcIqEstimate,
+    minimum_power: i32,
+    readiness_activity_edges: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyRxDcMinimumDecision {
+    Continue,
+    Complete(PhyRxDcMinimumOutcome),
+}
+
+impl PhyRxDcMinimumPolicyState {
+    #[cfg(any(target_arch = "riscv32", test))]
+    const fn new() -> Self {
+        Self {
+            attempts: 0,
+            best: PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 100,
+            },
+            minimum_power: 100,
+            readiness_activity_edges: 0,
+        }
+    }
+
+    fn accept(
+        &mut self,
+        request: PhyRxDcMinimumRequest,
+        outcome: PhyDcIqEstimateOutcome,
+    ) -> PhyRxDcMinimumDecision {
+        self.readiness_activity_edges = self
+            .readiness_activity_edges
+            .wrapping_add(outcome.readiness_activity_edges);
+
+        // `phy_iq_est_enable` clears `phy_param[0x1ac]` before every child
+        // estimate, so admission considers this attempt's activity only.
+        if outcome.estimate.power < self.minimum_power
+            && (outcome.readiness_activity_edges == 0 || request.rx_saturation_detected)
+        {
+            self.best = outcome.estimate;
+            self.minimum_power = outcome.estimate.power;
+        }
+
+        self.attempts += 1;
+        let complete = self.minimum_power < 36 || (self.attempts >= 3 && self.minimum_power < 48);
+        if !complete && self.attempts < RX_DC_MINIMUM_MAX_ATTEMPTS {
+            return PhyRxDcMinimumDecision::Continue;
+        }
+
+        let mut estimate = self.best;
+        if !complete {
+            // ROM overwrites output word two with this terminal sentinel.
+            estimate.power = 0x38;
+        }
+        PhyRxDcMinimumDecision::Complete(PhyRxDcMinimumOutcome {
+            request,
+            estimate,
+            attempts: self.attempts,
+            readiness_activity_edges: self.readiness_activity_edges,
+        })
+    }
+}
+
 /// One complete ROM-shaped `phy_rxdc_est_min` transaction. The estimator
 /// retry loop and selector stay below the RX calibration cursor.
 #[derive(Debug, Eq, PartialEq)]
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct PhyRxDcMinimumTargetTransaction {
     request: PhyRxDcMinimumRequest,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct PhyRxDcMinimumTargetCompletion {
     terminal: Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure>,
     operations: u32,
     estimators: u8,
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl PhyRxDcMinimumTargetCompletion {
     pub(crate) const fn operations(&self) -> u32 {
         self.operations
@@ -192,13 +259,14 @@ impl PhyRxDcMinimumTargetCompletion {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl PhyRxDcMinimumTargetTransaction {
     pub(crate) const fn new(request: PhyRxDcMinimumRequest) -> Self {
         Self { request }
     }
 
     #[inline]
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn execute_target<D: crate::target_executor::PhyShortDelay>(
         self,
         maximum_operations: u32,
@@ -241,66 +309,36 @@ impl PhyRxDcMinimumTargetTransaction {
             -> Result<crate::calibration::estimator::PhyDcIqTargetCompletion, E>,
     ) -> Result<Option<PhyRxDcMinimumTargetCompletion>, E> {
         let mut operations = 0_u32;
-        let mut estimators = 0_u8;
-        let mut best = PhyDcIqEstimate {
-            i: 0,
-            q: 0,
-            power: 100,
-        };
-        let mut minimum_power = 100;
-        let mut readiness_activity_edges = 0_u16;
+        let mut policy = PhyRxDcMinimumPolicyState::new();
         loop {
             let available = maximum_operations.saturating_sub(operations);
-            if available <= 8 {
+            let complete_estimator_allowance = u32::from(crate::HARDWARE_EDGE_LIMIT) + 8;
+            if available < complete_estimator_allowance {
                 return Ok(None);
             }
-            let allowance = u16::try_from(
-                available
-                    .saturating_sub(8)
-                    .min(u32::from(u16::MAX))
-                    .min(u32::from(crate::HARDWARE_EDGE_LIMIT)),
-            )
-            .expect("bounded estimator allowance fits u16");
-            let request = PhyRxDcMinimumTransition::estimate_request(self.request, estimators);
+            let allowance = crate::HARDWARE_EDGE_LIMIT;
+            let request = PhyRxDcMinimumTransition::estimate_request(self.request, policy.attempts);
             let completion = execute(
                 crate::calibration::estimator::PhyDcIqTargetTransaction::new(request),
                 allowance,
             )?;
             operations = operations.saturating_add(u32::from(completion.operations()));
-            estimators += 1;
             let outcome = match completion.into_terminal() {
                 Ok(outcome) => outcome,
                 Err(failure) => {
                     return Ok(Some(PhyRxDcMinimumTargetCompletion {
                         terminal: Err(PhyRxDcMinimumFailure::DcIq(failure)),
                         operations,
-                        estimators,
+                        estimators: policy.attempts + 1,
                     }));
                 }
             };
-            readiness_activity_edges =
-                readiness_activity_edges.wrapping_add(outcome.readiness_activity_edges);
-            if outcome.estimate.power < minimum_power
-                && (outcome.readiness_activity_edges == 0 || self.request.rx_saturation_detected)
+            if let PhyRxDcMinimumDecision::Complete(outcome) = policy.accept(self.request, outcome)
             {
-                best = outcome.estimate;
-                minimum_power = outcome.estimate.power;
-            }
-
-            let complete = minimum_power < 36 || (estimators >= 3 && minimum_power < 48);
-            if complete || estimators == RX_DC_MINIMUM_MAX_ATTEMPTS {
-                if !complete {
-                    best.power = 0x38;
-                }
                 return Ok(Some(PhyRxDcMinimumTargetCompletion {
-                    terminal: Ok(PhyRxDcMinimumOutcome {
-                        request: self.request,
-                        estimate: best,
-                        attempts: estimators,
-                        readiness_activity_edges,
-                    }),
+                    terminal: Ok(outcome),
                     operations,
-                    estimators,
+                    estimators: policy.attempts,
                 }));
             }
         }
@@ -360,47 +398,30 @@ impl PhyRxDcMinimumTransition {
     }
 
     fn accept_outcome(&mut self, outcome: PhyDcIqEstimateOutcome) {
-        self.readiness_activity_edges = self
-            .readiness_activity_edges
-            .wrapping_add(outcome.readiness_activity_edges);
-
-        // `phy_iq_est_enable` clears `phy_param[0x1ac]` before every child
-        // estimate.  The minimum selector therefore tests only this
-        // attempt's activity count.  Keep the sum solely as an owned
-        // diagnostic; using it as the acceptance gate would permanently
-        // reject clean later attempts after one active sample.
-        if outcome.estimate.power < self.minimum_power
-            && (outcome.readiness_activity_edges == 0 || self.request.rx_saturation_detected)
-        {
-            self.best = outcome.estimate;
-            self.minimum_power = outcome.estimate.power;
-        }
-
-        let attempts = self.attempt + 1;
-        if self.minimum_power < 36 || (attempts >= 3 && self.minimum_power < 48) {
-            self.step = PhyRxDcMinimumStep::Complete(PhyRxDcMinimumOutcome {
-                request: self.request,
-                estimate: self.best,
-                attempts,
-                readiness_activity_edges: self.readiness_activity_edges,
-            });
-        } else if attempts == RX_DC_MINIMUM_MAX_ATTEMPTS {
-            // The ROM unconditionally overwrites only output word two with
-            // 0x38 on this path. Rust keeps deterministic I/Q ownership and
-            // reproduces that final power sentinel.
-            let mut estimate = self.best;
-            estimate.power = 0x38;
-            self.step = PhyRxDcMinimumStep::Complete(PhyRxDcMinimumOutcome {
-                request: self.request,
-                estimate,
-                attempts,
-                readiness_activity_edges: self.readiness_activity_edges,
-            });
-        } else {
-            self.attempt = attempts;
-            self.step = PhyRxDcMinimumStep::Measure(PhyDcIqEstimateTransition::new(
-                Self::estimate_request(self.request, attempts),
-            ));
+        let mut policy = PhyRxDcMinimumPolicyState {
+            attempts: self.attempt,
+            best: self.best,
+            minimum_power: self.minimum_power,
+            readiness_activity_edges: self.readiness_activity_edges,
+        };
+        match policy.accept(self.request, outcome) {
+            PhyRxDcMinimumDecision::Continue => {
+                self.attempt = policy.attempts;
+                self.best = policy.best;
+                self.minimum_power = policy.minimum_power;
+                self.readiness_activity_edges = policy.readiness_activity_edges;
+                let attempts = policy.attempts;
+                self.step = PhyRxDcMinimumStep::Measure(PhyDcIqEstimateTransition::new(
+                    Self::estimate_request(self.request, attempts),
+                ));
+            }
+            PhyRxDcMinimumDecision::Complete(outcome) => {
+                self.attempt = policy.attempts;
+                self.best = policy.best;
+                self.minimum_power = policy.minimum_power;
+                self.readiness_activity_edges = policy.readiness_activity_edges;
+                self.step = PhyRxDcMinimumStep::Complete(outcome);
+            }
         }
     }
 

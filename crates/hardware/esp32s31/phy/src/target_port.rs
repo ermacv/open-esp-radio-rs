@@ -2155,7 +2155,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
         observer: &core::cell::RefCell<&mut O>,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-        calibration::tx_dc_pwdet_init::<D, _>(child.transition_mut(), registers, observer)?;
+        calibration::tx_dc_pwdet_init::<D::ShortDelay, _>(
+            child.transition_mut(),
+            registers,
+            observer,
+            D::now_micros,
+        )?;
         child
             .commit()
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)

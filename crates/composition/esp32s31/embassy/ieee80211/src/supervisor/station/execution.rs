@@ -345,7 +345,7 @@ pub(super) async fn run(
 // unwound. Its by-value signal payload need not live on the calibration stack.
 #[inline(never)]
 fn finish_pause(
-    mailbox: &ConnectedDatapathMailbox,
+    _mailbox: &ConnectedDatapathMailbox,
     result: Result<
         Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
         super::PauseError,
@@ -354,7 +354,8 @@ fn finish_pause(
 ) {
     super::pause_request::REQUESTS.finish(result.map(|tracking| {
         super::PauseReport {
-            timings: mailbox.pause.timings(),
+            #[cfg(feature = "diagnostics")]
+            timings: _mailbox.pause.timings(),
             tracking,
             elapsed_micros: embassy_time::Instant::now()
                 .duration_since(started)

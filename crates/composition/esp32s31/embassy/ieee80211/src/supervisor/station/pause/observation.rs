@@ -1,5 +1,7 @@
 //! Diagnostic storage is outside the nested PHY future and borrowed per event.
-use oer_esp32s31_phy::{PhyTargetObserver, tracking::observation::Report};
+use oer_esp32s31_phy::PhyTargetObserver;
+#[cfg(feature = "diagnostics")]
+use oer_esp32s31_phy::tracking::observation::Report;
 
 #[derive(Default)]
 pub(super) struct Storage {
@@ -25,15 +27,9 @@ impl Storage {
         }
     }
 
+    #[cfg(feature = "diagnostics")]
     pub fn report(&self) -> Option<Report> {
-        #[cfg(feature = "diagnostics")]
-        {
-            Some(self.recorder.borrow().report())
-        }
-        #[cfg(not(feature = "diagnostics"))]
-        {
-            None
-        }
+        Some(self.recorder.borrow().report())
     }
 
     pub fn observer(&self) -> impl PhyTargetObserver + '_ {

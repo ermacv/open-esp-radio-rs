@@ -14,6 +14,8 @@ printf '#!/bin/sh\ntest -f "$2"\n' >"$HOSTAPD"
 chmod 0700 "$HOSTAPD"
 take_network_manager_ownership() { :; }
 remember_wifi_identity() { :; }
+acquire_wifi_rfkill() { :; }
+restore_wifi_rfkill() { :; }
 restore_managed_interface() { :; }
 /usr/bin/ip() { :; }
 /usr/bin/iw() { :; }

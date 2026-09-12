@@ -324,7 +324,7 @@ impl PeripheralConnectionSchedulerRecycled {
     /// Copied receive batch which no longer aliases controller SRAM.
     pub const fn received(
         &self,
-    ) -> oer_esp32s31_bluetooth_memory::LeReceivedBatch<
+    ) -> &oer_esp32s31_bluetooth_memory::LeReceivedBatch<
         { oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT },
     > {
         self.event.received()
@@ -399,7 +399,7 @@ impl PeripheralConnectionSchedulerCompleted {
 
     pub const fn received(
         &self,
-    ) -> oer_esp32s31_bluetooth_memory::LeReceivedBatch<
+    ) -> &oer_esp32s31_bluetooth_memory::LeReceivedBatch<
         { oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT },
     > {
         self.event.received()

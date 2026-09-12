@@ -177,6 +177,11 @@ pub enum Workload {
         direction: Direction,
         #[serde(default)]
         station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
+        /// Delay after both traffic endpoints report progress and before the
+        /// maintenance request. This keeps thermal preconditioning explicit
+        /// in the scenario instead of relying on an unrecorded host sleep.
+        #[serde(default)]
+        station_pause_after_millis: Option<u32>,
         duration_seconds: u16,
         rx_rate_bps: Option<u64>,
         tx_rate_bps: Option<u64>,

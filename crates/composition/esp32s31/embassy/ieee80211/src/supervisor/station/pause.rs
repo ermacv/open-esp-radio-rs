@@ -46,6 +46,7 @@ impl Storage {
         }
     }
 
+    #[cfg(feature = "diagnostics")]
     pub(super) fn timings(&self) -> Option<oer_esp32s31_phy::tracking::observation::Report> {
         self.observations.report()
     }

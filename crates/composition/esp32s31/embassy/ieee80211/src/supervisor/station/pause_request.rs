@@ -59,10 +59,42 @@ pub enum PauseOperation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PauseReport {
+    /// Detailed observations exist only in diagnostic firmware. Keeping the
+    /// payload out of the type removes it from the request signal and normal
+    /// runtime futures when diagnostics are disabled.
+    #[cfg(feature = "diagnostics")]
     pub timings: Option<oer_esp32s31_phy::tracking::observation::Report>,
     /// Stop/resume plus optional PM exchanges; excludes requester queuing and prior TX drain.
     pub elapsed_micros: u64,
     pub tracking: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+}
+
+impl PauseReport {
+    /// Return detailed timing observations when this firmware includes them.
+    ///
+    /// Keeping this accessor available in every feature profile lets HIL and
+    /// other generic consumers use one API without retaining the diagnostic
+    /// payload in production request storage.
+    pub const fn timings(&self) -> Option<&oer_esp32s31_phy::tracking::observation::Report> {
+        #[cfg(feature = "diagnostics")]
+        {
+            self.timings.as_ref()
+        }
+        #[cfg(not(feature = "diagnostics"))]
+        {
+            None
+        }
+    }
+
+    /// Discard observations when a caller replaces the measured interval with
+    /// a wider aggregate interval. This is a no-op in compact production
+    /// builds, where the diagnostic payload does not exist.
+    pub fn discard_timings(&mut self) {
+        #[cfg(feature = "diagnostics")]
+        {
+            self.timings = None;
+        }
+    }
 }
 
 struct State {

@@ -52,6 +52,7 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
     pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
+    pub(crate) station_pause_after: Duration,
     pub(crate) device: Ipv4Addr,
     pub(crate) port: u16,
     pub(crate) duration: Duration,
@@ -331,6 +332,7 @@ pub(crate) fn run(
         let result = receiver
             .wait_started(Duration::from_secs(3))
             .and_then(|before| {
+                super::maintenance::wait_after_progress(options.station_pause_after);
                 super::maintenance::run(
                     &capture,
                     operation,
@@ -744,6 +746,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             station_pause: None,
+            station_pause_after: Duration::ZERO,
             device: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             duration: DEFAULT_DURATION,

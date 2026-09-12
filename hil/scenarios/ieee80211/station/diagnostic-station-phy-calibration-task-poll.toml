@@ -1,11 +1,11 @@
 schema = 4
-id = "diagnostic-station-rx-baseline-delivery"
-description = "RX diagnostic isolation: no maintenance"
+id = "diagnostic-station-phy-calibration-task-poll"
+description = "Combined PHY calibration with Core0 task residence under sustained RX delivery"
 repetitions = 3
-image = "diagnostic-rx-delivery"
+image = "diagnostic-task-poll"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "station", "pause", "udp", "ht40"]
+tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40", "task-poll"]
 
 [link]
 phy = "ht40"
@@ -16,6 +16,7 @@ direction = "rx"
 duration_seconds = 12
 rx_rate_bps = 65000000
 payload_bytes = 1200
+station_pause = "calibration"
 
 [criteria]
 exact_delivery = false

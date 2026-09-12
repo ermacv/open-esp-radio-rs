@@ -181,9 +181,11 @@ does not make a long calibration harmless to traffic.
 The event-driven RX-gain transitions remain executable semantic models for host
 tests and vendor comparison. Production calls the same source-owned arithmetic
 and finite hardware primitives directly, without creating an async boundary or
-moving a large action enum at each hot edge. Nested work consumes the same root
-operation budget; exhaustion cannot produce a complete coefficient set, and
-failure retains the recovered cleanup and outer-control restoration sequence.
+moving a large action enum at each hot edge. Every nested DC/IQ estimator
+consumes the same root operation budget, while the fixed outer calibration
+graph has its own finite structural bounds. Budget exhaustion cannot produce a
+complete coefficient set, and failure retains the recovered cleanup and
+outer-control restoration sequence.
 
 The fixed bank encodings are generated at compile time and shared as read-only
 data. Measured DC coefficients remain in the individual transition, and entry

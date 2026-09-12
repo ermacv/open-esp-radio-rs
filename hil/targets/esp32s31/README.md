@@ -504,6 +504,13 @@ invalid-clock samples do not execute RFPLL. No timed host sleep supplies readine
 The host retains the first operation in `station-temperature.json` and RFPLL
 in `station-pause.json`; a missing/deferred result fails the scenario.
 
+`diagnostic-station-phy-rfpll-thermal-observed` keeps the same station and PHY
+epoch under a 20 Mbit/s TX workload for 60 seconds before acquiring the fresh
+temperature and requesting RFPLL evaluation. The delay is part of the scenario
+manifest and leaves 30 seconds for the operation and restored traffic. It is the
+manual thermal-stimulus profile; the runner still owns router setup, capture,
+the maintenance request and cleanup.
+
 RFPLL detail includes `sample_age_micros`, measured from sensor acquisition
 start to RFPLL entry, including acquisition waits and the subsequent handoff.
 `None` means usable acquisition/observation timing is unavailable. The observed
@@ -526,6 +533,20 @@ measurement window is not shortened. `station-pause.json` retains the admission
 milestones and correlated operation evidence. Completion counts establish child
 coverage, not register readback, RF quality or event ordering. Radio restoration
 must preserve the station epoch; transport results retain any delivery loss.
+
+`diagnostic-station-phy-calibration-task-poll` executes the combined calibration
+under the same sustained RX offer with the `diagnostic-task-poll` image. It is the
+correlation profile for synchronous maintenance residence: the radio task's boot
+maximum and `>5000 us` count identify the poll containing the transaction, while
+`station-pause.json` retains the physical round-trip, child timings and timer
+IRQ-to-dispatch interval. Network and UDP RX poll maxima come from the CPU1
+executor in the split data plane and show whether the other core continued to
+run. The boot maximum is a lifetime maximum, so it is evidence for the workload
+interval only when the interval contains a long-poll increment and the value
+correlates with the maintenance timing. This diagnostic does not establish an
+acceptable production task-residence budget.
+`diagnostic-station-phy-baseline-task-poll` is its same-image, same-load control
+without a maintenance request.
 
 With driver observation enabled, single-flow RX sessions retain the first eight
 legacy/unknown PHY observations as `ORX_ANOMALY`, with UDP sequence (including

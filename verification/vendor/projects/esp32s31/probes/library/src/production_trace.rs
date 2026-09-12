@@ -244,10 +244,11 @@ pub extern "C" fn open_phy_calibration_trace_tx_dc_pwdet(
     let mut radio =
         oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
     let mut observer = NoopPhyTargetObserver;
-    match calibration::tx_dc_pwdet_init::<ProductionTraceDelay, _>(
+    match calibration::tx_dc_pwdet_init::<oer_esp32s31_phy::RomShortDelay, _>(
         &mut child,
         radio.phy_hal_mut(),
         &core::cell::RefCell::new(&mut observer),
+        || None,
     ) {
         Ok(()) => {},
         Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
@@ -399,23 +400,29 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
     };
     let mut radio =
         oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-    let mut child = PhyRxGainInitTransition::new(PhyRxGainInitParameters {
-        dc_calibrated: flags & 1 != 0,
-        tables_initialized: flags & 2 != 0,
-        dc: PhyRxGainDcParameters {
-            crystal_selector,
-            pbus_rx_path_value: pbus_rx_path,
-            rx_saturation_detected: flags & 4 != 0,
-        },
-        memory: PhyRxGainMemoryParameters {
-            parameter_002: pbus_rx_path,
-            wifi_index_dc: core::array::from_fn(|i| [input[2 * i], input[2 * i + 1]]),
-            wifi_dc_base: [input[16], input[17]],
-            shared_index_dc: core::array::from_fn(|i| [input[18 + 2 * i], input[19 + 2 * i]]),
-            rxbb_dc_adjustments: core::array::from_fn(|i| [input[40 + 2 * i], input[41 + 2 * i]]),
-            wifi_auxiliary: input[52],
-        },
-    });
+    let mut child = if flags & 2 != 0 {
+        PhyRxGainInitTransition::with_initialized_tables()
+    } else {
+        PhyRxGainInitTransition::new(PhyRxGainInitParameters {
+            dc_calibrated: flags & 1 != 0,
+            tables_initialized: false,
+            dc: PhyRxGainDcParameters {
+                crystal_selector,
+                pbus_rx_path_value: pbus_rx_path,
+                rx_saturation_detected: flags & 4 != 0,
+            },
+            memory: PhyRxGainMemoryParameters {
+                parameter_002: pbus_rx_path,
+                wifi_index_dc: core::array::from_fn(|i| [input[2 * i], input[2 * i + 1]]),
+                wifi_dc_base: [input[16], input[17]],
+                shared_index_dc: core::array::from_fn(|i| [input[18 + 2 * i], input[19 + 2 * i]]),
+                rxbb_dc_adjustments: core::array::from_fn(|i| {
+                    [input[40 + 2 * i], input[41 + 2 * i]]
+                }),
+                wifi_auxiliary: input[52],
+            },
+        })
+    };
     match oer_esp32s31_phy::target_port::calibration::rx_gain_init::<
         oer_esp32s31_phy::RomShortDelay,
         _,
@@ -434,7 +441,6 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
     let Some(Ok(result)) = child.terminal() else {
         return 4;
     };
-    output[..52].copy_from_slice(&input[..52]);
     if let Some(dc) = result.dc {
         for (destination, source) in output[..16].chunks_exact_mut(2).zip(dc.wifi_index_dc) {
             destination.copy_from_slice(&source);

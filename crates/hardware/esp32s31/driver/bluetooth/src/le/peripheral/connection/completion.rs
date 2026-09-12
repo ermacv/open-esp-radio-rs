@@ -466,8 +466,8 @@ impl PeripheralConnectionCompletedEvent {
         self.status
     }
 
-    pub(crate) const fn received(&self) -> LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
-        self.batch
+    pub(crate) const fn received(&self) -> &LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        &self.batch
     }
 
     pub(crate) const fn packet_start(&self) -> Option<&PeripheralConnectionPacketStartTiming> {
@@ -556,8 +556,8 @@ impl PeripheralConnectionRecycledEvent {
         self.status
     }
 
-    pub(crate) const fn received(&self) -> LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
-        self.batch
+    pub(crate) const fn received(&self) -> &LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        &self.batch
     }
 
     pub(crate) fn classify_completion(

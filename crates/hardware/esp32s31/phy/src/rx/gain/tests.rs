@@ -676,3 +676,33 @@ fn coarse_regions_follow_owned_children_without_advancing_them() {
     let root = PhyRxGainInitTransition::new(parameters);
     assert_eq!(root.phase(), Some(Phase::Publish));
 }
+
+#[test]
+fn initialized_tables_enter_only_the_compact_hardware_tail() {
+    let mut root = PhyRxGainInitTransition::with_initialized_tables();
+    assert_eq!(root.phase(), Some(Phase::Control));
+    assert_eq!(
+        root.action(),
+        PhyRxGainInitAction::ConfigureLimits {
+            wifi_last_index: generated_table(PhyRxGainBank::Wifi).last_index,
+        }
+    );
+
+    root.advance(PhyRxGainInitCompletion::LimitsConfigured {
+        wifi_last_index: generated_table(PhyRxGainBank::Wifi).last_index,
+    })
+    .unwrap();
+    assert_eq!(root.action(), PhyRxGainInitAction::EnableIqCorrection);
+    root.advance(PhyRxGainInitCompletion::IqCorrectionEnabled)
+        .unwrap();
+
+    assert_eq!(
+        root.terminal(),
+        Some(Ok(PhyRxGainInitOutcome {
+            dc: None,
+            generated_tables: false,
+            wifi_last_index: generated_table(PhyRxGainBank::Wifi).last_index,
+            shared_last_index: generated_table(PhyRxGainBank::Shared).last_index,
+        }))
+    );
+}

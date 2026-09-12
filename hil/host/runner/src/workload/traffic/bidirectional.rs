@@ -104,6 +104,7 @@ impl Phy {
 pub(crate) struct Config {
     pub(crate) maximum_rx_silence_ms: Option<u32>,
     pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
+    pub(crate) station_pause_after: Duration,
     pub(crate) address: Ipv4Addr,
     pub(crate) port: u16,
     pub(crate) rate_bps: u64,
@@ -312,6 +313,7 @@ pub(crate) fn run(
             let pause = (|| {
                 let device_rx = capture.wait_for_udp_rx_started(session, Duration::from_secs(3))?;
                 let host_rx = receiver.wait_started(Duration::from_secs(3))?;
+                super::maintenance::wait_after_progress(options.station_pause_after);
                 super::maintenance::run(
                     &capture,
                     operation,
@@ -779,6 +781,7 @@ impl Default for Config {
         Self {
             maximum_rx_silence_ms: None,
             station_pause: None,
+            station_pause_after: Duration::ZERO,
             address: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             rate_bps: DEFAULT_RATE_BPS,

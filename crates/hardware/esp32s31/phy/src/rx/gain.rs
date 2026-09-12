@@ -772,7 +772,7 @@ enum InitStep {
 /// across steps instead of copying the child around every accepted action.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainInitTransition {
-    parameters: PhyRxGainInitParameters,
+    parameters: Option<PhyRxGainInitParameters>,
     step: InitStep,
     dc_outcome: Option<PhyRxGainDcOutcome>,
     wifi_last_index: u8,
@@ -792,7 +792,9 @@ pub(crate) enum Phase {
 impl PhyRxGainInitTransition {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn direct_dc_parameters(&self) -> Option<PhyRxGainDcParameters> {
-        matches!(self.step, InitStep::PrepareDcControlRestore).then_some(self.parameters.dc)
+        matches!(self.step, InitStep::PrepareDcControlRestore)
+            .then(|| self.parameters.map(|parameters| parameters.dc))
+            .flatten()
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -805,10 +807,11 @@ impl PhyRxGainInitTransition {
         }
         match result {
             Ok(outcome) => {
+                let Some(memory) = self.memory_with_dc(outcome) else {
+                    return Err(PhyRxGainInitTransitionError::WrongCompletion);
+                };
                 self.dc_outcome = Some(outcome);
-                self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
-                    self.memory_with_dc(outcome),
-                ));
+                self.step = InitStep::Publish(PhyRxGainPublishTransition::new(memory));
             }
             Err(failure) => {
                 self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(failure));
@@ -985,15 +988,16 @@ impl PhyRxGainInitTransition {
     pub fn new(parameters: PhyRxGainInitParameters) -> Self {
         let wifi_last_index = generated_table(PhyRxGainBank::Wifi).last_index;
         let shared_last_index = generated_table(PhyRxGainBank::Shared).last_index;
-        let step = if parameters.tables_initialized {
-            InitStep::Limits
-        } else if parameters.dc_calibrated {
+        if parameters.tables_initialized {
+            return Self::with_initialized_tables();
+        }
+        let step = if parameters.dc_calibrated {
             InitStep::Publish(PhyRxGainPublishTransition::new(parameters.memory))
         } else {
             InitStep::PrepareDcControlRestore
         };
         Self {
-            parameters,
+            parameters: Some(parameters),
             step,
             dc_outcome: None,
             wifi_last_index,
@@ -1002,8 +1006,23 @@ impl PhyRxGainInitTransition {
         }
     }
 
-    fn memory_with_dc(&self, outcome: PhyRxGainDcOutcome) -> PhyRxGainMemoryParameters {
-        let mut memory = self.parameters.memory;
+    /// Enter the exact vendor tail when both RX calibration products and gain
+    /// tables already exist. The tail only republishes hardware limits and IQ
+    /// enable state, so it must not materialize or retain the unused coefficient
+    /// bank merely to represent this guard result.
+    pub fn with_initialized_tables() -> Self {
+        Self {
+            parameters: None,
+            step: InitStep::Limits,
+            dc_outcome: None,
+            wifi_last_index: generated_table(PhyRxGainBank::Wifi).last_index,
+            shared_last_index: generated_table(PhyRxGainBank::Shared).last_index,
+            generated_tables: false,
+        }
+    }
+
+    fn memory_with_dc(&self, outcome: PhyRxGainDcOutcome) -> Option<PhyRxGainMemoryParameters> {
+        let mut memory = self.parameters?.memory;
         memory.wifi_index_dc = outcome.wifi_index_dc;
         memory.wifi_dc_base = outcome.wifi_dc_base;
         memory.rxbb_dc_adjustments = outcome.rxbb_dc_adjustments;
@@ -1012,7 +1031,7 @@ impl PhyRxGainInitTransition {
             memory.shared_index_dc[index] = outcome.shared_index_dc[index];
             index += 1;
         }
-        memory
+        Some(memory)
     }
 
     #[cfg_attr(
@@ -1049,7 +1068,10 @@ impl PhyRxGainInitTransition {
                 InitStep::PrepareDcControlRestore,
                 PhyRxGainInitCompletion::DcControlRestorePrepared,
             ) => {
-                self.step = InitStep::Dc(PhyRxGainDcTransition::new(self.parameters.dc));
+                let Some(parameters) = self.parameters else {
+                    return Err(PhyRxGainInitTransitionError::WrongCompletion);
+                };
+                self.step = InitStep::Dc(PhyRxGainDcTransition::new(parameters.dc));
             }
             (InitStep::Dc(transition), PhyRxGainInitCompletion::Dc(completion)) => {
                 // DC already commits only after its child accepts completion.
@@ -1072,10 +1094,11 @@ impl PhyRxGainInitTransition {
                 PhyRxGainInitCompletion::DcControlRestored,
             ) => {
                 let outcome = *outcome;
+                let Some(memory) = self.memory_with_dc(outcome) else {
+                    return Err(PhyRxGainInitTransitionError::WrongCompletion);
+                };
                 self.dc_outcome = Some(outcome);
-                self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
-                    self.memory_with_dc(outcome),
-                ));
+                self.step = InitStep::Publish(PhyRxGainPublishTransition::new(memory));
             }
             (
                 InitStep::RestoreDcControlAfterFailure(failure),

@@ -162,6 +162,35 @@ pub trait PhyShortDelay {
     fn settle_micros(micros: u32) -> bool;
 }
 
+/// Finite allowance shared by nested work in one direct PHY transaction.
+///
+/// The budget counts typed hardware operations reported by a completed child;
+/// it is not a wall-clock deadline. A child receives only the remaining
+/// allowance and must leave hardware untouched when that allowance cannot fit
+/// one complete operation envelope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DirectOperationBudget {
+    remaining: u32,
+}
+
+impl DirectOperationBudget {
+    pub(crate) const fn new(limit: u32) -> Self {
+        Self { remaining: limit }
+    }
+
+    pub(crate) const fn remaining(&self) -> u32 {
+        self.remaining
+    }
+
+    pub(crate) fn consume(&mut self, operations: u32) -> bool {
+        let Some(remaining) = self.remaining.checked_sub(operations) else {
+            return false;
+        };
+        self.remaining = remaining;
+        true
+    }
+}
+
 /// Executor-independent delay for scheduling and long hardware waits.
 ///
 /// The async half remains at orchestration boundaries. Hot RX/TX calibration
@@ -608,3 +637,21 @@ define_direct_timeout_pbus_executor!(
     PhyRxGainPublishPbusBinding,
     PhyRxGainPublishCompletion
 );
+
+#[cfg(test)]
+mod direct_operation_budget_tests {
+    use super::DirectOperationBudget;
+
+    #[test]
+    fn shared_budget_rejects_overrun_without_mutation() {
+        let mut budget = DirectOperationBudget::new(10);
+
+        assert_eq!(budget.remaining(), 10);
+        assert!(budget.consume(4));
+        assert_eq!(budget.remaining(), 6);
+        assert!(!budget.consume(7));
+        assert_eq!(budget.remaining(), 6);
+        assert!(budget.consume(6));
+        assert_eq!(budget.remaining(), 0);
+    }
+}

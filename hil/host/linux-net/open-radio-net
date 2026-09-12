@@ -12,6 +12,8 @@ CTRL_DIR=/run/open-radio-hostapd
 STATE_DIR=/run/open-radio-net
 PHY_STATE="$STATE_DIR/phy"
 MAC_STATE="$STATE_DIR/mac"
+RFKILL_ID_STATE="$STATE_DIR/rfkill-id"
+RFKILL_SOFT_STATE="$STATE_DIR/rfkill-soft"
 WPA_PID="$STATE_DIR/wpa-supplicant.pid"
 WPA_CONFIG="$STATE_DIR/wpa-supplicant.conf"
 AP_CONFIG="$STATE_DIR/hostapd.conf"
@@ -79,6 +81,53 @@ remember_wifi_identity() {
     /bin/mkdir -p "$STATE_DIR"
     /usr/bin/printf '%s\n' "$phy" >"$PHY_STATE"
     /usr/bin/printf '%s\n' "$mac" >"$MAC_STATE"
+}
+
+acquire_wifi_rfkill() {
+    phy=$(/bin/cat "$PHY_STATE")
+    if test ! -s "$RFKILL_ID_STATE" || test ! -s "$RFKILL_SOFT_STATE"; then
+        /bin/rm -f "$RFKILL_ID_STATE" "$RFKILL_SOFT_STATE"
+        for entry in /sys/class/rfkill/rfkill*; do
+            test -e "$entry/type" || continue
+            test "$(/bin/cat "$entry/type")" = wlan || continue
+            test "$(/bin/cat "$entry/name")" = "$phy" || continue
+            id=${entry##*/rfkill}
+            /usr/bin/printf '%s\n' "$id" >"$RFKILL_ID_STATE"
+            /bin/cat "$entry/soft" >"$RFKILL_SOFT_STATE"
+            break
+        done
+    fi
+    test -s "$RFKILL_ID_STATE"
+    test -s "$RFKILL_SOFT_STATE"
+    id=$(/bin/cat "$RFKILL_ID_STATE")
+    case "$id" in ''|*[!0-9]*) return 1;; esac
+    entry="/sys/class/rfkill/rfkill$id"
+    test "$(/bin/cat "$entry/type")" = wlan
+    test "$(/bin/cat "$entry/name")" = "$phy"
+    test "$(/bin/cat "$entry/hard")" = 0
+    /usr/bin/rfkill unblock "$id"
+    test "$(/bin/cat "$entry/soft")" = 0
+}
+
+restore_wifi_rfkill() {
+    if test ! -s "$RFKILL_ID_STATE" || test ! -s "$RFKILL_SOFT_STATE"; then
+        return
+    fi
+    id=$(/bin/cat "$RFKILL_ID_STATE")
+    initial=$(/bin/cat "$RFKILL_SOFT_STATE")
+    phy=$(/bin/cat "$PHY_STATE")
+    case "$id" in ''|*[!0-9]*) return 1;; esac
+    case "$initial" in 0|1) ;; *) return 1;; esac
+    entry="/sys/class/rfkill/rfkill$id"
+    test "$(/bin/cat "$entry/type")" = wlan
+    test "$(/bin/cat "$entry/name")" = "$phy"
+    if test "$initial" = 1; then
+        /usr/bin/rfkill block "$id"
+    else
+        /usr/bin/rfkill unblock "$id"
+    fi
+    test "$(/bin/cat "$entry/soft")" = "$initial"
+    /bin/rm -f "$RFKILL_ID_STATE" "$RFKILL_SOFT_STATE"
 }
 
 restore_managed_interface() {
@@ -162,6 +211,7 @@ start_ap() {
     read_ap_profile
     take_network_manager_ownership
     remember_wifi_identity
+    acquire_wifi_rfkill
     stop_radio_services
     restore_managed_interface
     /usr/bin/ip link set wlan0 up
@@ -197,6 +247,7 @@ start_monitor() {
     width=$2
     take_network_manager_ownership
     remember_wifi_identity
+    acquire_wifi_rfkill
     stop_radio_services
     phy=$(/bin/cat "$PHY_STATE")
     mac=$(/bin/cat "$MAC_STATE")
@@ -226,6 +277,7 @@ start_client() {
 
     take_network_manager_ownership
     remember_wifi_identity
+    acquire_wifi_rfkill
     stop_radio_services
     recreate_managed_interface
     /usr/bin/ip link set wlan0 up
@@ -282,11 +334,12 @@ restore_managed() {
     stop_radio_services
     restore_managed_interface
     /usr/bin/nmcli device set wlan0 managed yes
+    restore_wifi_rfkill
 }
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=11 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1\n'
+        /usr/bin/printf 'schema=12 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1 rfkill=restore\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then

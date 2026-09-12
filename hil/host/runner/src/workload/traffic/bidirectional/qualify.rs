@@ -318,7 +318,10 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         if ampdu.ampdu_datagrams == 0 {
             return Err("HT RX did not observe an aggregated benchmark MPDU".into());
         }
-        if ampdu.protocol_validated_datagrams() != 0 {
+        // Legacy OFDM frames are valid rate-control fallback within an HT
+        // association and protocol-decodable as non-A-MPDU. A positive HT
+        // aggregation claim still requires the hardware HT-SIG bit.
+        if ampdu.protocol_ampdu_datagrams != 0 {
             return Err("HT RX A-MPDU evidence did not remain hardware-sourced".into());
         }
     } else if matches!(expected_format, 4..=7) {

@@ -1,0 +1,28 @@
+schema = 4
+id = "diagnostic-station-absence-pm-20ms-high-load-rx"
+description = "20 ms synthetic physical absence with acknowledged PM during high-load HT40 RX delivery"
+repetitions = 3
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "station", "pause", "udp", "ht40", "high-load", "power-save"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 100000000
+payload_bytes = 1472
+station_pause = { synthetic = { duration_micros = 20000, notify_ap = true } }
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 95000000
+maximum_rx_silence_ms = 50
+require_no_beacon_loss = false
+
+[evidence]
+openwrt_tx_monitor_rx = true

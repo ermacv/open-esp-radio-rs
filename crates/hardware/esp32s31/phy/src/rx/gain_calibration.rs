@@ -191,6 +191,148 @@ pub struct PhyRxDcCalibrationTransition {
     readiness_activity_edges: u16,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PhyRxDcCalibrationPolicyState {
+    current: [u16; 2],
+    iteration: u8,
+    low: crate::calibration::estimator::PhyDcIqEstimate,
+    readiness_activity_edges: u16,
+}
+
+impl PhyRxDcCalibrationPolicyState {
+    #[cfg(target_arch = "riscv32")]
+    const fn new(initial: [u16; 2]) -> Self {
+        Self {
+            current: initial,
+            iteration: 0,
+            low: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
+            readiness_activity_edges: 0,
+        }
+    }
+
+    fn accept(
+        &mut self,
+        request: PhyRxDcCalibrationRequest,
+        population: u8,
+        threshold: i32,
+        high: bool,
+        outcome: PhyRxDcMinimumOutcome,
+    ) -> Option<PhyRxDcCalibrationOutcome> {
+        self.readiness_activity_edges = self
+            .readiness_activity_edges
+            .wrapping_add(outcome.readiness_activity_edges);
+        if request.stage == PhyRxDcCalibrationStage::Baseband && !high {
+            self.low = outcome.estimate;
+            return None;
+        }
+
+        let (delta_i, delta_q, power, shift) = match request.stage {
+            PhyRxDcCalibrationStage::Radio => (
+                outcome.estimate.i,
+                outcome.estimate.q,
+                outcome.estimate.power,
+                population.max(2) - 2,
+            ),
+            PhyRxDcCalibrationStage::Baseband => (
+                outcome
+                    .estimate
+                    .i
+                    .wrapping_sub(self.low.i)
+                    .wrapping_sub(i32::from(request.reference_delta[0])),
+                outcome
+                    .estimate
+                    .q
+                    .wrapping_sub(self.low.q)
+                    .wrapping_sub(i32::from(request.reference_delta[1])),
+                outcome.estimate.power.max(self.low.power),
+                if request.shared_radio {
+                    3
+                } else if self.iteration >= 2 {
+                    1
+                } else {
+                    0
+                },
+            ),
+        };
+
+        let mut correction_i = rx_dc_calibration_correction(delta_i, self.low.i, threshold, shift);
+        let mut correction_q = rx_dc_calibration_correction(delta_q, self.low.q, threshold, shift);
+        if request.stage == PhyRxDcCalibrationStage::Baseband {
+            if power >= 45 {
+                correction_i = 0;
+                correction_q = 0;
+            }
+            if !request.shared_radio && request.gain_index > 1 {
+                correction_i = saturate_signed_5(correction_i);
+                correction_q = saturate_signed_5(correction_q);
+            }
+        }
+
+        let converged = delta_i.wrapping_abs() <= threshold
+            && delta_q.wrapping_abs() <= threshold
+            && power < 46;
+        if !converged {
+            if delta_i.wrapping_abs() > threshold {
+                self.current[0] =
+                    saturate_9bit(i32::from(self.current[0]).wrapping_sub(correction_i));
+            }
+            if delta_q.wrapping_abs() > threshold {
+                self.current[1] =
+                    saturate_9bit(i32::from(self.current[1]).wrapping_sub(correction_q));
+            }
+        }
+
+        self.iteration += 1;
+        if !converged && self.iteration < maximum_iterations(request.stage) {
+            return None;
+        }
+        let configuration = if !converged && request.stage == PhyRxDcCalibrationStage::Baseband {
+            request.initial
+        } else {
+            self.current
+        };
+        Some(PhyRxDcCalibrationOutcome {
+            request,
+            configuration,
+            iterations: self.iteration,
+            converged,
+            readiness_activity_edges: self.readiness_activity_edges,
+        })
+    }
+}
+
+const fn calibration_threshold(request: PhyRxDcCalibrationRequest, population: u8) -> i32 {
+    match request.stage {
+        PhyRxDcCalibrationStage::Radio => {
+            if population < 2 {
+                1
+            } else {
+                (population - 1) as i32
+            }
+        }
+        PhyRxDcCalibrationStage::Baseband if request.shared_radio => 6,
+        PhyRxDcCalibrationStage::Baseband => 1,
+    }
+}
+
+const fn calibration_path(stage: PhyRxDcCalibrationStage) -> u8 {
+    match stage {
+        PhyRxDcCalibrationStage::Radio => 2,
+        PhyRxDcCalibrationStage::Baseband => 1,
+    }
+}
+
+const fn maximum_iterations(stage: PhyRxDcCalibrationStage) -> u8 {
+    match stage {
+        PhyRxDcCalibrationStage::Radio => 8,
+        PhyRxDcCalibrationStage::Baseband => 12,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct PhyRxDcCalibrationTargetStats {
@@ -204,14 +346,18 @@ pub(crate) struct PhyRxDcCalibrationTargetStats {
 fn execute_minimum_target<D: crate::target_executor::PhyShortDelay>(
     request: PhyRxDcMinimumRequest,
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    budget: &mut crate::target_executor::DirectOperationBudget,
     stats: &mut PhyRxDcCalibrationTargetStats,
 ) -> Result<
     Result<PhyRxDcMinimumOutcome, PhyRxDcMinimumFailure>,
     crate::target_executor::PhyTargetPortError,
 > {
     let completion = crate::rx::dc_offset::PhyRxDcMinimumTargetTransaction::new(request)
-        .execute_target::<D>(u32::MAX, registers)?
+        .execute_target::<D>(budget.remaining(), registers)?
         .ok_or(crate::target_executor::PhyTargetPortError::RfOperationLimit)?;
+    if !budget.consume(completion.operations()) {
+        return Err(crate::target_executor::PhyTargetPortError::RfOperationLimit);
+    }
     stats.minimum_searches += 1;
     stats.minimum_operations += completion.operations();
     stats.settle_1us += 2 * u32::from(completion.estimators());
@@ -232,6 +378,7 @@ impl PhyRxDcCalibrationTransition {
     pub(crate) fn execute_target_direct<D: crate::target_executor::PhyShortDelay>(
         &mut self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
+        budget: &mut crate::target_executor::DirectOperationBudget,
     ) -> Result<PhyRxDcCalibrationTargetStats, crate::target_executor::PhyTargetPortError> {
         use crate::target_executor::{PhyTargetPortError, force_pbus_direct};
 
@@ -245,31 +392,18 @@ impl PhyRxDcCalibrationTransition {
             .ok_or(PhyTargetPortError::HardwareInvariant)? as u8
             & 0x3f;
         let population = population.count_ones() as u8;
-        let threshold = match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => i32::from(population.max(2) - 1),
-            PhyRxDcCalibrationStage::Baseband if self.request.shared_radio => 6,
-            PhyRxDcCalibrationStage::Baseband => 1,
-        };
-        let path = match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => 2,
-            PhyRxDcCalibrationStage::Baseband => 1,
-        };
-        let maximum_iterations = match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => 8,
-            PhyRxDcCalibrationStage::Baseband => 12,
-        };
+        let threshold = calibration_threshold(self.request, population);
+        let path = calibration_path(self.request.stage);
         let initial = self.request.initial;
-        let mut current = initial;
-        let mut iteration = 0_u8;
-        let mut readiness_activity_edges = 0_u16;
+        let mut policy = PhyRxDcCalibrationPolicyState::new(initial);
         let mut stats = PhyRxDcCalibrationTargetStats::default();
 
         let terminal = loop {
-            let force_i = PhyPbusForceTest::new(2, path, current[0]);
+            let force_i = PhyPbusForceTest::new(2, path, policy.current[0]);
             if !force_pbus_direct(registers, force_i) {
                 break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(force_i));
             }
-            let force_q = PhyPbusForceTest::new(3, path, current[1]);
+            let force_q = PhyPbusForceTest::new(3, path, policy.current[1]);
             if !force_pbus_direct(registers, force_q) {
                 break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(force_q));
             }
@@ -286,8 +420,9 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, iteration, false),
+                    Self::minimum_request_at(self.request, policy.iteration, false),
                     registers,
+                    budget,
                     &mut stats,
                 )? {
                     Ok(outcome) => (outcome.estimate, outcome.readiness_activity_edges),
@@ -316,8 +451,9 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, iteration, true),
+                    Self::minimum_request_at(self.request, policy.iteration, true),
                     registers,
+                    budget,
                     &mut stats,
                 )? {
                     Ok(outcome) => outcome,
@@ -331,8 +467,9 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, iteration, false),
+                    Self::minimum_request_at(self.request, policy.iteration, false),
                     registers,
+                    budget,
                     &mut stats,
                 )? {
                     Ok(outcome) => outcome,
@@ -342,77 +479,20 @@ impl PhyRxDcCalibrationTransition {
                 }
             };
 
-            readiness_activity_edges = readiness_activity_edges
-                .wrapping_add(low_activity_edges)
-                .wrapping_add(measurement.readiness_activity_edges);
-            let (delta_i, delta_q, power, shift) = match self.request.stage {
-                PhyRxDcCalibrationStage::Radio => (
-                    measurement.estimate.i,
-                    measurement.estimate.q,
-                    measurement.estimate.power,
-                    population.max(2) - 2,
-                ),
-                PhyRxDcCalibrationStage::Baseband => (
-                    measurement
-                        .estimate
-                        .i
-                        .wrapping_sub(low.i)
-                        .wrapping_sub(i32::from(self.request.reference_delta[0])),
-                    measurement
-                        .estimate
-                        .q
-                        .wrapping_sub(low.q)
-                        .wrapping_sub(i32::from(self.request.reference_delta[1])),
-                    measurement.estimate.power.max(low.power),
-                    if self.request.shared_radio {
-                        3
-                    } else if iteration >= 2 {
-                        1
-                    } else {
-                        0
-                    },
-                ),
-            };
-
-            let mut correction_i = rx_dc_calibration_correction(delta_i, low.i, threshold, shift);
-            let mut correction_q = rx_dc_calibration_correction(delta_q, low.q, threshold, shift);
             if self.request.stage == PhyRxDcCalibrationStage::Baseband {
-                if power >= 45 {
-                    correction_i = 0;
-                    correction_q = 0;
-                }
-                if !self.request.shared_radio && self.request.gain_index > 1 {
-                    correction_i = saturate_signed_5(correction_i);
-                    correction_q = saturate_signed_5(correction_q);
-                }
+                let low_outcome = PhyRxDcMinimumOutcome {
+                    request: Self::minimum_request_at(self.request, policy.iteration, false),
+                    estimate: low,
+                    attempts: 0,
+                    readiness_activity_edges: low_activity_edges,
+                };
+                let _ = policy.accept(self.request, population, threshold, false, low_outcome);
             }
-
-            let converged = delta_i.wrapping_abs() <= threshold
-                && delta_q.wrapping_abs() <= threshold
-                && power < 46;
-            if !converged {
-                if delta_i.wrapping_abs() > threshold {
-                    current[0] = saturate_9bit(i32::from(current[0]).wrapping_sub(correction_i));
-                }
-                if delta_q.wrapping_abs() > threshold {
-                    current[1] = saturate_9bit(i32::from(current[1]).wrapping_sub(correction_q));
-                }
-            }
-            iteration += 1;
-            if converged || iteration == maximum_iterations {
-                let configuration =
-                    if !converged && self.request.stage == PhyRxDcCalibrationStage::Baseband {
-                        initial
-                    } else {
-                        current
-                    };
-                break Terminal::Complete(PhyRxDcCalibrationOutcome {
-                    request: self.request,
-                    configuration,
-                    iterations: iteration,
-                    converged,
-                    readiness_activity_edges,
-                });
+            let high = self.request.stage == PhyRxDcCalibrationStage::Baseband;
+            if let Some(outcome) =
+                policy.accept(self.request, population, threshold, high, measurement)
+            {
+                break Terminal::Complete(outcome);
             }
         };
 
@@ -426,11 +506,12 @@ impl PhyRxDcCalibrationTransition {
             .map_err(|_| PhyTargetPortError::HardwareInvariant)?;
 
         self.initial = initial;
-        self.current = current;
+        self.current = policy.current;
         self.population = population;
         self.threshold = threshold;
-        self.iteration = iteration;
-        self.readiness_activity_edges = readiness_activity_edges;
+        self.iteration = policy.iteration;
+        self.low = policy.low;
+        self.readiness_activity_edges = policy.readiness_activity_edges;
         self.step = match terminal {
             Terminal::Complete(outcome) => Step::Complete(outcome),
             Terminal::Failed(failure) => Step::Failed(failure),
@@ -509,17 +590,7 @@ impl PhyRxDcCalibrationTransition {
     }
 
     const fn path(&self) -> u8 {
-        match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => 2,
-            PhyRxDcCalibrationStage::Baseband => 1,
-        }
-    }
-
-    const fn max_iterations(&self) -> u8 {
-        match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => 8,
-            PhyRxDcCalibrationStage::Baseband => 12,
-        }
+        calibration_path(self.request.stage)
     }
 
     const fn measurement_identity(&self, high: bool) -> u8 {
@@ -610,95 +681,22 @@ impl PhyRxDcCalibrationTransition {
         unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
     )]
     fn accept_measurement(&mut self, high: bool, outcome: PhyRxDcMinimumOutcome) {
-        self.readiness_activity_edges = self
-            .readiness_activity_edges
-            .wrapping_add(outcome.readiness_activity_edges);
-        if self.request.stage == PhyRxDcCalibrationStage::Baseband && !high {
-            self.low = outcome.estimate;
-            self.step = Step::ForceRadioLevel { high: true };
-            return;
-        }
-
-        let (delta_i, delta_q, power, shift) = match self.request.stage {
-            PhyRxDcCalibrationStage::Radio => (
-                outcome.estimate.i,
-                outcome.estimate.q,
-                outcome.estimate.power,
-                self.population.max(2) - 2,
-            ),
-            PhyRxDcCalibrationStage::Baseband => (
-                outcome
-                    .estimate
-                    .i
-                    .wrapping_sub(self.low.i)
-                    .wrapping_sub(i32::from(self.request.reference_delta[0])),
-                outcome
-                    .estimate
-                    .q
-                    .wrapping_sub(self.low.q)
-                    .wrapping_sub(i32::from(self.request.reference_delta[1])),
-                outcome.estimate.power.max(self.low.power),
-                if self.request.shared_radio {
-                    3
-                } else if self.iteration >= 2 {
-                    // ROM `.L11`: Wi-Fi baseband correction switches from
-                    // shift zero to shift one after the first two attempts.
-                    1
-                } else {
-                    0
-                },
-            ),
+        let mut policy = PhyRxDcCalibrationPolicyState {
+            current: self.current,
+            iteration: self.iteration,
+            low: self.low,
+            readiness_activity_edges: self.readiness_activity_edges,
         };
-
-        let mut correction_i =
-            rx_dc_calibration_correction(delta_i, self.low.i, self.threshold, shift);
-        let mut correction_q =
-            rx_dc_calibration_correction(delta_q, self.low.q, self.threshold, shift);
-        if self.request.stage == PhyRxDcCalibrationStage::Baseband {
-            if power >= 45 {
-                correction_i = 0;
-                correction_q = 0;
-            }
-            // ROM clamps only the Wi-Fi-bank correction for gain indices
-            // above one.  The shared-radio path deliberately retains the
-            // full correction.
-            if !self.request.shared_radio && self.request.gain_index > 1 {
-                correction_i = saturate_signed_5(correction_i);
-                correction_q = saturate_signed_5(correction_q);
-            }
-        }
-
-        let converged = delta_i.wrapping_abs() <= self.threshold
-            && delta_q.wrapping_abs() <= self.threshold
-            && power < 46;
-        if !converged {
-            if delta_i.wrapping_abs() > self.threshold {
-                self.current[0] =
-                    saturate_9bit(i32::from(self.current[0]).wrapping_sub(correction_i));
-            }
-            if delta_q.wrapping_abs() > self.threshold {
-                self.current[1] =
-                    saturate_9bit(i32::from(self.current[1]).wrapping_sub(correction_q));
-            }
-        }
-
-        let iterations = self.iteration + 1;
-        if converged || iterations == self.max_iterations() {
-            let configuration =
-                if !converged && self.request.stage == PhyRxDcCalibrationStage::Baseband {
-                    self.initial
-                } else {
-                    self.current
-                };
-            self.begin_cleanup(Terminal::Complete(PhyRxDcCalibrationOutcome {
-                request: self.request,
-                configuration,
-                iterations,
-                converged,
-                readiness_activity_edges: self.readiness_activity_edges,
-            }));
+        let terminal = policy.accept(self.request, self.population, self.threshold, high, outcome);
+        self.current = policy.current;
+        self.iteration = policy.iteration;
+        self.low = policy.low;
+        self.readiness_activity_edges = policy.readiness_activity_edges;
+        if self.request.stage == PhyRxDcCalibrationStage::Baseband && !high {
+            self.step = Step::ForceRadioLevel { high: true };
+        } else if let Some(outcome) = terminal {
+            self.begin_cleanup(Terminal::Complete(outcome));
         } else {
-            self.iteration = iterations;
             self.step = Step::ForceI;
         }
     }
@@ -744,16 +742,7 @@ impl PhyRxDcCalibrationTransition {
                 },
             ) => {
                 self.population = (value as u8 & 0x3f).count_ones() as u8;
-                self.threshold = match self.request.stage {
-                    PhyRxDcCalibrationStage::Radio => i32::from(self.population.max(2) - 1),
-                    PhyRxDcCalibrationStage::Baseband => {
-                        if self.request.shared_radio {
-                            6
-                        } else {
-                            1
-                        }
-                    }
-                };
+                self.threshold = calibration_threshold(self.request, self.population);
                 self.step = Step::ForceI;
             }
             (Step::ForceI, PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction))

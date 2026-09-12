@@ -546,6 +546,7 @@ impl Scenario {
                 tx_rate_bps,
                 payload_bytes,
                 station_pause,
+                station_pause_after_millis,
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
@@ -555,6 +556,17 @@ impl Scenario {
                 }
                 if station_pause.is_some() && *duration_seconds < 12 {
                     return Err("station_pause requires at least 12 seconds of station UDP".into());
+                }
+                if station_pause_after_millis.is_some() && station_pause.is_none() {
+                    return Err(
+                        "station_pause_after_millis requires a station_pause operation".into(),
+                    );
+                }
+                if let Some(delay_millis) = station_pause_after_millis {
+                    let workload_millis = u32::from(*duration_seconds).saturating_mul(1_000);
+                    if *delay_millis == 0 || delay_millis.saturating_add(2_000) > workload_millis {
+                        return Err("station_pause_after_millis must be nonzero and leave at least two seconds for maintenance and restored traffic".into());
+                    }
                 }
                 if matches!(
                     self.image,

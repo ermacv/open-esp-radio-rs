@@ -1,11 +1,11 @@
 schema = 4
-id = "diagnostic-station-rx-baseline-delivery"
-description = "RX diagnostic isolation: no maintenance"
+id = "diagnostic-station-phy-access-delivery-rx"
+description = "Access-only PHY maintenance control without PM during RX UDP delivery"
 repetitions = 3
 image = "diagnostic-rx-delivery"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "station", "pause", "udp", "ht40"]
+tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40"]
 
 [link]
 phy = "ht40"
@@ -16,6 +16,7 @@ direction = "rx"
 duration_seconds = 12
 rx_rate_bps = 65000000
 payload_bytes = 1200
+station_pause = "access"
 
 [criteria]
 exact_delivery = false

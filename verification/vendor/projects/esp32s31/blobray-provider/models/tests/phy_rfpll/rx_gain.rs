@@ -226,7 +226,15 @@ fn compare_roots(guard_flags: &[u8], samples: &[i32]) {
                             calibration_inputs(&mut r, fill, sample, u16::from(settle) * 2);
                         }
                         put(&mut r, INPUT, values.iter().flat_map(|v| v.to_le_bytes()));
-                        put(&mut r, OUTPUT, [0xa5; 108]);
+                        put(
+                            &mut r,
+                            OUTPUT,
+                            values
+                                .iter()
+                                .take(52)
+                                .flat_map(|value| value.to_le_bytes())
+                                .chain([0xa5; 4]),
+                        );
                         r.observed_memory = vec![MemoryRange {
                             start: OUTPUT,
                             length: 108,
@@ -278,6 +286,11 @@ fn compare_roots(guard_flags: &[u8], samples: &[i32]) {
                             final_vendor.insert(change.address, change.after);
                         }
                         let mut final_rust = [0xa5; 108];
+                        for (destination, value) in
+                            final_rust[..104].chunks_exact_mut(2).zip(values)
+                        {
+                            destination.copy_from_slice(&value.to_le_bytes());
+                        }
                         for change in &r.memory_changes {
                             final_rust[(change.address - OUTPUT) as usize] = change.after;
                         }

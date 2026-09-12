@@ -316,6 +316,7 @@ pub fn rx_gain_init<D: PhyShortDelay, P>(
 ) -> Result<(), PhyTargetPortError> {
     use crate::tracking::observation::{Event, Operation};
     let mut execution = crate::tracking::observation::RxGainExecution::default();
+    let mut budget = crate::target_executor::DirectOperationBudget::new(RF_OPERATION_LIMIT);
     let result = (|| {
         for _ in 0..4 {
             if child.terminal().is_some() {
@@ -329,7 +330,8 @@ pub fn rx_gain_init<D: PhyShortDelay, P>(
                 prepared?;
 
                 observe(Operation::RxGainDcPhase, Event::Started);
-                let outcome = rx_gain_dc_direct::<D>(parameters, registers, &mut execution);
+                let outcome =
+                    rx_gain_dc_direct::<D>(parameters, registers, &mut budget, &mut execution);
                 observe(Operation::RxGainDcPhase, terminal_event(&outcome));
                 let outcome = outcome?;
 
@@ -448,11 +450,15 @@ fn rx_gain_rfpll_direct<D: PhyShortDelay>(
 fn rx_minimum_value<D: PhyShortDelay>(
     request: crate::rx::dc_offset::PhyRxDcMinimumRequest,
     registers: &mut impl SharedPhyAccess,
+    budget: &mut crate::target_executor::DirectOperationBudget,
     execution: &mut crate::tracking::observation::RxGainExecution,
 ) -> Result<crate::rx::dc_offset::PhyRxDcMinimumOutcome, DirectRxGainDcError> {
     let completion = crate::rx::dc_offset::PhyRxDcMinimumTargetTransaction::new(request)
-        .execute_target::<D>(u32::MAX, registers)?
+        .execute_target::<D>(budget.remaining(), registers)?
         .ok_or(PhyTargetPortError::RfOperationLimit)?;
+    if !budget.consume(completion.operations()) {
+        return Err(PhyTargetPortError::RfOperationLimit.into());
+    }
     execution.minimum_searches += 1;
     execution.minimum_operations += completion.operations();
     execution.settle_1us += 2 * u32::from(completion.estimators());
@@ -468,11 +474,12 @@ fn rx_minimum_value<D: PhyShortDelay>(
 fn rx_gain_one_step_direct<D: PhyShortDelay>(
     request: crate::rx::gain_calibration::PhyRxDcCalibrationRequest,
     registers: &mut impl SharedPhyContext,
+    budget: &mut crate::target_executor::DirectOperationBudget,
     execution: &mut crate::tracking::observation::RxGainExecution,
 ) -> Result<crate::rx::gain_calibration::PhyRxDcCalibrationOutcome, DirectRxGainDcError> {
     execution.outer_operations += 1;
     let mut transition = crate::rx::gain_calibration::PhyRxDcCalibrationTransition::new(request);
-    let stats = transition.execute_target_direct::<D>(registers)?;
+    let stats = transition.execute_target_direct::<D>(registers, budget)?;
     execution.minimum_searches += stats.minimum_searches;
     execution.minimum_operations += stats.minimum_operations;
     execution.settle_1us += stats.settle_1us;
@@ -494,6 +501,7 @@ fn rx_gain_reference_direct<D: PhyShortDelay>(
     bank: crate::rx::gain_calibration::PhyRxGainDcBank,
     measurement_base: u8,
     registers: &mut impl SharedPhyContext,
+    budget: &mut crate::target_executor::DirectOperationBudget,
     execution: &mut crate::tracking::observation::RxGainExecution,
 ) -> Result<[i16; 2], DirectRxGainDcError> {
     use crate::rx::gain_calibration::reference_setup;
@@ -512,6 +520,7 @@ fn rx_gain_reference_direct<D: PhyShortDelay>(
             rx_saturation_detected: false,
         },
         registers,
+        budget,
         execution,
     )?;
     force_rx_gain_pbus(
@@ -531,6 +540,7 @@ fn rx_gain_reference_direct<D: PhyShortDelay>(
             rx_saturation_detected: false,
         },
         registers,
+        budget,
         execution,
     )?;
     Ok([
@@ -572,6 +582,7 @@ fn rx_gain_cleanup_direct<D: PhyShortDelay>(
 fn rx_gain_dc_direct<D: PhyShortDelay>(
     parameters: crate::rx::gain_calibration::PhyRxGainDcParameters,
     registers: &mut impl SharedPhyContext,
+    budget: &mut crate::target_executor::DirectOperationBudget,
     execution: &mut crate::tracking::observation::RxGainExecution,
 ) -> Result<
     Result<
@@ -621,8 +632,13 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
             analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
             0,
         )?;
-        let shared_reference =
-            rx_gain_reference_direct::<D>(PhyRxGainDcBank::Shared, 0, registers, execution)?;
+        let shared_reference = rx_gain_reference_direct::<D>(
+            PhyRxGainDcBank::Shared,
+            0,
+            registers,
+            budget,
+            execution,
+        )?;
         for index in 0..SHARED_CALIBRATION_GAIN.len() as u8 {
             let previous = if index == 0 {
                 [0x100; 2]
@@ -676,6 +692,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     rx_saturation_detected: parameters.rx_saturation_detected,
                 },
                 registers,
+                budget,
                 execution,
             )?;
             outcome.shared_index_dc[index as usize] = calibrated.configuration;
@@ -721,6 +738,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     rx_saturation_detected: parameters.rx_saturation_detected,
                 },
                 registers,
+                budget,
                 execution,
             )?;
             fine_current = calibrated.configuration;
@@ -735,7 +753,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
             }
         }
         let wifi_reference =
-            rx_gain_reference_direct::<D>(PhyRxGainDcBank::Wifi, 2, registers, execution)?;
+            rx_gain_reference_direct::<D>(PhyRxGainDcBank::Wifi, 2, registers, budget, execution)?;
         for index in 0..WIFI_CALIBRATION_GAIN.len() as u8 {
             let previous = if index == 0 {
                 [0x100; 2]
@@ -789,6 +807,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     rx_saturation_detected: parameters.rx_saturation_detected,
                 },
                 registers,
+                budget,
                 execution,
             )?;
             outcome.wifi_index_dc[index as usize] = calibrated.configuration;
@@ -809,6 +828,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                         rx_saturation_detected: parameters.rx_saturation_detected,
                     },
                     registers,
+                    budget,
                     execution,
                 )?
                 .configuration;
@@ -915,25 +935,27 @@ fn terminal_event<T, E>(result: &Result<T, E>) -> crate::tracking::observation::
 /// physical access until terminal completion. Returning a target error or a
 /// typed failed action does not establish a safe RF state.
 #[inline(never)]
-pub fn tx_dc_pwdet_init<D: PhyAsyncDelay, O: PhyTargetObserver>(
+pub fn tx_dc_pwdet_init<D: PhyShortDelay, O: PhyTargetObserver>(
     child: &mut crate::tx::dc_power_detector::PhyTxDcPwdetTransition,
     registers: &mut impl SharedPhyContext,
     observer: &core::cell::RefCell<&mut O>,
+    mut now_micros: impl FnMut() -> Option<u64>,
 ) -> Result<(), PhyTargetPortError> {
     child.execute_target_direct(
         registers,
-        |scope, micros| tx_settle::<D, O>(observer, scope, micros),
+        |scope, micros| tx_settle::<D, O>(observer, &mut now_micros, scope, micros),
         |ready| observer.borrow_mut().tx_sar_ready(ready),
     )
 }
 
-fn tx_settle<D: PhyAsyncDelay, O: PhyTargetObserver>(
+fn tx_settle<D: PhyShortDelay, O: PhyTargetObserver>(
     observer: &core::cell::RefCell<&mut O>,
+    now_micros: &mut impl FnMut() -> Option<u64>,
     scope: crate::executor::wait::tx::Scope,
     micros: u32,
 ) -> Result<(), PhyTargetPortError> {
     use crate::executor::wait::{Event, Kind};
-    let started = O::OBSERVE_DELAYS.then(D::now_micros).flatten();
+    let started = O::OBSERVE_DELAYS.then(&mut *now_micros).flatten();
     if O::OBSERVE_DELAYS {
         observer.borrow_mut().tx_wait(
             scope,
@@ -943,9 +965,9 @@ fn tx_settle<D: PhyAsyncDelay, O: PhyTargetObserver>(
             },
         );
     }
-    let result = short_settle::<D::ShortDelay>(micros);
+    let result = short_settle::<D>(micros);
     if O::OBSERVE_DELAYS {
-        let event = match (result.is_ok(), started, D::now_micros()) {
+        let event = match (result.is_ok(), started, now_micros()) {
             (true, Some(started), Some(completed)) if completed >= started => {
                 let elapsed_micros = completed - started;
                 Event::Completed {

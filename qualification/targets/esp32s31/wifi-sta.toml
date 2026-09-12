@@ -10,6 +10,8 @@ required-capabilities = [
   "authentication-association",
   "wpa2",
   "async-deadlines",
+  "runtime-phy-calibration",
+  "runtime-rfpll-tracking",
   "radio-cold-start",
   "timeout-error-recovery",
 ]
@@ -248,8 +250,8 @@ gaps = [
 
 [[capabilities]]
 id = "async-deadlines"
-title = "Bounded asynchronous hardware deadlines"
-scope = "Production PHY I2C PBus IQ-estimator and protocol waits contain no CPU spin"
+title = "Bounded asynchronous and direct hardware waits"
+scope = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -261,6 +263,49 @@ hil-requirements = [
 ]
 gaps = [
   { axis = "vendor", id = "iq-estimator-and-remaining-wait-contracts-not-bound" },
+]
+
+[[capabilities]]
+id = "runtime-phy-calibration"
+title = "Connected runtime PHY calibration"
+scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["rx-tx-dma", "interrupt-recovery", "async-deadlines"]
+vendor-roots = [
+  { source = "archive", symbol = "phy_param_track_tot" },
+]
+hil-requirements = [
+  { scenario = "diagnostic-station-phy-rxcal-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-txcal-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-combined-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-calibration-task-poll", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "current-compiled-calibration-comparison-not-release-evidence" },
+  { axis = "hil", id = "repeated-current-clean-rf-quality-cells-missing" },
+]
+
+[[capabilities]]
+id = "runtime-rfpll-tracking"
+title = "Connected runtime RFPLL tracking"
+scope = "Fresh temperature demand selects a finite nonzero RFPLL correction, updates frequency memory, restores the current channel and resumes the same station epoch"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+depends-on = ["runtime-phy-calibration", "channel-selection-switch"]
+vendor-roots = [
+  { source = "archive", symbol = "phy_param_track_tot" },
+]
+hil-requirements = [
+  { scenario = "diagnostic-station-phy-rfpll-observed", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "implementation", id = "automatic-rfpll-service-selection-disabled" },
+  { axis = "vendor", id = "current-compiled-rfpll-parent-comparison-not-release-evidence" },
+  { axis = "hil", id = "nonzero-thermal-correction-and-post-restore-rf-quality-missing" },
+  { axis = "async", id = "automatic-rfpll-service-suspends-as-unsupported" },
 ]
 
 [[capabilities]]

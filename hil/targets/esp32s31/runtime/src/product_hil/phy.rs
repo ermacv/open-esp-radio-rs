@@ -198,7 +198,7 @@ pub(super) async fn run_service_window() -> Result<
         invalid: report.invalid,
     };
     // The final access-only handoff is not the aggregate PHY observation.
-    pause.timings = None;
+    pause.discard_timings();
     pause.elapsed_micros = evidence.elapsed_micros;
     Ok((pause, evidence))
 }
@@ -305,16 +305,16 @@ pub(super) async fn run_station_pause(
     }
     let evidence = match result {
         Ok(report) => {
-            rx_gain = report.timings.as_ref().map(rx_gain_evidence);
+            rx_gain = report.timings().map(rx_gain_evidence);
             tx_waits = report
-                .timings
+                .timings()
                 .map(|value| self::tx_wait_evidence(value.tx_waits));
             rfpll = report
-                .timings
+                .timings()
                 .and_then(|value| value.rfpll)
                 .map(self::rfpll_evidence);
             StationPauseEvidence {
-                timings: report.timings.as_ref().map(phy_timing_evidence),
+                timings: report.timings().map(phy_timing_evidence),
                 tracking: report.tracking.map(|outcome| {
                     open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
                         inhibited: outcome.tracking_inhibited,

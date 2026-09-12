@@ -1,0 +1,27 @@
+schema = 4
+id = "diagnostic-station-phy-baseline-high-load-delivery-rx"
+description = "High-load HT40 RX delivery control with recovery headroom and no PHY maintenance"
+repetitions = 3
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["phy-maintenance", "diagnostic", "station", "udp", "ht40", "high-load"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 100000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 95000000
+maximum_rx_silence_ms = 50
+require_no_beacon_loss = false
+
+[evidence]
+openwrt_tx_monitor_rx = true

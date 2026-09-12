@@ -164,6 +164,31 @@ fn healthy_he_rx() -> RxRadioEvidence {
     }
 }
 
+fn healthy_ht_rx() -> RxRadioEvidence {
+    RxRadioEvidence {
+        phy_format: 2,
+        sequence_first: Some(0),
+        sequence_highest: Some(99),
+        not_s_mpdu_datagrams: 100,
+        not_s_mpdu_beacons: 1,
+        ampdu_datagrams: 100,
+        hardware_ampdu_datagrams: 100,
+        reorder_tid: 0,
+        reorder_window: 64,
+        reorder_first_samples: 1,
+        reorder_first_tid: 0,
+        reorder_first_start: 7,
+        reorder_first_sequence: 9,
+        reorder_first_distance: 2,
+        reorder_maximum_occupied: 8,
+        rx_service_calls: 10,
+        rx_frontier_histogram_samples: 10,
+        mac_irq_entries: 10,
+        mac_irq_classified_entries: 10,
+        ..RxRadioEvidence::default()
+    }
+}
+
 #[test]
 fn typed_rx_radio_enforces_order_and_provenance_without_text() {
     assert!(
@@ -188,6 +213,42 @@ fn typed_rx_radio_enforces_order_and_provenance_without_text() {
     assert!(
         session_with_rx(wrong_provenance)
             .require_rx_radio_health(4)
+            .is_err()
+    );
+}
+
+#[test]
+fn typed_ht_rx_allows_protocol_proven_non_aggregated_fallback() {
+    let mut mixed = healthy_ht_rx();
+    mixed.not_ampdu_datagrams = 2;
+    mixed.protocol_not_ampdu_datagrams = 2;
+    assert!(session_with_rx(mixed).require_rx_radio_health(2).is_ok());
+
+    let mut protocol_positive = healthy_ht_rx();
+    protocol_positive.hardware_ampdu_datagrams = 99;
+    protocol_positive.protocol_ampdu_datagrams = 1;
+    assert!(
+        session_with_rx(protocol_positive)
+            .require_rx_radio_health(2)
+            .is_err()
+    );
+
+    let mut unavailable = healthy_ht_rx();
+    unavailable.ampdu_unavailable_datagrams = 1;
+    assert!(
+        session_with_rx(unavailable)
+            .require_rx_radio_health(2)
+            .is_err()
+    );
+
+    let mut no_aggregate = healthy_ht_rx();
+    no_aggregate.ampdu_datagrams = 0;
+    no_aggregate.hardware_ampdu_datagrams = 0;
+    no_aggregate.not_ampdu_datagrams = 100;
+    no_aggregate.hardware_not_ampdu_datagrams = 100;
+    assert!(
+        session_with_rx(no_aggregate)
+            .require_rx_radio_health(2)
             .is_err()
     );
 }

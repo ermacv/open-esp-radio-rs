@@ -138,6 +138,7 @@ fn execute_workload_inner(
             tx_rate_bps,
             payload_bytes,
             station_pause,
+            station_pause_after_millis,
         } => {
             let duration = Duration::from_secs(u64::from(*duration_seconds));
             let payload = usize::from(*payload_bytes);
@@ -150,6 +151,9 @@ fn execute_workload_inner(
                     let config = traffic::rx_traffic::Config {
                         maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
                         station_pause: *station_pause,
+                        station_pause_after: station_pause_after_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
                         duration,
                         payload,
                         phy,
@@ -197,6 +201,9 @@ fn execute_workload_inner(
                     };
                     let config = traffic::tx_traffic::Config {
                         station_pause: *station_pause,
+                        station_pause_after: station_pause_after_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
                         duration,
                         payload,
                         bandwidth_mhz,
@@ -231,6 +238,9 @@ fn execute_workload_inner(
                     let config = traffic::bidirectional::Config {
                         maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
                         station_pause: *station_pause,
+                        station_pause_after: station_pause_after_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
                         duration,
                         payload,
                         phy,

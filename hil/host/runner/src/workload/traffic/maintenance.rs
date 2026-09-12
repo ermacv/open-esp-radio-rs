@@ -13,6 +13,19 @@ pub(crate) fn require(capture: &SerialCapture) -> Result<()> {
     Ok(())
 }
 
+/// Hold the already-progressing traffic interval before issuing maintenance.
+/// The duration comes from the validated scenario and is therefore archived
+/// with the run rather than supplied by an unrecorded shell sleep.
+pub(crate) fn wait_after_progress(delay: Duration) {
+    if !delay.is_zero() {
+        eprintln!(
+            "station maintenance preconditioning: waiting {} ms after traffic progress",
+            delay.as_millis()
+        );
+        std::thread::sleep(delay);
+    }
+}
+
 pub(crate) fn run(
     capture: &SerialCapture,
     operation: open_esp_radio_hil_protocol::StationPauseOperation,

@@ -160,6 +160,220 @@ fn repository_catalog_is_valid_and_unique() {
         tx_task_poll.criteria.maximum_idle_channel_utilization_255,
         Some(64)
     );
+    let calibration_task_poll = catalog
+        .get("diagnostic-station-phy-calibration-task-poll")
+        .unwrap();
+    assert_eq!(calibration_task_poll.repetitions, 3);
+    assert_eq!(calibration_task_poll.image, ImageClass::DiagnosticTaskPoll);
+    assert!(matches!(
+        calibration_task_poll.workload,
+        Workload::Udp {
+            direction: Direction::Rx,
+            rx_rate_bps: Some(65_000_000),
+            station_pause: Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration),
+            ..
+        }
+    ));
+    assert_eq!(
+        calibration_task_poll.criteria.maximum_rx_silence_ms,
+        Some(50)
+    );
+    let baseline_task_poll = catalog
+        .get("diagnostic-station-phy-baseline-task-poll")
+        .unwrap();
+    assert_eq!(baseline_task_poll.repetitions, 3);
+    assert_eq!(baseline_task_poll.image, calibration_task_poll.image);
+    assert_eq!(
+        baseline_task_poll.isolation,
+        calibration_task_poll.isolation
+    );
+    assert_eq!(
+        baseline_task_poll.data_plane,
+        calibration_task_poll.data_plane
+    );
+    assert_eq!(baseline_task_poll.link, calibration_task_poll.link);
+    assert_eq!(baseline_task_poll.criteria, calibration_task_poll.criteria);
+    assert!(matches!(
+        baseline_task_poll.workload,
+        Workload::Udp {
+            direction: Direction::Rx,
+            duration_seconds: 12,
+            rx_rate_bps: Some(65_000_000),
+            payload_bytes: 1_200,
+            station_pause: None,
+            ..
+        }
+    ));
+    let delivery_matrix = [
+        ("diagnostic-station-rx-baseline-delivery", None),
+        (
+            "diagnostic-station-phy-access-delivery-rx",
+            Some(open_esp_radio_hil_protocol::StationPauseOperation::Access),
+        ),
+        (
+            "diagnostic-station-phy-rxcal-delivery-rx",
+            Some(open_esp_radio_hil_protocol::StationPauseOperation::CommonCalibration),
+        ),
+        (
+            "diagnostic-station-phy-txcal-delivery-rx",
+            Some(open_esp_radio_hil_protocol::StationPauseOperation::TxCalibration),
+        ),
+        (
+            "diagnostic-station-phy-combined-delivery-rx",
+            Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration),
+        ),
+    ];
+    for (id, expected_pause) in delivery_matrix {
+        let scenario = catalog.get(id).unwrap();
+        assert_eq!(scenario.repetitions, 3, "{id}");
+        assert_eq!(scenario.image, ImageClass::DiagnosticRxDelivery, "{id}");
+        assert!(
+            matches!(
+                scenario.workload,
+                Workload::Udp {
+                    direction: Direction::Rx,
+                    duration_seconds: 12,
+                    rx_rate_bps: Some(65_000_000),
+                    payload_bytes: 1_200,
+                    station_pause,
+                    ..
+                } if station_pause == expected_pause
+            ),
+            "{id}"
+        );
+        assert_eq!(scenario.criteria.minimum_rx_bps, Some(60_000_000), "{id}");
+        assert_eq!(scenario.criteria.maximum_rx_silence_ms, Some(50), "{id}");
+        assert!(scenario.criteria.require_no_beacon_loss, "{id}");
+    }
+    let ceiling_control = catalog
+        .get("diagnostic-station-phy-baseline-ceiling-delivery-rx")
+        .unwrap();
+    let ceiling_calibration = catalog
+        .get("diagnostic-station-phy-combined-ceiling-delivery-rx")
+        .unwrap();
+    assert_eq!(ceiling_control.repetitions, 3);
+    assert_eq!(ceiling_calibration.repetitions, 3);
+    assert_eq!(ceiling_control.image, ceiling_calibration.image);
+    assert_eq!(ceiling_control.isolation, ceiling_calibration.isolation);
+    assert_eq!(ceiling_control.data_plane, ceiling_calibration.data_plane);
+    assert_eq!(ceiling_control.link, ceiling_calibration.link);
+    assert_eq!(ceiling_control.criteria, ceiling_calibration.criteria);
+    assert_eq!(ceiling_control.evidence, ceiling_calibration.evidence);
+    let Workload::Udp {
+        station_pause: control_pause,
+        ..
+    } = ceiling_control.workload
+    else {
+        panic!("ceiling control must remain UDP")
+    };
+    let Workload::Udp {
+        station_pause: calibration_pause,
+        ..
+    } = ceiling_calibration.workload
+    else {
+        panic!("ceiling calibration must remain UDP")
+    };
+    assert_eq!(control_pause, None);
+    assert_eq!(
+        calibration_pause,
+        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+    );
+    let mut normalized = ceiling_calibration.workload.clone();
+    let Workload::Udp { station_pause, .. } = &mut normalized else {
+        unreachable!()
+    };
+    *station_pause = None;
+    assert_eq!(ceiling_control.workload, normalized);
+    let high_load_control = catalog
+        .get("diagnostic-station-phy-baseline-high-load-delivery-rx")
+        .unwrap();
+    let high_load_calibration = catalog
+        .get("diagnostic-station-phy-combined-high-load-delivery-rx")
+        .unwrap();
+    assert_eq!(high_load_control.repetitions, 3);
+    assert_eq!(high_load_calibration.repetitions, 3);
+    assert_eq!(high_load_control.image, high_load_calibration.image);
+    assert_eq!(high_load_control.isolation, high_load_calibration.isolation);
+    assert_eq!(
+        high_load_control.data_plane,
+        high_load_calibration.data_plane
+    );
+    assert_eq!(high_load_control.link, high_load_calibration.link);
+    assert_eq!(high_load_control.criteria, high_load_calibration.criteria);
+    assert_eq!(high_load_control.evidence, high_load_calibration.evidence);
+    let mut normalized = high_load_calibration.workload.clone();
+    let Workload::Udp { station_pause, .. } = &mut normalized else {
+        unreachable!()
+    };
+    assert_eq!(
+        *station_pause,
+        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+    );
+    *station_pause = None;
+    assert_eq!(high_load_control.workload, normalized);
+    for (id, expected_pause) in [
+        (
+            "diagnostic-station-phy-access-high-load-delivery-rx",
+            open_esp_radio_hil_protocol::StationPauseOperation::Access,
+        ),
+        (
+            "diagnostic-station-phy-rxcal-high-load-delivery-rx",
+            open_esp_radio_hil_protocol::StationPauseOperation::CommonCalibration,
+        ),
+        (
+            "diagnostic-station-phy-txcal-high-load-delivery-rx",
+            open_esp_radio_hil_protocol::StationPauseOperation::TxCalibration,
+        ),
+    ] {
+        let scenario = catalog.get(id).unwrap();
+        assert_eq!(scenario.repetitions, high_load_control.repetitions, "{id}");
+        assert_eq!(scenario.image, high_load_control.image, "{id}");
+        assert_eq!(scenario.isolation, high_load_control.isolation, "{id}");
+        assert_eq!(scenario.data_plane, high_load_control.data_plane, "{id}");
+        assert_eq!(scenario.link, high_load_control.link, "{id}");
+        assert_eq!(scenario.criteria, high_load_control.criteria, "{id}");
+        assert_eq!(scenario.evidence, high_load_control.evidence, "{id}");
+        let mut normalized = scenario.workload.clone();
+        let Workload::Udp { station_pause, .. } = &mut normalized else {
+            panic!("{id} must remain UDP")
+        };
+        assert_eq!(*station_pause, Some(expected_pause), "{id}");
+        *station_pause = None;
+        assert_eq!(normalized, high_load_control.workload, "{id}");
+    }
+    let no_pm = catalog
+        .get("diagnostic-station-absence-no-pm-20ms-high-load-rx")
+        .unwrap();
+    let pm = catalog
+        .get("diagnostic-station-absence-pm-20ms-high-load-rx")
+        .unwrap();
+    assert_eq!(no_pm.repetitions, 3);
+    assert_eq!(no_pm.image, pm.image);
+    assert_eq!(no_pm.isolation, pm.isolation);
+    assert_eq!(no_pm.data_plane, pm.data_plane);
+    assert_eq!(no_pm.link, pm.link);
+    assert_eq!(no_pm.criteria, pm.criteria);
+    assert_eq!(no_pm.evidence, pm.evidence);
+    let mut normalized = pm.workload.clone();
+    let Workload::Udp { station_pause, .. } = &mut normalized else {
+        panic!("PM absence control must remain UDP")
+    };
+    assert_eq!(
+        *station_pause,
+        Some(
+            open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
+                duration_micros: 20_000,
+                notify_ap: true,
+            }
+        )
+    );
+    *station_pause = Some(
+        open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
+            duration_micros: 20_000,
+            notify_ap: false,
+        },
+    );
+    assert_eq!(no_pm.workload, normalized);
     assert_eq!(
         catalog
             .get("udp-bidirectional-ht40-split-baseline")
@@ -1070,4 +1284,37 @@ fn synthetic_absence_profiles_keep_the_same_load_and_validate_duration() {
         });
         assert_eq!(scenario.validate().is_ok(), valid);
     }
+}
+
+#[test]
+fn station_pause_preconditioning_is_explicit_and_leaves_a_restored_interval() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-phy-rfpll-thermal-observed")
+        .unwrap()
+        .clone();
+    assert!(scenario.validate().is_ok());
+
+    let set_delay = |scenario: &mut Scenario, delay| {
+        let Workload::Udp {
+            station_pause_after_millis,
+            ..
+        } = &mut scenario.workload
+        else {
+            panic!("UDP");
+        };
+        *station_pause_after_millis = delay;
+    };
+    set_delay(&mut scenario, Some(0));
+    assert!(scenario.validate().is_err());
+    set_delay(&mut scenario, Some(88_001));
+    assert!(scenario.validate().is_err());
+    set_delay(&mut scenario, Some(88_000));
+    assert!(scenario.validate().is_ok());
+    let Workload::Udp { station_pause, .. } = &mut scenario.workload else {
+        panic!("UDP");
+    };
+    *station_pause = None;
+    assert!(scenario.validate().is_err());
 }

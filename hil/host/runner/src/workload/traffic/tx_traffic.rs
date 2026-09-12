@@ -51,6 +51,7 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
+    pub(crate) require_nonzero_rfpll_correction: bool,
     pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
     pub(crate) station_pause_after: Duration,
     pub(crate) device: Ipv4Addr,
@@ -336,6 +337,7 @@ pub(crate) fn run(
                 super::maintenance::run(
                     &capture,
                     operation,
+                    options.require_nonzero_rfpll_correction,
                     output,
                     serde_json::json!({"host_rx_datagrams": before}),
                 )?;
@@ -745,6 +747,7 @@ fn require_performance_link(
 impl Default for Config {
     fn default() -> Self {
         Self {
+            require_nonzero_rfpll_correction: false,
             station_pause: None,
             station_pause_after: Duration::ZERO,
             device: Ipv4Addr::UNSPECIFIED,

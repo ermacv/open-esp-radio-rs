@@ -325,12 +325,45 @@ fn rfpll_detail_cannot_be_missing_or_confuse_forced_work_with_thermal_skip() {
         (StationPauseOperation::RfpllCheck, None, false),
     ] {
         assert_eq!(
-            super::validate_rfpll(operation, Some(timing), detail).is_ok(),
+            super::validate_rfpll(operation, Some(timing), detail, false).is_ok(),
             expected
         );
     }
-    assert!(super::validate_rfpll(StationPauseOperation::Access, None, Some(ran)).is_err());
-    assert!(super::validate_rfpll(StationPauseOperation::Access, None, None).is_ok());
+    assert!(super::validate_rfpll(StationPauseOperation::Access, None, Some(ran), false).is_err());
+    assert!(super::validate_rfpll(StationPauseOperation::Access, None, None, false).is_ok());
+    assert!(super::validate_rfpll(StationPauseOperation::Access, None, None, true).is_err());
+    assert!(
+        super::validate_rfpll(
+            StationPauseOperation::RfpllObserved,
+            Some(timing),
+            Some(ran),
+            true,
+        )
+        .is_err()
+    );
+    let nonzero = RfpllEvidence {
+        reference_before: 10,
+        reference_after: 30,
+        temperature: 30,
+        threshold: 15,
+        correction: Some(RfpllCorrectionEvidence {
+            initial_cap: 100,
+            selected_cap: 101,
+            accepted_samples: 3,
+            entries_updated: 85,
+            restored_frequency_index: Some(11),
+        }),
+        ..ran
+    };
+    assert!(
+        super::validate_rfpll(
+            StationPauseOperation::RfpllObserved,
+            Some(timing),
+            Some(nonzero),
+            true,
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -361,7 +394,8 @@ fn observed_rfpll_rejects_missing_or_stale_sensor_age() {
             super::validate_rfpll(
                 StationPauseOperation::RfpllObserved,
                 Some(timings),
-                Some(detail)
+                Some(detail),
+                false,
             )
             .is_ok(),
             valid
@@ -378,15 +412,21 @@ fn observed_rfpll_rejects_missing_or_stale_sensor_age() {
             ..detail
         };
         assert_eq!(
-            super::validate_rfpll(StationPauseOperation::Rfpll, Some(timings), Some(measured))
-                .is_ok(),
+            super::validate_rfpll(
+                StationPauseOperation::Rfpll,
+                Some(timings),
+                Some(measured),
+                false,
+            )
+            .is_ok(),
             valid
         );
         assert!(
             super::validate_rfpll(
                 StationPauseOperation::RfpllCheck,
                 Some(timings),
-                Some(detail)
+                Some(detail),
+                false,
             )
             .is_ok()
         );

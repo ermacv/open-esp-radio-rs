@@ -103,6 +103,7 @@ impl Phy {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
     pub(crate) maximum_rx_silence_ms: Option<u32>,
+    pub(crate) require_nonzero_rfpll_correction: bool,
     pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
     pub(crate) station_pause_after: Duration,
     pub(crate) address: Ipv4Addr,
@@ -317,6 +318,7 @@ pub(crate) fn run(
                 super::maintenance::run(
                     &capture,
                     operation,
+                    options.require_nonzero_rfpll_correction,
                     output,
                     serde_json::json!({"device_rx_datagrams": device_rx, "host_rx_datagrams": host_rx}),
                 )
@@ -780,6 +782,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             maximum_rx_silence_ms: None,
+            require_nonzero_rfpll_correction: false,
             station_pause: None,
             station_pause_after: Duration::ZERO,
             address: Ipv4Addr::UNSPECIFIED,

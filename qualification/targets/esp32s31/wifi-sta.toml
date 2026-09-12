@@ -300,6 +300,7 @@ vendor-roots = [
 ]
 hil-requirements = [
   { scenario = "diagnostic-station-phy-rfpll-observed", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-rfpll-thermal-observed", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "implementation", id = "automatic-rfpll-service-selection-disabled" },

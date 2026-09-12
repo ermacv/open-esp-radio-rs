@@ -998,6 +998,21 @@ impl Scenario {
                 "maximum_rx_silence_ms requires nonzero station UDP RX/bidirectional bound",
             );
         }
+        if self.criteria.require_nonzero_rfpll_correction
+            && !matches!(
+                self.workload,
+                Workload::Udp {
+                    station_pause: Some(
+                        open_esp_radio_hil_protocol::StationPauseOperation::RfpllObserved
+                    ),
+                    ..
+                }
+            )
+        {
+            return self.criteria_error(
+                "require_nonzero_rfpll_correction requires an RFPLL-observed UDP workload",
+            );
+        }
         if let Some(maximum) = self.criteria.maximum_secondary_tx_interarrival_ms {
             if maximum == 0 {
                 return self.criteria_error("maximum_secondary_tx_interarrival_ms must be nonzero");

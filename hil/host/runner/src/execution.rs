@@ -150,6 +150,9 @@ fn execute_workload_inner(
                         .expect("validated station workload has a link expectation");
                     let config = traffic::rx_traffic::Config {
                         maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
+                        require_nonzero_rfpll_correction: selected
+                            .criteria
+                            .require_nonzero_rfpll_correction,
                         station_pause: *station_pause,
                         station_pause_after: station_pause_after_millis
                             .map(|value| Duration::from_millis(u64::from(value)))
@@ -200,6 +203,9 @@ fn execute_workload_inner(
                         }
                     };
                     let config = traffic::tx_traffic::Config {
+                        require_nonzero_rfpll_correction: selected
+                            .criteria
+                            .require_nonzero_rfpll_correction,
                         station_pause: *station_pause,
                         station_pause_after: station_pause_after_millis
                             .map(|value| Duration::from_millis(u64::from(value)))
@@ -237,6 +243,9 @@ fn execute_workload_inner(
                     };
                     let config = traffic::bidirectional::Config {
                         maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
+                        require_nonzero_rfpll_correction: selected
+                            .criteria
+                            .require_nonzero_rfpll_correction,
                         station_pause: *station_pause,
                         station_pause_after: station_pause_after_millis
                             .map(|value| Duration::from_millis(u64::from(value)))

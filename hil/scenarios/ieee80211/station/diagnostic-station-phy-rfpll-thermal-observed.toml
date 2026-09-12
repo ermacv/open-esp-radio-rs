@@ -23,3 +23,4 @@ station_pause_after_millis = 60000
 exact_delivery = false
 minimum_tx_bps = 10000000
 require_no_beacon_loss = true
+require_nonzero_rfpll_correction = true

@@ -1260,6 +1260,24 @@ fn continuity_bound_is_explicit_and_only_applies_to_station_udp_rx() {
 }
 
 #[test]
+fn nonzero_rfpll_criterion_is_restricted_to_observed_rfpll_workloads() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let thermal = catalog
+        .get("diagnostic-station-phy-rfpll-thermal-observed")
+        .unwrap();
+    assert!(thermal.criteria.require_nonzero_rfpll_correction);
+    assert!(thermal.validate().is_ok());
+
+    let mut unsupported = catalog
+        .get("diagnostic-station-phy-combined-delivery-rx")
+        .unwrap()
+        .clone();
+    unsupported.criteria.require_nonzero_rfpll_correction = true;
+    assert!(unsupported.validate().is_err());
+}
+
+#[test]
 fn synthetic_absence_profiles_keep_the_same_load_and_validate_duration() {
     use open_esp_radio_hil_protocol::StationPauseOperation;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");

@@ -299,6 +299,9 @@ pub struct Criteria {
     pub maximum_idle_channel_utilization_255: Option<u8>,
     /// Maximum silence in the complete station UDP RX observation window.
     pub maximum_rx_silence_ms: Option<u32>,
+    /// Require the observed RFPLL operation to cross its thermal threshold and
+    /// commit a nonzero capacitor correction with frequency-memory restore.
+    pub require_nonzero_rfpll_correction: bool,
     pub maximum_lost: Option<u32>,
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,

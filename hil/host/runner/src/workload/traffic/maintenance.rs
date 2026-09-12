@@ -29,6 +29,7 @@ pub(crate) fn wait_after_progress(delay: Duration) {
 pub(crate) fn run(
     capture: &SerialCapture,
     operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    require_nonzero_rfpll_correction: bool,
     output: &Path,
     progress: serde_json::Value,
 ) -> Result<()> {
@@ -46,7 +47,12 @@ pub(crate) fn run(
             serde_json::to_vec_pretty(&sample)?,
         )?;
         validate_pause(Op::Temperature, sample.evidence)?;
-        validate_rfpll(Op::Temperature, sample.evidence.timings, sample.rfpll)?;
+        validate_rfpll(
+            Op::Temperature,
+            sample.evidence.timings,
+            sample.rfpll,
+            false,
+        )?;
         validate_tx_waits(sample.evidence.timings, sample.tx_waits)?;
         validate_rx_gain(sample.evidence.timings, sample.rx_gain)?;
         if !sample.timer.is_some_and(|timer| timer.is_valid()) {
@@ -82,7 +88,12 @@ pub(crate) fn run(
         }))?,
     )?;
     validate_pause(operation, evidence)?;
-    validate_rfpll(operation, evidence.timings, rfpll)?;
+    validate_rfpll(
+        operation,
+        evidence.timings,
+        rfpll,
+        require_nonzero_rfpll_correction,
+    )?;
     validate_service(operation, service)?;
     validate_tx_waits(evidence.timings, tx_waits)?;
     validate_rx_gain(evidence.timings, report.rx_gain)?;
@@ -292,8 +303,12 @@ fn validate_rfpll(
     operation: open_esp_radio_hil_protocol::StationPauseOperation,
     timings: Option<open_esp_radio_hil_protocol::PhyTimingEvidence>,
     detail: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
+    require_nonzero_correction: bool,
 ) -> Result<()> {
     use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    if require_nonzero_correction && operation != Op::RfpllObserved {
+        return Err("nonzero RFPLL correction is valid only for observed RFPLL work".into());
+    }
     let count = timings.map_or(0, |timing| timing.rfpll.completed);
     match (count, detail) {
         (0, None) if !matches!(operation, Op::Rfpll | Op::RfpllCheck | Op::RfpllObserved) => Ok(()),
@@ -306,7 +321,11 @@ fn validate_rfpll(
                 && (!matches!(operation, Op::Rfpll | Op::RfpllObserved)
                     || detail.sample_age_micros.is_some_and(|age| {
                         age <= open_esp_radio_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS
-                    })) =>
+                    }))
+                && (!require_nonzero_correction
+                    || detail
+                        .correction
+                        .is_some_and(|correction| correction.delta() != 0)) =>
         {
             Ok(())
         }

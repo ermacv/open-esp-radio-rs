@@ -509,7 +509,10 @@ epoch under a 20 Mbit/s TX workload for 60 seconds before acquiring the fresh
 temperature and requesting RFPLL evaluation. The delay is part of the scenario
 manifest and leaves 30 seconds for the operation and restored traffic. It is the
 manual thermal-stimulus profile; the runner still owns router setup, capture,
-the maintenance request and cleanup.
+the maintenance request and cleanup. Unlike the ordinary observation profile,
+this scenario requires a nonzero capacitor delta. The existing typed RFPLL
+validation consequently also requires frequency-memory updates, current-index
+restoration and publication of the fresh temperature as the new reference.
 
 RFPLL detail includes `sample_age_micros`, measured from sensor acquisition
 start to RFPLL entry, including acquisition waits and the subsequent handoff.

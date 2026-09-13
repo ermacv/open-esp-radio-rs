@@ -139,7 +139,7 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "source-127-expiration-consumer-and-periodic-phy-tracking-missing" },
+  { axis = "implementation", id = "source-127-expiration-consumer-and-controller-phy-tracking-integration-missing" },
   { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
@@ -158,7 +158,7 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "periodic-bluetooth-client-tracking-and-last-owner-phy-release-missing" },
+  { axis = "implementation", id = "controller-phy-maintenance-admission-execution-and-physical-release-missing" },
   { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },
   { axis = "hil", id = "bluetooth-registered-phy-client-tracking-and-baseband-cell-missing" },
   { axis = "async", id = "periodic-tracking-wake-cancellation-and-teardown-contract-missing" },
@@ -176,12 +176,12 @@ source-paths = [
 ]
 
 [[capabilities.source-contracts]]
-id = "bluetooth-periodic-phy-lifetime"
-composition = "unimplemented"
-scope = "Compose periodic Bluetooth PHY tracking cancellation wake and last-client physical release into the Controller lifetime"
-limits = "Initial tracking and shared parameter/calibration algorithms exist; missing lifetime composition must not be described as absence of those primitives"
+id = "bluetooth-phy-demand-and-release"
+composition = "production"
+scope = "Retain the registered Bluetooth PHY client while inspecting or cancellation-safely waiting for periodic demand, consume due or periodic evaluation into the exact pending tracking request, and release the client without discarding the saved last-client fact"
+limits = "These lower transitions acquire no Controller or shared-RF permission; Controller quiescence, target execution, timer integration, physical-owner reunion and RF close remain unimplemented"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
+  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
   "crates/hardware/esp32s31/phy/src/state/client.rs",
 ]
 

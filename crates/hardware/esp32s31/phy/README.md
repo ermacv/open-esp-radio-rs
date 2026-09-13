@@ -127,9 +127,11 @@ and cannot authorize the next hardware epoch. Consuming the cold-release owner
 with the platform-derived physical identity returns both the radio and a cache
 captured from the final state after runtime tracking and recalibration. The
 caller can power the same radio back up and run cold registration with that
-cache; validation and hardware replay still run normally. This edge does not
-claim that every platform clock/reset image changed by cold power-up has been
-restored.
+cache; validation and hardware replay still run normally. Cold-owner reunion
+restores the captured Wi-Fi reset, calibration-clock, I2C-source, modem-source
+and register-bus fields before returning ownership. Shared modem ICG maps remain
+installed because they are monotonic platform initialization rather than a
+route-owned power lease.
 
 The Wi-Fi driver composes this boundary through `restart_esp32s31_radio`: the
 cold-release owner is consumed with the identity selected for the next

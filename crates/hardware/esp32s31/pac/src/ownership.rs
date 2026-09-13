@@ -66,6 +66,8 @@ pub enum RadioPhyReleaseError {
     RxDcoControlRestorePending,
     /// Bluetooth TX-power calibration still owns analog-control snapshots.
     BluetoothTxPowerControlRestorePending,
+    /// A route-owned cold-power field did not return to its captured baseline.
+    WifiPowerRestore(crate::modem::platform::WifiPowerRestoreCheckpoint),
 }
 
 /// Failed neutral-root release retaining the cold route owner unchanged.
@@ -737,6 +739,15 @@ pub struct WifiColdRegisters {
 }
 
 impl WifiColdRegisters {
+    /// Capture the reversible Wi-Fi power baseline before the first mutation.
+    #[doc(hidden)]
+    pub fn prepare_wifi_power_epoch(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .prepare_wifi_power_epoch();
+    }
+
     /// Complete the one-way cold-to-running ownership transition.
     ///
     /// This operation itself performs no MMIO. The returned setup token keeps
@@ -752,16 +763,18 @@ impl WifiColdRegisters {
 
     /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
     ///
-    /// This is an ownership-only transition. Higher layers remain responsible
-    /// for completing their clock/reset shutdown before changing protocols;
-    /// releasing the owner does not claim to modify baseband hardware state.
+    /// The PHY layer remains responsible for closing RF and analog state before
+    /// this call. Release drops retained shared-clock leases, restores the
+    /// non-monotonic clock/reset fields captured before Wi-Fi power-up, and
+    /// only then reconstructs the protocol-neutral owner. Global modem ICG
+    /// maps remain installed as monotonic platform initialization.
     ///
     /// # Errors
     ///
     /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
-    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
-    /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
-    /// first.
+    /// RX-DCO, or Bluetooth TX-power control still awaits restoration, or when
+    /// a cold-power baseline fails readback. Recover it with
+    /// [`RadioPhyReleaseFailure::into_parts`] and complete or retry the restore.
     pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
         if self
             .registers
@@ -808,6 +821,17 @@ impl WifiColdRegisters {
             });
         }
         self.registers.release_retained_shared_clocks();
+        if let Err(checkpoint) = self
+            .registers
+            .peripherals
+            .radio_phy
+            .restore_wifi_power_epoch()
+        {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
+            });
+        }
         let Self {
             registers:
                 WifiRadioRegisters {

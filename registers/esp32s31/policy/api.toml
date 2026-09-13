@@ -6012,6 +6012,15 @@ exposure = "facade"
 sources = ["S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
+name = "restore_modem_register_bus_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CTRL0"
+fields = [{ field = "MODEM_CLK_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
 name = "enable_modem_reference_160m_clock"
 peripheral = "HP_SYS_CLKRST_RADIO"
 register = "REF_160M_CTRL0"
@@ -6306,6 +6315,17 @@ domain = "ModemSysconResetState"
 exposure = "facade"
 sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
 
+[[field-argument-modifies]]
+name = "restore_wifi_modem_resets"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+arguments = [
+    { name = "wifi_baseband_asserted", field = "RST_WIFIBB" },
+    { name = "wifi_mac_asserted", field = "RST_WIFIMAC" },
+]
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
 [[field-replace-modifies]]
 name = "enable_phy_calibration_clocks"
 peripheral = "MODEM_SYSCON_RADIO"
@@ -6334,6 +6354,37 @@ value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK", "S31_MODEM_SYSCON_STRUCT"]
 
+[[field-argument-modifies]]
+name = "restore_phy_calibration_clocks"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+arguments = [
+    { name = "wifi_bb_22m", field = "CLK_WIFIBB_22M_EN" },
+    { name = "wifi_bb_40m", field = "CLK_WIFIBB_40M_EN" },
+    { name = "wifi_bb_44m", field = "CLK_WIFIBB_44M_EN" },
+    { name = "wifi_bb_80m", field = "CLK_WIFIBB_80M_EN" },
+    { name = "wifi_bb_40x", field = "CLK_WIFIBB_40X_EN" },
+    { name = "wifi_bb_80x", field = "CLK_WIFIBB_80X_EN" },
+    { name = "wifi_bb_40x1", field = "CLK_WIFIBB_40X1_EN" },
+    { name = "wifi_bb_80x1", field = "CLK_WIFIBB_80X1_EN" },
+    { name = "wifi_bb_160x1", field = "CLK_WIFIBB_160X1_EN" },
+    { name = "wifi_apb", field = "CLK_WIFI_APB_EN" },
+    { name = "frontend_80m", field = "CLK_FE_80M_EN" },
+    { name = "frontend_160m", field = "CLK_FE_160M_EN" },
+    { name = "frontend_apb", field = "CLK_FE_APB_EN" },
+    { name = "bluetooth_apb", field = "CLK_BT_APB_EN" },
+    { name = "bluetooth_baseband", field = "CLK_BTBB_EN" },
+    { name = "frontend_power_detector_adc", field = "CLK_FE_PWDET_ADC_EN" },
+    { name = "frontend_adc", field = "CLK_FE_ADC_EN" },
+    { name = "frontend_dac", field = "CLK_FE_DAC_EN" },
+]
+exposure = "facade"
+sources = [
+    "ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK",
+    "ROM_REV0_PHY_OPEN_FE_BB_CLK",
+    "S31_MODEM_SYSCON_STRUCT",
+]
+
 [[field-replace-modifies]]
 name = "select_phy_i2c_160mhz_source"
 peripheral = "MODEM_SYSCON_RADIO"
@@ -6342,6 +6393,15 @@ fields = [{ field = "CLK_I2C_MST_SEL_160M", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_I2C", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "restore_phy_i2c_160mhz_source"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_I2C_MST_SEL_160M", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "ROM_REV0_PHY_I2C", "S31_MODEM_SYSCON_STRUCT"]
 
 [[field-snapshot-reads]]
 name = "observe_wifi_modem_resets"

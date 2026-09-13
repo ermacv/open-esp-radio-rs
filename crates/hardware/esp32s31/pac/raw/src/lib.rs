@@ -66660,6 +66660,16 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CTRL0 fields `[MODEM_CLK_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn restore_modem_register_bus_clock(registers: &crate::HpSysClkrstRadio, input: u32) {
+        registers.modem_ctrl0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.modem_clk_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields `[REF_160M_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
@@ -66903,6 +66913,16 @@ pub mod field_replace_modify {
     pub fn select_phy_i2c_160mhz_source(registers: &crate::ModemSysconRadio) {
         registers.clk_conf().modify(|_, writer| {
             let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_i2c_mst_sel_160m().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_I2C_MST_SEL_160M]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn restore_phy_i2c_160mhz_source(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.clk_i2c_mst_sel_160m().bit((input & 0x00000001) != 0)
@@ -71009,6 +71029,94 @@ pub mod field_argument_modify {
                 .bit(pll_clock_enabled)
                 .modem_xtal_clk_en()
                 .bit(xtal_clock_enabled)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[wifi_baseband_asserted -> RST_WIFIBB, wifi_mac_asserted -> RST_WIFIMAC]` from independently typed arguments while preserving every other bit.
+    #[inline]
+    pub fn restore_wifi_modem_resets(
+        registers: &crate::ModemSysconRadio,
+        wifi_baseband_asserted: bool,
+        wifi_mac_asserted: bool,
+    ) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            writer
+                .rst_wifibb()
+                .bit(wifi_baseband_asserted)
+                .rst_wifimac()
+                .bit(wifi_mac_asserted)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[wifi_bb_22m -> CLK_WIFIBB_22M_EN, wifi_bb_40m -> CLK_WIFIBB_40M_EN, wifi_bb_44m -> CLK_WIFIBB_44M_EN, wifi_bb_80m -> CLK_WIFIBB_80M_EN, wifi_bb_40x -> CLK_WIFIBB_40X_EN, wifi_bb_80x -> CLK_WIFIBB_80X_EN, wifi_bb_40x1 -> CLK_WIFIBB_40X1_EN, wifi_bb_80x1 -> CLK_WIFIBB_80X1_EN, wifi_bb_160x1 -> CLK_WIFIBB_160X1_EN, wifi_apb -> CLK_WIFI_APB_EN, frontend_80m -> CLK_FE_80M_EN, frontend_160m -> CLK_FE_160M_EN, frontend_apb -> CLK_FE_APB_EN, bluetooth_apb -> CLK_BT_APB_EN, bluetooth_baseband -> CLK_BTBB_EN, frontend_power_detector_adc -> CLK_FE_PWDET_ADC_EN, frontend_adc -> CLK_FE_ADC_EN, frontend_dac -> CLK_FE_DAC_EN]` from independently typed arguments while preserving every other bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn restore_phy_calibration_clocks(
+        registers: &crate::ModemSysconRadio,
+        wifi_bb_22m: bool,
+        wifi_bb_40m: bool,
+        wifi_bb_44m: bool,
+        wifi_bb_80m: bool,
+        wifi_bb_40x: bool,
+        wifi_bb_80x: bool,
+        wifi_bb_40x1: bool,
+        wifi_bb_80x1: bool,
+        wifi_bb_160x1: bool,
+        wifi_apb: bool,
+        frontend_80m: bool,
+        frontend_160m: bool,
+        frontend_apb: bool,
+        bluetooth_apb: bool,
+        bluetooth_baseband: bool,
+        frontend_power_detector_adc: bool,
+        frontend_adc: bool,
+        frontend_dac: bool,
+    ) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            writer
+                .clk_wifibb_22m_en()
+                .bit(wifi_bb_22m)
+                .clk_wifibb_40m_en()
+                .bit(wifi_bb_40m)
+                .clk_wifibb_44m_en()
+                .bit(wifi_bb_44m)
+                .clk_wifibb_80m_en()
+                .bit(wifi_bb_80m)
+                .clk_wifibb_40x_en()
+                .bit(wifi_bb_40x)
+                .clk_wifibb_80x_en()
+                .bit(wifi_bb_80x)
+                .clk_wifibb_40x1_en()
+                .bit(wifi_bb_40x1)
+                .clk_wifibb_80x1_en()
+                .bit(wifi_bb_80x1)
+                .clk_wifibb_160x1_en()
+                .bit(wifi_bb_160x1)
+                .clk_wifi_apb_en()
+                .bit(wifi_apb)
+                .clk_fe_80m_en()
+                .bit(frontend_80m)
+                .clk_fe_160m_en()
+                .bit(frontend_160m)
+                .clk_fe_apb_en()
+                .bit(frontend_apb)
+                .clk_bt_apb_en()
+                .bit(bluetooth_apb)
+                .clk_btbb_en()
+                .bit(bluetooth_baseband)
+                .clk_fe_pwdet_adc_en()
+                .bit(frontend_power_detector_adc)
+                .clk_fe_adc_en()
+                .bit(frontend_adc)
+                .clk_fe_dac_en()
+                .bit(frontend_dac)
         });
     }
 

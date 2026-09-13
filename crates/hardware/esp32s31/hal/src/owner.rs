@@ -705,6 +705,7 @@ pub enum ColdReunionError {
     TxIqToneControlRestorePending,
     RxDcoControlRestorePending,
     BluetoothTxPowerControlRestorePending,
+    WifiPowerRestore(oer_esp32s31_pac::WifiPowerRestoreCheckpoint),
 }
 
 impl From<RadioPhyReleaseError> for ColdReunionError {
@@ -717,6 +718,9 @@ impl From<RadioPhyReleaseError> for ColdReunionError {
             RadioPhyReleaseError::RxDcoControlRestorePending => Self::RxDcoControlRestorePending,
             RadioPhyReleaseError::BluetoothTxPowerControlRestorePending => {
                 Self::BluetoothTxPowerControlRestorePending
+            }
+            RadioPhyReleaseError::WifiPowerRestore(checkpoint) => {
+                Self::WifiPowerRestore(checkpoint)
             }
         }
     }
@@ -841,6 +845,7 @@ impl<P> Radio<P, state::Owned> {
     /// `P` remains an affine integration witness. A successful PAC read-back
     /// is the only safe path into `Radio<P, Powered>`.
     pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
+        self.state.registers.prepare_wifi_power_epoch();
         if let Err(error) = power::execute_owned(&mut self.state.registers) {
             return Err(PowerUpFailure { radio: self, error });
         }
@@ -914,11 +919,11 @@ impl<P> Radio<P, state::Powered> {
 
     /// Return a physically closed radio to the cold ownership frontier.
     ///
-    /// This method performs only retained shared-clock release and ownership
-    /// reunion. The PHY layer must complete RF close and temperature-sensor
-    /// power-down before calling it; ordinary application flow reaches it only
-    /// through the registered PHY cold-release transaction. This does not
-    /// restore every platform clock/reset image changed by cold power-up.
+    /// The PHY layer must complete RF close and temperature-sensor power-down
+    /// before calling it; ordinary application flow reaches it only through
+    /// the registered PHY cold-release transaction. This releases retained
+    /// shared clocks and restores the route-owned cold-power baseline before
+    /// reconstructing the cold owner.
     #[doc(hidden)]
     pub fn reunite_cold_after_phy_close(
         self,

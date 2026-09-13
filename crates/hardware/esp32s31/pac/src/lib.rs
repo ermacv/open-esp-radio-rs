@@ -158,7 +158,7 @@ pub use ieee802154::{
 };
 
 pub use modem::{
-    platform::PlatformClockPowerObservation,
+    platform::{PlatformClockPowerObservation, WifiPowerRestoreCheckpoint},
     shared_clock::{
         BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
         CoexistenceLowPowerClockSource, ModemLowPowerClockSource, SharedModemClockObservation,

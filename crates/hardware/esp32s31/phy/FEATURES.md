@@ -101,7 +101,7 @@ selected, every channel is usable or all radio clients can run concurrently.
 | Periodic parameter/calibration tracking | PARTIAL: opt-in connected-station observation service; current parent order at role boundaries; no default automatic service or qualified RFPLL execution | PARTIAL: initial tracking exists; periodic Controller maintenance remains incomplete | PARTIAL: target tracking entry exists; RF/runtime service remains incomplete |
 | Operational power selection | IMPLEMENTED: configured Wi-Fi ceiling reaches per-rate MAC codes | PARTIAL: default event power encoding, not general live power control | PARTIAL: provider-index resolution lacks calibrated provider/MMIO composition |
 | Resume after RF sleep | ABSENT | ABSENT | ABSENT |
-| Complete last-client RF/analog shutdown | PARTIAL: the production Wi-Fi supervisor can quiesce an idle role frontier, release the final client, execute target RF close and cold-owner reunion, then cold-restart with the final-state cache. The platform still does not restore every clock/reset image changed by cold power-up | ABSENT | ABSENT |
+| Complete last-client RF/analog shutdown | IMPLEMENTED: the production Wi-Fi supervisor quiesces an idle role frontier, releases the final client, executes target RF close, restores the captured route-owned clock/reset baseline during cold-owner reunion, and can cold-restart with the final-state cache | ABSENT | ABSENT |
 
 The relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),
 [Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),
@@ -119,9 +119,9 @@ refcount ownership, IRQ routing, DMA ownership and operational MAC service.
 | Target-bound registration/client proof | IMPLEMENTED | Registered wrappers couple state/proof to the hardware epoch; target runners produce the completion authority. A model-only result is insufficient. |
 | Cold RF activation | PARTIAL | Registration and the Wi-Fi cold-power path compose initialization; protocol-wide reusable wake semantics are not supplied by that cold path. |
 | RF wake from retained sleep | ABSENT | `RegisteredPhyRfClosed` retains semantic state, but no direct wake transaction restores its physical RF/PHY/baseband state. |
-| RF sleep/power-down | PARTIAL | The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor invokes the distinct cold-release edge for an explicit idle cold restart. Retained sleep/wake and complete platform clock/reset reversal remain absent. |
+| RF sleep/power-down | PARTIAL | The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor invokes cold release, including captured route-owned clock/reset restoration, for an explicit idle cold restart. Direct retained sleep/wake remains absent. |
 | Stop tracking / release last client | IMPLEMENTED | Model release disarms tracking state and produces a distinct powered-idle hardware owner on the last client. Non-final release cannot enter RF close. Runtime timer cancellation remains a composition responsibility before stopped-owner reunion. |
-| RF and analog shutdown | IMPLEMENTED | `RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor and returns the cold radio owner. This is source coverage, not silicon qualification or complete platform-clock power-down. |
+| RF and analog shutdown | IMPLEMENTED | `RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor, restores the captured Wi-Fi clock/reset baseline and returns the cold radio owner. This is source coverage rather than broad silicon qualification. |
 | Re-registration after owned shutdown | IMPLEMENTED | Consuming cold release with the platform-derived physical identity returns `Radio<P, Owned>` together with a cache captured from the final post-tracking state; the ordinary power-up and target-registration entry validate that cache and replay hardware-resident frequency/RX/TX state. |
 | Tracking failure containment | FAIL-CLOSED | Failed target tracking consumes the unique request into a poisoned epoch. Target futures must reach a terminal result; cancellation requires out-of-band hardware reset rather than reuse of partial state. |
 
@@ -138,6 +138,6 @@ and calibration stability across sleep/wake require their own hardware evidence.
 A completed source transition or protocol cold start cannot substitute for those
 measurements. Cache-backed cold partial calibration and RF-close-to-cold-registration
 ownership are implemented and composed by the Wi-Fi supervisor. Direct
-retained sleep/wake remains unsupported. Repeated connection and data-path HIL,
-complete platform clock/reset reversal and broad RF qualification remain
-separate readiness requirements.
+retained sleep/wake remains unsupported. Repeated connection and data-path HIL
+cover the Wi-Fi cold-restart boundary; broad RF qualification remains a
+separate readiness requirement.

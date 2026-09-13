@@ -5294,6 +5294,15 @@ pub(crate) fn enable_modem_register_bus_clock(registers: &crate::svd::HpSysClkrs
     crate::svd::field_replace_modify::enable_modem_register_bus_clock(registers);
 }
 
+/// Typed bridge for the reviewed `restore_modem_register_bus_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn restore_modem_register_bus_clock(
+    registers: &crate::svd::HpSysClkrstRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::restore_modem_register_bus_clock(registers, value.bits());
+}
+
 /// Typed bridge for the reviewed `enable_modem_reference_160m_clock` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn enable_modem_reference_160m_clock(registers: &crate::svd::HpSysClkrstRadio) {
@@ -5400,6 +5409,15 @@ pub(crate) fn enable_phy_calibration_clocks(registers: &crate::svd::ModemSysconR
 #[inline]
 pub(crate) fn select_phy_i2c_160mhz_source(registers: &crate::svd::ModemSysconRadio) {
     crate::svd::field_replace_modify::select_phy_i2c_160mhz_source(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_i2c_160mhz_source` field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_i2c_160mhz_source(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::restore_phy_i2c_160mhz_source(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `enable_wifi_mac_clocks` fixed field-replacement transaction.
@@ -7761,6 +7779,70 @@ pub(crate) fn restore_modem_source_clocks(
         pll_selected,
         pll_clock_enabled,
         xtal_clock_enabled,
+    );
+}
+
+/// Typed bridge for the reviewed `restore_wifi_modem_resets` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn restore_wifi_modem_resets(
+    registers: &crate::svd::ModemSysconRadio,
+    wifi_baseband_asserted: bool,
+    wifi_mac_asserted: bool,
+) {
+    crate::svd::field_argument_modify::restore_wifi_modem_resets(
+        registers,
+        wifi_baseband_asserted,
+        wifi_mac_asserted,
+    );
+}
+
+/// Typed bridge for the reviewed `restore_phy_calibration_clocks` multi-argument field-replacement transaction.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "reviewed hardware transaction exposes one typed argument per field"
+)]
+#[inline]
+pub(crate) fn restore_phy_calibration_clocks(
+    registers: &crate::svd::ModemSysconRadio,
+    wifi_bb_22m: bool,
+    wifi_bb_40m: bool,
+    wifi_bb_44m: bool,
+    wifi_bb_80m: bool,
+    wifi_bb_40x: bool,
+    wifi_bb_80x: bool,
+    wifi_bb_40x1: bool,
+    wifi_bb_80x1: bool,
+    wifi_bb_160x1: bool,
+    wifi_apb: bool,
+    frontend_80m: bool,
+    frontend_160m: bool,
+    frontend_apb: bool,
+    bluetooth_apb: bool,
+    bluetooth_baseband: bool,
+    frontend_power_detector_adc: bool,
+    frontend_adc: bool,
+    frontend_dac: bool,
+) {
+    crate::svd::field_argument_modify::restore_phy_calibration_clocks(
+        registers,
+        wifi_bb_22m,
+        wifi_bb_40m,
+        wifi_bb_44m,
+        wifi_bb_80m,
+        wifi_bb_40x,
+        wifi_bb_80x,
+        wifi_bb_40x1,
+        wifi_bb_80x1,
+        wifi_bb_160x1,
+        wifi_apb,
+        frontend_80m,
+        frontend_160m,
+        frontend_apb,
+        bluetooth_apb,
+        bluetooth_baseband,
+        frontend_power_detector_adc,
+        frontend_adc,
+        frontend_dac,
     );
 }
 

@@ -68,7 +68,7 @@ source-paths = [
 id = "phy-final-state-cache-handoff"
 composition = "production"
 scope = "Consume the cold-release owner with the platform-derived physical identity, capture the final post-tracking cache and feed both directly into the ordinary validated cold-restart graph"
-limits = "The production supervisor invokes the release/restart chain only from its idle control frontier; retained-sleep wake, repeated hardware lifecycle evidence and complete platform clock/reset reversal remain absent"
+limits = "The production supervisor invokes the release/restart chain only from its idle control frontier; retained-sleep wake remains absent and broad RF behavior remains outside this source contract"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/registered_radio.rs",

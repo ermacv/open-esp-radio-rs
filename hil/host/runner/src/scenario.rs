@@ -110,6 +110,7 @@ pub enum PhyExpectation {
 pub enum WifiOperation {
     Stop,
     Start,
+    Restart,
     Scan,
     Monitor,
     AccessPoint,
@@ -122,6 +123,7 @@ impl WifiOperation {
         match self {
             Self::Stop => "stop",
             Self::Start => "start",
+            Self::Restart => "restart",
             Self::Scan => "scan",
             Self::Monitor => "monitor",
             Self::AccessPoint => "ap",

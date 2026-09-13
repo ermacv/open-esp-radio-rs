@@ -10,6 +10,9 @@ const IDENTITY: crate::calibration::registration::PhyCalibrationIdentity =
 fn complete_calibration_cache() -> PhyCalibrationCache {
     let mut state = PhyState::new(PhyConfig::production());
     state.common.temperature = 23;
+    state.common.rfpll_tracking_temperature = 19;
+    state.common.calibration_tracking_temperature = 17;
+    state.common.txdc_tracking_temperature = 13;
     state.common.sensor_index = 3;
     state.common.crystal_selector = 2;
     state.common.rc_result = 41;
@@ -479,11 +482,15 @@ fn cached_calibration_restores_products_but_resets_runtime_and_hardware_epoch_st
     assert_eq!(state.common.temperature, snapshot.common.temperature);
     assert_eq!(
         state.common.calibration_tracking_temperature,
-        snapshot.common.temperature
+        snapshot.common.rxcal_reference_temperature
     );
     assert_eq!(
         state.common.txdc_tracking_temperature,
-        snapshot.common.temperature
+        snapshot.common.txcal_reference_temperature
+    );
+    assert_eq!(
+        state.common.rfpll_tracking_temperature,
+        snapshot.common.rfpll_reference_temperature
     );
     assert_eq!(state.common.calibrated_attenuation, 13);
     assert_eq!(state.wifi.tx_dco, snapshot.wifi.tx_dco);

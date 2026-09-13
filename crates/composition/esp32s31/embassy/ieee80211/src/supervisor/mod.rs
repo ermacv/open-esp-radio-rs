@@ -25,7 +25,9 @@ use core::{future::Future, marker::PhantomData, pin::Pin};
 
 use crate::{
     composition::{
-        start::{RadioStartConfig, start_esp32s31_radio},
+        start::{
+            RadioStartConfig, RadioStartFailure, restart_esp32s31_radio, start_esp32s31_radio,
+        },
         supervisor::{
             RadioSupervisorTask, StationSupervisorEpoch, StationSupervisorHooks,
             WifiSupervisorStopped, drive_esp32s31_monitor_role, prepare_esp32s31_radio_supervisor,
@@ -76,7 +78,10 @@ use oer_esp32s31_wifi::{
     cold_start::WifiColdStartConfig as Esp32s31WifiStartConfig,
     lower_wifi_channel,
     mac_start::WifiMacStartConfig,
-    runtime::{WifiRoleOwner, WifiStopped, materialize_esp32s31_wifi_role},
+    runtime::{
+        WifiRadioReleaseDisposition, WifiRadioReleaseFailure, WifiRoleOwner, WifiStopped,
+        materialize_esp32s31_wifi_role,
+    },
     tx::ControlTxConfig,
 };
 
@@ -499,6 +504,36 @@ enum ProductionWifiStoppedResources {
     Returned(ProductionWifiReusableResources<'static>),
 }
 
+type ProductionRadioResources = (
+    ProductionWifiPhysicalResources,
+    ProductionStationRoleResources,
+    ProductionAccessPointResources,
+    ProductionMonitorResources,
+);
+
+enum ProductionRadioLifecycleFault {
+    ShutdownQuiesce {
+        _failure: maintenance::Failure,
+    },
+    Release {
+        _failure: WifiRadioReleaseFailure<EspHalRadioPeripheral>,
+        _resources: ProductionRadioResources,
+    },
+    Shared {
+        _radio: oer_esp32s31_phy::RegisteredPhyRadio<EspHalRadioPeripheral>,
+        _resources: ProductionRadioResources,
+    },
+    Restart {
+        _failure: RadioStartFailure<EspHalRadioPeripheral>,
+        _resources: ProductionRadioResources,
+    },
+}
+
+// A whole-radio restart failure is terminal for this boot. Keep its exact
+// owner graph outside the supervisor task frame so every ordinary role epoch
+// does not pay for the largest cold-start failure variant.
+static RADIO_LIFECYCLE_FAULT: StaticCell<ProductionRadioLifecycleFault> = StaticCell::new();
+
 /// Quiescent production frontier with physical hardware and each role's
 /// storage represented by independent owners.
 #[allow(clippy::result_large_err)]
@@ -519,6 +554,7 @@ struct ProductionWifiEpochRunner {
     trng: Trng,
     station_control: &'static StationControlResources<CriticalSectionRawMutex>,
     monitor_capture: &'static CaptureResources,
+    radio_start: RadioStartConfig,
 }
 
 /// Eternal supervisor for the Core0 radio ownership domain. Controlled child
@@ -567,6 +603,9 @@ enum ProductionStationReclaimFault<'security> {
 enum ProductionWifiFault {
     PhyMaintenance {
         _failure: maintenance::Failure,
+    },
+    RadioLifecycle {
+        _failure: &'static mut ProductionRadioLifecycleFault,
     },
     PairedStationPhase {
         _owner: ProductionStationOwner<'static, 'static>,
@@ -841,12 +880,13 @@ pub async fn new(
         wifi_start = wifi_start.with_maximum_tx_power_quarter_dbm(maximum);
     }
     let mut phy_clock = EmbassyPhyClock;
+    let radio_start = RadioStartConfig::new(
+        wifi_start,
+        WifiMacStartConfig::new(MAC_HANDSHAKE_SAMPLE_LIMIT, station_mac, access_point_mac),
+    );
     let ready = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyPhyDelay, _>(
         owned,
-        RadioStartConfig::new(
-            wifi_start,
-            WifiMacStartConfig::new(MAC_HANDSHAKE_SAMPLE_LIMIT, station_mac, access_point_mac,),
-        ),
+        radio_start,
         calibration_cache,
         NoopPhyTargetObserver,
         &mut phy_clock,
@@ -998,6 +1038,7 @@ pub async fn new(
             // leases fresh controller/task endpoints through `split()`.
             station_control: memory.station_control,
             monitor_capture: monitor.capture,
+            radio_start,
         },
         stopped,
     ) {

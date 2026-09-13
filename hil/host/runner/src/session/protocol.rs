@@ -773,6 +773,10 @@ impl SerialCapture {
         self.request_wifi_command(Command::StopStation, "station stop")
     }
 
+    pub(crate) fn request_radio_restart(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::RestartRadio, "idle radio restart")
+    }
+
     pub(crate) fn query_stack_usage(&self, timeout: Duration) -> Result<StackUsage> {
         let response = self.send_command(0, Command::QueryStackUsage, timeout)?;
         match response.body {

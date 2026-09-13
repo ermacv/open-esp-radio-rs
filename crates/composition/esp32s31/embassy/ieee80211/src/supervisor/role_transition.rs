@@ -257,11 +257,9 @@ pub(super) fn try_split_wifi_stopped_resources(
                 station,
                 registers,
             } => {
-                let (ring, rx) = receive
-                    .try_into_live_epoch_parts()
-                    .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
+                let (ring, rx) = receive.into_physical_parts();
                 (
-                    ProductionRxRing::Live(ring),
+                    ring,
                     ProductionStationReturnedPhase::Disconnected {
                         network,
                         rx: Some(rx),
@@ -410,12 +408,14 @@ pub(super) fn join_station_activation_resources(
                 } => StationStoppedPhaseResources::Disconnected {
                     network,
                     receive: match ring {
-                        ProductionRxRing::Halted(_) => unreachable!(
-                            "a disconnected station never receives a halted AP handoff"
+                        ProductionRxRing::Halted(ring) => ConnectedParkedRx::from_halted(
+                            rx.expect("disconnected station must reclaim its RX publisher")
+                                .with_halted_ring(ring),
                         ),
-                        ProductionRxRing::Live(ring) => rx
-                            .expect("disconnected station must reclaim its RX publisher")
-                            .with_live_ring(ring),
+                        ProductionRxRing::Live(ring) => ConnectedParkedRx::from_live(
+                            rx.expect("disconnected station must reclaim its RX publisher")
+                                .with_live_ring(ring),
+                        ),
                     },
                     aggregate_tx: aggregate_tx
                         .take()

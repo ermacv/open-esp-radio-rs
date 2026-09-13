@@ -266,7 +266,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 5;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 6;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationCacheError {
@@ -278,7 +278,12 @@ pub enum PhyCalibrationCacheError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCommonCalibration {
+    /// Most recently observed temperature. This is observation state, not a
+    /// calibration reference for any runtime tracking branch.
     pub temperature: i16,
+    pub rfpll_reference_temperature: i16,
+    pub rxcal_reference_temperature: i16,
+    pub txcal_reference_temperature: i16,
     pub sensor_index: u8,
     pub crystal_selector: u8,
     pub rc_result: u8,
@@ -1398,9 +1403,10 @@ impl PhyState {
         let mut restored = Self::new(config);
 
         restored.common.temperature = snapshot.common.temperature;
-        restored.common.rfpll_tracking_temperature = snapshot.common.temperature;
-        restored.common.calibration_tracking_temperature = snapshot.common.temperature;
-        restored.common.txdc_tracking_temperature = snapshot.common.temperature;
+        restored.common.rfpll_tracking_temperature = snapshot.common.rfpll_reference_temperature;
+        restored.common.calibration_tracking_temperature =
+            snapshot.common.rxcal_reference_temperature;
+        restored.common.txdc_tracking_temperature = snapshot.common.txcal_reference_temperature;
         restored.common.calibrated_attenuation = snapshot.wifi.calibrated_attenuation;
         restored.common.sensor_index = snapshot.common.sensor_index;
         restored.common.crystal_selector = snapshot.common.crystal_selector;
@@ -1487,6 +1493,9 @@ impl PhyState {
             identity,
             common: PhyCommonCalibration {
                 temperature: self.common.temperature,
+                rfpll_reference_temperature: self.common.rfpll_tracking_temperature,
+                rxcal_reference_temperature: self.common.calibration_tracking_temperature,
+                txcal_reference_temperature: self.common.txdc_tracking_temperature,
                 sensor_index: self.common.sensor_index,
                 crystal_selector: self.common.crystal_selector,
                 rc_result: self.common.rc_result,

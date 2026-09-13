@@ -88,6 +88,24 @@ impl<P> WifiStopped<P> {
             transition_report,
             current_channel,
         } = self;
+        let (registers, interrupt_setup) = match registers.try_confirm_phy_stopped(interrupt_setup)
+        {
+            Ok(frontier) => frontier,
+            Err(failure) => {
+                return Err(WifiPhyClientReleaseFailure {
+                    error: WifiPhyClientReleaseError::Hardware(failure.error),
+                    owner: Self {
+                        platform,
+                        registers: failure.registers,
+                        interrupt_setup: failure.interrupts,
+                        phy,
+                        start_report,
+                        transition_report,
+                        current_channel,
+                    },
+                });
+            }
+        };
         let mut radio = Radio::<P, radio_state::Running>::from_runtime_parts(
             platform,
             registers,
@@ -102,7 +120,7 @@ impl<P> WifiStopped<P> {
                 let (platform, registers, interrupt_setup) =
                     radio.into_running().into_runtime_parts();
                 Err(WifiPhyClientReleaseFailure {
-                    error: failure.error(),
+                    error: WifiPhyClientReleaseError::Client(failure.error()),
                     owner: Self {
                         platform,
                         registers,
@@ -303,12 +321,18 @@ pub enum WifiRadioReleaseFailure<P> {
 /// Failed stopped-frontier PHY client release retaining all Wi-Fi owners.
 #[must_use = "failed PHY client release retains the complete stopped Wi-Fi frontier"]
 pub struct WifiPhyClientReleaseFailure<P> {
-    error: oer_esp32s31_phy::state::client::PhyClientReleaseError,
+    error: WifiPhyClientReleaseError,
     owner: WifiStopped<P>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiPhyClientReleaseError {
+    Hardware(oer_esp32s31_hal::owner::maintenance::Error),
+    Client(oer_esp32s31_phy::state::client::PhyClientReleaseError),
+}
+
 impl<P> WifiPhyClientReleaseFailure<P> {
-    pub const fn error(&self) -> oer_esp32s31_phy::state::client::PhyClientReleaseError {
+    pub const fn error(&self) -> WifiPhyClientReleaseError {
         self.error
     }
 

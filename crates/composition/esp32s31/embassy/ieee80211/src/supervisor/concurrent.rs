@@ -1098,7 +1098,7 @@ impl ProductionWifiEpochRunner {
         let disconnected = ConnectedDisconnectedEpoch::new(
             RunningStationNetwork::new((), network_runner),
             teardown.hardware,
-            teardown.parked_rx,
+            ConnectedParkedRx::from_live(teardown.parked_rx),
             teardown.aggregate,
             control_resources,
         );

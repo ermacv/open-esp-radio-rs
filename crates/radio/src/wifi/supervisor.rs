@@ -196,6 +196,22 @@ pub struct WifiStopReport {
     generation: RadioSubsystemGeneration,
 }
 
+/// Successful whole-radio cold restart while no Wi-Fi role was active.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiRadioRestartReport {
+    generation: RadioSubsystemGeneration,
+}
+
+impl WifiRadioRestartReport {
+    pub const fn new(generation: RadioSubsystemGeneration) -> Self {
+        Self { generation }
+    }
+
+    pub const fn generation(self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+}
+
 impl WifiStopReport {
     pub const fn new(generation: RadioSubsystemGeneration) -> Self {
         Self { generation }
@@ -260,6 +276,10 @@ pub trait WifiSupervisorPort {
     ) -> impl Future<Output = WifiStartResult<MonitorRequest, Self::Error>> + '_;
 
     fn stop(&mut self) -> impl Future<Output = Result<WifiStopReport, Self::Error>> + '_;
+
+    fn restart_radio(
+        &mut self,
+    ) -> impl Future<Output = Result<WifiRadioRestartReport, Self::Error>> + '_;
 }
 
 /// Role-neutral Wi-Fi control capability.
@@ -281,6 +301,13 @@ impl<P> WifiIdle<P> {
 }
 
 impl<P: WifiSupervisorPort> WifiIdle<P> {
+    /// Close and cold-start the physical radio while retaining this idle
+    /// application control capability.
+    pub async fn restart_radio(mut self) -> Result<(Self, WifiRadioRestartReport), P::Error> {
+        let report = self.port.restart_radio().await?;
+        Ok((self, report))
+    }
+
     pub async fn scan(
         mut self,
         request: WifiScanRequest,

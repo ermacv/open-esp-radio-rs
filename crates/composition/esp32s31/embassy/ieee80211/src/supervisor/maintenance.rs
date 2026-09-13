@@ -74,37 +74,31 @@ impl Failure {
     }
 }
 
-/// No connected task runs here: ordinary and aggregate TX resources have
-/// returned, while the live RX ring and IRQ route may still be installed.
-pub(super) async fn maintain(
-    stopped: ProductionSupervisorStopped,
-) -> Result<ProductionSupervisorStopped, Failure> {
-    let (mut wifi, mut physical, station, access_point, monitor) = stopped.into_parts();
-    let snapshot = match &mut wifi {
-        ProductionWifiOwner::Cold(owner) => owner.phy_client_snapshot(),
-        ProductionWifiOwner::Live { owner, .. } => owner.radio_mut().0.client_snapshot(),
-    };
-    let mut clock = EmbassyPhyClock;
-    let due = match snapshot.tracking_schedule_at(clock.now_micros()) {
-        Ok(Schedule::Due(_)) => true,
-        Ok(Schedule::Inactive | Schedule::At(_)) => false,
-        Err(error) => {
-            return Err(Failure::radio(
-                wifi,
-                (physical, station, access_point, monitor),
-                Reason::Deadline(error),
-            ));
-        }
-    };
-    if !due {
-        return Ok(WifiSupervisorStopped::new(
-            wifi,
-            physical,
-            station,
-            access_point,
-            monitor,
-        ));
+struct Quiesced {
+    wifi: WifiStopped<EspHalRadioPeripheral>,
+    physical: ProductionWifiPhysicalResources,
+    station: ProductionStationRoleResources,
+    access_point: ProductionAccessPointResources,
+    monitor: ProductionMonitorResources,
+    restore_live: bool,
+}
+
+pub(super) struct ShutdownFrontier {
+    wifi: WifiStopped<EspHalRadioPeripheral>,
+    resources: Resources,
+}
+
+impl ShutdownFrontier {
+    pub(super) fn into_parts(self) -> (WifiStopped<EspHalRadioPeripheral>, Resources) {
+        (self.wifi, self.resources)
     }
+}
+
+async fn quiesce(
+    stopped: ProductionSupervisorStopped,
+    clock: &mut EmbassyPhyClock,
+) -> Result<Quiesced, Failure> {
+    let (wifi, mut physical, station, access_point, monitor) = stopped.into_parts();
     let tx_idle = match &physical.tx {
         ProductionOrdinaryTxResources::Uninitialized(_) => true,
         ProductionOrdinaryTxResources::Epoch(epoch) => {
@@ -127,15 +121,14 @@ pub(super) async fn maintain(
             Reason::RxOwner,
         ));
     }
-    let stopped = match wifi {
+    let wifi = match wifi {
         ProductionWifiOwner::Cold(stopped) => stopped,
         ProductionWifiOwner::Live {
             mut owner,
             mut registers,
             mut interrupts,
         } => {
-            if let Err(error) = await_stack_boundary!(stop_mac(&mut registers, &mut clock, 100_000))
-            {
+            if let Err(error) = await_stack_boundary!(stop_mac(&mut registers, clock, 100_000)) {
                 return Err(Failure::radio(
                     ProductionWifiOwner::Live {
                         owner,
@@ -198,6 +191,75 @@ pub(super) async fn maintain(
             owner.into_stopped(registers, setup, ()).wifi
         }
     };
+    Ok(Quiesced {
+        wifi,
+        physical,
+        station,
+        access_point,
+        monitor,
+        restore_live,
+    })
+}
+
+pub(super) async fn quiesce_for_shutdown(
+    stopped: ProductionSupervisorStopped,
+) -> Result<ShutdownFrontier, Failure> {
+    let mut clock = EmbassyPhyClock;
+    let quiesced = quiesce(stopped, &mut clock).await?;
+    Ok(ShutdownFrontier {
+        wifi: quiesced.wifi,
+        resources: (
+            quiesced.physical,
+            quiesced.station,
+            quiesced.access_point,
+            quiesced.monitor,
+        ),
+    })
+}
+
+/// No connected task runs here: ordinary and aggregate TX resources have
+/// returned, while the live RX ring and IRQ route may still be installed.
+pub(super) async fn maintain(
+    stopped: ProductionSupervisorStopped,
+) -> Result<ProductionSupervisorStopped, Failure> {
+    let (mut wifi, physical, station, access_point, monitor) = stopped.into_parts();
+    let snapshot = match &mut wifi {
+        ProductionWifiOwner::Cold(owner) => owner.phy_client_snapshot(),
+        ProductionWifiOwner::Live { owner, .. } => owner.radio_mut().0.client_snapshot(),
+    };
+    let mut clock = EmbassyPhyClock;
+    let due = match snapshot.tracking_schedule_at(clock.now_micros()) {
+        Ok(Schedule::Due(_)) => true,
+        Ok(Schedule::Inactive | Schedule::At(_)) => false,
+        Err(error) => {
+            return Err(Failure::radio(
+                wifi,
+                (physical, station, access_point, monitor),
+                Reason::Deadline(error),
+            ));
+        }
+    };
+    if !due {
+        return Ok(WifiSupervisorStopped::new(
+            wifi,
+            physical,
+            station,
+            access_point,
+            monitor,
+        ));
+    }
+    let Quiesced {
+        wifi: stopped,
+        mut physical,
+        station,
+        access_point,
+        monitor,
+        restore_live,
+    } = quiesce(
+        WifiSupervisorStopped::new(wifi, physical, station, access_point, monitor),
+        &mut clock,
+    )
+    .await?;
     let (wifi, outcome) = match await_stack_boundary!(
         stopped.maintain_phy::<EmbassyPhyDelay, _>(&mut clock, NoopPhyTargetObserver)
     ) {

@@ -138,6 +138,7 @@ type RebindableStationPhase<
     NS,
     A,
     C,
+    P,
     const QUEUE_DEPTH: usize,
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
@@ -150,19 +151,7 @@ type RebindableStationPhase<
     ReceiveFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
     StationNetworkResources<ND, NR, NS>,
     RunningStationNetwork<NS, NR>,
-    StagedRxProducer<
-        'storage,
-        'pool,
-        'queue,
-        RD,
-        M,
-        QUEUE_DEPTH,
-        COUNT,
-        STAGE_CAPACITY,
-        STAGE_SLOTS,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >,
+    P,
     A,
     C,
     RxEpochResources<
@@ -564,6 +553,8 @@ pub fn try_rebind_esp32s31_station_phase<
     NS,
     A,
     C,
+    P,
+    F,
     const QUEUE_DEPTH: usize,
     const COUNT: usize,
     const STAGE_CAPACITY: usize,
@@ -584,6 +575,7 @@ pub fn try_rebind_esp32s31_station_phase<
         NS,
         A,
         C,
+        P,
         QUEUE_DEPTH,
         COUNT,
         STAGE_CAPACITY,
@@ -593,6 +585,7 @@ pub fn try_rebind_esp32s31_station_phase<
     >,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     identity: StaIdentity,
+    from_live: F,
 ) -> Result<
     RebindableStationPhase<
         'arena,
@@ -607,6 +600,7 @@ pub fn try_rebind_esp32s31_station_phase<
         NS,
         A,
         C,
+        P,
         QUEUE_DEPTH,
         COUNT,
         STAGE_CAPACITY,
@@ -628,6 +622,7 @@ pub fn try_rebind_esp32s31_station_phase<
             NS,
             A,
             C,
+            P,
             QUEUE_DEPTH,
             COUNT,
             STAGE_CAPACITY,
@@ -640,6 +635,21 @@ pub fn try_rebind_esp32s31_station_phase<
 where
     PD: RxFrontierDelay,
     M: RawMutex,
+    F: FnOnce(
+        StagedRxProducer<
+            'storage,
+            'pool,
+            'queue,
+            RD,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+    ) -> P,
 {
     match resources {
         StationStoppedPhaseResources::InitialScan {
@@ -741,7 +751,7 @@ where
             station.association_preference = identity.association_preference;
             Ok(StationStoppedPhaseResources::Disconnected {
                 network,
-                receive: rx.with_live_ring(live),
+                receive: from_live(rx.with_live_ring(live)),
                 aggregate_tx,
                 control,
                 station,

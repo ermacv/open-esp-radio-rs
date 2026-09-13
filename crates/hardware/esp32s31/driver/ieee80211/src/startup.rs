@@ -102,17 +102,17 @@ where
 /// This has the same fail-stop cancellation contract as
 /// [`start_esp32s31_radio`]. Once polled, it must reach a terminal result.
 #[must_use = "cold radio restart must be driven to a terminal result"]
-pub async fn restart_esp32s31_radio<P, D, O>(
+pub fn restart_esp32s31_radio<'a, P, D, O>(
     released: RegisteredPhyColdReleased<P>,
     config: RadioStartConfig,
     observer: O,
-    clock: &mut impl PhyPllTrackClock,
-) -> Result<RadioReady<P>, RadioStartFailure<P>>
+    clock: &'a mut impl PhyPllTrackClock,
+) -> impl core::future::Future<Output = Result<RadioReady<P>, RadioStartFailure<P>>> + 'a
 where
-    P: WifiMacPlatform,
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver + Clone,
+    P: WifiMacPlatform + 'a,
+    D: PhyAsyncDelay + 'a,
+    O: PhyTargetObserver + Clone + 'a,
 {
     let (radio, calibration_cache) = released.into_parts(config.wifi.calibration_identity);
-    start_esp32s31_radio::<P, D, O>(radio, config, Some(calibration_cache), observer, clock).await
+    start_esp32s31_radio::<P, D, O>(radio, config, Some(calibration_cache), observer, clock)
 }

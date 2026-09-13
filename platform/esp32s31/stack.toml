@@ -70,8 +70,8 @@ reason = "atomic connected composition retains the validated plan and complete s
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-embassy-wifi-0.1.0/src/supervisor/mod.rs"]
-max_bytes = 18176
-reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
+max_bytes = 19712
+reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; diagnostic builds retain their value-only driver observation state, and the stopped frontier retains the immutable cold-restart policy while registered PHY state and its shared client scheduler remain affine through role transfers"
 
 [[reviewed_frames]]
 function_contains = "::radio_resources::initialize_network"
@@ -144,6 +144,12 @@ function_contains = "::station::lifecycle::StationTask<"
 source_ends_with = ["crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "oer-esp32s31-wifi-embassy-0.1.0/src/roles/station/lifecycle.rs"]
 max_bytes = 13568
 reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
+
+[[reviewed_frames]]
+function_contains = "::runtime::embassy::run_embassy_wifi_supervisor_actor"
+source_ends_with = ["crates/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+max_bytes = 10496
+reason = "the generic actor retains one optional stopped owner across commands and transfers it in place through the cold-restart transaction; diagnostic response unions add only value state, its caller polls it through an opaque stack boundary and the concrete runtime stack remains independently bounded by the selected platform memory profile"
 
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"

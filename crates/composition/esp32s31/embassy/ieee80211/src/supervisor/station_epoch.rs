@@ -289,8 +289,11 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 phy_observer: NoopPhyTargetObserver,
                 phy_delay: EmbassyPhyDelay,
                 hardware,
-                receive: RunningScanRx::from_parked(rx)
-                    .unwrap_or_else(|_| panic!("parked station RX retained a staging lease")),
+                receive: match rx {
+                    ConnectedParkedRx::Live(rx) => RunningScanRx::from_parked(rx)
+                        .unwrap_or_else(|_| panic!("parked station RX retained a staging lease")),
+                    ConnectedParkedRx::Halted(rx) => RunningScanRx::from_stopped(rx),
+                },
                 control,
                 table: scan_table,
                 frame,
@@ -345,7 +348,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         tx_storage
             .restore_control(control)
             .unwrap_or_else(|_| panic!("running scan returned over a live TX owner"));
-        let disconnected = retained.restore(hardware, rx);
+        let disconnected = retained.restore(hardware, ConnectedParkedRx::from_live(rx));
         complete_esp32s31_station_running_scan(
             runtime,
             disconnected,
@@ -1004,7 +1007,12 @@ impl ProductionWifiEpochRunner {
                     association_preference: discovery.scan().association_preference(),
                     security: requested_security,
                 };
-                let phase = match try_rebind_esp32s31_station_phase(phase, rx_storage, identity) {
+                let phase = match try_rebind_esp32s31_station_phase(
+                    phase,
+                    rx_storage,
+                    identity,
+                    ConnectedParkedRx::from_live,
+                ) {
                     Ok(phase) => phase,
                     Err(failure) => {
                         return Err(ProductionWifiFault::Resume {

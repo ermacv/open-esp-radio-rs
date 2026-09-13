@@ -2126,6 +2126,38 @@ async fn wifi_role_task(
                 _ => unreachable!("console admits only station commands while station owns Wi-Fi"),
             },
             ProductWifiRole::Idle(idle) => match receive_wifi_control_request().await {
+                WifiControlRequest::RestartRadio { request_id } => {
+                    match await_stack_boundary!(idle.restart_radio()) {
+                        Ok((idle, report)) => {
+                            let generation = report.generation().value();
+                            complete_wifi_role_transition(
+                                request_id,
+                                WifiRoleTransitionEvidence {
+                                    previous: WifiRole::Idle,
+                                    current: WifiRole::Idle,
+                                    generation,
+                                },
+                            )
+                            .await;
+                            runtime_log(format_args!(
+                                "OPEN_RADIO_HIL radio restart generation={generation}",
+                            ));
+                            ProductWifiRole::Idle(idle)
+                        }
+                        Err(_) => {
+                            complete_wifi_role_failure(
+                                request_id,
+                                WifiRoleFailureEvidence {
+                                    role: WifiRole::Idle,
+                                    operation: WifiRoleOperation::Restart,
+                                    reason: WifiRoleFailureReason::HardwareFault,
+                                },
+                            )
+                            .await;
+                            core::future::pending().await
+                        }
+                    }
+                }
                 WifiControlRequest::StartStationAccessPoint {
                     request_id,
                     request,

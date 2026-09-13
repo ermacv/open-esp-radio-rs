@@ -153,6 +153,9 @@ pub enum WifiControlRequest {
         request_id: u32,
         credentials: NetworkCredentials,
     },
+    RestartRadio {
+        request_id: u32,
+    },
     Scan {
         request_id: u32,
         request: WifiScanRequest,
@@ -1461,6 +1464,26 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 request_id,
                                 credentials,
                             })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::RestartRadio => {
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::RestartRadio { request_id })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)

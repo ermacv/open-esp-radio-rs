@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use crate::datapath::rx::dma::StoppedReceive;
 /// Running-scan RX owner which retains every connected-epoch resource.
 ///
 /// A connected teardown returns more than a descriptor ring: the staging
@@ -66,6 +67,31 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// Rebind a physically halted connected producer after a whole-radio
+    /// shutdown. The first scan start drives the retained ring through its
+    /// normal prepared/live lifecycle.
+    pub fn from_stopped(
+        stopped: StoppedReceive<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+    ) -> Self {
+        let (ring, resources) = stopped.into_epoch_parts();
+        Self {
+            scan: ScanRx::from_halted(ring, resources.storage()),
+            resources,
+        }
+    }
+
     pub fn from_parked<P>(
         parked: StagedRxProducer<
             'storage,

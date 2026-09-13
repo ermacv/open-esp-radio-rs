@@ -577,3 +577,60 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     );
     assert_eq!(parked.queued_frames(), 0);
 }
+
+#[test]
+fn running_scan_rx_restarts_the_exact_halted_connected_epoch_resources() {
+    const STAGE_SLOTS: usize = 1;
+    const STAGE_CAPACITY: usize = 64;
+    struct TestDelay;
+
+    impl RxDmaObservationDelay for TestDelay {
+        fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
+            ready(())
+        }
+    }
+
+    let storage = Box::leak(Box::new(ReceiveDmaStorage::<
+        RX_TEST_COUNT,
+        RX_TEST_BUFFER_SIZE,
+        RX_TEST_STORAGE_SIZE,
+    >::new()));
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        RX_TEST_BASE,
+        &RX_TEST_BUFFERS,
+        RX_TEST_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    let pool = RxStagePool::<STAGE_SLOTS, STAGE_CAPACITY>::new();
+    let queue = StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
+    let (sender, _receiver) = queue.split();
+    let connected = StagedRxProducer::new(ring, storage, &pool, TestDelay, sender);
+    let stopped = connected
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("connected RX ring must stop"));
+    assert!(!hardware.walker);
+
+    let mut running = RunningScanRx::from_stopped(stopped);
+    assert_eq!(running.phase(), RxFrontierPhase::Halted);
+    running.prepare_initial(&mut hardware).unwrap();
+    assert_eq!(running.phase(), RxFrontierPhase::Prepared);
+    block_on(running.start(&mut hardware)).unwrap();
+    assert_eq!(running.phase(), RxFrontierPhase::Live);
+
+    let parked = running
+        .into_parked()
+        .unwrap_or_else(|_| panic!("restarted scan must return the connected producer"));
+    assert_eq!(parked.ring().descriptor_base(), RX_TEST_BASE);
+    assert_eq!(
+        parked.storage().buffers().as_ptr(),
+        storage.buffers().as_ptr()
+    );
+}

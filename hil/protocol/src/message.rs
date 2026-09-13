@@ -1120,6 +1120,9 @@ pub enum Command {
     PauseStation {
         operation: StationPauseOperation,
     },
+    /// Release the final Wi-Fi PHY client from role-neutral ownership, close
+    /// the RF epoch, and start a fresh cold radio epoch.
+    RestartRadio,
 }
 
 /// Work performed while the connected station retains its paused epoch.
@@ -1254,6 +1257,7 @@ pub enum WifiNetworkInterface {
 pub enum WifiRoleOperation {
     Start,
     Stop,
+    Restart,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2332,7 +2336,7 @@ pub enum Event {
     /// Reliable completion acknowledgement for `CycleStationEpoch`.
     /// The envelope request ID identifies the command being completed.
     StationEpochCompleted(StationEpochEvidence),
-    /// Reliable completion of `StartStation` or `StopStation`.
+    /// Reliable completion of a Wi-Fi role transition or idle radio restart.
     WifiRoleTransitioned(WifiRoleTransitionEvidence),
     /// Reliable completion of one finite `ScanWifi` request.
     WifiScanCompleted(WifiScanEvidence),

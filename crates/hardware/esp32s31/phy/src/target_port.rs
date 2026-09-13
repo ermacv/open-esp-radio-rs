@@ -3014,10 +3014,23 @@ where
 /// Failure precedes every shutdown mutation, so the caller may retain and
 /// retry its powered-idle owner. The observation updates only source-owned
 /// temperature state and acquisition provenance.
+pub(crate) enum PhyRfCloseTemperatureFailure {
+    /// The transition rejected state after every issued hardware transaction
+    /// had completed, so the powered-idle owner remains usable.
+    Recoverable(PhyTargetPortError),
+    /// An I2C command may still be active or partially observed. Reusing the
+    /// physical epoch without reset would invent a completion boundary.
+    HardwareAmbiguous(PhyTargetPortError),
+}
+
+const fn preclose_i2c_failure(error: PhyTargetPortError) -> PhyRfCloseTemperatureFailure {
+    PhyRfCloseTemperatureFailure::HardwareAmbiguous(error)
+}
+
 pub(crate) async fn observe_temperature_before_rf_close<P, D: PhyAsyncDelay>(
     radio: &mut Radio<P, Powered>,
     state: &mut PhyState,
-) -> Result<(), PhyTargetPortError> {
+) -> Result<(), PhyRfCloseTemperatureFailure> {
     let started = D::now_micros();
     let (platform, registers) = radio.phy_hal_parts();
     let mut transition = PhyTemperatureTransition::new();
@@ -3028,21 +3041,27 @@ pub(crate) async fn observe_temperature_before_rf_close<P, D: PhyAsyncDelay>(
                 return Ok(());
             }
             PhyTemperatureAction::Failed(_) => {
-                return Err(PhyTargetPortError::HardwareInvariant);
+                return Err(PhyRfCloseTemperatureFailure::Recoverable(
+                    PhyTargetPortError::HardwareInvariant,
+                ));
             }
             action => {
-                let binding = PhyTemperatureExternalBinding::lower(action)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                let binding = PhyTemperatureExternalBinding::lower(action).map_err(|_| {
+                    PhyRfCloseTemperatureFailure::Recoverable(PhyTargetPortError::UnexpectedBinding)
+                })?;
                 let completion =
                     TargetCompleter::<D>::complete_temperature(binding, platform, registers)
-                        .await?;
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                        .await
+                        .map_err(preclose_i2c_failure)?;
+                transition.advance(completion).map_err(|_| {
+                    PhyRfCloseTemperatureFailure::Recoverable(PhyTargetPortError::UnexpectedBinding)
+                })?;
             }
         }
     }
-    Err(PhyTargetPortError::RfOperationLimit)
+    Err(PhyRfCloseTemperatureFailure::Recoverable(
+        PhyTargetPortError::RfOperationLimit,
+    ))
 }
 
 /// Execute the exact finite current-vendor RF-close graph after preflight.
@@ -3166,4 +3185,20 @@ pub async fn switch_phy_channel_with_hal_and_mac_restart<
         observer,
     )
     .await
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn preclose_i2c_failure_never_returns_a_reusable_epoch() {
+        let failure = preclose_i2c_failure(PhyTargetPortError::HardwareEdgeTimedOut);
+        assert!(matches!(
+            failure,
+            PhyRfCloseTemperatureFailure::HardwareAmbiguous(
+                PhyTargetPortError::HardwareEdgeTimedOut
+            )
+        ));
+    }
 }

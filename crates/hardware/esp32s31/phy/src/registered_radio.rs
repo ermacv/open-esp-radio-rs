@@ -568,15 +568,27 @@ impl<P> RegisteredPhyPoweredIdle<P> {
     pub async fn close_rf<D: crate::PhyAsyncDelay>(
         mut self,
     ) -> Result<RegisteredPhyRfClosed<P>, RegisteredPhyRfCloseFailure<P>> {
-        if let Err(error) = crate::target_port::observe_temperature_before_rf_close::<P, D>(
+        if let Err(failure) = crate::target_port::observe_temperature_before_rf_close::<P, D>(
             &mut self.radio,
             self.phy.target_state_mut(),
         )
         .await
         {
-            return Err(RegisteredPhyRfCloseFailure::Preparation(
-                RegisteredPhyRfClosePreparationFailure { owner: self, error },
-            ));
+            return Err(match failure {
+                crate::target_port::PhyRfCloseTemperatureFailure::Recoverable(error) => {
+                    RegisteredPhyRfCloseFailure::Preparation(
+                        RegisteredPhyRfClosePreparationFailure { owner: self, error },
+                    )
+                }
+                crate::target_port::PhyRfCloseTemperatureFailure::HardwareAmbiguous(error) => {
+                    RegisteredPhyRfCloseFailure::Started(RegisteredPhyRfClosePoisoned {
+                        radio: self.radio,
+                        phy: self.phy,
+                        clients: self.clients,
+                        error,
+                    })
+                }
+            });
         }
 
         if let Err(error) = crate::target_port::execute_rf_close::<P, D>(&mut self.radio) {
@@ -715,7 +727,8 @@ impl<P> RegisteredPhyColdReleaseFailure<P> {
 pub enum RegisteredPhyRfCloseFailure<P> {
     /// Temperature preflight failed before any close mutation.
     Preparation(RegisteredPhyRfClosePreparationFailure<P>),
-    /// Physical close began and the epoch is no longer resumable.
+    /// A pre-close hardware transaction or physical close began and the epoch
+    /// is no longer resumable.
     Started(RegisteredPhyRfClosePoisoned<P>),
 }
 

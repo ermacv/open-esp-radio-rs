@@ -98,6 +98,23 @@ fn paused_irq_authority_survives_rejection_and_checked_release_without_cold_setu
 }
 
 #[test]
+fn shutdown_confirmation_returns_the_same_frontier_only_after_a_stopped_check() {
+    let rejected = super::confirm_stopped(registers(), checkpoint(), |_| {
+        Err(Error::MacActive { state: 2 })
+    })
+    .err()
+    .expect("active MAC must reject final-client shutdown");
+    assert_eq!(rejected.error, Error::MacActive { state: 2 });
+
+    let (_registers, checkpoint): (_, super::MacInterruptCheckpoint) =
+        super::confirm_stopped(rejected.registers, rejected.interrupts, |_| Ok(()))
+            .ok()
+            .expect("stopped hardware must return the unchanged ownership frontier");
+    let (mac, power) = checkpoint.into_registers();
+    let _same_epoch = mac.checkpoint(power);
+}
+
+#[test]
 fn restoration_failure_retains_interrupt_authority_until_fault_is_retired() {
     use std::{cell::Cell, rc::Rc};
     struct InterruptOwner(Rc<Cell<usize>>);

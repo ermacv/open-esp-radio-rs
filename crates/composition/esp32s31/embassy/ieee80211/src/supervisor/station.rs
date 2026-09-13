@@ -41,13 +41,14 @@ use oer_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
 };
 
+use oer_esp32s31_wifi_embassy::roles::station::epoch::StoppedStaRx;
 use oer_esp32s31_wifi_embassy::{
     datapath::{
         DatapathRunner, DatapathServices,
         network::DatapathNetwork,
         rx::{
-            dma::{RxEpochResources, StagedRxProducer},
-            frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError},
+            dma::{RxEpochResources, StagedRxProducer, StoppedReceive},
+            frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierDelay, RxFrontierError},
             hardware::EmbassyRxDmaObservationDelay,
             reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
@@ -170,6 +171,19 @@ type ConnectedRxProtocolStoppedOwner = ConnectedProtocolStopped<
 >;
 type ConnectedLiveRx =
     ConnectedRx<oer_esp32s31_wifi_dma::rx_ring::RxRingLive<'static, RX_DESCRIPTOR_COUNT>>;
+type ConnectedStoppedRx = StoppedReceive<
+    'static,
+    'static,
+    'static,
+    EmbassyRxDmaObservationDelay,
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+    RX_DESCRIPTOR_COUNT,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
+    RX_BUFFER_SIZE,
+    { RX_BUFFER_SIZE + 4 },
+>;
 type ConnectedRx<R> = StagedRxProducer<
     'static,
     'static,
@@ -187,7 +201,7 @@ type ConnectedRx<R> = StagedRxProducer<
 >;
 type ConnectedRxService = ConnectedStaRxService<ConnectedLiveRx, ConnectedRxProtocol>;
 type ConnectedParkedRxService =
-    ConnectedStaRxParked<ConnectedParkedRx, ConnectedRxProtocolStoppedOwner>;
+    ConnectedStaRxParked<ConnectedLiveRx, ConnectedRxProtocolStoppedOwner>;
 pub(super) type ProductionAccessPointRxProducer =
     oer_esp32s31_wifi_embassy::roles::access_point::AccessPointReceiveProducer<
         'static,
@@ -358,7 +372,63 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
 }
 
 pub type ConnectedHardware = CooperativeRadioHardware<'static>;
-pub(super) type ConnectedParkedRx = ConnectedLiveRx;
+pub(crate) enum ConnectedParkedRx {
+    /// Logical role handoff kept the descriptor walker running.
+    Live(ConnectedLiveRx),
+    /// Whole-radio shutdown stopped the descriptor walker before RF close.
+    Halted(ConnectedStoppedRx),
+}
+
+impl ConnectedParkedRx {
+    pub(super) const fn from_live(rx: ConnectedLiveRx) -> Self {
+        Self::Live(rx)
+    }
+
+    pub(super) const fn from_halted(rx: ConnectedStoppedRx) -> Self {
+        Self::Halted(rx)
+    }
+
+    pub(super) fn into_physical_parts(self) -> (ProductionRxRing, ConnectedRxEpochResources) {
+        match self {
+            Self::Live(rx) => {
+                let (ring, resources) = rx
+                    .try_into_live_epoch_parts()
+                    .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
+                (ProductionRxRing::Live(ring), resources)
+            }
+            Self::Halted(rx) => {
+                let (ring, resources) = rx.into_epoch_parts();
+                (ProductionRxRing::Halted(ring), resources)
+            }
+        }
+    }
+}
+
+impl StoppedStaRx for ConnectedParkedRx {
+    type Preconnected<D>
+        = ReceiveFrontier<'static, D, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>
+    where
+        D: RxFrontierDelay;
+    type Persistent = ConnectedRxEpochResources;
+
+    fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
+    where
+        D: RxFrontierDelay,
+    {
+        match self {
+            Self::Live(rx) => {
+                let (ring, resources) = rx
+                    .try_into_live_epoch_parts()
+                    .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
+                (ReceiveFrontier::from_live(ring), resources)
+            }
+            Self::Halted(rx) => {
+                let (ring, resources) = rx.into_epoch_parts();
+                (ReceiveFrontier::from_halted(ring), resources)
+            }
+        }
+    }
+}
 pub(super) type ConnectedRxEpochResources = RxEpochResources<
     'static,
     'static,
@@ -1966,6 +2036,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let interrupt_drain = teardown.interrupt_drain;
     let teardown = teardown.driver;
     let (parked_rx, stopped_protocol) = teardown.parked_rx.into_parts();
+    let parked_rx = ConnectedParkedRx::from_live(parked_rx);
     let shutdown = stopped_protocol.shutdown();
     diagnostics_event!(
         "open-radio: RX protocol stopped queued={} retained={} commands={} active={}",

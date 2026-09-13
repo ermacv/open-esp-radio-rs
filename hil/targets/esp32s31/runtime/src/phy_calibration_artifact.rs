@@ -10,7 +10,7 @@ use oer_esp32s31_phy::{
 use serde::{Deserialize, Serialize};
 
 pub const MAX_ENCODED_LEN: usize = crate::console::STARTUP_ARTIFACT_CAPACITY;
-const MAGIC: [u8; 8] = *b"ORCAL005";
+const MAGIC: [u8; 8] = *b"ORCAL006";
 
 #[derive(Serialize, Deserialize)]
 struct Artifact {
@@ -31,6 +31,9 @@ struct Identity {
 #[serde(remote = "PhyCommonCalibration")]
 struct Common {
     temperature: i16,
+    rfpll_reference_temperature: i16,
+    rxcal_reference_temperature: i16,
+    txcal_reference_temperature: i16,
     sensor_index: u8,
     crystal_selector: u8,
     rc_result: u8,

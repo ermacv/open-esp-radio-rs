@@ -647,6 +647,13 @@ pub(super) async fn wait_for_active_wifi_role_stop(
     loop {
         match endpoint.receive().await {
             EmbassyWifiSupervisorCommand::Stop => return,
+            EmbassyWifiSupervisorCommand::RestartRadio => {
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(
+                        RadioError::RoleActive(EmbassyWifiStartKind::WholeRadioRestart),
+                    )))
+                    .await;
+            }
             EmbassyWifiSupervisorCommand::Scan(request) => {
                 endpoint
                     .respond(EmbassyWifiSupervisorResponse::Scan(Err(

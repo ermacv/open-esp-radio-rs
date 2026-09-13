@@ -79,6 +79,17 @@ pub struct WifiAccess<I: InterruptAuthority = MacInterruptSetup> {
 }
 
 impl RadioRuntimeOwner {
+    /// Verify the stopped physical boundary without acquiring maintenance or
+    /// changing hardware. This is the final-client shutdown admission check.
+    pub fn try_confirm_phy_stopped<I: InterruptAuthority>(
+        self,
+        interrupts: I,
+    ) -> Result<(Self, I), AdmissionFailure<I>> {
+        confirm_stopped(self, interrupts, |registers| {
+            check_stopped(&mut registers.wifi_mac_hal())
+        })
+    }
+
     /// Transfer stopped or paused physical ownership into PHY maintenance. This does
     /// not stop the MAC, DMA or CPU interrupt route on the caller's behalf.
     pub fn try_into_phy_maintenance<I: InterruptAuthority>(
@@ -89,6 +100,21 @@ impl RadioRuntimeOwner {
             check_stopped(&mut registers.wifi_mac_hal())
         })
     }
+}
+
+fn confirm_stopped<I: InterruptAuthority>(
+    mut registers: RadioRuntimeOwner,
+    interrupts: I,
+    check: impl FnOnce(&mut RadioRuntimeOwner) -> Result<(), Error>,
+) -> Result<(RadioRuntimeOwner, I), AdmissionFailure<I>> {
+    if let Err(error) = check(&mut registers) {
+        return Err(AdmissionFailure {
+            error,
+            registers,
+            interrupts,
+        });
+    }
+    Ok((registers, interrupts))
 }
 
 // These private transfers keep the production check and ownership branches

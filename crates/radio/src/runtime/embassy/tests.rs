@@ -122,6 +122,20 @@ impl EmbassyWifiRoleEpochRunner<NoopRawMutex> for FakeLocalEpochRunner {
             }
         }
     }
+
+    fn restart_radio<'a>(
+        &'a mut self,
+        slot: &'a mut Option<Self::Stopped>,
+    ) -> impl Future<Output = Result<(), Self::Faulted>> + 'a {
+        async move {
+            let stopped = slot
+                .take()
+                .expect("test actor retains stopped owner between epochs");
+            stopped.set(stopped.get() + 10);
+            *slot = Some(stopped);
+            Ok(())
+        }
+    }
 }
 
 #[test]
@@ -265,6 +279,28 @@ fn supervisor_actor_keeps_a_non_send_owner_across_role_epochs() {
     let Either::First(generations) = run(select(application, task.run()));
     assert_eq!(generations, (1, 2, 3));
     assert_eq!(observed_owner.get(), 3);
+}
+
+#[test]
+fn idle_restart_runs_in_the_owner_actor_and_advances_generation() {
+    let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
+    let configuration = WifiSupervisorConfiguration::new(TEST_CAPABILITIES).with_station(
+        WifiStationConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap()),
+    );
+    let owner = Rc::new(Cell::new(0));
+    let observed_owner = Rc::clone(&owner);
+    let (radio, task) =
+        prepare_embassy_wifi_supervisor(&resources, configuration, FakeLocalEpochRunner, owner)
+            .unwrap_or_else(|_| panic!("fresh supervisor must prepare"));
+
+    let application = async {
+        let (wifi, restart) = radio.into_wifi().restart_radio().await.unwrap();
+        let station = wifi.start_station(station_request()).await.unwrap();
+        (restart.generation().value(), station.generation().value())
+    };
+    let Either::First(generations) = run(select(application, task.run()));
+    assert_eq!(generations, (1, 2));
+    assert_eq!(observed_owner.get(), 11);
 }
 
 #[test]

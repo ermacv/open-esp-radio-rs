@@ -139,6 +139,13 @@ retains that cache with its exact failure frontier. An ambiguous initial
 tracking failure keeps the older snapshot opaque because it may no longer
 describe the hardware state.
 
+The production Wi-Fi supervisor exposes this as `WifiIdle::restart_radio`.
+It first stops MAC, RX DMA and IRQ ownership at the same physical boundary used
+for maintenance, checks the stopped hardware state again before final-client
+release, and acknowledges restart only after cold registration returns a new
+stopped owner. A role-local `Stop` remains a separate operation and does not
+power-cycle PHY.
+
 A shorter retained wake directly from `RegisteredPhyRfClosed` is not yet
 implemented. That future transaction must reacquire clocks, open
 frontend/baseband and analog-I2C power, restore retained frequency, channel,

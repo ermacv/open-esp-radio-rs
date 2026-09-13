@@ -66,6 +66,20 @@ fn qualify(
         report_stack(capture, options.timeout, "station-started")?;
         return Ok(());
     }
+    if operation == Operation::Restart {
+        let restarted =
+            capture.wait_wifi_role_transition(capture.request_radio_restart()?, options.timeout)?;
+        require_radio_restart(stopped, restarted)?;
+        report_stack(capture, options.timeout, "radio-restarted")?;
+        let started = start_station_evidence(capture, context, options.timeout)?;
+        require_station_after_restart(restarted, started)?;
+        report_stack(
+            capture,
+            options.timeout,
+            "station-started-after-radio-restart",
+        )?;
+        return Ok(());
+    }
 
     if operation == Operation::AccessPoint {
         if !capabilities.features.wifi_access_point {
@@ -313,10 +327,18 @@ pub(crate) fn start_station(
     context: &Context<'_>,
     timeout: Duration,
 ) -> Result<()> {
+    start_station_evidence(capture, context, timeout).map(|_| ())
+}
+
+fn start_station_evidence(
+    capture: &SerialCapture,
+    context: &Context<'_>,
+    timeout: Duration,
+) -> Result<WifiRoleTransitionEvidence> {
     let evidence =
         capture.wait_wifi_role_transition(capture.request_station_start(context)?, timeout)?;
     require_transition(evidence, WifiRole::Idle, WifiRole::Station)?;
-    Ok(())
+    Ok(evidence)
 }
 
 pub(crate) fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiScanEvidence> {
@@ -361,6 +383,38 @@ pub(crate) fn require_transition(
     if evidence.previous != previous || evidence.current != current {
         return Err(format!(
             "unexpected Wi-Fi role transition: expected {previous:?}->{current:?}, got {evidence:?}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn require_radio_restart(
+    stopped: WifiRoleTransitionEvidence,
+    restarted: WifiRoleTransitionEvidence,
+) -> Result<()> {
+    require_transition(restarted, WifiRole::Idle, WifiRole::Idle)?;
+    let expected_generation = stopped.generation.wrapping_add(1);
+    if restarted.generation != expected_generation {
+        return Err(format!(
+            "idle radio restart returned generation {}, expected {} after stopped generation {}",
+            restarted.generation, expected_generation, stopped.generation,
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn require_station_after_restart(
+    restarted: WifiRoleTransitionEvidence,
+    started: WifiRoleTransitionEvidence,
+) -> Result<()> {
+    require_transition(started, WifiRole::Idle, WifiRole::Station)?;
+    let expected_generation = restarted.generation.wrapping_add(1);
+    if started.generation != expected_generation {
+        return Err(format!(
+            "station after radio restart used generation {}, expected {} after restart generation {}",
+            started.generation, expected_generation, restarted.generation,
         )
         .into());
     }

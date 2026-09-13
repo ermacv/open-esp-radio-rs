@@ -356,9 +356,7 @@ fn collect_i2c_memory_writes(
 
 #[test]
 fn i2c_transition_publishes_the_fixed_graph_and_three_copy_tail() {
-    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-        front_end_parameter_bit: false,
-    });
+    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::cold(false));
     complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0x10);
 
     let writes = collect_i2c_memory_writes(&mut transition);
@@ -399,10 +397,34 @@ fn i2c_transition_publishes_the_fixed_graph_and_three_copy_tail() {
 }
 
 #[test]
+fn retained_wake_i2c_transition_preserves_command_memory() {
+    let mut transition =
+        PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::retained_wake(false));
+    complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0x10);
+
+    let writes = collect_i2c_memory_writes(&mut transition);
+    assert!(writes.is_empty());
+
+    let PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses) = transition.action() else {
+        panic!("retained wake did not preserve frequency command memory");
+    };
+    transition
+        .advance(PhyFrequencyI2cCompletion::NumberAddressesConfigured(
+            addresses,
+        ))
+        .unwrap();
+    let PhyFrequencyI2cAction::Complete(outcome) = transition.action() else {
+        panic!("retained-wake frequency-I2C transition did not complete");
+    };
+    assert_eq!(outcome.rfpll_register_0b, 0x5a);
+    assert_eq!(outcome.sdm_register_0, 0x8f);
+    assert_eq!(outcome.front_end_register_3, 0x10);
+    assert_eq!(outcome.number_addresses, addresses);
+}
+
+#[test]
 fn i2c_transition_applies_the_parameter_bit_only_to_outer_tail_copies() {
-    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-        front_end_parameter_bit: true,
-    });
+    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::cold(true));
     complete_i2c_snapshot(&mut transition, 0x5a, 0x8f, 0x10);
 
     let writes = collect_i2c_memory_writes(&mut transition);
@@ -419,9 +441,7 @@ fn i2c_transition_applies_the_parameter_bit_only_to_outer_tail_copies() {
 
 #[test]
 fn i2c_transition_rejects_a_completion_for_another_snapshot_register() {
-    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-        front_end_parameter_bit: false,
-    });
+    let mut transition = PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::cold(false));
     assert_eq!(
         transition.advance(PhyFrequencyI2cCompletion::MaskedWrite {
             field: analog_registers::RFPLL_CAPACITOR_HIGH,

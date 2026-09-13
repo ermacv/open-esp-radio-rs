@@ -528,10 +528,39 @@ impl PhyFrequencyCapMemoryExternalBinding {
     }
 }
 
+/// Publication policy selected by the final argument of complete rev0 ROM
+/// `phy_freq_i2c_write_set`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyI2cPublication {
+    /// Cold initialization republishes command memory and its number-address
+    /// table (`phy_freq_i2c_data_write(1)`).
+    MemoryAndAddresses,
+    /// Retained wake preserves command memory and republishes only the
+    /// number-address table (`phy_freq_i2c_data_write(0)`).
+    AddressesOnly,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyI2cRequest {
     /// Explicit replacement for the single bit read from `phy_param[0x1af]`.
     pub front_end_parameter_bit: bool,
+    pub publication: PhyFrequencyI2cPublication,
+}
+
+impl PhyFrequencyI2cRequest {
+    pub const fn cold(front_end_parameter_bit: bool) -> Self {
+        Self {
+            front_end_parameter_bit,
+            publication: PhyFrequencyI2cPublication::MemoryAndAddresses,
+        }
+    }
+
+    pub const fn retained_wake(front_end_parameter_bit: bool) -> Self {
+        Self {
+            front_end_parameter_bit,
+            publication: PhyFrequencyI2cPublication::AddressesOnly,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -783,8 +812,9 @@ enum PhyFrequencyI2cStep {
     Complete(PhyFrequencyI2cOutcome),
 }
 
-/// Complete caller-driven replacement for pinned
-/// `phy_freq_i2c_data_write(1)`.
+/// Complete caller-driven replacement for both pinned
+/// `phy_freq_i2c_data_write(1)` cold publication and
+/// `phy_freq_i2c_data_write(0)` retained-wake publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyI2cTransition {
     request: PhyFrequencyI2cRequest,
@@ -888,12 +918,21 @@ impl PhyFrequencyI2cTransition {
                 },
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
             ) if address == analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE.address() => {
-                PhyFrequencyI2cStep::Memory {
-                    rfpll_register_0b,
-                    sdm_register_0,
-                    front_end_register_3: value,
-                    descriptor_index: 0,
-                    copy_index: 0,
+                match self.request.publication {
+                    PhyFrequencyI2cPublication::MemoryAndAddresses => PhyFrequencyI2cStep::Memory {
+                        rfpll_register_0b,
+                        sdm_register_0,
+                        front_end_register_3: value,
+                        descriptor_index: 0,
+                        copy_index: 0,
+                    },
+                    PhyFrequencyI2cPublication::AddressesOnly => {
+                        PhyFrequencyI2cStep::NumberAddresses {
+                            rfpll_register_0b,
+                            sdm_register_0,
+                            front_end_register_3: value,
+                        }
+                    }
                 }
             }
             (
@@ -1268,9 +1307,9 @@ impl PhyChannelFrequencyInitTransition {
                 if self.request.frequency_table_initialized {
                     PhyChannelFrequencyInitStep::I2c {
                         calibration: None,
-                        transition: PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-                            front_end_parameter_bit: self.request.front_end_parameter_bit,
-                        }),
+                        transition: PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::cold(
+                            self.request.front_end_parameter_bit,
+                        )),
                     }
                 } else {
                     PhyChannelFrequencyInitStep::InitialCapLow
@@ -1424,9 +1463,9 @@ impl PhyChannelFrequencyInitTransition {
                             high,
                             table,
                         }),
-                        transition: PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest {
-                            front_end_parameter_bit: self.request.front_end_parameter_bit,
-                        }),
+                        transition: PhyFrequencyI2cTransition::new(PhyFrequencyI2cRequest::cold(
+                            self.request.front_end_parameter_bit,
+                        )),
                     },
                     _ => PhyChannelFrequencyInitStep::Table {
                         nominal,

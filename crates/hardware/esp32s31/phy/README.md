@@ -205,8 +205,8 @@ sequenceDiagram
 ```
 
 The [connected pause](../../../composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause.rs)
-is an explicit diagnostic route. The connected role also exposes an opt-in [observation-driven service](src/tracking/service/README.md),
-which starts disabled and uses the same physical pause/restoration boundary. A separate stopped-role path services
+is an explicit diagnostic route. The connected role also exposes an [observation-driven service](src/tracking/service/README.md),
+which production configures at a one-second cadence and which uses the same physical pause/restoration boundary. A separate stopped-role path services
 due work at role boundaries. Joint Wi-Fi/Bluetooth/154 maintenance and
 active-traffic publication of individual compensation classes are not
 qualified execution modes.

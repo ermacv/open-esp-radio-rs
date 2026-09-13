@@ -643,6 +643,7 @@ impl ProductionWifiEpochRunner {
             rx_protocol_runtime,
             sta_ap_rx_batch,
             initial_connected,
+            station_tracking,
             #[cfg(feature = "diagnostics")]
             diagnostics,
         } = board;
@@ -1132,6 +1133,7 @@ impl ProductionWifiEpochRunner {
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
+                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },

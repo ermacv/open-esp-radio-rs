@@ -289,6 +289,7 @@ pub struct RadioConfig {
     pub(crate) initial_channel: oer_ieee80211::channel::WifiChannel,
     pub(crate) calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
+    pub(crate) station_tracking: Option<TrackingConfig>,
     #[cfg(feature = "connected-datapath-cycle-telemetry")]
     pub(crate) connected_datapath_poll_observer: Option<ConnectedDatapathPollObserver>,
     #[cfg(feature = "diagnostics")]
@@ -311,6 +312,9 @@ impl RadioConfig {
             initial_channel,
             calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
+            station_tracking: Some(TrackingConfig::new(
+                core::num::NonZeroU64::new(1_000_000).unwrap(),
+            )),
             #[cfg(feature = "connected-datapath-cycle-telemetry")]
             connected_datapath_poll_observer: None,
             #[cfg(feature = "diagnostics")]
@@ -341,6 +345,23 @@ impl RadioConfig {
     /// Apply the board/regulatory TX ceiling to the calibrated power profile.
     pub const fn with_maximum_tx_power_quarter_dbm(mut self, maximum: i8) -> Self {
         self.maximum_tx_power_quarter_dbm = Some(maximum);
+        self
+    }
+
+    /// Set the observation cadence for automatic connected-station PHY
+    /// maintenance. The default is one second, matching the current vendor
+    /// scheduler. Thermal predicates still decide whether hardware work is due.
+    pub const fn with_station_tracking_period(
+        mut self,
+        period_micros: core::num::NonZeroU64,
+    ) -> Self {
+        self.station_tracking = Some(TrackingConfig::new(period_micros));
+        self
+    }
+
+    /// Disable automatic PHY maintenance for connected station epochs.
+    pub const fn without_station_tracking(mut self) -> Self {
+        self.station_tracking = None;
         self
     }
 

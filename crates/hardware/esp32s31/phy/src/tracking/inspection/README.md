@@ -73,8 +73,8 @@ hardware children retain the same exclusive access. A child completion or an
 async Pending return is not a resumable protocol checkpoint. Hardware coex
 timer control does not supply a joint-protocol maintenance grant.
 
-The connected Wi-Fi composition exposes an opt-in observation-driven service
-and a coalescing external request for a new measurement. These notifications
+The connected Wi-Fi composition enables an observation-driven service from
+`RadioConfig` and exposes a coalescing external request for a new measurement. These notifications
 carry no temperature and no RF authority. The existing `Track` request follows
 registered policy; `Calibrate` is a due-only diagnostic override for both heavy
 branches. Independent operations preserve the periodic scheduler timestamps.

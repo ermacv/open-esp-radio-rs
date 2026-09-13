@@ -234,6 +234,7 @@ pub(super) async fn run(
     mailbox: &'static ConnectedDatapathMailbox,
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
     mut interrupt_epoch: crate::interrupts::MacInterruptEpoch,
+    tracking: Option<super::TrackingConfig>,
     role: &mut Option<super::pause::Role>,
     runner: &mut Option<ConnectedDatapathRunner>,
 ) -> Result<
@@ -250,7 +251,7 @@ pub(super) async fn run(
     use super::{PauseError, pause, pause_request};
     use oer_esp32s31_wifi_embassy::datapath::DatapathRunnerExit;
     use oer_wifi_embassy::await_stack_boundary;
-    let _pause_availability = pause_request::REQUESTS.open();
+    let _pause_availability = pause_request::REQUESTS.open(tracking);
     let mut requested_command = None;
     mailbox.start(runner);
     loop {

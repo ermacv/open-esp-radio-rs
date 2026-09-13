@@ -1496,6 +1496,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         rx_protocol_runtime,
         sta_ap_rx_batch,
         initial_connected,
+        station_tracking,
         #[cfg(feature = "diagnostics")]
         diagnostics,
     } = board;
@@ -1547,6 +1548,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                                 rx_protocol_runtime,
                                 sta_ap_rx_batch,
                                 initial_connected,
+                                station_tracking,
                                 #[cfg(feature = "diagnostics")]
                                 diagnostics,
                             },
@@ -1596,6 +1598,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                             rx_protocol_runtime,
                             sta_ap_rx_batch,
                             initial_connected,
+                            station_tracking,
                             #[cfg(feature = "diagnostics")]
                             diagnostics,
                         },
@@ -1640,6 +1643,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                             rx_protocol_runtime,
                             sta_ap_rx_batch,
                             initial_connected,
+                            station_tracking,
                             #[cfg(feature = "diagnostics")]
                             diagnostics,
                         },
@@ -1856,6 +1860,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         connected_datapath,
         station_control,
         interrupt_epoch,
+        station_tracking,
         &mut role,
         &mut radio_runner,
     )) {
@@ -2070,6 +2075,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
+                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },
@@ -2107,6 +2113,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
+                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },
@@ -2150,6 +2157,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 rx_protocol_runtime,
                 sta_ap_rx_batch,
                 initial_connected,
+                station_tracking,
                 #[cfg(feature = "diagnostics")]
                 diagnostics,
             },

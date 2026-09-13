@@ -5,10 +5,11 @@
 PHY remains the single owner of sensor values, calibration references and
 client deadlines. The service does not duplicate those values in a queue.
 
-The connected Wi-Fi composition exposes `configure_station_tracking`,
+The connected Wi-Fi composition starts a one-second policy from `RadioConfig`
+and exposes `configure_station_tracking`,
 `request_station_temperature_observation`, `station_tracking_status` and
-`station_tracking_report`. Configuration is explicit and ends with the
-connected epoch. The default is disabled. This is a standalone Wi-Fi path;
+`station_tracking_report`. Dynamic configuration ends with the connected
+epoch; reconnect reapplies the radio policy. This is a standalone Wi-Fi path;
 shared Wi-Fi/Bluetooth/IEEE 802.15.4 access remains unsupported.
 
 ## Observation and selection

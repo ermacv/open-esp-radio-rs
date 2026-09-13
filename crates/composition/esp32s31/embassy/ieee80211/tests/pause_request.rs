@@ -12,11 +12,26 @@ use std::{
 };
 
 #[test]
+fn connected_epoch_opens_with_radio_tracking_policy_and_clears_it_on_close() {
+    use oer_esp32s31_phy::tracking::service::Config;
+    let requests = Requests::new();
+    let config = Config::new(core::num::NonZeroU64::new(1_000_000).unwrap());
+    let epoch = requests.open(Some(config));
+    assert_eq!(requests.automatic.snapshot(), (Some(config), true));
+    drop(epoch);
+    assert_eq!(requests.automatic.snapshot(), (None, false));
+    assert_eq!(
+        requests.automatic.status(),
+        pause_request::TrackingStatus::Disabled
+    );
+}
+
+#[test]
 fn simultaneous_explicit_request_leaves_automatic_observation_available() {
     use embassy_futures::select::Either;
     use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
     let requests = Requests::new();
-    let _epoch = requests.open();
+    let _epoch = requests.open(None);
     let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
     requests.automatic.configure(Some(config));
     let mut cx = Context::from_waker(Waker::noop());
@@ -61,7 +76,7 @@ fn explicit_request_after_automatic_selection_survives_until_next_round_trip() {
     use embassy_futures::select::Either;
     use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
     let requests = Requests::new();
-    let _epoch = requests.open();
+    let _epoch = requests.open(None);
     let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
     requests.automatic.configure(Some(config));
     let mut cx = Context::from_waker(Waker::noop());
@@ -103,7 +118,7 @@ fn cancellation_cannot_reuse_an_inflight_request_or_deliver_a_stale_completion()
         unavailable.as_mut().poll(&mut cx),
         Poll::Ready(Err(PauseError::Unavailable))
     );
-    let availability = requests.open();
+    let availability = requests.open(None);
     {
         let mut first = std::pin::pin!(requests.request(PauseOperation::Access));
         assert!(first.as_mut().poll(&mut cx).is_pending());
@@ -160,7 +175,7 @@ fn hardware_failure_is_returned_without_becoming_success_or_leaking_into_next_ep
         PauseError::MacRestoration,
         PauseError::ReceivePolicyChanged,
     ] {
-        let availability = requests.open();
+        let availability = requests.open(None);
         let mut request = std::pin::pin!(requests.request(PauseOperation::Access));
         assert!(request.as_mut().poll(&mut cx).is_pending());
         let mut server = std::pin::pin!(requests.wait());
@@ -175,7 +190,7 @@ fn hardware_failure_is_returned_without_becoming_success_or_leaking_into_next_ep
 fn maintenance_request_is_not_downgraded() {
     for operation in [PauseOperation::Tracking, PauseOperation::Calibration] {
         let requests = Requests::new();
-        let _availability = requests.open();
+        let _availability = requests.open(None);
         let mut cx = Context::from_waker(Waker::noop());
         let mut request = std::pin::pin!(requests.request(operation));
         assert!(request.as_mut().poll(&mut cx).is_pending());
@@ -194,7 +209,7 @@ fn automatic_observation_notifications_survive_an_inflight_operation_and_epoch_c
  {
     use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
     let requests = Requests::new();
-    let epoch = requests.open();
+    let epoch = requests.open(None);
     let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
     requests.automatic.configure(Some(config));
     assert_eq!(requests.automatic.snapshot(), (Some(config), true));
@@ -232,7 +247,7 @@ fn automatic_observation_notifications_survive_an_inflight_operation_and_epoch_c
 fn automatic_selection_checks_current_configuration_and_epoch_end_releases_pending() {
     use oer_esp32s31_phy::tracking::{maintenance::Operation, service::Config};
     let requests = Requests::new();
-    let epoch = requests.open();
+    let epoch = requests.open(None);
     let config = Config::new(core::num::NonZeroU64::new(1000).unwrap());
     requests.automatic.configure(Some(config));
     requests.automatic.configure(None);
@@ -244,7 +259,7 @@ fn automatic_selection_checks_current_configuration_and_epoch_end_releases_pendi
         requests.automatic.status(),
         pause_request::TrackingStatus::Disabled
     );
-    let _next_epoch = requests.open();
+    let _next_epoch = requests.open(None);
     requests.automatic.configure(Some(config));
     assert!(requests.automatic.try_begin(config, Operation::Temperature));
     requests
@@ -265,7 +280,7 @@ fn automatic_selection_checks_current_configuration_and_epoch_end_releases_pendi
 #[test]
 fn invalid_hold_is_rejected_before_reserving_the_request_channel() {
     let requests = Requests::new();
-    let _epoch = requests.open();
+    let _epoch = requests.open(None);
     let mut cx = Context::from_waker(Waker::noop());
     for duration_micros in [0, 200_001, u32::MAX] {
         let mut request = std::pin::pin!(requests.request(PauseOperation::Synthetic {

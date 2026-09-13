@@ -148,12 +148,13 @@ impl Requests {
         self.completed.wait().await
     }
 
-    pub fn open(&self) -> Availability<'_> {
+    pub fn open(&self, tracking: Option<TrackingConfig>) -> Availability<'_> {
         self.state.lock(|state| {
             let mut state = state.borrow_mut();
             assert!(!state.available && !state.pending);
             state.available = true;
         });
+        self.automatic.configure(tracking);
         Availability(self)
     }
 
@@ -212,7 +213,8 @@ pub async fn station_pause_round_trip(
 
 /// Enable or disable observation-driven tracking for this connected STA epoch.
 /// Each selected operation still performs the full physical pause/restoration.
-/// No configuration survives leaving the connected role. None is the default.
+/// No dynamic configuration survives leaving the connected role. The next
+/// epoch starts from the policy carried by `RadioConfig`.
 pub fn configure_station_tracking(config: Option<TrackingConfig>) -> Result<(), PauseError> {
     REQUESTS.state.lock(|state| {
         if !state.borrow().available {

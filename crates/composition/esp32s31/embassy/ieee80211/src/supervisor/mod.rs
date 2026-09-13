@@ -830,6 +830,7 @@ pub(super) struct ProductionStationBoardResources {
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
     pub(super) sta_ap_rx_batch: &'static mut [u8],
     pub(super) initial_connected: Option<InitialConnectedStaticResources>,
+    pub(super) station_tracking: Option<crate::TrackingConfig>,
     #[cfg(feature = "diagnostics")]
     pub(super) diagnostics: Option<crate::DiagnosticObservers>,
 }
@@ -865,6 +866,7 @@ pub async fn new(
         initial_channel,
         calibration_cache,
         maximum_tx_power_quarter_dbm,
+        station_tracking,
         #[cfg(feature = "connected-datapath-cycle-telemetry")]
         connected_datapath_poll_observer,
         #[cfg(feature = "diagnostics")]
@@ -978,6 +980,7 @@ pub async fn new(
             rx_protocol_runtime: initialize_connected_rx_protocol_runtime(),
             sta_ap_rx_batch: initialize_sta_ap_station_rx_batch(),
             initial_connected: Some(initial_connected),
+            station_tracking,
             #[cfg(feature = "diagnostics")]
             diagnostics,
         },

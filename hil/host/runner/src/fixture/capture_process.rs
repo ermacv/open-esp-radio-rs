@@ -87,15 +87,23 @@ impl Capture {
             .expect("capture owns reader")
             .join()
             .map_err(|_| "capture reader panicked")??;
+        let status = status?;
         if let Err(error) = stop {
             return Err(super::Error::new(format!(
-                "{error}: {}",
+                "{error} ({status}): {}",
+                String::from_utf8_lossy(&stderr).trim()
+            ))
+            .into());
+        }
+        if !status.success() {
+            return Err(super::Error::new(format!(
+                "capture process failed while completing Stop ({status}): {}",
                 String::from_utf8_lossy(&stderr).trim()
             ))
             .into());
         }
         Ok(Output {
-            status: status?,
+            status,
             stdout: Vec::new(),
             stderr,
         })

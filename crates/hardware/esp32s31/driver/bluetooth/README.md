@@ -97,12 +97,15 @@ The HIL image uses development company value `0xffff`, Core 5.4, subversion 1;
 it does not report the vendor Controller identity.
 Peer termination retires the connection after event completion and scheduler
 unlink. It cancels pending TX payloads, restores the exact graph and RX pool,
-and returns to idle command intake after any earlier HCI response is published.
-The actor reports the peer's reason through its idle completion boundary;
-Host-visible Connection/Disconnection Complete events remain unavailable.
+and returns to idle command intake after any earlier HCI response and the
+Host-enabled Disconnection Complete event are published. The first event which
+observes peer activity produces LE Connection Complete for the single supported
+handle. Both events retain their exact packet across HCI queue backpressure;
+radio completion and recurrence continue independently while they wait.
 Before establishment, each missed event retains the entire initial transmit
 window plus clock widening. After six events without a peer packet, the closed
-connection retires with reason `0x3e` and restores idle command intake.
+connection publishes failed LE Connection Complete with status `0x3e` and no
+allocated handle before restoring idle command intake.
 Established-link supervision uses the hardware valid-RX timestamp, seeded
 with absolute creation time. Anchor capture and delivered RX count do not
 extend this deadline. A fresh controller-time check before the next RUN

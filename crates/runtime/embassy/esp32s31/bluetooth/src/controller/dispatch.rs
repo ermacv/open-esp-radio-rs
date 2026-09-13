@@ -1358,6 +1358,45 @@ where
                     continue;
                 }
                 ControllerCommandPhase::PeripheralConnectionActive => {
+                    let should_try_host_event = matches!(
+                        self.owner.current(),
+                        ControllerCommandState::PeripheralConnectionActive(running)
+                            if running.hci_axis()
+                                == LegacyConnectablePeripheralFirstHciAxis::CommandReady
+                                && running.has_pending_host_event()
+                    );
+                    if should_try_host_event {
+                        let ControllerCommandState::PeripheralConnectionActive(running) =
+                            self.owner.take()
+                        else {
+                            unreachable!("the selected peripheral active owner did not change")
+                        };
+                        match running.try_publish_host_event(controller) {
+                            PeripheralConnectionHostEventPublication::None(running)
+                            | PeripheralConnectionHostEventPublication::Published(running)
+                            | PeripheralConnectionHostEventPublication::Masked(running) => {
+                                self.store_retained_state(
+                                    ControllerCommandPhase::PeripheralConnectionActive,
+                                    ControllerCommandState::PeripheralConnectionActive(running),
+                                );
+                                continue;
+                            }
+                            PeripheralConnectionHostEventPublication::Pending(running) => {
+                                self.store_retained_state(
+                                    ControllerCommandPhase::PeripheralConnectionActive,
+                                    ControllerCommandState::PeripheralConnectionActive(running),
+                                );
+                            }
+                            PeripheralConnectionHostEventPublication::Fault { session, error } => {
+                                self.store_retained_state(
+                                    ControllerCommandPhase::PeripheralConnectionActive,
+                                    ControllerCommandState::PeripheralConnectionActive(session),
+                                );
+                                return self
+                                    .retain_boundary(ControllerCommandBoundary::HciFault(error));
+                            }
+                        }
+                    }
                     let ControllerCommandState::PeripheralConnectionActive(running) =
                         self.owner.current()
                     else {
@@ -1382,9 +1421,28 @@ where
                             }
                         }
                     };
-                    let response = (running.hci_axis()
-                        == LegacyConnectablePeripheralFirstHciAxis::ResponsePending)
-                        .then(|| running.wait_response_capacity(controller));
+                    let response_pending = running.hci_axis()
+                        == LegacyConnectablePeripheralFirstHciAxis::ResponsePending;
+                    let host_event_pending = running.has_pending_host_event();
+                    let hci_work = super::peripheral_work::select_hci_work(
+                        response_pending,
+                        host_event_pending,
+                    );
+                    let response =
+                        (hci_work != super::peripheral_work::HciWork::None).then_some(async {
+                            match hci_work {
+                                super::peripheral_work::HciWork::OrderedResponse => {
+                                    Either::First(running.wait_response_capacity(controller).await)
+                                }
+                                super::peripheral_work::HciWork::HostEvent => {
+                                    running.wait_host_event_capacity(controller).await;
+                                    Either::Second(())
+                                }
+                                super::peripheral_work::HciWork::None => {
+                                    unreachable!("absent HCI work does not construct this future")
+                                }
+                            }
+                        });
                     match super::peripheral_work::wait(radio, response).await {
                         super::peripheral_work::Work::Radio => {
                             let ControllerCommandState::PeripheralConnectionActive(running) =
@@ -1428,11 +1486,42 @@ where
                             }
                             continue;
                         }
-                        super::peripheral_work::Work::Response(Err(_)) => {
+                        super::peripheral_work::Work::Response(Either::First(Err(_))) => {
                             return self
                                 .retain_boundary(ControllerCommandBoundary::EndpointMismatch);
                         }
-                        super::peripheral_work::Work::Response(Ok(_)) => {}
+                        super::peripheral_work::Work::Response(Either::Second(())) => {
+                            let ControllerCommandState::PeripheralConnectionActive(running) =
+                                self.owner.take()
+                            else {
+                                unreachable!("the awaited peripheral active owner did not change")
+                            };
+                            match running.try_publish_host_event(controller) {
+                                PeripheralConnectionHostEventPublication::None(running)
+                                | PeripheralConnectionHostEventPublication::Published(running)
+                                | PeripheralConnectionHostEventPublication::Masked(running)
+                                | PeripheralConnectionHostEventPublication::Pending(running) => {
+                                    self.store_retained_state(
+                                        ControllerCommandPhase::PeripheralConnectionActive,
+                                        ControllerCommandState::PeripheralConnectionActive(running),
+                                    );
+                                }
+                                PeripheralConnectionHostEventPublication::Fault {
+                                    session,
+                                    error,
+                                } => {
+                                    self.store_retained_state(
+                                        ControllerCommandPhase::PeripheralConnectionActive,
+                                        ControllerCommandState::PeripheralConnectionActive(session),
+                                    );
+                                    return self.retain_boundary(
+                                        ControllerCommandBoundary::HciFault(error),
+                                    );
+                                }
+                            }
+                            continue;
+                        }
+                        super::peripheral_work::Work::Response(Either::First(Ok(_))) => {}
                     }
                     let ControllerCommandState::PeripheralConnectionActive(running) =
                         self.owner.take()

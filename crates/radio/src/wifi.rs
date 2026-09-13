@@ -31,8 +31,9 @@ pub use requests::{
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 pub use supervisor::{
-    RadioController, RadioSubsystemGeneration, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPoint,
-    WifiIdle, WifiMonitor, WifiRadioCalibrationPath, WifiRadioRestartReport, WifiRoleStartFailure,
+    PhyRegistrationGeneration, RadioController, RadioSubsystemGeneration,
+    WIFI_SCAN_RESULT_CAPACITY, WifiAccessPoint, WifiIdle, WifiMonitor, WifiRadioCalibrationPath,
+    WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiRoleStartFailure,
     WifiRoleStopFailure, WifiScanCompleted, WifiScanFailure, WifiScanOperationFailure,
     WifiScanReport, WifiScanResult, WifiStartFailure, WifiStartReport, WifiStartResult,
     WifiStation, WifiStationAccessPoint, WifiStopReport, WifiSupervisorPort,

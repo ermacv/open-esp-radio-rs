@@ -11,6 +11,15 @@ pub enum LeLegacyAdvertisingReportPublication {
     Masked,
 }
 
+/// Result of attempting one Host-visible peripheral connection event publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralConnectionEventPublication {
+    /// The complete event entered the bounded Controller-to-Host queue.
+    Published,
+    /// The Host currently masks this standard event.
+    Masked,
+}
+
 /// Result of claiming the sole initial next-command authority for an HCI epoch.
 #[must_use = "retain either the command-ready authority or the unchanged owner"]
 pub enum LeControllerCommandReadyClaim<'epoch, Owner> {
@@ -198,6 +207,14 @@ where
         self.transport().wait_publish_ready().await;
     }
 
+    /// Wait until Controller-to-Host capacity may accept a connection event.
+    ///
+    /// This readiness hint reserves no slot. The caller must retain the exact
+    /// event and retry publication after cancellation or competing output.
+    pub async fn wait_peripheral_connection_event_capacity(&self) {
+        self.transport().wait_publish_ready().await;
+    }
+
     /// Publish one standard LE Advertising Report if enabled by the Host masks.
     ///
     /// The event does not consume or mint command-order authority. A full queue
@@ -214,5 +231,37 @@ where
         self.transport()
             .try_publish(event.kind(), event.as_bytes())?;
         Ok(LeLegacyAdvertisingReportPublication::Published)
+    }
+
+    /// Publish a proven successful peripheral establishment if Host-enabled.
+    pub fn try_publish_peripheral_connection_complete(
+        &self,
+        event: &LePeripheralConnectionCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self.bootstrap.le_event_mask().is_le_conn_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish a proven link teardown if Host-enabled.
+    pub fn try_publish_disconnection_complete(
+        &self,
+        event: &LeDisconnectionCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self
+            .bootstrap
+            .event_mask()
+            .is_disconnection_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
     }
 }

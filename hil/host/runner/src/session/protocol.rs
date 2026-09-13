@@ -777,6 +777,10 @@ impl SerialCapture {
         self.request_wifi_command(Command::RestartRadio, "idle radio restart")
     }
 
+    pub(crate) fn request_retained_radio_cycle(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::CycleRetainedRadio, "idle retained radio cycle")
+    }
+
     pub(crate) fn query_stack_usage(&self, timeout: Duration) -> Result<StackUsage> {
         let response = self.send_command(0, Command::QueryStackUsage, timeout)?;
         match response.body {
@@ -827,6 +831,30 @@ impl SerialCapture {
         {
             Event::BluetoothDtm(evidence) if evidence.completed(operation) => Ok(evidence),
             response => Err(format!("Bluetooth {operation:?} failed: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn bluetooth_peripheral(
+        &self,
+        operation: open_esp_radio_hil_protocol::BluetoothPeripheralOperation,
+    ) -> Result<open_esp_radio_hil_protocol::BluetoothPeripheralEvidence> {
+        match self
+            .send_command(
+                0,
+                Command::BluetoothPeripheral(operation),
+                Duration::from_secs(5),
+            )?
+            .body
+        {
+            Event::BluetoothPeripheral(evidence)
+                if evidence.started_address(operation).is_some()
+                    || evidence.is_snapshot(operation) =>
+            {
+                Ok(evidence)
+            }
+            response => {
+                Err(format!("Bluetooth peripheral {operation:?} failed: {response:?}").into())
+            }
         }
     }
 
@@ -996,12 +1024,41 @@ impl SerialCapture {
         let event = self
             .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiRadioRestarted(_))
+                    && matches!(
+                        message.body,
+                        Event::WifiRadioRestarted(_) | Event::WifiRoleFailed(_)
+                    )
             })?
             .ok_or("device did not complete the idle radio restart")?;
         match event.body {
             Event::WifiRadioRestarted(evidence) => Ok(evidence),
-            _ => unreachable!("radio-restart predicate accepted only its completion event"),
+            Event::WifiRoleFailed(failure) => {
+                Err(format!("idle radio restart failed: {failure:?}").into())
+            }
+            _ => unreachable!("radio-restart predicate accepted only terminal restart events"),
+        }
+    }
+
+    pub(crate) fn wait_wifi_radio_retained_cycle(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiRadioRetainedCycleEvidence> {
+        let event = self
+            .wait_for_wifi_event(handle, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(
+                        message.body,
+                        Event::WifiRadioRetainedCycled(_) | Event::WifiRoleFailed(_)
+                    )
+            })?
+            .ok_or("device did not complete the idle retained radio cycle")?;
+        match event.body {
+            Event::WifiRadioRetainedCycled(evidence) => Ok(evidence),
+            Event::WifiRoleFailed(failure) => {
+                Err(format!("idle retained radio cycle failed: {failure:?}").into())
+            }
+            _ => unreachable!("retained-cycle predicate accepted only terminal cycle events"),
         }
     }
 

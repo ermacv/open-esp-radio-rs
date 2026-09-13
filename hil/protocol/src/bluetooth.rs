@@ -26,11 +26,33 @@ pub struct BluetoothPeripheralEvidence {
     pub result: BluetoothPeripheralResult,
     pub advertising_runs: u32,
     pub peripheral_runs: u32,
+    pub peripheral_disconnections: u32,
+    /// Successful, profile-valid LE Connection Complete events consumed by the Host.
+    pub connection_complete_events: u32,
+    /// Successful, profile-valid Disconnection Complete events consumed by the Host.
+    pub disconnection_complete_events: u32,
+    /// Connection/disconnection events that failed the HIL profile checks or decoding.
+    pub host_event_faults: u32,
+    pub last_disconnect_reason: Option<u8>,
     pub retries: u32,
     pub terminal: bool,
     pub saturated: bool,
     pub detail_truncated: bool,
     pub detail: heapless::String<128>,
+}
+
+impl BluetoothPeripheralEvidence {
+    pub fn started_address(&self, requested: BluetoothPeripheralOperation) -> Option<[u8; 6]> {
+        (self.operation == requested).then_some(())?;
+        match self.result {
+            BluetoothPeripheralResult::Started { address } => Some(address),
+            _ => None,
+        }
+    }
+
+    pub fn is_snapshot(&self, requested: BluetoothPeripheralOperation) -> bool {
+        self.operation == requested && self.result == BluetoothPeripheralResult::Snapshot
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +126,11 @@ mod tests {
                     result,
                     advertising_runs: u32::MAX,
                     peripheral_runs: 2,
+                    peripheral_disconnections: 1,
+                    connection_complete_events: 1,
+                    disconnection_complete_events: 1,
+                    host_event_faults: 0,
+                    last_disconnect_reason: Some(8),
                     retries: 3,
                     terminal: true,
                     saturated: true,
@@ -121,6 +148,45 @@ mod tests {
             });
             assert_eq!(observed, Some(expected));
         }
+    }
+
+    #[test]
+    fn peripheral_completion_helpers_reject_wrong_operations_and_results() {
+        let evidence = BluetoothPeripheralEvidence {
+            operation: BluetoothPeripheralOperation::StartAdvertising,
+            result: BluetoothPeripheralResult::Started {
+                address: [1, 2, 3, 4, 5, 6],
+            },
+            advertising_runs: 1,
+            peripheral_runs: 0,
+            peripheral_disconnections: 0,
+            connection_complete_events: 0,
+            disconnection_complete_events: 0,
+            host_event_faults: 0,
+            last_disconnect_reason: None,
+            retries: 0,
+            terminal: false,
+            saturated: false,
+            detail_truncated: false,
+            detail: heapless::String::new(),
+        };
+        assert_eq!(
+            evidence.started_address(BluetoothPeripheralOperation::StartAdvertising),
+            Some([1, 2, 3, 4, 5, 6])
+        );
+        assert_eq!(
+            evidence.started_address(BluetoothPeripheralOperation::Snapshot),
+            None
+        );
+        assert!(!evidence.is_snapshot(BluetoothPeripheralOperation::StartAdvertising));
+        assert!(
+            BluetoothPeripheralEvidence {
+                operation: BluetoothPeripheralOperation::Snapshot,
+                result: BluetoothPeripheralResult::Snapshot,
+                ..evidence
+            }
+            .is_snapshot(BluetoothPeripheralOperation::Snapshot)
+        );
     }
 
     #[test]

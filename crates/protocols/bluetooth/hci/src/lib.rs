@@ -28,6 +28,10 @@
 //! Parameters and Set Scan Enable commands become owned timing and duplicate
 //! policy, while affine start/disable continuations delay success until a chip
 //! runner proves hardware `RUN` or quiescence.
+//! Owned LE Connection Complete and Disconnection Complete codecs retain the
+//! exact Host event across bounded backpressure. Their endpoint publication
+//! enforces the standard base and LE event masks; a chip runner still owns the
+//! proof that establishment or teardown occurred.
 //! [`classify_le_controller_command`] joins these portable policies at a finite
 //! command boundary: valid bootstrap, DTM and Link Layer configuration commands
 //! become owned semantic tokens, malformed known commands become owned error
@@ -87,6 +91,11 @@ pub use controller::le::dtm::{
     LeDtmPayloadPattern, LeDtmPhy, LeReceiverTestCommand, LeTestEndCommand,
     LeTransmitterTestCommand,
 };
+pub use controller::le::peripheral::{
+    LE_DISCONNECTION_COMPLETE_EVENT_CAPACITY, LE_PERIPHERAL_CONNECTION_COMPLETE_EVENT_CAPACITY,
+    LeDisconnectionCompleteEvent, LePeripheralConnectionCompleteEvent,
+    LePeripheralConnectionCompleteEventError,
+};
 pub use controller::le::scanning::{
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
     LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
@@ -114,6 +123,7 @@ pub use controller::response::{
 pub use controller::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
     LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
+    LePeripheralConnectionEventPublication,
 };
 pub use transport::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
 pub(crate) use transport::{

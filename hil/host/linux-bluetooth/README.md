@@ -1,4 +1,4 @@
-# Linux Bluetooth DTM fixture
+# Linux Bluetooth fixture
 
 On Linux, build and install the narrow helper from the repository root:
 
@@ -76,6 +76,8 @@ With the ESP connected at the configured serial port, run:
 ```console
 cargo hil doctor bluetooth-dtm-bidirectional
 cargo hil run bluetooth-dtm-bidirectional
+cargo hil doctor bluetooth-peripheral-recovery
+cargo hil run bluetooth-peripheral-recovery
 ```
 
 The runner reserves the board and adapter, builds and audits the separate
@@ -87,6 +89,17 @@ expire after 30 seconds; expiry and HCI errors attempt Reset, retain a failed
 state and require a board reset before another test.
 USB responses write and flush within one two-second deadline, including
 responses whose encoded length is an exact USB packet multiple.
+
+The peripheral recovery scenario starts the target's public `ADV_IND`, asks
+the same finite helper to connect as a central and reset its local Controller,
+then waits for the target's 2-second supervision timeout. Each cycle requires
+the external central's Connection Complete and restoration report, one exact
+target-side peripheral retirement, and ordered standard LE Connection Complete
+and Disconnection Complete events consumed by the target's Host facade. The
+disconnect status must be successful, the sole profile handle must be `0x0001`,
+and the reason must be `0x08`. The catalog runs two cycles per boot and three
+fresh repetitions, proving that advertising can restart after the first idle
+restoration. The scenario does not send ACL data and makes no ACL claim.
 
 Test End and logical Reset share bounded production scheduler stop and exact
 descriptor retirement. A deadline or ownership fault retains the graph and

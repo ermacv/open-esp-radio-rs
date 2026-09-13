@@ -76,6 +76,17 @@ fn execute_workload_inner(
             output,
             context,
         ),
+        Workload::BluetoothPeripheral {
+            boots,
+            connections,
+            hold_millis,
+        } => crate::workload::bluetooth::run_peripheral(
+            *boots,
+            *connections,
+            *hold_millis,
+            output,
+            context,
+        ),
         Workload::BootSmoke => boot_smoke(output, context),
         Workload::MemoryBenchmark {
             boots,

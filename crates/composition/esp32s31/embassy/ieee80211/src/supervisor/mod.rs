@@ -79,8 +79,8 @@ use oer_esp32s31_wifi::{
     lower_wifi_channel,
     mac_start::WifiMacStartConfig,
     runtime::{
-        WifiRadioReleaseDisposition, WifiRadioReleaseFailure, WifiRoleOwner, WifiStopped,
-        materialize_esp32s31_wifi_role,
+        WifiRadioReleaseDisposition, WifiRadioReleaseFailure, WifiRadioRetainedCycleFailure,
+        WifiRoleOwner, WifiStopped, materialize_esp32s31_wifi_role,
     },
     tx::ControlTxConfig,
 };
@@ -527,6 +527,10 @@ enum ProductionRadioLifecycleFault {
         _failure: RadioStartFailure<EspHalRadioPeripheral>,
         _resources: ProductionRadioResources,
     },
+    RetainedCycle {
+        _failure: WifiRadioRetainedCycleFailure<EspHalRadioPeripheral>,
+        _resources: ProductionRadioResources,
+    },
 }
 
 // A whole-radio restart failure is terminal for this boot. Keep its exact
@@ -603,9 +607,6 @@ enum ProductionStationReclaimFault<'security> {
 enum ProductionWifiFault {
     PhyMaintenance {
         _failure: maintenance::Failure,
-    },
-    RadioLifecycle {
-        _failure: &'static mut ProductionRadioLifecycleFault,
     },
     PairedStationPhase {
         _owner: ProductionStationOwner<'static, 'static>,

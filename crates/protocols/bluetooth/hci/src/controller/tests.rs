@@ -4,8 +4,13 @@ use bt_hci::{
         Cmd,
         controller_baseband::{Reset, SetEventMask},
     },
-    event::{CommandComplete, CommandCompleteWithStatus, EventKind},
-    param::{AddrKind, BdAddr, EventMask, LeAdvEventKind, LeEventMask, Status},
+    event::{
+        CommandComplete, CommandCompleteWithStatus, DisconnectionComplete, EventKind, le::LeEvent,
+    },
+    param::{
+        AddrKind, BdAddr, ClockAccuracy, ConnHandle, Duration, Error as HciError, EventMask,
+        LeAdvEventKind, LeEventMask, Status,
+    },
     transport::Transport,
 };
 use embassy_futures::block_on;
@@ -13,13 +18,14 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::{
     LeControllerCommandReadyClaim, LeControllerHciResources, LeControllerHciResourcesError,
-    LeLegacyAdvertisingReportPublication,
+    LeLegacyAdvertisingReportPublication, LePeripheralConnectionEventPublication,
 };
 use crate::{
     BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LeControllerBootstrapConfig,
     LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
-    LeControllerResponsePublication, LeLegacyAdvertisingReportEvent, OwnedBootstrapCommand,
+    LeControllerResponsePublication, LeDisconnectionCompleteEvent, LeLegacyAdvertisingReportEvent,
+    LePeripheralConnectionCompleteEvent, OwnedBootstrapCommand,
 };
 
 fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
@@ -122,6 +128,111 @@ fn advertising_reports_honor_masks_and_retain_backpressure() {
             .try_publish_legacy_advertising_report(&event),
         Ok(LeLegacyAdvertisingReportPublication::Published)
     );
+}
+
+#[test]
+fn peripheral_connection_events_honor_their_standard_masks() {
+    let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
+        .expect("the connection events fit this transport profile");
+    assert_eq!(
+        resources
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .status(),
+        Status::SUCCESS
+    );
+    let connection = LePeripheralConnectionCompleteEvent::new(
+        ConnHandle::new(1),
+        AddrKind::PUBLIC,
+        BdAddr::new([1, 2, 3, 4, 5, 6]),
+        Duration::from_u16(24),
+        0,
+        Duration::from_u16(200),
+        ClockAccuracy::Ppm50,
+    )
+    .expect("the peer address is representable");
+    let disconnection =
+        LeDisconnectionCompleteEvent::new(ConnHandle::new(1), HciError::CONN_TIMEOUT.to_status());
+
+    let endpoints = resources.split();
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
+                LeEventMask::new().enable_le_conn_complete(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_peripheral_connection_complete(&connection),
+        Ok(LePeripheralConnectionEventPublication::Masked)
+    );
+
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                EventMask::new().enable_le_meta(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_peripheral_connection_complete(&connection),
+        Ok(LePeripheralConnectionEventPublication::Published)
+    );
+    let mut packet = [0; 45];
+    let ControllerToHostPacket::Event(received) =
+        block_on(endpoints.host.read(&mut packet)).expect("the Host drains Connection Complete")
+    else {
+        panic!("Connection Complete changed packet class");
+    };
+    assert_eq!(received.kind, EventKind::Le);
+    assert!(matches!(
+        LeEvent::from_hci_bytes_complete(received.data)
+            .expect("the published event remains standard"),
+        LeEvent::LeConnectionComplete(_)
+    ));
+
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_disconnection_complete(&disconnection),
+        Ok(LePeripheralConnectionEventPublication::Masked)
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                EventMask::new()
+                    .enable_le_meta(true)
+                    .enable_disconnection_complete(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_disconnection_complete(&disconnection),
+        Ok(LePeripheralConnectionEventPublication::Published)
+    );
+    let ControllerToHostPacket::Event(received) =
+        block_on(endpoints.host.read(&mut packet)).expect("the Host drains Disconnection Complete")
+    else {
+        panic!("Disconnection Complete changed packet class");
+    };
+    assert_eq!(received.kind, EventKind::DisconnectionComplete);
+    DisconnectionComplete::from_hci_bytes_complete(received.data)
+        .expect("the published event remains standard");
 }
 
 #[test]

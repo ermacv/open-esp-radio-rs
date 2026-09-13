@@ -20,17 +20,18 @@ use crate::{
     HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
     InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY,
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeControllerBootstrap,
-    LeControllerBootstrapConfig, LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
-    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningConfigurationCommand,
-    LeLegacyScanningEnableCommand, OwnedBootstrapCommand,
+    LeControllerBootstrapConfig, LeControllerCommandReady, LeDisconnectionCompleteEvent,
+    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingConfigurationCommand,
+    LeLegacyAdvertisingEnableCommand, LeLegacyAdvertisingIdleEnableDisposition,
+    LeLegacyAdvertisingReportEvent, LeLegacyScanningCommandCompleteEvent,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand,
+    LePeripheralConnectionCompleteEvent, OwnedBootstrapCommand,
 };
 
 mod endpoint;
 pub use endpoint::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim,
-    LeLegacyAdvertisingReportPublication,
+    LeLegacyAdvertisingReportPublication, LePeripheralConnectionEventPublication,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;

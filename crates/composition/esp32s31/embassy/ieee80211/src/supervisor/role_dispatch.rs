@@ -301,6 +301,7 @@ impl ProductionWifiEpochRunner {
 impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
     type Stopped = ProductionSupervisorStopped;
     type Faulted = ProductionWifiFault;
+    type LifecycleFaulted = &'static mut ProductionRadioLifecycleFault;
     type Error = RadioError;
 
     fn planning_error(&mut self, error: WifiServicePlanningError) -> Self::Error {
@@ -308,6 +309,11 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     }
 
     fn fault_error(&mut self, faulted: &Self::Faulted) -> Self::Error {
+        let _ = faulted;
+        RadioError::HardwareFault
+    }
+
+    fn lifecycle_fault_error(&mut self, faulted: &Self::LifecycleFaulted) -> Self::Error {
         let _ = faulted;
         RadioError::HardwareFault
     }
@@ -489,8 +495,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<oer_radio::wifi::WifiRadioCalibrationPath, Self::Faulted>> + 'a
-    {
+    ) -> impl Future<
+        Output = Result<oer_radio::wifi::WifiRadioCalibrationPath, Self::LifecycleFaulted>,
+    > + 'a {
         async move {
             let stopped = slot
                 .take()
@@ -498,38 +505,32 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
             let frontier = match await_stack_boundary!(maintenance::quiesce_for_shutdown(stopped)) {
                 Ok(frontier) => frontier,
                 Err(failure) => {
-                    return Err(ProductionWifiFault::RadioLifecycle {
-                        _failure: RADIO_LIFECYCLE_FAULT.init(
-                            ProductionRadioLifecycleFault::ShutdownQuiesce { _failure: failure },
-                        ),
-                    });
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::ShutdownQuiesce { _failure: failure },
+                    ));
                 }
             };
             let (wifi, resources) = frontier.into_parts();
             let released = match await_stack_boundary!(wifi.release_radio::<EmbassyPhyDelay>()) {
                 Ok(released) => released,
                 Err(failure) => {
-                    return Err(ProductionWifiFault::RadioLifecycle {
-                        _failure: RADIO_LIFECYCLE_FAULT.init(
-                            ProductionRadioLifecycleFault::Release {
-                                _failure: failure,
-                                _resources: resources,
-                            },
-                        ),
-                    });
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::Release {
+                            _failure: failure,
+                            _resources: resources,
+                        },
+                    ));
                 }
             };
             let cold = match released {
                 WifiRadioReleaseDisposition::Cold(cold) => cold,
                 WifiRadioReleaseDisposition::Shared(radio) => {
-                    return Err(ProductionWifiFault::RadioLifecycle {
-                        _failure: RADIO_LIFECYCLE_FAULT.init(
-                            ProductionRadioLifecycleFault::Shared {
-                                _radio: radio,
-                                _resources: resources,
-                            },
-                        ),
-                    });
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::Shared {
+                            _radio: radio,
+                            _resources: resources,
+                        },
+                    ));
                 }
             };
             let mut clock = EmbassyPhyClock;
@@ -542,14 +543,12 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 )) {
                     Ok(ready) => ready,
                     Err(failure) => {
-                        return Err(ProductionWifiFault::RadioLifecycle {
-                            _failure: RADIO_LIFECYCLE_FAULT.init(
-                                ProductionRadioLifecycleFault::Restart {
-                                    _failure: failure,
-                                    _resources: resources,
-                                },
-                            ),
-                        });
+                        return Err(RADIO_LIFECYCLE_FAULT.init(
+                            ProductionRadioLifecycleFault::Restart {
+                                _failure: failure,
+                                _resources: resources,
+                            },
+                        ));
                     }
                 };
             let calibration_path = match ready
@@ -580,6 +579,49 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 monitor,
             ));
             Ok(calibration_path)
+        }
+    }
+
+    fn cycle_retained_radio<'a>(
+        &'a mut self,
+        slot: &'a mut Option<Self::Stopped>,
+    ) -> impl Future<Output = Result<(), Self::LifecycleFaulted>> + 'a {
+        async move {
+            let stopped = slot
+                .take()
+                .expect("supervisor retains stopped owner between role epochs");
+            let frontier = match await_stack_boundary!(maintenance::quiesce_for_shutdown(stopped)) {
+                Ok(frontier) => frontier,
+                Err(failure) => {
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::ShutdownQuiesce { _failure: failure },
+                    ));
+                }
+            };
+            let (wifi, resources) = frontier.into_parts();
+            let mut clock = EmbassyPhyClock;
+            let wifi = match await_stack_boundary!(
+                wifi.cycle_retained_rf::<EmbassyPhyDelay, _>(&mut clock)
+            ) {
+                Ok(wifi) => wifi,
+                Err(failure) => {
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::RetainedCycle {
+                            _failure: failure,
+                            _resources: resources,
+                        },
+                    ));
+                }
+            };
+            let (physical, station, access_point, monitor) = resources;
+            *slot = Some(WifiSupervisorStopped::new(
+                ProductionWifiOwner::Cold(wifi),
+                physical,
+                station,
+                access_point,
+                monitor,
+            ));
+            Ok(())
         }
     }
 }

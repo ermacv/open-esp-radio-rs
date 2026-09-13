@@ -1,0 +1,19 @@
+schema = 4
+id = "wifi-radio-retained-cycle"
+description = "Final-client RF close and retained wake without retiring the registered PHY epoch"
+repetitions = 3
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["qualification", "wifi", "lifecycle", "phy", "retained-wake"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "wifi-role"
+operation = "retained"
+timeout_seconds = 90
+cycles = 3
+
+[criteria]

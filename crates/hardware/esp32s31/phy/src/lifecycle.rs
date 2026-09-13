@@ -211,22 +211,52 @@ pub(crate) const PHY_RF_CLOSE_OPERATIONS: [PhyRfCloseOperation; 17] = [
     PhyRfCloseOperation::ExitCritical,
 ];
 
+/// Drive the complete close graph through one target-owned operation port.
+///
+/// The caller supplies the hardware binding. Returning an error stops before
+/// every later edge, so the outer owner can retain the exact poisoned
+/// frontier instead of inventing cleanup after an ambiguous write.
+pub(crate) fn drive_rf_close<E>(
+    mut execute: impl FnMut(PhyRfCloseOperation) -> Result<(), E>,
+) -> Result<(), E> {
+    for operation in PHY_RF_CLOSE_OPERATIONS {
+        execute(operation)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn retained_wake_parent_requires_every_vendor_child_in_order() {
+    fn retained_wake_parent_has_a_safe_envelope_and_terminal_completion() {
         let mut transition = PhyRfWakeTransition::new();
-        let mut seen = 0;
-        for expected in PHY_RF_WAKE_OPERATIONS {
-            assert_eq!(transition.action(), PhyRfWakeAction::Execute(expected));
+        let mut trace = std::vec::Vec::new();
+        while let PhyRfWakeAction::Execute(operation) = transition.action() {
+            trace.push(operation);
             transition
-                .advance(PhyRfWakeCompletion::executed(expected))
+                .advance(PhyRfWakeCompletion::executed(operation))
                 .unwrap();
-            seen += 1;
         }
-        assert_eq!(seen, 36);
+        assert_eq!(trace.len(), 36);
+        assert_eq!(
+            &trace[..3],
+            &[
+                PhyRfWakeOperation::SetBasebandMode { mode: 2 },
+                PhyRfWakeOperation::ForceTxRxOff { enabled: true },
+                PhyRfWakeOperation::SetHardwareFrequencyControl { enabled: false },
+            ]
+        );
+        assert_eq!(
+            &trace[32..],
+            &[
+                PhyRfWakeOperation::SetHardwareFrequencyControl { enabled: true },
+                PhyRfWakeOperation::SetBbpllCalibration { enabled: false },
+                PhyRfWakeOperation::ForceTxRxOff { enabled: false },
+                PhyRfWakeOperation::SetBasebandMode { mode: 0 },
+            ]
+        );
         assert_eq!(
             transition.action(),
             PhyRfWakeAction::Complete(PhyRfWakeOutcome)
@@ -255,37 +285,47 @@ mod tests {
     }
 
     #[test]
-    fn close_graph_preserves_vendor_parent_and_child_order() {
+    fn close_driver_observes_the_complete_critical_section() {
+        let mut trace = std::vec::Vec::new();
+        drive_rf_close::<core::convert::Infallible>(|operation| {
+            trace.push(operation);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(trace.len(), 17);
+        assert_eq!(trace.first(), Some(&PhyRfCloseOperation::EnterCritical));
+        assert_eq!(trace.last(), Some(&PhyRfCloseOperation::ExitCritical));
         assert_eq!(
-            PHY_RF_CLOSE_OPERATIONS,
-            [
-                PhyRfCloseOperation::EnterCritical,
-                PhyRfCloseOperation::DisableHardwareFrequencyControl,
-                PhyRfCloseOperation::ForceTxRxOff { phase: 0 },
-                PhyRfCloseOperation::SettleOneMicrosecond,
-                PhyRfCloseOperation::ForceTxRxOff { phase: 1 },
-                PhyRfCloseOperation::SettleOneMicrosecond,
-                PhyRfCloseOperation::DisableAgc,
-                PhyRfCloseOperation::ClearBasebandControl,
-                PhyRfCloseOperation::SettleOneMicrosecond,
-                PhyRfCloseOperation::WriteI2c {
-                    address: analog_registers::RF_CLOSE_CONTROL,
-                    value: 0x07,
-                },
-                PhyRfCloseOperation::PowerOffRfCircuits,
-                PhyRfCloseOperation::ClearImmediateClockPower,
-                PhyRfCloseOperation::CloseFrontendBasebandClocks,
-                PhyRfCloseOperation::EnableBbpllCalibration,
-                PhyRfCloseOperation::WriteI2c {
-                    address: analog_registers::RF_CLOSE_RETENTION_ZERO,
-                    value: 0x77,
-                },
-                PhyRfCloseOperation::WriteI2c {
-                    address: analog_registers::RF_CLOSE_RETENTION_ONE,
-                    value: 0x77,
-                },
-                PhyRfCloseOperation::ExitCritical,
-            ]
+            trace
+                .iter()
+                .filter(|operation| matches!(operation, PhyRfCloseOperation::SettleOneMicrosecond))
+                .count(),
+            3
         );
+        assert_eq!(
+            trace
+                .iter()
+                .filter(|operation| matches!(operation, PhyRfCloseOperation::WriteI2c { .. }))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn close_driver_stops_at_the_first_failed_hardware_edge() {
+        let mut trace = std::vec::Vec::new();
+        let result = drive_rf_close(|operation| {
+            trace.push(operation);
+            if operation == PhyRfCloseOperation::DisableAgc {
+                Err("agc-write-failed")
+            } else {
+                Ok(())
+            }
+        });
+
+        assert_eq!(result, Err("agc-write-failed"));
+        assert_eq!(trace.last(), Some(&PhyRfCloseOperation::DisableAgc));
+        assert!(!trace.contains(&PhyRfCloseOperation::ClearBasebandControl));
     }
 }

@@ -200,6 +200,15 @@ pub async fn complete_wifi_radio_restart(
     wait_until_serialized(sequence).await;
 }
 
+pub async fn complete_wifi_radio_retained_cycle(
+    request_id: u32,
+    evidence: open_esp_radio_hil_protocol::WifiRadioRetainedCycleEvidence,
+) {
+    let sequence =
+        queue_event_reliably(0, request_id, Event::WifiRadioRetainedCycled(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
 pub async fn complete_wifi_scan(request_id: u32, evidence: WifiScanEvidence) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiScanCompleted(evidence)).await;
     wait_until_serialized(sequence).await;

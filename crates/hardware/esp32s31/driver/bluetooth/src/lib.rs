@@ -7,8 +7,8 @@
 //! the Embassy adapter owns executor waits and task storage.
 //!
 //! DTM, advertising and scanning have event lifecycles. Peripheral connection
-//! has a causal first-event path, completion/recycle and lower recurrence
-//! operations, but the active connection loop and reliable ACL dataplane are
+//! has a causal first-event path, active completion/recycle/recurrence and
+//! Host-visible establishment/teardown events. The reliable ACL dataplane is
 //! not yet integrated. Initialization and scheduler RUN are not RF evidence.
 //!
 //! Shared single-item completion and timed preparation engines implement the

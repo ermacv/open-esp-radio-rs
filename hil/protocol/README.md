@@ -1,6 +1,6 @@
-# HIL protocol v126
+# HIL protocol v129
 
-Host and firmware must both use version 126. Other versions are rejected
+Host and firmware must both use version 129. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
@@ -24,7 +24,10 @@ reset. Feature discovery identifies images implementing this diagnostic.
 
 `BluetoothPeripheral::StartAdvertising` requests a bounded diagnostic
 `ADV_IND` on channel 37 through production HCI. `Snapshot` returns boot-lifetime
-advertising/peripheral RUN counts, retries and the first terminal reason.
+advertising/peripheral RUN and disconnection counts, retries, the first terminal
+reason, and separately decoded Host-side Connection/Disconnection Complete
+counts. Invalid, out-of-order or profile-mismatched lifecycle events increment
+`host_event_faults`; the last decoded disconnection reason is retained.
 These are software publication observations; a peer observation is required
 to establish RF delivery. The start response includes the public address.
 HCI rejection stages are Reset (0), address read (1), parameters (2), data (3)

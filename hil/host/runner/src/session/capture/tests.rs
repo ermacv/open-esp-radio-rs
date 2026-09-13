@@ -658,6 +658,38 @@ fn monitor_failure_is_correlated_and_terminal() {
 }
 
 #[test]
+fn retained_radio_failure_is_correlated_and_terminal() {
+    use open_esp_radio_hil_protocol::{
+        WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+    };
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            1,
+            0,
+            23,
+            Event::WifiRoleFailed(WifiRoleFailureEvidence {
+                role: WifiRole::Idle,
+                operation: WifiRoleOperation::RetainedCycle,
+                reason: WifiRoleFailureReason::HardwareFault,
+            }),
+        ))))
+        .unwrap();
+    let handle = WifiCommandHandle {
+        request_id: 23,
+        first_event: 1,
+    };
+    let error = capture
+        .wait_wifi_radio_retained_cycle(handle, Duration::from_secs(3))
+        .unwrap_err();
+    assert!(error.to_string().contains("RetainedCycle"));
+    assert!(error.to_string().contains("HardwareFault"));
+}
+
+#[test]
 fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
     let output = Output::new();
     let (capture, input) = capture(&output, false);

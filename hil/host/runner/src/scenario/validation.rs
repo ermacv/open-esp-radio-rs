@@ -165,9 +165,13 @@ impl Scenario {
             .into());
         }
         if (self.image == ImageClass::BluetoothDtm)
-            != matches!(self.workload, Workload::BluetoothDtm { .. })
+            != matches!(
+                self.workload,
+                Workload::BluetoothDtm { .. } | Workload::BluetoothPeripheral { .. }
+            )
         {
-            return self.criteria_error("Bluetooth DTM requires its exclusive firmware image");
+            return self
+                .criteria_error("Bluetooth workloads require their exclusive firmware image");
         }
         let boot_smoke_image = self.image == ImageClass::BootSmoke;
         if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
@@ -447,6 +451,23 @@ impl Scenario {
                     );
                 }
             }
+            Workload::BluetoothPeripheral {
+                boots,
+                connections,
+                hold_millis,
+            } => {
+                bounded(*boots, 1, 10, self, "boots")?;
+                bounded(*connections, 1, 5, self, "connections")?;
+                bounded(*hold_millis, 0, 5_000, self, "hold_millis")?;
+                if self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "Bluetooth peripheral does not accept Wi-Fi criteria or fixture evidence",
+                    );
+                }
+            }
             Workload::BootSmoke => {}
             Workload::MemoryBenchmark {
                 boots,
@@ -680,7 +701,7 @@ impl Scenario {
                 bounded(*timeout_seconds, 10, 180, self, "timeout_seconds")?;
                 if let Some(cycles) = cycles {
                     bounded(*cycles, 1, 10, self, "cycles")?;
-                    if *operation != WifiOperation::Restart {
+                    if !matches!(operation, WifiOperation::Restart | WifiOperation::Retained) {
                         return Err(format!(
                             "{}: cycles is supported only by the Wi-Fi radio restart workload",
                             self.source.display(),

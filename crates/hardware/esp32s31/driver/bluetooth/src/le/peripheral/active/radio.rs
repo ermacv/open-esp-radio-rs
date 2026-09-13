@@ -180,12 +180,15 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
         supervision: &mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
+        host_events: &mut super::host_events::PeripheralConnectionHostEvents,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
         match self {
             stopped @ Self::Stopped { .. } => Step::Continue(stopped),
             Self::Running(running) => Self::poll_running(running),
-            Self::Completed(completed) => Self::complete(completed, control, supervision),
+            Self::Completed(completed) => {
+                Self::complete(completed, control, supervision, host_events)
+            }
             Self::Candidate {
                 mut task,
                 candidate,
@@ -218,7 +221,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     })
                 }
                 Ok(ctrl::ControllerSchedulerCurrentStep::Ready(now)) => {
-                    Self::finish_current(now, admitted, evidence, *supervision)
+                    Self::finish_current(now, admitted, evidence, *supervision, host_events)
                 }
             },
             Self::Merged {
@@ -302,15 +305,17 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         completed: Completed<'a, S, N>,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
         supervision: &mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
+        host_events: &mut super::host_events::PeripheralConnectionHostEvents,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
 
         let (mut task, mut completed, evidence) = completed.into_parts();
+        host_events.observe_completion(completed.link_layer_completion());
         if let Err(error) = task.process_peripheral_control(&mut completed, control) {
             if let oer_bluetooth_ll::control::LePeripheralControlError::PeerTermination { reason } =
                 error
             {
-                return Self::retire(task, completed, evidence, reason);
+                return Self::retire(task, completed, evidence, reason, true, host_events);
             }
             return fault(
                 Cause::Control(error),
@@ -320,7 +325,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         if completed.link_layer_completion().establishment_failed() {
             // HCI error: Connection Failed to be Established. Reclaim
             // only this closed, unlinked event; no live RUN is aborted.
-            return Self::retire(task, completed, evidence, 0x3e);
+            return Self::retire(task, completed, evidence, 0x3e, false, host_events);
         }
         *supervision = task.peripheral_supervision_deadline(&completed);
         // Only contiguous successors are composed; peripheral latency
@@ -360,6 +365,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         admitted: sched::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         supervision: Option<super::super::supervision::PeripheralSupervisionDeadline>,
+        host_events: &mut super::host_events::PeripheralConnectionHostEvents,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
 
@@ -371,7 +377,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     let (completed, _) = task
                         .cancel_peripheral_connection_recurring_pre_sequence(admitted)
                         .into_parts();
-                    return Self::retire(task, completed, evidence, 0x08);
+                    return Self::retire(task, completed, evidence, 0x08, true, host_events);
                 }
                 PeripheralSupervisionDecision::Wait => {
                     let task = now.into_retained_epoch().into_task_service();
@@ -441,9 +447,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         completed: sched::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         reason: u8,
+        publish_disconnection: bool,
+        host_events: &mut super::host_events::PeripheralConnectionHostEvents,
     ) -> Step<'a, S, N> {
         match task.retire_peripheral_connection(completed) {
-            ControlFlow::Continue(()) => Step::Continue(Self::Stopped { task, reason }),
+            ControlFlow::Continue(()) => {
+                if publish_disconnection {
+                    host_events.observe_disconnection(reason);
+                }
+                Step::Continue(Self::Stopped { task, reason })
+            }
             ControlFlow::Break(completed) => fault(
                 PeripheralConnectionActiveFaultCause::RetirementIdentityMismatch,
                 FaultOwner::Control(task, completed, evidence),

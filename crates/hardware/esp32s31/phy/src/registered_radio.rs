@@ -112,6 +112,17 @@ impl<P> RegisteredPhyRadio<P> {
         self.radio.close_cold_interrupt_phase()
     }
 
+    /// Complete the protocol wrapper's post-wake Wi-Fi RX-enable edge.
+    ///
+    /// Retained PHY wake itself returns a protocol-neutral powered owner. The
+    /// Wi-Fi runtime calls this only after reacquiring the Wi-Fi client and
+    /// before exposing runtime register ownership again.
+    #[cfg(target_arch = "riscv32")]
+    #[doc(hidden)]
+    pub fn enable_wifi_rx_after_retained_wake(&mut self) {
+        self.radio.enable_wifi_rx();
+    }
+
     /// Transfer the registered PHY and scheduler to the Wi-Fi runtime context
     /// together with its matching physical and interrupt owners.
     #[cfg(target_arch = "riscv32")]

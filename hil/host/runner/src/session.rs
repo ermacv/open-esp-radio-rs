@@ -25,7 +25,8 @@ use open_esp_radio_hil_protocol::{
     TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
     TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
     WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRadioRestartEvidence,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    WifiRadioRetainedCycleEvidence, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c,
 };
 use zeroize::Zeroizing;
 

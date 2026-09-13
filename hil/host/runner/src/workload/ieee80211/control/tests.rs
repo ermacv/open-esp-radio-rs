@@ -20,6 +20,7 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
     };
     let restarted = WifiRadioRestartEvidence {
         generation: 8,
+        phy_registration_generation: 1,
         calibration_path: WifiRadioCalibrationPath::RestoredCache,
     };
     assert!(require_radio_restart(stopped, restarted).is_ok());
@@ -49,6 +50,7 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
 fn station_after_radio_restart_requires_the_next_generation() {
     let restarted = WifiRadioRestartEvidence {
         generation: 8,
+        phy_registration_generation: 1,
         calibration_path: WifiRadioCalibrationPath::RestoredCache,
     };
     let started = WifiRoleTransitionEvidence {
@@ -56,10 +58,10 @@ fn station_after_radio_restart_requires_the_next_generation() {
         current: WifiRole::Station,
         generation: 9,
     };
-    assert!(require_station_after_restart(restarted, started).is_ok());
+    assert!(require_station_after_lifecycle(restarted.generation, started).is_ok());
     assert!(
-        require_station_after_restart(
-            restarted,
+        require_station_after_lifecycle(
+            restarted.generation,
             WifiRoleTransitionEvidence {
                 generation: 8,
                 ..started
@@ -67,6 +69,33 @@ fn station_after_radio_restart_requires_the_next_generation() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn retained_radio_cycle_requires_the_next_generation_and_preserves_phy_epoch() {
+    let stopped = WifiRoleTransitionEvidence {
+        previous: WifiRole::Station,
+        current: WifiRole::Idle,
+        generation: 7,
+    };
+    let retained = WifiRadioRetainedCycleEvidence {
+        generation: 8,
+        phy_registration_generation: 3,
+    };
+    assert!(require_retained_radio_cycle(stopped, retained, None).is_ok());
+    assert!(require_retained_radio_cycle(stopped, retained, Some(3)).is_ok());
+    assert!(
+        require_retained_radio_cycle(
+            stopped,
+            WifiRadioRetainedCycleEvidence {
+                generation: 7,
+                ..retained
+            },
+            Some(3),
+        )
+        .is_err()
+    );
+    assert!(require_retained_radio_cycle(stopped, retained, Some(2)).is_err());
 }
 
 #[test]

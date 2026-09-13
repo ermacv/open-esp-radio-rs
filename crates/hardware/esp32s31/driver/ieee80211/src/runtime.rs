@@ -16,8 +16,9 @@ use oer_esp32s31_phy::{
 
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::{
-    RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased, RegisteredPhyRadio,
-    RegisteredPhyRfCloseFailure,
+    RegisteredPhyClientAcquireFailure, RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased,
+    RegisteredPhyPendingTrack, RegisteredPhyRadio, RegisteredPhyRfCloseFailure,
+    RegisteredPhyRfWakePoisoned,
 };
 
 use oer_esp32s31_wifi_mac::sta_ap_registers::disable_all_role_receive_registers;
@@ -173,6 +174,67 @@ impl<P> WifiStopped<P> {
         }
     }
 
+    /// Close and immediately restore the RF domain without retiring the
+    /// registered calibration epoch.
+    ///
+    /// This is the basic retained-wake lifecycle transaction. It is admitted
+    /// only from the fully stopped Wi-Fi frontier, releases the final Wi-Fi
+    /// client, executes physical close and wake, reacquires that client and
+    /// reconstructs the same stopped runtime ownership boundary.
+    #[cfg(target_arch = "riscv32")]
+    #[must_use = "retained RF cycle must return a stopped owner or a fail-stop frontier"]
+    pub async fn cycle_retained_rf<
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        C: oer_esp32s31_phy::state::client::PhyPllTrackClock,
+    >(
+        self,
+        clock: &mut C,
+    ) -> Result<Self, WifiRadioRetainedCycleFailure<P>> {
+        let start_report = self.start_report;
+        let transition_report = self.transition_report;
+        let current_channel = self.current_channel;
+        let idle = match self
+            .release_phy_client()
+            .map_err(WifiRadioRetainedCycleFailure::Client)?
+        {
+            RegisteredPhyClientReleaseDisposition::Last(idle) => idle,
+            RegisteredPhyClientReleaseDisposition::Remaining(radio) => {
+                return Err(WifiRadioRetainedCycleFailure::Shared(radio));
+            }
+        };
+        let closed = idle
+            .close_rf::<D>()
+            .await
+            .map_err(WifiRadioRetainedCycleFailure::RfClose)?;
+        let idle = closed
+            .wake_rf::<D>()
+            .await
+            .map_err(WifiRadioRetainedCycleFailure::RfWake)?;
+        let acquire = idle
+            .retain_powered()
+            .acquire_client(oer_esp32s31_phy::state::client::PhyModemClient::Wifi, clock)
+            .map_err(WifiRadioRetainedCycleFailure::Acquire)?;
+        let mut radio = acquire
+            .into_owner()
+            .map_err(WifiRadioRetainedCycleFailure::Tracking)?;
+        radio.enable_wifi_rx_after_retained_wake();
+        let (platform, mut registers, interrupt_setup, phy) = radio.into_wifi_runtime_parts();
+        {
+            let mut mac = registers.wifi_mac_hal();
+            disable_all_role_receive_registers(&mut mac);
+            mac.request_channel_stop();
+        }
+        Ok(Self {
+            platform,
+            registers,
+            interrupt_setup,
+            phy,
+            start_report,
+            transition_report,
+            current_channel,
+        })
+    }
+
     /// Borrow the role-neutral radio state for stopped-only operations.
     pub fn radio_mut(&mut self) -> (oer_esp32s31_hal::ieee80211::mac::WifiMacHal<'_>, &mut P) {
         (self.registers.wifi_mac_hal(), &mut self.platform)
@@ -304,6 +366,18 @@ pub enum WifiRadioReleaseDisposition<P> {
     Shared(RegisteredPhyRadio<P>),
     /// Wi-Fi was the last client and the RF domain reached the cold frontier.
     Cold(RegisteredPhyColdReleased<P>),
+}
+
+/// Fail-stop frontier for an immediate retained RF close/wake cycle.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retained lifecycle failure owns the only recoverable or poisoned frontier"]
+pub enum WifiRadioRetainedCycleFailure<P> {
+    Client(WifiPhyClientReleaseFailure<P>),
+    Shared(RegisteredPhyRadio<P>),
+    RfClose(RegisteredPhyRfCloseFailure<P>),
+    RfWake(RegisteredPhyRfWakePoisoned<P>),
+    Acquire(RegisteredPhyClientAcquireFailure<P>),
+    Tracking(RegisteredPhyPendingTrack<P>),
 }
 
 /// Fail-stop frontier for the composed stopped-Wi-Fi release transaction.

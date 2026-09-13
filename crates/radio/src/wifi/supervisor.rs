@@ -172,6 +172,26 @@ impl RadioSubsystemGeneration {
     }
 }
 
+/// Generation of the registered physical PHY epoch owned by the supervisor.
+///
+/// Role transitions and retained RF close/wake cycles preserve this value. A
+/// successful cold whole-radio restart advances it after target registration
+/// completes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyRegistrationGeneration(u32);
+
+impl PhyRegistrationGeneration {
+    pub const INITIAL: Self = Self(0);
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+
+    pub const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+}
+
 pub type WifiStartResult<R, E> = Result<WifiStartReport, WifiStartFailure<R, E>>;
 
 /// Successful role start acknowledged by the owner-holding supervisor actor.
@@ -211,16 +231,46 @@ pub enum WifiRadioCalibrationPath {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiRadioRestartReport {
     generation: RadioSubsystemGeneration,
+    phy_registration_generation: PhyRegistrationGeneration,
     calibration_path: WifiRadioCalibrationPath,
+}
+
+/// Successful RF close/wake cycle which retained the registered PHY epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiRadioRetainedCycleReport {
+    generation: RadioSubsystemGeneration,
+    phy_registration_generation: PhyRegistrationGeneration,
+}
+
+impl WifiRadioRetainedCycleReport {
+    pub const fn new(
+        generation: RadioSubsystemGeneration,
+        phy_registration_generation: PhyRegistrationGeneration,
+    ) -> Self {
+        Self {
+            generation,
+            phy_registration_generation,
+        }
+    }
+
+    pub const fn generation(self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+
+    pub const fn phy_registration_generation(self) -> PhyRegistrationGeneration {
+        self.phy_registration_generation
+    }
 }
 
 impl WifiRadioRestartReport {
     pub const fn new(
         generation: RadioSubsystemGeneration,
+        phy_registration_generation: PhyRegistrationGeneration,
         calibration_path: WifiRadioCalibrationPath,
     ) -> Self {
         Self {
             generation,
+            phy_registration_generation,
             calibration_path,
         }
     }
@@ -231,6 +281,10 @@ impl WifiRadioRestartReport {
 
     pub const fn calibration_path(self) -> WifiRadioCalibrationPath {
         self.calibration_path
+    }
+
+    pub const fn phy_registration_generation(self) -> PhyRegistrationGeneration {
+        self.phy_registration_generation
     }
 }
 
@@ -302,6 +356,10 @@ pub trait WifiSupervisorPort {
     fn restart_radio(
         &mut self,
     ) -> impl Future<Output = Result<WifiRadioRestartReport, Self::Error>> + '_;
+
+    fn cycle_retained_radio(
+        &mut self,
+    ) -> impl Future<Output = Result<WifiRadioRetainedCycleReport, Self::Error>> + '_;
 }
 
 /// Role-neutral Wi-Fi control capability.
@@ -327,6 +385,14 @@ impl<P: WifiSupervisorPort> WifiIdle<P> {
     /// application control capability.
     pub async fn restart_radio(mut self) -> Result<(Self, WifiRadioRestartReport), P::Error> {
         let report = self.port.restart_radio().await?;
+        Ok((self, report))
+    }
+
+    /// Close and restore RF while retaining the registered PHY epoch.
+    pub async fn cycle_retained_radio(
+        mut self,
+    ) -> Result<(Self, WifiRadioRetainedCycleReport), P::Error> {
+        let report = self.port.cycle_retained_radio().await?;
         Ok((self, report))
     }
 

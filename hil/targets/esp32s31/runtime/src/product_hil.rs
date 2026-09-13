@@ -80,9 +80,9 @@ use open_esp_radio_hil_protocol::{
     WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
     WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
-    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiStationAccessPointStopEvidence,
+    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence,
+    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
@@ -91,8 +91,9 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_radio_restart, complete_wifi_role_failure,
-    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
+    complete_station_epoch_cycle, complete_wifi_radio_restart,
+    complete_wifi_radio_retained_cycle, complete_wifi_role_failure, complete_wifi_role_transition,
+    complete_wifi_scan, publish_event_reliably,
     publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
     receive_wifi_control_request, runtime_log, set_wifi_role,
 };
@@ -2147,6 +2148,9 @@ async fn wifi_role_task(
                                 request_id,
                                 WifiRadioRestartEvidence {
                                     generation,
+                                    phy_registration_generation: report
+                                        .phy_registration_generation()
+                                        .value(),
                                     calibration_path,
                                 },
                             )
@@ -2162,6 +2166,39 @@ async fn wifi_role_task(
                                 WifiRoleFailureEvidence {
                                     role: WifiRole::Idle,
                                     operation: WifiRoleOperation::Restart,
+                                    reason: WifiRoleFailureReason::HardwareFault,
+                                },
+                            )
+                            .await;
+                            core::future::pending().await
+                        }
+                    }
+                }
+                WifiControlRequest::CycleRetainedRadio { request_id } => {
+                    match await_stack_boundary!(idle.cycle_retained_radio()) {
+                        Ok((idle, report)) => {
+                            let generation = report.generation().value();
+                            complete_wifi_radio_retained_cycle(
+                                request_id,
+                                WifiRadioRetainedCycleEvidence {
+                                    generation,
+                                    phy_registration_generation: report
+                                        .phy_registration_generation()
+                                        .value(),
+                                },
+                            )
+                            .await;
+                            runtime_log(format_args!(
+                                "OPEN_RADIO_HIL retained radio cycle generation={generation}",
+                            ));
+                            ProductWifiRole::Idle(idle)
+                        }
+                        Err(_) => {
+                            complete_wifi_role_failure(
+                                request_id,
+                                WifiRoleFailureEvidence {
+                                    role: WifiRole::Idle,
+                                    operation: WifiRoleOperation::RetainedCycle,
                                     reason: WifiRoleFailureReason::HardwareFault,
                                 },
                             )

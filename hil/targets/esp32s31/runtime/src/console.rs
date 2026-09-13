@@ -156,6 +156,9 @@ pub enum WifiControlRequest {
     RestartRadio {
         request_id: u32,
     },
+    CycleRetainedRadio {
+        request_id: u32,
+    },
     Scan {
         request_id: u32,
         request: WifiScanRequest,
@@ -1492,6 +1495,26 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::CycleRetainedRadio => {
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::CycleRetainedRadio { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::ScanWifi(request) => {
                         let valid = request.channel_mask_2_4_ghz != 0
                             && request.channel_mask_2_4_ghz & !0x1fff == 0
@@ -1995,6 +2018,7 @@ fn confirms_wifi_serialization(event: &Event) -> bool {
         Event::StationLifecycle(_)
             | Event::WifiRoleTransitioned(_)
             | Event::WifiRadioRestarted(_)
+            | Event::WifiRadioRetainedCycled(_)
             | Event::WifiScanCompleted(_)
             | Event::WifiMonitorStarted(_)
             | Event::WifiMonitorStopped(_)
@@ -2160,6 +2184,7 @@ mod tests {
         assert!(confirms_wifi_serialization(&Event::WifiRadioRestarted(
             WifiRadioRestartEvidence {
                 generation: 2,
+                phy_registration_generation: 1,
                 calibration_path: WifiRadioCalibrationPath::RestoredCache,
             },
         )));

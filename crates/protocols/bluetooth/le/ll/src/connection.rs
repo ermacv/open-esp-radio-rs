@@ -908,6 +908,11 @@ pub struct LePeripheralConnectionEventCompleted {
 }
 
 impl LePeripheralConnectionEventCompleted {
+    /// Exact accepted CONNECT_IND request retained by the advanced connection.
+    pub const fn request(&self) -> LeLegacyConnectionRequest {
+        self.connection.request
+    }
+
     pub const fn timing(&self) -> LeConnectionTiming {
         self.connection.request.timing()
     }

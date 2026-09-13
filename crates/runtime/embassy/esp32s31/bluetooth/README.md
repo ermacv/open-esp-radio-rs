@@ -24,9 +24,14 @@ all owners in a terminal boundary. See the driver's
 for the required clock bound and unsupported link behavior.
 
 Peer termination, six events without establishment (`0x3e`), or established
-supervision expiry (`0x08`) restore the connection allocations after unlink and return `IdleRestored(PeripheralDisconnected { reason })`. Pending HCI
-responses retain their order before idle command intake resumes. This actor
-boundary is diagnostic evidence, not a Host Disconnection Complete event.
+supervision expiry (`0x08`) restore the connection allocations after unlink.
+The actor publishes successful or failed LE Connection Complete at the proven
+establishment boundary and Disconnection Complete after an established link
+ends. Pending command responses stay ahead of these unsolicited events, while
+radio readiness can continue during output backpressure. Idle command intake
+resumes only after each applicable Host-enabled event is published or masked;
+`IdleRestored(PeripheralDisconnected { reason })` remains the separate runtime
+diagnostic boundary.
 
 Connectable advertising also reports progress at the first and recurring RUN
 publication. Publishing an HCI response does not duplicate that observation.

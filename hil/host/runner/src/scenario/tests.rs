@@ -35,6 +35,22 @@ fn radio_restart_catalog_requires_repeated_cache_replay_cycles() {
 }
 
 #[test]
+fn retained_radio_catalog_requires_repeated_same_epoch_cycles() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let scenario = catalog.get("wifi-radio-retained-cycle").unwrap();
+    assert_eq!(scenario.repetitions, 3);
+    assert!(matches!(
+        scenario.workload,
+        Workload::WifiRole {
+            operation: WifiOperation::Retained,
+            cycles: Some(3),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn ap_measurement_accepts_one_cycle_but_rejects_empty_lifecycle() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
@@ -1175,6 +1191,32 @@ fn bluetooth_dtm_is_bounded_and_requires_its_own_image() {
         };
         assert!(scenario.validate().is_err());
     }
+}
+
+#[test]
+fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
+    let mut scenario: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-peripheral-recovery.toml"
+    ))
+    .unwrap();
+    scenario.validate().unwrap();
+    scenario.image = ImageClass::Performance;
+    assert!(scenario.validate().is_err());
+    scenario.image = ImageClass::BluetoothDtm;
+    for connections in [0, 6] {
+        scenario.workload = Workload::BluetoothPeripheral {
+            boots: 1,
+            connections,
+            hold_millis: 100,
+        };
+        assert!(scenario.validate().is_err());
+    }
+    scenario.workload = Workload::BluetoothPeripheral {
+        boots: 1,
+        connections: 2,
+        hold_millis: 5_001,
+    };
+    assert!(scenario.validate().is_err());
 }
 
 #[test]

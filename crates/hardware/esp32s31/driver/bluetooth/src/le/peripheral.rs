@@ -2,6 +2,9 @@
 
 #[cfg(target_arch = "riscv32")]
 mod active;
+#[cfg(all(test, not(target_arch = "riscv32")))]
+#[path = "peripheral/active/host_events.rs"]
+mod active_host_events;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod completion;
 pub(crate) mod connection;
@@ -63,7 +66,7 @@ pub use start::{
 pub use active::{
     PeripheralConnectionActiveFault, PeripheralConnectionActiveFaultCause,
     PeripheralConnectionActiveSession, PeripheralConnectionActiveStep,
-    PeripheralConnectionActiveWait,
+    PeripheralConnectionActiveWait, PeripheralConnectionHostEventPublication,
 };
 
 #[cfg(feature = "dtm-diagnostics")]

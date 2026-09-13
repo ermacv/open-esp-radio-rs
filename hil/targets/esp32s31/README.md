@@ -8,7 +8,11 @@ the bounded [peripheral diagnostic commands](../../protocol/README.md) for
 starting a single-channel connectable advertisement and observing execution.
 They require a fresh boot. After an observed disconnect or failed establishment,
 advertising may restart without a board or HCI Reset; the host resets the board when the probe
-ends. These commands do not qualify a connection or ACL traffic. See the
+ends. The commands alone do not qualify a connection or ACL traffic. The
+`bluetooth-peripheral-recovery` scenario coordinates a real Linux central with
+two connection/supervision-timeout cycles and requires ordered Host-visible
+completion events before each advertising restart. It still carries no ACL
+traffic claim. See the
 [Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
 
 The peripheral diagnostic explicitly configures software window widening with

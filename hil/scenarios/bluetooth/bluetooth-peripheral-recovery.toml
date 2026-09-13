@@ -1,0 +1,13 @@
+schema = 4
+id = "bluetooth-peripheral-recovery"
+description = "Two real LE peripheral connections with Host-visible completion and supervision-timeout disconnection events followed by advertising recovery"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "connection", "recovery"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 2
+hold_millis = 100

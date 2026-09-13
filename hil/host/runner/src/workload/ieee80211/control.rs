@@ -5,8 +5,8 @@ use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     WifiMonitorRequest, WifiNetworkInterface, WifiRadioCalibrationPath, WifiRadioRestartEvidence,
-    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    WifiStationAccessPointRequest,
+    WifiRadioRetainedCycleEvidence, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiScanRequest, WifiStationAccessPointRequest,
 };
 
 use crate::{
@@ -58,22 +58,49 @@ fn qualify(
     }
     report_stack(capture, options.timeout, "connected")?;
 
-    if operation == Operation::Restart {
+    if matches!(operation, Operation::Restart | Operation::Retained) {
         prove_station_data_path(capture, options.timeout, "before-restart")?;
         let mut stopped = stop_station(capture, options.timeout)?;
         report_stack(capture, options.timeout, "station-stopped")?;
+        let mut retained_phy_registration_generation = None;
         for cycle in 1..=options.restart_cycles {
-            let restarted = capture
-                .wait_wifi_radio_restart(capture.request_radio_restart()?, options.timeout)?;
-            require_radio_restart(stopped, restarted)?;
+            let lifecycle_generation = match operation {
+                Operation::Restart => {
+                    let restarted = capture.wait_wifi_radio_restart(
+                        capture.request_radio_restart()?,
+                        options.timeout,
+                    )?;
+                    require_radio_restart(stopped, restarted)?;
+                    eprintln!(
+                        "wifi_radio_restart_cycle={cycle} generation={} calibration_path={:?}",
+                        restarted.generation, restarted.calibration_path,
+                    );
+                    restarted.generation
+                }
+                Operation::Retained => {
+                    let retained = capture.wait_wifi_radio_retained_cycle(
+                        capture.request_retained_radio_cycle()?,
+                        options.timeout,
+                    )?;
+                    require_retained_radio_cycle(
+                        stopped,
+                        retained,
+                        retained_phy_registration_generation,
+                    )?;
+                    retained_phy_registration_generation =
+                        Some(retained.phy_registration_generation);
+                    eprintln!(
+                        "wifi_radio_retained_cycle={cycle} generation={} phy_registration_generation={}",
+                        retained.generation, retained.phy_registration_generation,
+                    );
+                    retained.generation
+                }
+                _ => unreachable!(),
+            };
             report_stack(capture, options.timeout, "radio-restarted")?;
             let started = start_connected_station(capture, context, options.timeout)?;
-            require_station_after_restart(restarted, started)?;
+            require_station_after_lifecycle(lifecycle_generation, started)?;
             prove_station_data_path(capture, options.timeout, "after-restart")?;
-            eprintln!(
-                "wifi_radio_restart_cycle={cycle} generation={} calibration_path={:?}",
-                restarted.generation, restarted.calibration_path,
-            );
             if cycle < options.restart_cycles {
                 stopped = stop_station(capture, options.timeout)?;
             }
@@ -450,16 +477,42 @@ fn require_radio_restart(
     Ok(())
 }
 
-fn require_station_after_restart(
-    restarted: WifiRadioRestartEvidence,
+fn require_retained_radio_cycle(
+    stopped: WifiRoleTransitionEvidence,
+    retained: WifiRadioRetainedCycleEvidence,
+    previous_phy_registration_generation: Option<u32>,
+) -> Result<()> {
+    let expected_generation = stopped.generation.wrapping_add(1);
+    if retained.generation != expected_generation {
+        return Err(format!(
+            "idle retained cycle returned generation {}, expected {} after stopped generation {}",
+            retained.generation, expected_generation, stopped.generation,
+        )
+        .into());
+    }
+    if previous_phy_registration_generation
+        .is_some_and(|previous| previous != retained.phy_registration_generation)
+    {
+        return Err(format!(
+            "retained cycle changed PHY registration generation from {} to {}",
+            previous_phy_registration_generation.unwrap(),
+            retained.phy_registration_generation,
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn require_station_after_lifecycle(
+    lifecycle_generation: u32,
     started: WifiRoleTransitionEvidence,
 ) -> Result<()> {
     require_transition(started, WifiRole::Idle, WifiRole::Station)?;
-    let expected_generation = restarted.generation.wrapping_add(1);
+    let expected_generation = lifecycle_generation.wrapping_add(1);
     if started.generation != expected_generation {
         return Err(format!(
-            "station after radio restart used generation {}, expected {} after restart generation {}",
-            started.generation, expected_generation, restarted.generation,
+            "station after radio lifecycle used generation {}, expected {} after lifecycle generation {}",
+            started.generation, expected_generation, lifecycle_generation,
         )
         .into());
     }

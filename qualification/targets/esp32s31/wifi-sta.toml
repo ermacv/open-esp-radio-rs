@@ -14,6 +14,7 @@ required-capabilities = [
   "runtime-rfpll-tracking",
   "radio-cold-start",
   "radio-cold-restart",
+  "radio-retained-wake",
   "timeout-error-recovery",
 ]
 
@@ -48,7 +49,7 @@ gaps = [
 id = "wifi-full-cold-calibration"
 composition = "production"
 scope = "Wi-Fi cold start executes full PHY calibration without an admitted cache and exports a fresh semantic calibration cache"
-limits = "Cache-backed partial calibration is a separate source contract; retained-sleep resume remains unimplemented"
+limits = "Cache-backed partial calibration and retained RF wake are separate source contracts; this cold entry does not implement scheduled modem sleep"
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee80211/src/cold_start.rs",
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
@@ -58,7 +59,7 @@ source-paths = [
 id = "phy-cache-cold-replay"
 composition = "production"
 scope = "Validate retained semantic calibration, restore it into a cold state owner, regenerate frequency memory, republish gain state and skip the completed full-calibration prefix"
-limits = "Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained-sleep resume or broad RF qualification"
+limits = "Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained wake or broad RF qualification"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/state.rs",
@@ -68,7 +69,7 @@ source-paths = [
 id = "phy-final-state-cache-handoff"
 composition = "production"
 scope = "Consume the cold-release owner with the platform-derived physical identity, capture the final post-tracking cache and feed both directly into the ordinary validated cold-restart graph"
-limits = "The production supervisor invokes the release/restart chain only from its idle control frontier; retained-sleep wake remains absent and broad RF behavior remains outside this source contract"
+limits = "The production supervisor invokes this cold release/restart chain only from its idle control frontier; retained RF wake is a separate lifecycle and broad RF behavior remains outside this source contract"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/registered_radio.rs",
@@ -361,6 +362,35 @@ hil-requirements = [
 ]
 gaps = [
   { axis = "vendor", id = "combined-close-cache-replay-restart-not-release-evidence" },
+]
+
+[[capabilities]]
+id = "radio-retained-wake"
+title = "Retained RF close and wake"
+scope = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["radio-cold-start", "timeout-error-recovery"]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
+]
+hil-requirements = [
+  { scenario = "wifi-radio-retained-cycle", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "retained-close-wake-parent-production-trace-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-retained-rf-cycle"
+composition = "production"
+scope = "Quiesce the idle Wi-Fi frontier, release the final PHY client, execute RF close and wake to terminal completion inside the owner actor, reacquire Wi-Fi and reconstruct stopped runtime ownership"
+limits = "This is an explicitly requested immediate idle cycle; it does not implement timed modem sleep, connected station power save, Bluetooth or IEEE 802.15.4 resume, and it has no radiated-RF qualification claim"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/registered_radio.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
 ]
 
 [[capabilities]]

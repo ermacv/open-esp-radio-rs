@@ -889,7 +889,28 @@ fn radio_restart_round_trips_cache_path_with_request_identity() {
         43,
         Event::WifiRadioRestarted(WifiRadioRestartEvidence {
             generation: 10,
+            phy_registration_generation: 4,
             calibration_path: WifiRadioCalibrationPath::RestoredCache,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn retained_radio_cycle_round_trips_phy_epoch_with_request_identity() {
+    let expected = Envelope::new(
+        7,
+        6,
+        0,
+        44,
+        Event::WifiRadioRetainedCycled(crate::WifiRadioRetainedCycleEvidence {
+            generation: 11,
+            phy_registration_generation: 4,
         }),
     );
     let mut encoder = FrameEncoder::new();

@@ -13,8 +13,9 @@ use embassy_sync::{
 use oer_wifi_embassy::{await_stack_boundary, stack_boundary::stack_poll};
 
 use crate::wifi::{
-    AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
-    WifiIdle, WifiRadioCalibrationPath, WifiRadioRestartReport, WifiScanFailure, WifiScanReport,
+    AccessPointRequest, MonitorRequest, PhyRegistrationGeneration, RadioController,
+    StationAccessPointRequest, StationRequest, WifiIdle, WifiRadioCalibrationPath,
+    WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiScanFailure, WifiScanReport,
     WifiScanRequest, WifiServicePlanningError, WifiServiceRequest, WifiStartFailure,
     WifiStartResult, WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
 };
@@ -32,6 +33,7 @@ pub enum EmbassyWifiSupervisorCommand {
     StartMonitor(MonitorRequest),
     Stop,
     RestartRadio,
+    CycleRetainedRadio,
 }
 
 /// Role requested while another Wi-Fi role graph is already active.
@@ -43,6 +45,7 @@ pub enum EmbassyWifiStartKind {
     StationAccessPoint,
     StandaloneMonitor,
     WholeRadioRestart,
+    WholeRadioRetainedCycle,
 }
 
 /// Result of one command received while the supervisor holds `WifiStopped`.
@@ -59,6 +62,7 @@ pub enum EmbassyWifiStoppedDispatch {
     Handled,
     Start(WifiServiceRequest),
     RestartRadio,
+    CycleRetainedRadio,
 }
 
 /// Complete result of one locally executed role epoch.
@@ -84,6 +88,12 @@ pub enum EmbassyWifiRoleEpochOutcome<S, F> {
 pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
     type Stopped;
     type Faulted;
+    /// Fail-stop owner returned by a role-neutral whole-radio transaction.
+    ///
+    /// Implementations may use a compact handle to fault storage kept outside
+    /// the supervisor frame. Active-role faults can retain a much larger owner
+    /// graph through `Faulted` independently.
+    type LifecycleFaulted;
     type Error;
 
     fn planning_error(&mut self, error: WifiServicePlanningError) -> Self::Error;
@@ -91,6 +101,8 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
     /// Translate a retained hardware fault into the public control-plane
     /// error. This classifies the state; it does not perform recovery.
     fn fault_error(&mut self, faulted: &Self::Faulted) -> Self::Error;
+
+    fn lifecycle_fault_error(&mut self, faulted: &Self::LifecycleFaulted) -> Self::Error;
 
     fn run_epoch<'a>(
         &'a mut self,
@@ -106,7 +118,13 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
     fn restart_radio<'a>(
         &'a mut self,
         stopped: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<WifiRadioCalibrationPath, Self::Faulted>> + 'a;
+    ) -> impl Future<Output = Result<WifiRadioCalibrationPath, Self::LifecycleFaulted>> + 'a;
+
+    /// Close and restore RF without retiring the registered PHY epoch.
+    fn cycle_retained_radio<'a>(
+        &'a mut self,
+        stopped: &'a mut Option<Self::Stopped>,
+    ) -> impl Future<Output = Result<(), Self::LifecycleFaulted>> + 'a;
 }
 
 /// Typed completion transported back to the application controller.
@@ -122,6 +140,7 @@ pub enum EmbassyWifiSupervisorResponse<E> {
     Monitor(WifiStartResult<MonitorRequest, E>),
     Stop(Result<WifiStopReport, E>),
     RestartRadio(Result<WifiRadioRestartReport, E>),
+    CycleRetainedRadio(Result<WifiRadioRetainedCycleReport, E>),
     SupervisorUnavailable,
 }
 
@@ -538,6 +557,23 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
             _ => Err(EmbassyWifiSupervisorError::ResponseMismatch),
         }
     }
+
+    async fn cycle_retained_radio(&mut self) -> Result<WifiRadioRetainedCycleReport, Self::Error> {
+        if !self.supervisor_available() {
+            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
+        }
+        self.publish(EmbassyWifiSupervisorCommand::CycleRetainedRadio)
+            .await;
+        match self.completion().await {
+            EmbassyWifiSupervisorResponse::CycleRetainedRadio(result) => {
+                result.map_err(EmbassyWifiSupervisorError::Service)
+            }
+            EmbassyWifiSupervisorResponse::SupervisorUnavailable => {
+                Err(EmbassyWifiSupervisorError::SupervisorUnavailable)
+            }
+            _ => Err(EmbassyWifiSupervisorError::ResponseMismatch),
+        }
+    }
 }
 
 fn map_start_failure<R, E>(
@@ -692,6 +728,9 @@ where
             EmbassyWifiStoppedDispatch::Handled
         }
         EmbassyWifiSupervisorCommand::RestartRadio => EmbassyWifiStoppedDispatch::RestartRadio,
+        EmbassyWifiSupervisorCommand::CycleRetainedRadio => {
+            EmbassyWifiStoppedDispatch::CycleRetainedRadio
+        }
     }
 }
 
@@ -712,6 +751,7 @@ where
     R: EmbassyWifiRoleEpochRunner<M>,
 {
     let mut generation = crate::wifi::RadioSubsystemGeneration::INITIAL;
+    let mut phy_registration_generation = PhyRegistrationGeneration::INITIAL;
     let mut stopped = Some(stopped);
     loop {
         let service = loop {
@@ -729,20 +769,58 @@ where
                     match await_stack_boundary!(runner.restart_radio(&mut stopped)) {
                         Ok(calibration_path) => {
                             generation = next_generation;
+                            phy_registration_generation = phy_registration_generation.next();
                             endpoint
                                 .respond(EmbassyWifiSupervisorResponse::RestartRadio(Ok(
-                                    WifiRadioRestartReport::new(generation, calibration_path),
+                                    WifiRadioRestartReport::new(
+                                        generation,
+                                        phy_registration_generation,
+                                        calibration_path,
+                                    ),
                                 )))
                                 .await;
                         }
                         Err(faulted) => {
                             endpoint
                                 .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(
-                                    runner.fault_error(&faulted)
+                                    runner.lifecycle_fault_error(&faulted)
                                 )))
                                 .await;
-                            run_embassy_wifi_faulted_actor(&mut endpoint, &mut runner, faulted)
-                                .await
+                            run_embassy_wifi_lifecycle_faulted_actor(
+                                &mut endpoint,
+                                &mut runner,
+                                faulted,
+                            )
+                            .await
+                        }
+                    }
+                }
+                EmbassyWifiStoppedDispatch::CycleRetainedRadio => {
+                    let next_generation = generation.next();
+                    match await_stack_boundary!(runner.cycle_retained_radio(&mut stopped)) {
+                        Ok(()) => {
+                            generation = next_generation;
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Ok(
+                                    WifiRadioRetainedCycleReport::new(
+                                        generation,
+                                        phy_registration_generation,
+                                    ),
+                                )))
+                                .await;
+                        }
+                        Err(faulted) => {
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(
+                                    runner.lifecycle_fault_error(&faulted),
+                                )))
+                                .await;
+                            run_embassy_wifi_lifecycle_faulted_actor(
+                                &mut endpoint,
+                                &mut runner,
+                                faulted,
+                            )
+                            .await
                         }
                     }
                 }
@@ -820,6 +898,68 @@ where
             EmbassyWifiSupervisorCommand::RestartRadio => {
                 EmbassyWifiSupervisorResponse::RestartRadio(Err(runner.fault_error(&faulted)))
             }
+            EmbassyWifiSupervisorCommand::CycleRetainedRadio => {
+                EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(runner.fault_error(&faulted)))
+            }
+        };
+        endpoint.respond(response).await;
+    }
+}
+
+async fn run_embassy_wifi_lifecycle_faulted_actor<M, R>(
+    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, R::Error>,
+    runner: &mut R,
+    faulted: R::LifecycleFaulted,
+) -> !
+where
+    M: RawMutex,
+    R: EmbassyWifiRoleEpochRunner<M>,
+{
+    loop {
+        let response = match endpoint.receive().await {
+            EmbassyWifiSupervisorCommand::Scan(request) => {
+                EmbassyWifiSupervisorResponse::Scan(Err(WifiScanFailure::Rejected {
+                    request,
+                    error: runner.lifecycle_fault_error(&faulted),
+                }))
+            }
+            EmbassyWifiSupervisorCommand::StartStation(request) => {
+                EmbassyWifiSupervisorResponse::Station(Err(WifiStartFailure::rejected(
+                    request,
+                    runner.lifecycle_fault_error(&faulted),
+                )))
+            }
+            EmbassyWifiSupervisorCommand::StartAccessPoint(request) => {
+                EmbassyWifiSupervisorResponse::AccessPoint(Err(WifiStartFailure::rejected(
+                    request,
+                    runner.lifecycle_fault_error(&faulted),
+                )))
+            }
+            EmbassyWifiSupervisorCommand::StartStationAccessPoint(request) => {
+                EmbassyWifiSupervisorResponse::StationAccessPoint(Err(WifiStartFailure::rejected(
+                    request,
+                    runner.lifecycle_fault_error(&faulted),
+                )))
+            }
+            EmbassyWifiSupervisorCommand::StartMonitor(request) => {
+                EmbassyWifiSupervisorResponse::Monitor(Err(WifiStartFailure::rejected(
+                    request,
+                    runner.lifecycle_fault_error(&faulted),
+                )))
+            }
+            EmbassyWifiSupervisorCommand::Stop => {
+                EmbassyWifiSupervisorResponse::Stop(Err(runner.lifecycle_fault_error(&faulted)))
+            }
+            EmbassyWifiSupervisorCommand::RestartRadio => {
+                EmbassyWifiSupervisorResponse::RestartRadio(Err(
+                    runner.lifecycle_fault_error(&faulted)
+                ))
+            }
+            EmbassyWifiSupervisorCommand::CycleRetainedRadio => {
+                EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(
+                    runner.lifecycle_fault_error(&faulted)
+                ))
+            }
         };
         endpoint.respond(response).await;
     }
@@ -889,6 +1029,14 @@ where
                 let error = active_start_error(EmbassyWifiStartKind::WholeRadioRestart);
                 endpoint
                     .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(error)))
+                    .await;
+            }
+            Either::Second(EmbassyWifiSupervisorCommand::CycleRetainedRadio) => {
+                let error = active_start_error(EmbassyWifiStartKind::WholeRadioRetainedCycle);
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(
+                        error,
+                    )))
                     .await;
             }
             Either::Second(EmbassyWifiSupervisorCommand::Scan(request)) => {

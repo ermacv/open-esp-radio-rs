@@ -547,14 +547,19 @@ fn scenario_precondition(
     lab: &crate::lab::config::LabConfig,
     selected: &crate::scenario::Scenario,
 ) -> Option<crate::evidence::run::Failure> {
-    if matches!(
-        selected.workload,
-        crate::scenario::Workload::BluetoothDtm { .. }
-    ) {
+    let bluetooth_preflight: Option<fn(fixture::bluetooth::model::Adapter) -> crate::Result<()>> =
+        match selected.workload {
+            crate::scenario::Workload::BluetoothDtm { .. } => Some(fixture::bluetooth::preflight),
+            crate::scenario::Workload::BluetoothPeripheral { .. } => {
+                Some(fixture::bluetooth::preflight_connect_reset)
+            }
+            _ => None,
+        };
+    if let Some(preflight) = bluetooth_preflight {
         let result = lab
             .bluetooth_adapter
             .ok_or_else(|| "missing [bluetooth] adapter in lab config".into())
-            .and_then(fixture::bluetooth::preflight);
+            .and_then(preflight);
         if let Err(error) = result {
             return Some(crate::evidence::run::Failure::new(
                 crate::evidence::run::FailureKind::Precondition,

@@ -111,6 +111,7 @@ pub enum WifiOperation {
     Stop,
     Start,
     Restart,
+    Retained,
     Scan,
     Monitor,
     AccessPoint,
@@ -124,6 +125,7 @@ impl WifiOperation {
             Self::Stop => "stop",
             Self::Start => "start",
             Self::Restart => "restart",
+            Self::Retained => "retained",
             Self::Scan => "scan",
             Self::Monitor => "monitor",
             Self::AccessPoint => "ap",
@@ -151,6 +153,11 @@ pub enum Workload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         quiet_cycles: Option<u16>,
         minimum_packets: u16,
+    },
+    BluetoothPeripheral {
+        boots: u8,
+        connections: u8,
+        hold_millis: u16,
     },
     BootSmoke,
     MemoryBenchmark {

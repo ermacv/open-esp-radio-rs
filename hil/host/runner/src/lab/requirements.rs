@@ -27,7 +27,7 @@ impl Requirements {
     pub(crate) fn for_scenario(scenario: &Scenario) -> Self {
         let mut required = Self::default();
         match &scenario.workload {
-            Workload::BluetoothDtm { .. } => {
+            Workload::BluetoothDtm { .. } | Workload::BluetoothPeripheral { .. } => {
                 required.bluetooth_adapter = true;
                 return required;
             }

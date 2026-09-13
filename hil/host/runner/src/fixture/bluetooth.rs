@@ -111,6 +111,28 @@ pub(crate) fn preflight(adapter: Adapter) -> crate::Result<()> {
     Ok(())
 }
 
+pub(crate) fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
+    preflight(adapter)?;
+    let mut command = Command::new("sudo");
+    command.args([
+        "-n",
+        "-l",
+        "/usr/local/libexec/open-radio-bluetooth",
+        "connect-reset",
+        "--adapter",
+        &adapter.to_string(),
+        "--peer",
+        "00:00:00:00:00:00",
+        "--hold-ms",
+        "0",
+    ]);
+    let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
+    if !output.status.success() {
+        return Err("installed Bluetooth helper lacks connect-reset permission; rerun sudo hil/host/linux-bluetooth/install.sh".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn connect_reset(
     root: &Path,
     adapter: Adapter,
@@ -124,6 +146,23 @@ pub(crate) fn connect_reset(
         .prefix("bluetooth-connect-reset-")
         .tempdir_in(directory)?
         .keep();
+    let result = connect_reset_in(&output, adapter, peer, hold_ms);
+    let summary: serde_json::Value =
+        serde_json::from_slice(&fs::read(output.join("result.json"))?)?;
+    crate::emit_json(&summary, true)?;
+    result.map(|_| ())
+}
+
+pub(crate) fn connect_reset_in(
+    output: &Path,
+    adapter: Adapter,
+    peer: model::PeerAddress,
+    hold_ms: u16,
+) -> crate::Result<model::ConnectionReset> {
+    fs::create_dir_all(output)?;
+    if hold_ms > 5_000 {
+        return Err("connection hold must be at most 5000 ms".into());
+    }
     let mut command = Command::new("sudo");
     command
         .args([
@@ -167,10 +206,7 @@ pub(crate) fn connect_reset(
         "error": result.as_ref().err().map(ToString::to_string), "helper": report,
     });
     crate::evidence::run::atomic_json(&output.join("result.json"), &summary)?;
-    crate::emit_json(&summary, true)?;
-    result
-        .map(|_| ())
-        .map_err(|error| format!("{error}; evidence: {}", output.display()).into())
+    result.map_err(|error| format!("{error}; evidence: {}", output.display()).into())
 }
 
 #[cfg(test)]

@@ -97,21 +97,30 @@ fn suite_requirements_include_every_selected_owner() {
 
 #[test]
 fn bluetooth_requires_its_adapter_without_a_network() {
-    let required = Requirements::for_scenario(&scenario(Workload::BluetoothDtm {
-        boots: 2,
-        minimum_packets: 10,
-        quiet_cycles: Some(100),
-    }));
-    assert!(required.bluetooth_adapter);
-    assert!(!required.network());
-    assert!(!required.local_radio());
-    assert!(
-        Requirements {
-            laptop_air_monitor: true,
-            ..required
-        }
-        .network()
-    );
+    for workload in [
+        Workload::BluetoothDtm {
+            boots: 2,
+            minimum_packets: 10,
+            quiet_cycles: Some(100),
+        },
+        Workload::BluetoothPeripheral {
+            boots: 1,
+            connections: 2,
+            hold_millis: 100,
+        },
+    ] {
+        let required = Requirements::for_scenario(&scenario(workload));
+        assert!(required.bluetooth_adapter);
+        assert!(!required.network());
+        assert!(!required.local_radio());
+        assert!(
+            Requirements {
+                laptop_air_monitor: true,
+                ..required
+            }
+            .network()
+        );
+    }
 }
 
 #[test]

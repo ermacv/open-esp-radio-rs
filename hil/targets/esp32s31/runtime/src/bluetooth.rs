@@ -1,6 +1,7 @@
 //! HIL owns the command lease and UART; the production composition owns RF.
 
 use bt_hci::{
+    ControllerToHostPacket,
     cmd::{
         SyncCmd,
         controller_baseband::Reset,
@@ -11,7 +12,10 @@ use bt_hci::{
         },
     },
     controller::Controller,
+    event::{Event as HciEvent, le::LeEvent},
+    param::{LeConnRole, Status},
 };
+use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_time::{Duration, Instant, with_timeout};
 use embedded_io_async::Read as _;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
@@ -45,6 +49,94 @@ type Host = BluetoothHostController<4, 4, 258>;
 static STORAGE: BluetoothSystemStorage<EspHalBluetoothPlatform<'static>, 4, 1, 4, 4, 258> =
     BluetoothSystemStorage::new();
 static PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
+static PERIPHERAL_HOST_EVENTS: PeripheralHostEvents = PeripheralHostEvents::new();
+
+const NO_DISCONNECT_REASON: u32 = u8::MAX as u32 + 1;
+
+struct PeripheralHostEvents {
+    connections: AtomicU32,
+    disconnections: AtomicU32,
+    faults: AtomicU32,
+    last_disconnect_reason: AtomicU32,
+}
+
+#[derive(Clone, Copy)]
+struct PeripheralHostEventSnapshot {
+    connections: u32,
+    disconnections: u32,
+    faults: u32,
+    last_disconnect_reason: Option<u8>,
+}
+
+impl PeripheralHostEvents {
+    const fn new() -> Self {
+        Self {
+            connections: AtomicU32::new(0),
+            disconnections: AtomicU32::new(0),
+            faults: AtomicU32::new(0),
+            last_disconnect_reason: AtomicU32::new(NO_DISCONNECT_REASON),
+        }
+    }
+
+    fn increment(counter: &AtomicU32) {
+        let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        });
+    }
+
+    fn observe(&self, packet: ControllerToHostPacket<'_>) {
+        let ControllerToHostPacket::Event(packet) = packet else {
+            return;
+        };
+        let event = match HciEvent::try_from(packet) {
+            Ok(event) => event,
+            Err(_) => {
+                Self::increment(&self.faults);
+                return;
+            }
+        };
+        match event {
+            HciEvent::Le(LeEvent::LeConnectionComplete(event)) => {
+                let ordered = self.connections.load(Ordering::Relaxed)
+                    == self.disconnections.load(Ordering::Relaxed);
+                if event.status == Status::SUCCESS
+                    && event.handle.raw() == 1
+                    && event.role == LeConnRole::Peripheral
+                    && ordered
+                {
+                    Self::increment(&self.connections);
+                } else {
+                    Self::increment(&self.faults);
+                }
+            }
+            HciEvent::DisconnectionComplete(event) => {
+                let ordered = self.connections.load(Ordering::Relaxed)
+                    == self
+                        .disconnections
+                        .load(Ordering::Relaxed)
+                        .saturating_add(1);
+                if event.status == Status::SUCCESS && event.handle.raw() == 1 && ordered {
+                    self.last_disconnect_reason
+                        .store(u32::from(event.reason.into_inner()), Ordering::Relaxed);
+                    Self::increment(&self.disconnections);
+                } else {
+                    Self::increment(&self.faults);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn snapshot(&self) -> PeripheralHostEventSnapshot {
+        let last_disconnect_reason = self.last_disconnect_reason.load(Ordering::Relaxed);
+        PeripheralHostEventSnapshot {
+            connections: self.connections.load(Ordering::Relaxed),
+            disconnections: self.disconnections.load(Ordering::Relaxed),
+            faults: self.faults.load(Ordering::Relaxed),
+            last_disconnect_reason: u8::try_from(last_disconnect_reason).ok(),
+        }
+    }
+}
 
 pub(super) fn start(
     executor: &'static mut super::Executor<0>,
@@ -132,9 +224,11 @@ async fn pump(hci: &Host) {
         .alloc_buf()
         .unwrap_or_else(|_| panic!("HCI receive buffer"));
     loop {
-        if hci.read(&mut buffer).await.is_err() {
-            panic!("HCI transport failed");
-        }
+        let packet = hci
+            .read(&mut buffer)
+            .await
+            .unwrap_or_else(|_| panic!("HCI transport failed"));
+        PERIPHERAL_HOST_EVENTS.observe(packet);
     }
 }
 
@@ -412,6 +506,7 @@ fn rx_diagnostics() -> open_esp_radio_hil_protocol::BluetoothDtmRxDiagnostics {
 
 fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult) -> Event {
     let snapshot = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
+    let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
     use core::fmt::Write as _;
     let mut detail = heapless::String::<128>::new();
     let truncated = if snapshot.terminal {
@@ -455,6 +550,11 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         result,
         advertising_runs: snapshot.advertising_runs,
         peripheral_runs: snapshot.peripheral_runs,
+        peripheral_disconnections: snapshot.peripheral_disconnections,
+        connection_complete_events: host_events.connections,
+        disconnection_complete_events: host_events.disconnections,
+        host_event_faults: host_events.faults,
+        last_disconnect_reason: host_events.last_disconnect_reason,
         retries: snapshot.retries,
         terminal: snapshot.terminal,
         saturated: snapshot.saturated,

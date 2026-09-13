@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 128;
+pub const PROTOCOL_VERSION: u16 = 129;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1123,6 +1123,9 @@ pub enum Command {
     /// Release the final Wi-Fi PHY client from role-neutral ownership, close
     /// the RF epoch, and start a fresh cold radio epoch.
     RestartRadio,
+    /// Close and restore RF from role-neutral ownership while retaining the
+    /// registered PHY calibration epoch.
+    CycleRetainedRadio,
 }
 
 /// Work performed while the connected station retains its paused epoch.
@@ -1258,6 +1261,7 @@ pub enum WifiRoleOperation {
     Start,
     Stop,
     Restart,
+    RetainedCycle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1543,7 +1547,15 @@ pub enum WifiRadioCalibrationPath {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiRadioRestartEvidence {
     pub generation: u32,
+    pub phy_registration_generation: u32,
     pub calibration_path: WifiRadioCalibrationPath,
+}
+
+/// Completion of one idle retained RF close/wake cycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiRadioRetainedCycleEvidence {
+    pub generation: u32,
+    pub phy_registration_generation: u32,
 }
 
 /// Bounded scan evidence. The complete BSS table stays in the driver API and
@@ -2398,6 +2410,8 @@ pub enum Event {
     StationTimerObserved(crate::TimerWindowEvidence),
     /// Reliable completion of an idle whole-radio cold restart.
     WifiRadioRestarted(WifiRadioRestartEvidence),
+    /// Reliable completion of an idle retained RF close/wake cycle.
+    WifiRadioRetainedCycled(WifiRadioRetainedCycleEvidence),
 }
 
 impl WireBody for Event {

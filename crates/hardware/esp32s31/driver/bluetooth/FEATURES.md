@@ -127,7 +127,7 @@ remains outside the LE program.
 | Channel Selection Algorithm #2 | PARTIAL | Portable CSA#2 exists, but S31 connectable advertising marks local CSA#2 support unsupported and rejects requests requiring it. |
 | Peripheral latency | PARTIAL | Timing is validated and retained; live skip/recovery scheduling is not complete. |
 | Sleep Clock Accuracy / window widening | PARTIAL | Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned; arbitrary missed-event recovery is not established. |
-| Establishment / supervision timeout | PARTIAL | Before establishment, contiguous events preserve the full transmit window plus clock widening. Six unanswered events retire the unlinked allocation and restore idle with reason `0x3e`. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08`. Abrupt RF loss and CRC-error behavior remain unqualified; Host HCI notification is absent. |
+| Establishment / supervision timeout | PARTIAL | Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. Abrupt RF loss and CRC-error behavior remain unqualified. |
 | Missed-event recovery | ABSENT | No complete connection resynchronization and accumulated-uncertainty policy exists. |
 | LL Data PDU RX | PARTIAL | Lower peripheral RX extraction and buffer recycling exist without a reliable recurring ACL link. |
 | LL Data PDU TX | PARTIAL | One controller control-PDU payload is retained through publication and descriptor completion; its cursor survives reclamation. ACL TX and general queueing are absent. |
@@ -139,7 +139,7 @@ remains outside the LE program.
 | Feature Exchange | PARTIAL | Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with zero optional feature bits. Peripheral-initiated exchange and remote-feature HCI routing are absent. |
 | Version Exchange | PARTIAL | A peer request receives at most one queued reply using the configured Controller identity; no identity is inferred from the chip. Host-initiated version routing is absent. |
 | LE Ping | ABSENT | No ping procedure owner exists. |
-| Termination | PARTIAL | An accepted peer `LL_TERMINATE_IND` retires the unlinked connection and restores idle HCI intake. Host-initiated termination and HCI Disconnection Complete are absent. |
+| Termination | PARTIAL | An accepted peer `LL_TERMINATE_IND` or supervision timeout retires the unlinked connection, publishes Disconnection Complete under the Host mask and only then restores idle HCI intake. Host-initiated termination is absent. |
 | Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps and CSA progression exist. Dynamic assessment and map updates are absent. |
 | LE Channel Classification | ABSENT | No connected classification generation/report/update procedure exists. |
 
@@ -190,13 +190,13 @@ remains outside the LE program.
 | HCI ACL routing and bidirectional flow control | ABSENT | No connected handle, radio queue or credit lifecycle exists. Bootstrap retains Host buffer/flow-control policy; non-command input is quarantined by the Controller composition. |
 | HCI SCO / ISO data plane | ABSENT | Generic transport packet representations exist, but no synchronous/isochronous stream routes them to radio execution. |
 | HCI Reset | IMPLEMENTED | Software bootstrap reset and selected active-role reset coordination exist. Complete powered reconstruction remains separate. |
-| Event masks | PARTIAL | Bootstrap retains Host masks; complete event production is not composed. |
+| Event masks | PARTIAL | Bootstrap retains Host masks. Legacy advertising reports, LE Connection Complete and Disconnection Complete enforce their standard base/LE masks; the complete event inventory is not composed. |
 | Public BD_ADDR / LE Read Buffer Size | IMPLEMENTED | Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support. |
 | LE Set Random Address | PARTIAL | Bootstrap retains the request; hardware application is role-specific and does not establish privacy. |
 | LE Read Local Supported Features command | IMPLEMENTED | [Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns eight zero feature bytes. The query itself is implemented. |
 | Optional LE capability advertisement | FAIL-CLOSED | All optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement. |
 | LE Read Filter Accept List Size | IMPLEMENTED | Configured capacity is reported; list operation remains absent. |
-| Connection handles / Connection Complete / Disconnection Complete | ABSENT | No complete Host-visible connection lifecycle exists. |
+| Connection handles / Connection Complete / Disconnection Complete | PARTIAL | The sole supported peripheral connection uses handle `0x0001`. Successful and failed establishment plus peer/timeout teardown publish standard events in causal order with bounded backpressure. ACL routing, Host termination and multiple-handle allocation remain absent. |
 | Trouble Host integration | PARTIAL | [Portable HCI tests](../../../../protocols/bluetooth/hci/Cargo.toml) use `bt-hci` 0.10.1 and development-only `trouble-host` 0.8.0 for bootstrap. No production Trouble runner or connected GATT interoperability composition exists. |
 ## Controller scheduling, power and lifetime
 

@@ -48,8 +48,27 @@ fn premature_exit_preserves_the_capture_failure() {
     let capture =
         Capture::start(&mut command, "capture-open".into(), Duration::from_secs(5)).unwrap();
     let error = capture.finish().unwrap_err();
-    assert!(error.to_string().contains("capture exited before Stop"));
     assert!(error.to_string().contains("write failed: no space"));
+    assert!(error.to_string().contains("exit status: 4"));
+}
+
+#[test]
+fn nonzero_exit_after_accepting_stop_is_still_a_capture_failure() {
+    let mut command = Command::new("sh");
+    command.args([
+        "-c",
+        "printf 'capture-open\n' >&2; read command; test \"$command\" = stop; printf 'capture failed after stop\n' >&2; exit 4",
+    ]);
+    let capture =
+        Capture::start(&mut command, "capture-open".into(), Duration::from_secs(5)).unwrap();
+    let error = capture.finish().unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("capture process failed while completing Stop")
+    );
+    assert!(error.to_string().contains("capture failed after stop"));
+    assert!(error.to_string().contains("exit status: 4"));
 }
 
 #[test]

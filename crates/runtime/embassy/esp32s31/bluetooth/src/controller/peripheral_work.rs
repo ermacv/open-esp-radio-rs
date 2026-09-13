@@ -8,6 +8,24 @@ pub(super) enum Work<Response> {
     Response(Response),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HciWork {
+    None,
+    OrderedResponse,
+    HostEvent,
+}
+
+/// Preserve an older command completion ahead of an unsolicited connection event.
+pub(super) const fn select_hci_work(response_pending: bool, host_event_pending: bool) -> HciWork {
+    if response_pending {
+        HciWork::OrderedResponse
+    } else if host_event_pending {
+        HciWork::HostEvent
+    } else {
+        HciWork::None
+    }
+}
+
 /// An absent pending response cannot synthesize work or spin a command-ready actor.
 /// Both futures borrow retained owners; cancelling this wait consumes no authority.
 pub(super) async fn wait<R: Future<Output = ()>, H: Future>(
@@ -136,5 +154,12 @@ mod tests {
                 .poll(&mut Context::from_waker(Waker::noop())),
             Poll::Ready(Work::Radio)
         ));
+    }
+
+    #[test]
+    fn ordered_response_precedes_unsolicited_connection_event() {
+        assert_eq!(select_hci_work(true, true), HciWork::OrderedResponse);
+        assert_eq!(select_hci_work(false, true), HciWork::HostEvent);
+        assert_eq!(select_hci_work(false, false), HciWork::None);
     }
 }

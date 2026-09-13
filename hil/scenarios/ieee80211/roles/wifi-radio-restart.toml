@@ -1,6 +1,7 @@
 schema = 4
 id = "wifi-radio-restart"
 description = "Final-client PHY release, RF close and cold radio restart from idle ownership"
+repetitions = 3
 image = "correctness"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -13,5 +14,6 @@ phy = "ht40"
 kind = "wifi-role"
 operation = "restart"
 timeout_seconds = 90
+cycles = 3
 
 [criteria]

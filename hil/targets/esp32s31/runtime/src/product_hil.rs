@@ -80,8 +80,9 @@ use open_esp_radio_hil_protocol::{
     WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
     WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
-    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiStationAccessPointStopEvidence,
+    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRoleFailureEvidence,
+    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
@@ -90,9 +91,10 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_role_failure, complete_wifi_role_transition,
-    complete_wifi_scan, publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
-    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
+    complete_station_epoch_cycle, complete_wifi_radio_restart, complete_wifi_role_failure,
+    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
+    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
+    receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 use oer_esp32s31_soc::L1CachePerformanceCounters;
@@ -2130,17 +2132,27 @@ async fn wifi_role_task(
                     match await_stack_boundary!(idle.restart_radio()) {
                         Ok((idle, report)) => {
                             let generation = report.generation().value();
-                            complete_wifi_role_transition(
+                            let calibration_path = match report.calibration_path() {
+                                oer::wifi::WifiRadioCalibrationPath::Full => {
+                                    WifiRadioCalibrationPath::Full
+                                }
+                                oer::wifi::WifiRadioCalibrationPath::RejectedCache => {
+                                    WifiRadioCalibrationPath::RejectedCache
+                                }
+                                oer::wifi::WifiRadioCalibrationPath::RestoredCache => {
+                                    WifiRadioCalibrationPath::RestoredCache
+                                }
+                            };
+                            complete_wifi_radio_restart(
                                 request_id,
-                                WifiRoleTransitionEvidence {
-                                    previous: WifiRole::Idle,
-                                    current: WifiRole::Idle,
+                                WifiRadioRestartEvidence {
                                     generation,
+                                    calibration_path,
                                 },
                             )
                             .await;
                             runtime_log(format_args!(
-                                "OPEN_RADIO_HIL radio restart generation={generation}",
+                                "OPEN_RADIO_HIL radio restart generation={generation} calibration_path={calibration_path:?}",
                             ));
                             ProductWifiRole::Idle(idle)
                         }

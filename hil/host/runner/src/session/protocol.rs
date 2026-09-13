@@ -988,6 +988,23 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn wait_wifi_radio_restart(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiRadioRestartEvidence> {
+        let event = self
+            .wait_for_wifi_event(handle, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiRadioRestarted(_))
+            })?
+            .ok_or("device did not complete the idle radio restart")?;
+        match event.body {
+            Event::WifiRadioRestarted(evidence) => Ok(evidence),
+            _ => unreachable!("radio-restart predicate accepted only its completion event"),
+        }
+    }
+
     pub(crate) fn wait_wifi_scan(
         &self,
         handle: WifiCommandHandle,

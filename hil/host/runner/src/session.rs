@@ -24,8 +24,8 @@ use open_esp_radio_hil_protocol::{
     StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
     TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
     TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRadioRestartEvidence,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -328,7 +328,7 @@ use protocol::beacon_loss_count_in;
 use readiness::session_ready_covers;
 pub(crate) use readiness::{
     await_network_ready, await_tcp_ready, await_udp_rx_ready, await_udp_tx_ready,
-    prepare_udp_reverse_flow, probe_udp_rx_ready_via,
+    prepare_udp_reverse_flow, probe_udp_rx_ready, probe_udp_rx_ready_via,
 };
 use validation::validate_stack_usage;
 

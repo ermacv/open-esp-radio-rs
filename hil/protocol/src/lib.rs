@@ -68,11 +68,11 @@ pub use message::{
     WifiDataPlanePlacement, WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
     WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
-    WifiMonitorRequest, WifiNetworkInterface, WifiRole, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxChecksumPolicy,
-    WifiRxContinuationPolicy, WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
-    WifiStationAccessPointStopEvidence, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody,
-    WireKind,
+    WifiMonitorRequest, WifiNetworkInterface, WifiRadioCalibrationPath, WifiRadioRestartEvidence,
+    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+    WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiScanEvidence,
+    WifiScanRequest, WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence,
+    WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};
 

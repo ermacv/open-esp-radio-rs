@@ -489,7 +489,8 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<(), Self::Faulted>> + 'a {
+    ) -> impl Future<Output = Result<oer_radio::wifi::WifiRadioCalibrationPath, Self::Faulted>> + 'a
+    {
         async move {
             let stopped = slot
                 .take()
@@ -551,6 +552,24 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         });
                     }
                 };
+            let calibration_path = match ready
+                .wifi()
+                .start_report()
+                .wifi
+                .registration
+                .calibration_path
+            {
+                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::PartialFromCache => {
+                    oer_radio::wifi::WifiRadioCalibrationPath::RestoredCache
+                }
+                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullAfterRejectedCache => {
+                    oer_radio::wifi::WifiRadioCalibrationPath::RejectedCache
+                }
+                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullForCache
+                | oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullUncached => {
+                    oer_radio::wifi::WifiRadioCalibrationPath::Full
+                }
+            };
             let (wifi, _calibration_cache) = ready.into_parts();
             let (physical, station, access_point, monitor) = resources;
             *slot = Some(WifiSupervisorStopped::new(
@@ -560,7 +579,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 access_point,
                 monitor,
             ));
-            Ok(())
+            Ok(calibration_path)
         }
     }
 }

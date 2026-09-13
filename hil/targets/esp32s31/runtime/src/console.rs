@@ -1981,24 +1981,29 @@ async fn write_event_async(
     let _guard = WRITER.acquire_async().await;
     if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
         PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
-        if matches!(
-            &event.body,
-            Event::StationLifecycle(_)
-                | Event::WifiRoleTransitioned(_)
-                | Event::WifiScanCompleted(_)
-                | Event::WifiMonitorStarted(_)
-                | Event::WifiMonitorStopped(_)
-                | Event::WifiMonitorCaptureCompleted(_)
-                | Event::WifiAccessPointStarted(_)
-                | Event::WifiAccessPointStopped(_)
-                | Event::WifiStationAccessPointStopped(_)
-                | Event::WifiRoleFailed(_)
-        ) {
+        if confirms_wifi_serialization(&event.body) {
             SERIALIZED_WIFI_EVENTS.publish_next(event.message_sequence.wrapping_add(1));
         }
     } else {
         PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+fn confirms_wifi_serialization(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::StationLifecycle(_)
+            | Event::WifiRoleTransitioned(_)
+            | Event::WifiRadioRestarted(_)
+            | Event::WifiScanCompleted(_)
+            | Event::WifiMonitorStarted(_)
+            | Event::WifiMonitorStopped(_)
+            | Event::WifiMonitorCaptureCompleted(_)
+            | Event::WifiAccessPointStarted(_)
+            | Event::WifiAccessPointStopped(_)
+            | Event::WifiStationAccessPointStopped(_)
+            | Event::WifiRoleFailed(_)
+    )
 }
 
 async fn report_health_changes(
@@ -2128,8 +2133,9 @@ pub fn init_logger() {
 
 #[cfg(test)]
 mod tests {
-    use super::TextBuffer;
+    use super::{Event, TextBuffer, confirms_wifi_serialization};
     use core::fmt::Write;
+    use open_esp_radio_hil_protocol::{WifiRadioCalibrationPath, WifiRadioRestartEvidence};
 
     #[test]
     fn text_buffer_keeps_space_for_nul() {
@@ -2147,5 +2153,15 @@ mod tests {
 
         assert_eq!(&buffer.bytes, b"abcd\0");
         assert!(!buffer.was_truncated());
+    }
+
+    #[test]
+    fn radio_restart_advances_the_wifi_serialization_barrier() {
+        assert!(confirms_wifi_serialization(&Event::WifiRadioRestarted(
+            WifiRadioRestartEvidence {
+                generation: 2,
+                calibration_path: WifiRadioCalibrationPath::RestoredCache,
+            },
+        )));
     }
 }

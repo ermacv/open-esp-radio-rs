@@ -198,17 +198,39 @@ pub struct WifiStopReport {
 
 /// Successful whole-radio cold restart while no Wi-Fi role was active.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiRadioCalibrationPath {
+    /// Cold registration performed the full calibration graph.
+    Full,
+    /// Cold registration rejected the supplied cache and calibrated fully.
+    RejectedCache,
+    /// Cold registration restored the supplied cache and ran its partial tail.
+    RestoredCache,
+}
+
+/// Successful whole-radio cold restart while no Wi-Fi role was active.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiRadioRestartReport {
     generation: RadioSubsystemGeneration,
+    calibration_path: WifiRadioCalibrationPath,
 }
 
 impl WifiRadioRestartReport {
-    pub const fn new(generation: RadioSubsystemGeneration) -> Self {
-        Self { generation }
+    pub const fn new(
+        generation: RadioSubsystemGeneration,
+        calibration_path: WifiRadioCalibrationPath,
+    ) -> Self {
+        Self {
+            generation,
+            calibration_path,
+        }
     }
 
     pub const fn generation(self) -> RadioSubsystemGeneration {
         self.generation
+    }
+
+    pub const fn calibration_path(self) -> WifiRadioCalibrationPath {
+        self.calibration_path
     }
 }
 

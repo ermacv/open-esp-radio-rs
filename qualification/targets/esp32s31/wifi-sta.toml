@@ -13,6 +13,7 @@ required-capabilities = [
   "runtime-phy-calibration",
   "runtime-rfpll-tracking",
   "radio-cold-start",
+  "radio-cold-restart",
   "timeout-error-recovery",
 ]
 
@@ -341,6 +342,28 @@ hil-requirements = [
 async-not-applicable = "no-asynchronous-runtime-boundary"
 gaps = [
   { axis = "vendor", id = "cold-start-root-contract-incomplete" },
+]
+
+[[capabilities]]
+id = "radio-cold-restart"
+title = "Final-client RF close and cached cold restart"
+scope = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["cold-registration", "radio-cold-start", "timeout-error-recovery"]
+vendor-roots = [
+  { source = "archive", symbol = "register_chipv7_phy" },
+]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
+]
+hil-requirements = [
+  { scenario = "wifi-radio-restart", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "combined-close-cache-replay-restart-not-release-evidence" },
+  { axis = "hil", id = "current-clean-repeated-restart-evidence-missing" },
 ]
 
 [[capabilities]]

@@ -1,25 +1,28 @@
 //! Host qualification for explicit Wi-Fi role ownership transitions.
 
 use crate::execution::context::Context;
-use std::{fs, path::Path, time::Duration};
+use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
-    WifiMonitorRequest, WifiNetworkInterface, WifiRole, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
+    WifiMonitorRequest, WifiNetworkInterface, WifiRadioCalibrationPath, WifiRadioRestartEvidence,
+    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    WifiStationAccessPointRequest,
 };
 
 use crate::{
     Result,
     scenario::{PhyExpectation, WifiOperation as Operation},
-    session::SerialCapture,
+    session::{SerialCapture, probe_udp_rx_ready},
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);
 const DEFAULT_SCAN_DWELL_MILLIS: u16 = 200;
+const DATA_PATH_PROBE_PORT: u16 = 4_323;
 
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
+    pub(crate) restart_cycles: u8,
     pub(crate) monitor_duration: Duration,
     pub(crate) monitor_channel: Option<u8>,
     pub(crate) snapshot_length: u16,
@@ -55,6 +58,34 @@ fn qualify(
     }
     report_stack(capture, options.timeout, "connected")?;
 
+    if operation == Operation::Restart {
+        prove_station_data_path(capture, options.timeout, "before-restart")?;
+        let mut stopped = stop_station(capture, options.timeout)?;
+        report_stack(capture, options.timeout, "station-stopped")?;
+        for cycle in 1..=options.restart_cycles {
+            let restarted = capture
+                .wait_wifi_radio_restart(capture.request_radio_restart()?, options.timeout)?;
+            require_radio_restart(stopped, restarted)?;
+            report_stack(capture, options.timeout, "radio-restarted")?;
+            let started = start_connected_station(capture, context, options.timeout)?;
+            require_station_after_restart(restarted, started)?;
+            prove_station_data_path(capture, options.timeout, "after-restart")?;
+            eprintln!(
+                "wifi_radio_restart_cycle={cycle} generation={} calibration_path={:?}",
+                restarted.generation, restarted.calibration_path,
+            );
+            if cycle < options.restart_cycles {
+                stopped = stop_station(capture, options.timeout)?;
+            }
+        }
+        report_stack(
+            capture,
+            options.timeout,
+            "station-connected-after-radio-restart",
+        )?;
+        return Ok(());
+    }
+
     let stopped = stop_station(capture, options.timeout)?;
     report_stack(capture, options.timeout, "station-stopped")?;
     eprintln!("wifi_station_stopped_generation={}", stopped.generation);
@@ -66,21 +97,6 @@ fn qualify(
         report_stack(capture, options.timeout, "station-started")?;
         return Ok(());
     }
-    if operation == Operation::Restart {
-        let restarted =
-            capture.wait_wifi_role_transition(capture.request_radio_restart()?, options.timeout)?;
-        require_radio_restart(stopped, restarted)?;
-        report_stack(capture, options.timeout, "radio-restarted")?;
-        let started = start_station_evidence(capture, context, options.timeout)?;
-        require_station_after_restart(restarted, started)?;
-        report_stack(
-            capture,
-            options.timeout,
-            "station-started-after-radio-restart",
-        )?;
-        return Ok(());
-    }
-
     if operation == Operation::AccessPoint {
         if !capabilities.features.wifi_access_point {
             return Err("firmware does not advertise the access-point role".into());
@@ -341,6 +357,29 @@ fn start_station_evidence(
     Ok(evidence)
 }
 
+fn start_connected_station(
+    capture: &SerialCapture,
+    context: &Context<'_>,
+    timeout: Duration,
+) -> Result<WifiRoleTransitionEvidence> {
+    let lifecycle_cursor = capture.station_lifecycle_cursor();
+    let evidence = start_station_evidence(capture, context, timeout)?;
+    capture.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
+    Ok(evidence)
+}
+
+fn prove_station_data_path(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
+    let address = capture
+        .observed_protocol_ipv4(WifiNetworkInterface::Station)
+        .unwrap_or(Ipv4Addr::UNSPECIFIED);
+    let ready = probe_udp_rx_ready(capture, address, DATA_PATH_PROBE_PORT, timeout)?;
+    eprintln!(
+        "wifi_radio_restart_data_path={stage} address={}",
+        ready.address
+    );
+    Ok(())
+}
+
 pub(crate) fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiScanEvidence> {
     let request = WifiScanRequest {
         channel_mask_2_4_ghz: 0x1fff,
@@ -391,9 +430,8 @@ pub(crate) fn require_transition(
 
 fn require_radio_restart(
     stopped: WifiRoleTransitionEvidence,
-    restarted: WifiRoleTransitionEvidence,
+    restarted: WifiRadioRestartEvidence,
 ) -> Result<()> {
-    require_transition(restarted, WifiRole::Idle, WifiRole::Idle)?;
     let expected_generation = stopped.generation.wrapping_add(1);
     if restarted.generation != expected_generation {
         return Err(format!(
@@ -402,11 +440,18 @@ fn require_radio_restart(
         )
         .into());
     }
+    if restarted.calibration_path != WifiRadioCalibrationPath::RestoredCache {
+        return Err(format!(
+            "idle radio restart selected {:?}, expected restored calibration cache",
+            restarted.calibration_path,
+        )
+        .into());
+    }
     Ok(())
 }
 
 fn require_station_after_restart(
-    restarted: WifiRoleTransitionEvidence,
+    restarted: WifiRadioRestartEvidence,
     started: WifiRoleTransitionEvidence,
 ) -> Result<()> {
     require_transition(started, WifiRole::Idle, WifiRole::Station)?;
@@ -425,6 +470,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             timeout: DEFAULT_TIMEOUT,
+            restart_cycles: 1,
             monitor_duration: DEFAULT_MONITOR_DURATION,
             monitor_channel: None,
             snapshot_length: 256,

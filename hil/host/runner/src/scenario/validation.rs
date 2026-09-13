@@ -669,13 +669,25 @@ impl Scenario {
                 bounded(*timeout_seconds, 30, 300, self, "timeout_seconds")?;
             }
             Workload::WifiRole {
+                operation,
                 timeout_seconds,
+                cycles,
                 channel,
                 dwell_seconds,
                 snapshot_length,
                 ..
             } => {
                 bounded(*timeout_seconds, 10, 180, self, "timeout_seconds")?;
+                if let Some(cycles) = cycles {
+                    bounded(*cycles, 1, 10, self, "cycles")?;
+                    if *operation != WifiOperation::Restart {
+                        return Err(format!(
+                            "{}: cycles is supported only by the Wi-Fi radio restart workload",
+                            self.source.display(),
+                        )
+                        .into());
+                    }
+                }
                 if let Some(channel) = channel {
                     bounded(*channel, 1, 13, self, "channel")?;
                 }

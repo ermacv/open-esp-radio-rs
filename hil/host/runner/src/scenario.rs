@@ -223,6 +223,9 @@ pub enum Workload {
     WifiRole {
         operation: WifiOperation,
         timeout_seconds: u16,
+        /// Number of complete stop/restart/reconnect/data-path cycles.
+        #[serde(default)]
+        cycles: Option<u8>,
         channel: Option<u8>,
         dwell_seconds: Option<u8>,
         snapshot_length: Option<u16>,

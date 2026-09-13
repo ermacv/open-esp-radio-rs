@@ -8,8 +8,9 @@ use crate::{
     Ieee802154ValidationEdDurationState, Ieee802154ValidationEventEnableState,
     Ieee802154ValidationRxAbortEnableState, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
     StackUsage, StackWatermark, StartupArtifactChunk, StationAttemptFailureReason,
-    StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport, WifiRole,
-    WifiRoleTransitionEvidence, WireKind,
+    StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport,
+    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRole, WifiRoleTransitionEvidence,
+    WireKind,
 };
 
 fn command(sequence: u32) -> Envelope<Command> {
@@ -869,6 +870,26 @@ fn explicit_wifi_role_transition_round_trips_with_request_identity() {
             previous: WifiRole::Station,
             current: WifiRole::Idle,
             generation: 9,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn radio_restart_round_trips_cache_path_with_request_identity() {
+    let expected = Envelope::new(
+        7,
+        6,
+        0,
+        43,
+        Event::WifiRadioRestarted(WifiRadioRestartEvidence {
+            generation: 10,
+            calibration_path: WifiRadioCalibrationPath::RestoredCache,
         }),
     );
     let mut encoder = FrameEncoder::new();

@@ -126,14 +126,14 @@ impl EmbassyWifiRoleEpochRunner<NoopRawMutex> for FakeLocalEpochRunner {
     fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<(), Self::Faulted>> + 'a {
+    ) -> impl Future<Output = Result<WifiRadioCalibrationPath, Self::Faulted>> + 'a {
         async move {
             let stopped = slot
                 .take()
                 .expect("test actor retains stopped owner between epochs");
             stopped.set(stopped.get() + 10);
             *slot = Some(stopped);
-            Ok(())
+            Ok(WifiRadioCalibrationPath::RestoredCache)
         }
     }
 }
@@ -295,6 +295,10 @@ fn idle_restart_runs_in_the_owner_actor_and_advances_generation() {
 
     let application = async {
         let (wifi, restart) = radio.into_wifi().restart_radio().await.unwrap();
+        assert_eq!(
+            restart.calibration_path(),
+            WifiRadioCalibrationPath::RestoredCache
+        );
         let station = wifi.start_station(station_request()).await.unwrap();
         (restart.generation().value(), station.generation().value())
     };

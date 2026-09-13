@@ -401,12 +401,14 @@ fn execute_workload_inner(
         Workload::WifiRole {
             operation,
             timeout_seconds,
+            cycles,
             channel,
             dwell_seconds,
             snapshot_length,
         } => {
             let config = ieee80211::control::Config {
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+                restart_cycles: cycles.unwrap_or(1),
                 monitor_channel: *channel,
                 monitor_duration: Duration::from_secs(u64::from(dwell_seconds.unwrap_or(3))),
                 snapshot_length: snapshot_length.unwrap_or(256),

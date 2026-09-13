@@ -48,6 +48,10 @@ pub struct RadioReady<P> {
 }
 
 impl<P> RadioReady<P> {
+    pub const fn wifi(&self) -> &WifiStopped<P> {
+        &self.wifi
+    }
+
     pub fn into_parts(self) -> (WifiStopped<P>, Option<PhyCalibrationCache>) {
         (self.wifi, self.calibration_cache)
     }

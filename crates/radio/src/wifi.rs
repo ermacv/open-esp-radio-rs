@@ -32,10 +32,10 @@ pub use requests::{
 };
 pub use supervisor::{
     RadioController, RadioSubsystemGeneration, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPoint,
-    WifiIdle, WifiMonitor, WifiRadioRestartReport, WifiRoleStartFailure, WifiRoleStopFailure,
-    WifiScanCompleted, WifiScanFailure, WifiScanOperationFailure, WifiScanReport, WifiScanResult,
-    WifiStartFailure, WifiStartReport, WifiStartResult, WifiStation, WifiStationAccessPoint,
-    WifiStopReport, WifiSupervisorPort,
+    WifiIdle, WifiMonitor, WifiRadioCalibrationPath, WifiRadioRestartReport, WifiRoleStartFailure,
+    WifiRoleStopFailure, WifiScanCompleted, WifiScanFailure, WifiScanOperationFailure,
+    WifiScanReport, WifiScanResult, WifiStartFailure, WifiStartReport, WifiStartResult,
+    WifiStation, WifiStationAccessPoint, WifiStopReport, WifiSupervisorPort,
 };
 pub use {
     oer_ieee80211::channel::WifiChannel, oer_ieee80211::channel::WifiChannelError,

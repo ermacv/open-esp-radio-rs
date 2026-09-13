@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 127;
+pub const PROTOCOL_VERSION: u16 = 128;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1531,6 +1531,21 @@ pub struct WifiRoleTransitionEvidence {
     pub generation: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiRadioCalibrationPath {
+    Full,
+    RejectedCache,
+    RestoredCache,
+}
+
+/// Completion of an idle whole-radio restart, including the registration path
+/// selected from the final-state cache produced by the preceding RF epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiRadioRestartEvidence {
+    pub generation: u32,
+    pub calibration_path: WifiRadioCalibrationPath,
+}
+
 /// Bounded scan evidence. The complete BSS table stays in the driver API and
 /// is intentionally not expanded to fit the UART protocol.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2381,6 +2396,8 @@ pub enum Event {
     StationRfpllObserved(crate::RfpllEvidence),
     StationTrackingService(crate::StationTrackingServiceEvidence),
     StationTimerObserved(crate::TimerWindowEvidence),
+    /// Reliable completion of an idle whole-radio cold restart.
+    WifiRadioRestarted(WifiRadioRestartEvidence),
 }
 
 impl WireBody for Event {

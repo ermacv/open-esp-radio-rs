@@ -14,9 +14,9 @@ use oer_wifi_embassy::{await_stack_boundary, stack_boundary::stack_poll};
 
 use crate::wifi::{
     AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
-    WifiIdle, WifiRadioRestartReport, WifiScanFailure, WifiScanReport, WifiScanRequest,
-    WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStartResult,
-    WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
+    WifiIdle, WifiRadioCalibrationPath, WifiRadioRestartReport, WifiScanFailure, WifiScanReport,
+    WifiScanRequest, WifiServicePlanningError, WifiServiceRequest, WifiStartFailure,
+    WifiStartResult, WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
 };
 
 /// Exactly one command is outstanding because the public controller requires
@@ -106,7 +106,7 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
     fn restart_radio<'a>(
         &'a mut self,
         stopped: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<(), Self::Faulted>> + 'a;
+    ) -> impl Future<Output = Result<WifiRadioCalibrationPath, Self::Faulted>> + 'a;
 }
 
 /// Typed completion transported back to the application controller.
@@ -727,11 +727,11 @@ where
                 EmbassyWifiStoppedDispatch::RestartRadio => {
                     let next_generation = generation.next();
                     match await_stack_boundary!(runner.restart_radio(&mut stopped)) {
-                        Ok(()) => {
+                        Ok(calibration_path) => {
                             generation = next_generation;
                             endpoint
                                 .respond(EmbassyWifiSupervisorResponse::RestartRadio(Ok(
-                                    WifiRadioRestartReport::new(generation),
+                                    WifiRadioRestartReport::new(generation, calibration_path),
                                 )))
                                 .await;
                         }

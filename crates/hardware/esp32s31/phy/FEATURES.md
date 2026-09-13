@@ -136,7 +136,8 @@ This inventory does not promote their proof states.
 PLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,
 and calibration stability across sleep/wake require their own hardware evidence.
 A completed source transition or protocol cold start cannot substitute for those
-measurements. Cache-backed cold partial calibration and
-RF-close-to-cold-registration ownership are implemented. Direct retained
-sleep/wake remains unsupported; the cold-release path is not yet composed or
-hardware-qualified end to end.
+measurements. Cache-backed cold partial calibration and RF-close-to-cold-registration
+ownership are implemented and composed by the Wi-Fi supervisor. Direct
+retained sleep/wake remains unsupported. Repeated connection and data-path HIL,
+complete platform clock/reset reversal and broad RF qualification remain
+separate readiness requirements.

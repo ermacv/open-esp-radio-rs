@@ -19,6 +19,22 @@ fn ap_scheduler_policy_is_archived_and_restricted_to_standalone_ht() {
 }
 
 #[test]
+fn radio_restart_catalog_requires_repeated_cache_replay_cycles() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let scenario = catalog.get("wifi-radio-restart").unwrap();
+    assert_eq!(scenario.repetitions, 3);
+    assert!(matches!(
+        scenario.workload,
+        Workload::WifiRole {
+            operation: WifiOperation::Restart,
+            cycles: Some(3),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn ap_measurement_accepts_one_cycle_but_rejects_empty_lifecycle() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

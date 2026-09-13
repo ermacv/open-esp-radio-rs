@@ -18,16 +18,15 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
         current: WifiRole::Idle,
         generation: 7,
     };
-    let restarted = WifiRoleTransitionEvidence {
-        previous: WifiRole::Idle,
-        current: WifiRole::Idle,
+    let restarted = WifiRadioRestartEvidence {
         generation: 8,
+        calibration_path: WifiRadioCalibrationPath::RestoredCache,
     };
     assert!(require_radio_restart(stopped, restarted).is_ok());
     assert!(
         require_radio_restart(
             stopped,
-            WifiRoleTransitionEvidence {
+            WifiRadioRestartEvidence {
                 generation: 7,
                 ..restarted
             }
@@ -37,8 +36,8 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
     assert!(
         require_radio_restart(
             stopped,
-            WifiRoleTransitionEvidence {
-                current: WifiRole::Station,
+            WifiRadioRestartEvidence {
+                calibration_path: WifiRadioCalibrationPath::Full,
                 ..restarted
             }
         )
@@ -48,10 +47,9 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
 
 #[test]
 fn station_after_radio_restart_requires_the_next_generation() {
-    let restarted = WifiRoleTransitionEvidence {
-        previous: WifiRole::Idle,
-        current: WifiRole::Idle,
+    let restarted = WifiRadioRestartEvidence {
         generation: 8,
+        calibration_path: WifiRadioCalibrationPath::RestoredCache,
     };
     let started = WifiRoleTransitionEvidence {
         previous: WifiRole::Idle,

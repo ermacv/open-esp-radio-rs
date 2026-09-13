@@ -43,6 +43,50 @@ fn exact_sixty_entry_rom_sequence_is_explicit() {
 }
 
 #[test]
+fn retained_wake_regenerates_all_group_boundaries_without_table_entries() {
+    let expected_first = [0_u8, 8, 13, 21, 26, 29, 30, 38, 43, 51, 56, 59];
+    let expected_last = [7_u8, 12, 20, 25, 28, 29, 37, 42, 50, 55, 58, 59];
+    let mut transition = PhyPbusBoundaryRestoreTransition::new();
+
+    for group in 0..12 {
+        let PhyPbusBoundaryRestoreAction::Restore(boundary) = transition.action() else {
+            panic!("boundary transition completed before all groups");
+        };
+        assert_eq!(boundary.group(), group);
+        assert_eq!(boundary.first_entry(), expected_first[group as usize]);
+        assert_eq!(boundary.last_entry(), expected_last[group as usize]);
+        assert!(PhyPbusBoundaryRestoreMmioBinding::new(transition.action()).is_ok());
+        transition
+            .advance(PhyPbusBoundaryRestoreCompletion::Restored(boundary))
+            .unwrap();
+    }
+
+    assert_eq!(
+        transition.action(),
+        PhyPbusBoundaryRestoreAction::Complete(PhyPbusBoundaryRestoreOutcome)
+    );
+    assert_eq!(
+        PhyPbusBoundaryRestoreMmioBinding::new(transition.action()),
+        Err(PhyPbusMemoryBindingError::UnsupportedAction)
+    );
+}
+
+#[test]
+fn retained_boundary_restore_rejects_an_out_of_order_group() {
+    let mut transition = PhyPbusBoundaryRestoreTransition::new();
+    let PhyPbusBoundaryRestoreAction::Restore(first) = transition.action() else {
+        panic!("first boundary must be available");
+    };
+    transition
+        .advance(PhyPbusBoundaryRestoreCompletion::Restored(first))
+        .unwrap();
+    assert_eq!(
+        transition.advance(PhyPbusBoundaryRestoreCompletion::Restored(first)),
+        Err(PhyPbusBoundaryRestoreError::WrongCompletion)
+    );
+}
+
+#[test]
 fn completion_must_match_the_exact_entry() {
     let mut transition = PhyPbusMemoryTransition::new(PARAMETERS);
     let PhyPbusMemoryAction::Program(first) = transition.action() else {

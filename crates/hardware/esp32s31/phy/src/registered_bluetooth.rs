@@ -334,6 +334,10 @@ impl RegisteredBluetoothPhyClientRelease {
     /// A future shared-radio composition may retain another protocol client;
     /// that case returns this exact release unchanged instead of erasing the
     /// saved-mask disposition.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc error is the exact affine release owner and cannot be boxed or reduced"
+    )]
     pub fn into_registered_phy(self) -> Result<RegisteredBluetoothPhy, Self> {
         if !self.outcome.is_last() {
             return Err(self);

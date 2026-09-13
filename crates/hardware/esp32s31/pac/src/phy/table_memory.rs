@@ -136,6 +136,80 @@ const fn forced_power_state(enabled: bool) -> PhyForcedPowerState {
 }
 
 impl RadioPhyRegisters {
+    /// Restore one packed PBUS-memory group boundary without rewriting table
+    /// memory.
+    pub fn configure_pbus_memory_group_boundary(
+        &mut self,
+        boundary: PbusMemoryGroupBoundary,
+    ) -> Result<(), PhyMemoryError> {
+        let value =
+            PbusMemoryGroupBoundaryInput::compose(boundary.first_entry, boundary.last_entry);
+        match boundary.group {
+            0 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                0,
+                value,
+            ),
+            1 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                0,
+                value,
+            ),
+            2 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                1,
+                value,
+            ),
+            3 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                1,
+                value,
+            ),
+            4 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                2,
+                value,
+            ),
+            5 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                2,
+                value,
+            ),
+            6 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                3,
+                value,
+            ),
+            7 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                3,
+                value,
+            ),
+            8 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                4,
+                value,
+            ),
+            9 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                4,
+                value,
+            ),
+            10 => crate::generated::configure_even_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                5,
+                value,
+            ),
+            11 => crate::generated::configure_odd_pbus_memory_group_boundary(
+                &self.peripherals.phy_memory,
+                5,
+                value,
+            ),
+            _ => return Err(PhyMemoryError::PbusGroupOutOfRange),
+        }
+        Ok(())
+    }
+
     /// Publish one PBUS-memory entry in complete rev0 ROM access order.
     pub fn program_pbus_memory_entry(
         &mut self,
@@ -147,71 +221,7 @@ impl RadioPhyRegisters {
             .ok_or(PhyMemoryError::PbusCommandOutOfRange)?;
 
         if let Some(boundary) = boundary {
-            let value =
-                PbusMemoryGroupBoundaryInput::compose(boundary.first_entry, boundary.last_entry);
-            match boundary.group {
-                0 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    0,
-                    value,
-                ),
-                1 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    0,
-                    value,
-                ),
-                2 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    1,
-                    value,
-                ),
-                3 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    1,
-                    value,
-                ),
-                4 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    2,
-                    value,
-                ),
-                5 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    2,
-                    value,
-                ),
-                6 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    3,
-                    value,
-                ),
-                7 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    3,
-                    value,
-                ),
-                8 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    4,
-                    value,
-                ),
-                9 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    4,
-                    value,
-                ),
-                10 => crate::generated::configure_even_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    5,
-                    value,
-                ),
-                11 => crate::generated::configure_odd_pbus_memory_group_boundary(
-                    &self.peripherals.phy_memory,
-                    5,
-                    value,
-                ),
-                _ => return Err(PhyMemoryError::PbusGroupOutOfRange),
-            }
+            self.configure_pbus_memory_group_boundary(boundary)?;
         }
 
         crate::generated::phy_memory_data_0(

@@ -23,6 +23,22 @@ pub fn program_pbus_memory_entry(
     registers.program_pbus_memory_entry(boundary, data, command)
 }
 
+/// Restore one retained PBUS-memory group boundary without rewriting the
+/// table entries.
+///
+/// Basis: current S31 `libphy.a[phy_init.o]::phy_wakeup_init` calls
+/// `phy_set_pbus_reg`, which restores the six packed boundary words saved by
+/// cold `phy_set_pbus_mem`. Source-owned code regenerates the same twelve
+/// semantic boundaries instead of retaining opaque register images.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_pbus_memory_group_boundary(
+    registers: &mut impl SharedPhyAccess,
+    boundary: PbusMemoryGroupBoundary,
+) -> Result<(), PhyMemoryError> {
+    let registers = phy_pac_mut(registers);
+    registers.configure_pbus_memory_group_boundary(boundary)
+}
+
 /// Sample the shared CFR/gain-memory base index once.
 ///
 /// Basis: complete S31 `libphy.a[phy_tx_gain.o]::phy_set_tx_cfr_mem` and

@@ -50,6 +50,11 @@ pub use executor::{
     PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError, run_phy_calibration_tracking,
     run_phy_param_tracking, run_phy_register,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+pub use lifecycle::{
+    PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation, PhyRfWakeOutcome,
+    PhyRfWakeTransition, PhyRfWakeTransitionError,
+};
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,

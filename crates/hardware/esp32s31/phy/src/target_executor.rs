@@ -147,6 +147,25 @@ pub(crate) fn write_i2c_field_direct(
     write_i2c_direct(registers, field.address(), field.replace(current, value))
 }
 
+/// Execute the four masked analog-I²C writes of complete ROM
+/// `phy_reset_ckgen` with direct finite polling.
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn reset_clock_generator_direct(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), PhyTargetPortError> {
+    use oer_esp32s31_hal::phy::i2c::analog_registers;
+
+    for (field, value) in [
+        (analog_registers::RFPLL_DCODE_0_SOURCE_SELECT, 0),
+        (analog_registers::RFPLL_DCODE_1_SOURCE_SELECT, 0),
+        (analog_registers::RFPLL_DCODE_CKGEN_RESET, 0),
+        (analog_registers::RFPLL_DCODE_CKGEN_RESET, 1),
+    ] {
+        write_i2c_field_direct(registers, field, value)?;
+    }
+    Ok(())
+}
+
 /// Blocking clock used inside one already-admitted PHY hardware transaction.
 ///
 /// Short analog settles are part of the transaction itself. They must not arm

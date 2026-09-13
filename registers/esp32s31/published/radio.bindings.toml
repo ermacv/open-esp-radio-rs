@@ -874,7 +874,27 @@ peripheral-type = "PhyFedataRecovered"
 peripheral-module = "phy_fedata_recovered"
 scope = []
 register-method = "tx_rx_reset_opaque"
-fields = []
+
+[[registers.fields]]
+svd-name = "TX_RX_RESET_LOW_OPAQUE"
+method = "tx_rx_reset_low_opaque"
+bit-offset = 12
+bit-width = 13
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_RX_RESET_BIT_25"
+method = "tx_rx_reset_bit_25"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_RX_RESET_BIT_26"
+method = "tx_rx_reset_bit_26"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537920580

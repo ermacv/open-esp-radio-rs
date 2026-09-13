@@ -9981,6 +9981,30 @@ register = "FREQUENCY_PARAMETER_1_STATUS"
 field = "FREQUENCY_READY"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
 
+[[field-replace-modifies]]
+name = "clear_phy_frontend_txrx_reset_state"
+peripheral = "PHY_FEDATA_RECOVERED"
+register = "TX_RX_RESET_OPAQUE"
+fields = [
+    { field = "TX_RX_RESET_LOW_OPAQUE", source-bit-offset = 0 },
+    { field = "TX_RX_RESET_BIT_26", source-bit-offset = 13 },
+]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
+
+[[field-replace-modifies]]
+name = "assert_phy_frontend_txrx_reset_state"
+peripheral = "PHY_FEDATA_RECOVERED"
+register = "TX_RX_RESET_OPAQUE"
+fields = [
+    { field = "TX_RX_RESET_BIT_25", source-bit-offset = 0 },
+    { field = "TX_RX_RESET_BIT_26", source-bit-offset = 1 },
+]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
+
 [[field-snapshot-reads]]
 name = "capture_phy_nrx_frequency_shift"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"

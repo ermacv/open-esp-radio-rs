@@ -140,6 +140,12 @@ pub fn initialize_front_end(registers: &mut impl SharedPhyAccess) {
     registers.initialize_front_end_suffix();
 }
 
+/// Apply both fresh-read updates of complete rev0 ROM `phy_fe_txrx_reset`.
+#[cfg(target_arch = "riscv32")]
+pub fn reset_frontend_txrx(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).reset_frontend_txrx();
+}
+
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
 #[cfg(target_arch = "riscv32")]
 pub fn update_front_end(registers: &mut impl SharedPhyAccess) {

@@ -7500,6 +7500,18 @@ pub(crate) fn configure_phy_frequency_register_mode(
     );
 }
 
+/// Typed bridge for the reviewed `clear_phy_frontend_txrx_reset_state` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_frontend_txrx_reset_state(registers: &crate::svd::PhyFedataRecovered) {
+    crate::svd::field_replace_modify::clear_phy_frontend_txrx_reset_state(registers);
+}
+
+/// Typed bridge for the reviewed `assert_phy_frontend_txrx_reset_state` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn assert_phy_frontend_txrx_reset_state(registers: &crate::svd::PhyFedataRecovered) {
+    crate::svd::field_replace_modify::assert_phy_frontend_txrx_reset_state(registers);
+}
+
 /// Typed bridge for the reviewed `initialize_phy_nrx_frequency_quotient` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn initialize_phy_nrx_frequency_quotient(

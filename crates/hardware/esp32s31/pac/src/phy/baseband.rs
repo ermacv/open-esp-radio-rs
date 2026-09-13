@@ -415,6 +415,13 @@ fn tone_selector_high(selector: u16) -> crate::generated::PhyToneByteImage {
 }
 
 impl RadioPhyRegisters {
+    /// Apply both fresh-read edges of complete ROM `phy_fe_txrx_reset`.
+    pub fn reset_frontend_txrx(&mut self) {
+        let registers = &self.peripherals.phy_fedata_recovered;
+        crate::generated::clear_phy_frontend_txrx_reset_state(registers);
+        crate::generated::assert_phy_frontend_txrx_reset_state(registers);
+    }
+
     pub(crate) const fn txdc_pwdet_restore_pending(&self) -> bool {
         self.restore_slot.txdc_pending()
     }

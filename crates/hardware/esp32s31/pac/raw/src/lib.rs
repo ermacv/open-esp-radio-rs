@@ -36585,12 +36585,54 @@ pub mod phy_fedata_recovered {
         pub type R = crate::R<TxRxResetOpaqueSpec>;
         #[doc = "Register `TX_RX_RESET_OPAQUE` writer"]
         pub type W = crate::W<TxRxResetOpaqueSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` reader - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+        pub type TxRxResetLowOpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` writer - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+        pub type TxRxResetLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 13, u16>;
+        #[doc = "Field `TX_RX_RESET_BIT_25` reader - First upper reset bit asserted by complete phy_fe_txrx_reset."]
+        pub type TxRxResetBit25R = crate::BitReader;
+        #[doc = "Field `TX_RX_RESET_BIT_25` writer - First upper reset bit asserted by complete phy_fe_txrx_reset."]
+        pub type TxRxResetBit25W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_RX_RESET_BIT_26` reader - Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset."]
+        pub type TxRxResetBit26R = crate::BitReader;
+        #[doc = "Field `TX_RX_RESET_BIT_26` writer - Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset."]
+        pub type TxRxResetBit26W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 12:24 - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_low_opaque(&self) -> TxRxResetLowOpaqueR {
+                TxRxResetLowOpaqueR::new(((self.bits >> 12) & 0x1fff) as u16)
+            }
+            #[doc = "Bit 25 - First upper reset bit asserted by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_bit_25(&self) -> TxRxResetBit25R {
+                TxRxResetBit25R::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_bit_26(&self) -> TxRxResetBit26R {
+                TxRxResetBit26R::new(((self.bits >> 26) & 1) != 0)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 12:24 - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_low_opaque(
+                &mut self,
+            ) -> TxRxResetLowOpaqueW<'_, TxRxResetOpaqueSpec> {
+                TxRxResetLowOpaqueW::new(self, 12)
+            }
+            #[doc = "Bit 25 - First upper reset bit asserted by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_bit_25(&mut self) -> TxRxResetBit25W<'_, TxRxResetOpaqueSpec> {
+                TxRxResetBit25W::new(self, 25)
+            }
+            #[doc = "Bit 26 - Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset."]
+            #[inline(always)]
+            pub fn tx_rx_reset_bit_26(&mut self) -> TxRxResetBit26W<'_, TxRxResetOpaqueSpec> {
+                TxRxResetBit26W::new(self, 26)
+            }
+        }
         #[doc = "Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxRxResetOpaqueSpec;
         impl crate::RegisterSpec for TxRxResetOpaqueSpec {
@@ -70578,6 +70620,38 @@ pub mod field_replace_modify {
                     .register_mode_unknown()
                     .bits((input & 0x000000ff) as u8)
             }
+        });
+    }
+
+    /// Replace PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE fields `[TX_RX_RESET_LOW_OPAQUE, TX_RX_RESET_BIT_26]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_frontend_txrx_reset_state(registers: &crate::PhyFedataRecovered) {
+        registers.tx_rx_reset_opaque().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_rx_reset_low_opaque()
+                    .bits((input & 0x00001fff) as u16)
+                    .tx_rx_reset_bit_26()
+                    .bit(((input >> 13) & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE fields `[TX_RX_RESET_BIT_25, TX_RX_RESET_BIT_26]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn assert_phy_frontend_txrx_reset_state(registers: &crate::PhyFedataRecovered) {
+        registers.tx_rx_reset_opaque().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_rx_reset_bit_25()
+                .bit((input & 0x00000001) != 0)
+                .tx_rx_reset_bit_26()
+                .bit(((input >> 1) & 0x00000001) != 0)
         });
     }
 

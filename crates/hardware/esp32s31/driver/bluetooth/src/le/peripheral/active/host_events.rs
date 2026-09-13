@@ -2,8 +2,10 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::{
-    HciChannelError, LeControllerCommandEndpoint, LeDisconnectionCompleteEvent,
+    HciChannelError, LeConnectionUpdateCompleteEvent, LeControllerCommandEndpoint,
+    LeDisconnectionCompleteEvent, LeNumberOfCompletedPacketsEvent,
     LePeripheralConnectionCompleteEvent, LePeripheralConnectionEventPublication,
+    LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCompleteEvent,
     bt_hci::param::{AddrKind, BdAddr, ClockAccuracy, ConnHandle, Duration, Error as HciError},
 };
 use oer_bluetooth_ll::{
@@ -22,6 +24,12 @@ enum EventState<Event> {
 pub(super) struct PeripheralConnectionHostEvents {
     connection: EventState<LePeripheralConnectionCompleteEvent>,
     disconnection: EventState<LeDisconnectionCompleteEvent>,
+    connection_updates: [Option<LeConnectionUpdateCompleteEvent>; 2],
+    connection_update_len: u8,
+    remote_features: Option<LeReadRemoteFeaturesCompleteEvent>,
+    remote_version: Option<LeReadRemoteVersionInformationCompleteEvent>,
+    acl_completed: u16,
+    established: bool,
 }
 
 #[cfg_attr(
@@ -44,36 +52,86 @@ impl PeripheralConnectionHostEvents {
         Self {
             connection: EventState::Awaiting,
             disconnection: EventState::Awaiting,
+            connection_updates: [None; 2],
+            connection_update_len: 0,
+            remote_features: None,
+            remote_version: None,
+            acl_completed: 0,
+            established: false,
         }
     }
 
     pub(super) const fn has_pending(&self) -> bool {
         matches!(self.connection, EventState::Pending(_))
+            || self.acl_completed != 0
+            || self.connection_update_len != 0
+            || self.remote_features.is_some()
+            || self.remote_version.is_some()
             || matches!(self.disconnection, EventState::Pending(_))
     }
 
     pub(super) const fn ready_to_restore_idle(&self) -> bool {
         matches!(self.connection, EventState::Complete)
+            && self.acl_completed == 0
+            && self.connection_update_len == 0
+            && self.remote_features.is_none()
+            && self.remote_version.is_none()
             && matches!(self.disconnection, EventState::Complete)
     }
 
-    pub(super) fn observe_completion(&mut self, completed: &LePeripheralConnectionEventCompleted) {
-        if !matches!(self.connection, EventState::Awaiting) {
-            return;
+    /// ACL data cannot precede the Host-visible connection result.
+    pub(super) const fn connection_result_published(&self) -> bool {
+        matches!(self.connection, EventState::Complete)
+    }
+
+    pub(super) fn live_handle(&self) -> Option<ConnHandle> {
+        self.established
+            .then(|| ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE))
+    }
+
+    /// Record Host-visible state from one completed Link Layer event.
+    ///
+    /// `false` means both bounded update slots were already occupied; callers
+    /// must terminate rather than silently lose a mandatory Host notification.
+    pub(super) fn observe_completion(
+        &mut self,
+        completed: &LePeripheralConnectionEventCompleted,
+    ) -> bool {
+        if matches!(self.connection, EventState::Awaiting) {
+            if completed.establishment_failed() {
+                self.connection = EventState::Pending(
+                    LePeripheralConnectionCompleteEvent::failed(
+                        HciError::CONN_FAILED_SYNCHRONIZATION_TIMEOUT.to_status(),
+                    )
+                    .expect("the standard establishment-failure status is non-success"),
+                );
+                self.disconnection = EventState::Complete;
+            } else if completed.connection_state().establishment_event_counter()
+                == Some(completed.event_counter())
+            {
+                self.connection = EventState::Pending(success_event(completed.request()));
+                self.established = true;
+            }
         }
-        if completed.establishment_failed() {
-            self.connection = EventState::Pending(
-                LePeripheralConnectionCompleteEvent::failed(
-                    HciError::CONN_FAILED_SYNCHRONIZATION_TIMEOUT.to_status(),
-                )
-                .expect("the standard establishment-failure status is non-success"),
-            );
-            self.disconnection = EventState::Complete;
-        } else if completed.connection_state().establishment_event_counter()
-            == Some(completed.event_counter())
-        {
-            self.connection = EventState::Pending(success_event(completed.request()));
+        let Some(transition) = completed.connection_timing_transition() else {
+            return true;
+        };
+        if !transition.host_parameters_changed() {
+            return true;
         }
+        if usize::from(self.connection_update_len) == self.connection_updates.len() {
+            return false;
+        }
+        let timing = transition.updated();
+        self.connection_updates[usize::from(self.connection_update_len)] =
+            Some(LeConnectionUpdateCompleteEvent::new(
+                ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE),
+                Duration::from_u16(timing.interval_units()),
+                timing.peripheral_latency(),
+                Duration::from_u16(timing.supervision_timeout_units()),
+            ));
+        self.connection_update_len += 1;
+        true
     }
 
     pub(super) fn observe_disconnection(&mut self, reason: u8) {
@@ -83,6 +141,82 @@ impl PeripheralConnectionHostEvents {
                 oer_bluetooth_hci::bt_hci::param::Status::new(reason),
             ));
         }
+    }
+
+    pub(super) fn observe_acl_completed(&mut self, completed: u16) {
+        self.acl_completed = self
+            .acl_completed
+            .checked_add(completed)
+            .expect("bounded Controller ACL credits cannot overflow");
+    }
+
+    pub(super) fn observe_remote_features(
+        &mut self,
+        result: oer_bluetooth_ll::control::LeRemoteFeaturesResult,
+    ) {
+        let (status, features) = match result {
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::Success(features) => {
+                (oer_bluetooth_hci::bt_hci::param::Status::SUCCESS, features)
+            }
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::Unsupported => {
+                (HciError::UNSUPPORTED_REMOTE_FEATURE.to_status(), [0; 8])
+            }
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::Rejected { reason } => (
+                oer_bluetooth_hci::bt_hci::param::Status::new(reason),
+                [0; 8],
+            ),
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::ResponseTimeout => {
+                (HciError::LMP_LL_RESPONSE_TIMEOUT.to_status(), [0; 8])
+            }
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::ConnectionClosed => {
+                (HciError::UNKNOWN_CONN_IDENTIFIER.to_status(), [0; 8])
+            }
+        };
+        debug_assert!(self.remote_features.is_none());
+        self.remote_features = Some(LeReadRemoteFeaturesCompleteEvent::new(
+            status,
+            ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE),
+            features,
+        ));
+    }
+
+    pub(super) fn observe_remote_version(
+        &mut self,
+        result: oer_bluetooth_ll::control::LeRemoteVersionResult,
+    ) {
+        let (status, version) = match result {
+            oer_bluetooth_ll::control::LeRemoteVersionResult::Success(version) => (
+                oer_bluetooth_hci::bt_hci::param::Status::SUCCESS,
+                Some(version),
+            ),
+            oer_bluetooth_ll::control::LeRemoteVersionResult::Unsupported => {
+                (HciError::UNSUPPORTED_REMOTE_FEATURE.to_status(), None)
+            }
+            oer_bluetooth_ll::control::LeRemoteVersionResult::Rejected { reason } => {
+                (oer_bluetooth_hci::bt_hci::param::Status::new(reason), None)
+            }
+            oer_bluetooth_ll::control::LeRemoteVersionResult::ResponseTimeout => {
+                (HciError::LMP_LL_RESPONSE_TIMEOUT.to_status(), None)
+            }
+            oer_bluetooth_ll::control::LeRemoteVersionResult::ConnectionClosed => {
+                (HciError::UNKNOWN_CONN_IDENTIFIER.to_status(), None)
+            }
+        };
+        let (version, company_identifier, subversion) = version.map_or((0, 0, 0), |version| {
+            (
+                version.version(),
+                version.company_identifier(),
+                version.subversion(),
+            )
+        });
+        debug_assert!(self.remote_version.is_none());
+        self.remote_version = Some(LeReadRemoteVersionInformationCompleteEvent::new(
+            status,
+            ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE),
+            version,
+            company_identifier,
+            subversion,
+        ));
     }
 
     pub(super) fn try_publish<
@@ -99,14 +233,82 @@ impl PeripheralConnectionHostEvents {
                 .try_publish_peripheral_connection_complete(event)
                 .map(|publication| (true, publication)),
             EventState::Awaiting => return PeripheralConnectionHostEventPublication::None,
-            EventState::Complete => match &self.disconnection {
-                EventState::Pending(event) => controller
-                    .try_publish_disconnection_complete(event)
-                    .map(|publication| (false, publication)),
-                EventState::Awaiting | EventState::Complete => {
-                    return PeripheralConnectionHostEventPublication::None;
+            EventState::Complete => {
+                if self.acl_completed != 0 {
+                    let event = LeNumberOfCompletedPacketsEvent::new(
+                        ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE),
+                        self.acl_completed,
+                    );
+                    return match controller.try_publish_number_of_completed_packets(&event) {
+                        Ok(()) => {
+                            self.acl_completed = 0;
+                            PeripheralConnectionHostEventPublication::Published
+                        }
+                        Err(HciChannelError::Full) => {
+                            PeripheralConnectionHostEventPublication::Pending
+                        }
+                        Err(error) => PeripheralConnectionHostEventPublication::Fault(error),
+                    };
                 }
-            },
+                if let Some(event) = &self.connection_updates[0] {
+                    return match controller.try_publish_connection_update_complete(event) {
+                        Ok(LePeripheralConnectionEventPublication::Published) => {
+                            self.complete_connection_update();
+                            PeripheralConnectionHostEventPublication::Published
+                        }
+                        Ok(LePeripheralConnectionEventPublication::Masked) => {
+                            self.complete_connection_update();
+                            PeripheralConnectionHostEventPublication::Masked
+                        }
+                        Err(HciChannelError::Full) => {
+                            PeripheralConnectionHostEventPublication::Pending
+                        }
+                        Err(error) => PeripheralConnectionHostEventPublication::Fault(error),
+                    };
+                }
+                if let Some(event) = &self.remote_features {
+                    return match controller.try_publish_read_remote_features_complete(event) {
+                        Ok(LePeripheralConnectionEventPublication::Published) => {
+                            self.remote_features = None;
+                            PeripheralConnectionHostEventPublication::Published
+                        }
+                        Ok(LePeripheralConnectionEventPublication::Masked) => {
+                            self.remote_features = None;
+                            PeripheralConnectionHostEventPublication::Masked
+                        }
+                        Err(HciChannelError::Full) => {
+                            PeripheralConnectionHostEventPublication::Pending
+                        }
+                        Err(error) => PeripheralConnectionHostEventPublication::Fault(error),
+                    };
+                }
+                if let Some(event) = &self.remote_version {
+                    return match controller
+                        .try_publish_read_remote_version_information_complete(event)
+                    {
+                        Ok(LePeripheralConnectionEventPublication::Published) => {
+                            self.remote_version = None;
+                            PeripheralConnectionHostEventPublication::Published
+                        }
+                        Ok(LePeripheralConnectionEventPublication::Masked) => {
+                            self.remote_version = None;
+                            PeripheralConnectionHostEventPublication::Masked
+                        }
+                        Err(HciChannelError::Full) => {
+                            PeripheralConnectionHostEventPublication::Pending
+                        }
+                        Err(error) => PeripheralConnectionHostEventPublication::Fault(error),
+                    };
+                }
+                match &self.disconnection {
+                    EventState::Pending(event) => controller
+                        .try_publish_disconnection_complete(event)
+                        .map(|publication| (false, publication)),
+                    EventState::Awaiting | EventState::Complete => {
+                        return PeripheralConnectionHostEventPublication::None;
+                    }
+                }
+            }
         };
         match result {
             Ok((connection, LePeripheralConnectionEventPublication::Published)) => {
@@ -128,6 +330,11 @@ impl PeripheralConnectionHostEvents {
         } else {
             self.disconnection = EventState::Complete;
         }
+    }
+
+    fn complete_connection_update(&mut self) {
+        self.connection_updates[0] = self.connection_updates[1].take();
+        self.connection_update_len -= 1;
     }
 }
 
@@ -164,16 +371,18 @@ fn success_event(request: LeLegacyConnectionRequest) -> LePeripheralConnectionCo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use oer_bluetooth_hci::bt_hci::{
-        FromHciBytes,
+        ControllerToHostPacket, FromHciBytes,
         event::{Event, le::LeEvent},
+        transport::Transport,
     };
     use oer_bluetooth_hci::{
         BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerHciResources,
     };
     use oer_bluetooth_ll::connection::{
-        LeChannelSelectionAlgorithm, LeDataChannelMap, LePeripheralConnection,
+        LeChannelSelectionAlgorithm, LeConnectionTiming, LeDataChannelMap, LePeripheralConnection,
         LePeripheralConnectionEventPeerActivity,
     };
 
@@ -204,11 +413,17 @@ mod tests {
         .into_submitted()
         .complete(LePeripheralConnectionEventPeerActivity::Observed);
         let mut events = PeripheralConnectionHostEvents::new();
+        assert_eq!(events.live_handle(), None);
 
         events.observe_completion(&completed);
         events.observe_disconnection(0x13);
+        assert_eq!(
+            events.live_handle(),
+            Some(ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE))
+        );
 
         assert!(matches!(events.connection, EventState::Pending(_)));
+        assert!(!events.connection_result_published());
         assert!(matches!(events.disconnection, EventState::Pending(_)));
         assert!(!events.ready_to_restore_idle());
         let EventState::Pending(connection) = &events.connection else {
@@ -229,7 +444,7 @@ mod tests {
             ConnHandle::new(SINGLE_PERIPHERAL_CONNECTION_HANDLE)
         );
 
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
             LeControllerBootstrapConfig::new(
                 BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
                 27,
@@ -244,6 +459,7 @@ mod tests {
             events.try_publish(&endpoints.controller),
             PeripheralConnectionHostEventPublication::Masked
         ));
+        assert!(events.connection_result_published());
         assert!(events.has_pending());
         assert!(matches!(
             events.try_publish(&endpoints.controller),
@@ -268,6 +484,7 @@ mod tests {
             events.observe_completion(&completed);
             connection = completed.into_connection();
         }
+        assert_eq!(events.live_handle(), None);
 
         let EventState::Pending(failed) = &events.connection else {
             panic!("failed establishment must retain Connection Complete");
@@ -284,5 +501,214 @@ mod tests {
             HciError::CONN_FAILED_SYNCHRONIZATION_TIMEOUT.to_status()
         );
         assert_eq!(failed.handle, ConnHandle::new(0));
+    }
+
+    #[test]
+    fn acl_credits_publish_after_establishment_and_before_disconnection() {
+        let completed = LePeripheralConnection::from_request(
+            request(),
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        )
+        .prepare_event()
+        .into_submitted()
+        .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        let mut events = PeripheralConnectionHostEvents::new();
+        events.observe_completion(&completed);
+        events.observe_acl_completed(3);
+        events.observe_disconnection(0x13);
+
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+                27,
+                1,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let endpoints = resources.split();
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Masked
+        ));
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Published
+        ));
+
+        let mut buffer = [0; 80];
+        let ControllerToHostPacket::Event(event) =
+            block_on(endpoints.host.read(&mut buffer)).unwrap()
+        else {
+            panic!("ACL completion changed HCI packet kind");
+        };
+        assert_eq!(event.kind.0, 0x13);
+        assert_eq!(event.data, [1, 1, 0, 3, 0]);
+
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Masked
+        ));
+        assert!(events.ready_to_restore_idle());
+    }
+
+    #[test]
+    fn connection_updates_are_ordered_after_establishment_and_bounded_without_loss() {
+        let mut connection = LePeripheralConnection::from_request(
+            request(),
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        );
+        let mut events = PeripheralConnectionHostEvents::new();
+        for (counter, interval) in [(0, 40), (1, 48), (2, 56)] {
+            let mut completed = connection
+                .prepare_event()
+                .into_submitted()
+                .complete(LePeripheralConnectionEventPeerActivity::Observed);
+            let timing = LeConnectionTiming::new(2, 1, interval, 0, 200).unwrap();
+            completed
+                .schedule_connection_update(timing, counter)
+                .unwrap();
+            assert_eq!(events.observe_completion(&completed), counter < 2);
+            connection = completed.into_connection();
+        }
+        assert_eq!(events.connection_update_len, 2);
+
+        let EventState::Pending(connection) = &events.connection else {
+            panic!("establishment must remain ahead of parameter updates");
+        };
+        let Event::Le(LeEvent::LeConnectionComplete(_)) =
+            Event::from_hci_bytes_complete(connection.as_bytes()).unwrap()
+        else {
+            panic!("first event changed kind");
+        };
+        let first_update = events.connection_updates[0].unwrap();
+        let Event::Le(LeEvent::LeConnectionUpdateComplete(update)) =
+            Event::from_hci_bytes_complete(first_update.as_bytes()).unwrap()
+        else {
+            panic!("update event changed kind");
+        };
+        assert_eq!(update.conn_interval, Duration::from_u16(40));
+
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+                27,
+                1,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let endpoints = resources.split();
+        for _ in 0..3 {
+            assert!(matches!(
+                events.try_publish(&endpoints.controller),
+                PeripheralConnectionHostEventPublication::Masked
+            ));
+        }
+        assert_eq!(events.connection_update_len, 0);
+    }
+
+    #[test]
+    fn anchor_move_without_host_parameter_change_emits_no_update_event() {
+        let request = request();
+        let mut completed = LePeripheralConnection::from_request(
+            request,
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        )
+        .prepare_event()
+        .into_submitted()
+        .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        let timing = request.timing();
+        let moved = LeConnectionTiming::new(
+            timing.window_size_units(),
+            timing.window_offset_units() + 1,
+            timing.interval_units(),
+            timing.peripheral_latency(),
+            timing.supervision_timeout_units(),
+        )
+        .unwrap();
+        completed.schedule_connection_update(moved, 0).unwrap();
+
+        let mut events = PeripheralConnectionHostEvents::new();
+        assert!(events.observe_completion(&completed));
+        assert_eq!(events.connection_update_len, 0);
+    }
+
+    #[test]
+    fn remote_feature_results_retain_success_and_failure_status() {
+        let mut events = PeripheralConnectionHostEvents::new();
+        let features = [8, 2, 3, 4, 5, 6, 7, 8];
+        events.observe_remote_features(oer_bluetooth_ll::control::LeRemoteFeaturesResult::Success(
+            features,
+        ));
+        let event = events.remote_features.take().unwrap();
+        let Event::Le(LeEvent::LeReadRemoteFeaturesComplete(decoded)) =
+            Event::from_hci_bytes_complete(event.as_bytes()).unwrap()
+        else {
+            panic!("remote-feature completion changed event kind");
+        };
+        assert_eq!(
+            decoded.status,
+            oer_bluetooth_hci::bt_hci::param::Status::SUCCESS
+        );
+        assert_eq!(decoded.handle, ConnHandle::new(1));
+        assert!(
+            decoded
+                .le_features
+                .supports_peripheral_initiated_features_exchange()
+        );
+        assert_eq!(&event.as_bytes()[6..], &features);
+
+        events.observe_remote_features(
+            oer_bluetooth_ll::control::LeRemoteFeaturesResult::Unsupported,
+        );
+        let event = events.remote_features.take().unwrap();
+        let Event::Le(LeEvent::LeReadRemoteFeaturesComplete(decoded)) =
+            Event::from_hci_bytes_complete(event.as_bytes()).unwrap()
+        else {
+            panic!("remote-feature failure changed event kind");
+        };
+        assert_eq!(
+            decoded.status,
+            HciError::UNSUPPORTED_REMOTE_FEATURE.to_status()
+        );
+        assert!(!decoded.le_features.supports_le_encryption());
+        assert_eq!(&event.as_bytes()[6..], &[0; 8]);
+    }
+
+    #[test]
+    fn remote_version_results_retain_identity_and_failure_status() {
+        let mut events = PeripheralConnectionHostEvents::new();
+        events.observe_remote_version(oer_bluetooth_ll::control::LeRemoteVersionResult::Success(
+            oer_bluetooth_ll::control::LeVersionInformation::new(0x0d, 0x1234, 0x5678),
+        ));
+        let event = events.remote_version.take().unwrap();
+        let Event::ReadRemoteVersionInformationComplete(decoded) =
+            Event::from_hci_bytes_complete(event.as_bytes()).unwrap()
+        else {
+            panic!("remote-version completion changed event kind");
+        };
+        assert_eq!(
+            decoded.status,
+            oer_bluetooth_hci::bt_hci::param::Status::SUCCESS
+        );
+        assert_eq!(decoded.handle, ConnHandle::new(1));
+        assert_eq!(decoded.company_id, 0x1234);
+        assert_eq!(decoded.subversion, 0x5678);
+
+        events.observe_remote_version(
+            oer_bluetooth_ll::control::LeRemoteVersionResult::ResponseTimeout,
+        );
+        let event = events.remote_version.take().unwrap();
+        let Event::ReadRemoteVersionInformationComplete(decoded) =
+            Event::from_hci_bytes_complete(event.as_bytes()).unwrap()
+        else {
+            panic!("remote-version failure changed event kind");
+        };
+        assert_eq!(
+            decoded.status,
+            HciError::LMP_LL_RESPONSE_TIMEOUT.to_status()
+        );
+        assert_eq!(&event.as_bytes()[5..], &[0; 5]);
     }
 }

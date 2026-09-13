@@ -11,8 +11,9 @@
 //! directions have statically bounded storage, wake-driven backpressure and
 //! cancellation-safe waits.
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
-//! subset for Host initialization; Link-Layer commands remain owned by an
-//! outer router.
+//! subset for Host initialization and reports the complete production command
+//! inventory through the standard 64-octet Supported Commands bitmap;
+//! Link-Layer commands remain owned by an outer router.
 //! The separate closed LE DTM codec normalizes Receiver/Transmitter Test v1 and
 //! v2 plus Test End into owned semantic commands. Its reviewed idle/active
 //! session policy retains start/Test End ownership for a hardware runner and
@@ -28,15 +29,17 @@
 //! Parameters and Set Scan Enable commands become owned timing and duplicate
 //! policy, while affine start/disable continuations delay success until a chip
 //! runner proves hardware `RUN` or quiescence.
-//! Owned LE Connection Complete and Disconnection Complete codecs retain the
-//! exact Host event across bounded backpressure. Their endpoint publication
-//! enforces the standard base and LE event masks; a chip runner still owns the
-//! proof that establishment or teardown occurred.
+//! Owned LE Connection Complete, LE Connection Update Complete and
+//! Disconnection Complete codecs retain exact Host events across bounded
+//! backpressure. Their endpoint publication enforces the standard base and LE
+//! event masks; a chip runner still owns the proof that each transition occurred.
 //! [`classify_le_controller_command`] joins these portable policies at a finite
-//! command boundary: valid bootstrap, DTM and Link Layer configuration commands
-//! become owned semantic tokens, malformed known commands become owned error
-//! responses, and every other opcode becomes an owned Unknown Command
-//! completion.
+//! command boundary: valid bootstrap, DTM, Disconnect, LE Read Remote Features,
+//! Read Remote Version Information and Link Layer configuration
+//! commands become owned semantic tokens, malformed known commands become owned
+//! error responses, and every other opcode becomes an owned Unknown Command
+//! completion. Disconnect, remote feature discovery and remote version discovery
+//! use standard Command Status before their chip-owned Link Layer lifecycles begin.
 //! Classification never advances bootstrap state, leaves no result borrowing
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
@@ -51,9 +54,14 @@
 //! runner can retain an accepted command across asynchronous radio transitions
 //! and output backpressure without a synchronous-dispatch compatibility layer.
 //! Resource construction rejects
-//! profiles whose advertised ACL capacity exceeds that storage. This crate
-//! contains no Link Layer, radio, MMIO, interrupt, executor, allocator, or
-//! readiness substitute.
+//! profiles whose advertised ACL capacity exceeds that storage. Active
+//! peripheral intake copies one matching Host ACL packet into an owned credit
+//! token, which exposes acknowledged-fragment progression and a standard Number
+//! Of Completed Packets event without depending on a radio implementation.
+//! Controller ACL owners preserve start/continuation boundaries, fragment to
+//! the Host buffer profile, and decode the response-less Host Number Of
+//! Completed Packets credit command. This crate contains no Link Layer, radio,
+//! MMIO, interrupt, executor, allocator, or readiness substitute.
 
 #[cfg(test)]
 extern crate std;
@@ -67,9 +75,17 @@ pub use controller::bootstrap::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BluetoothPublicDeviceAddress, BootstrapCommand,
     BootstrapCommandCompleteEvent, BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase,
     LeControllerBootstrap, LeControllerBootstrapConfig, OwnedBootstrapCommand,
+    le_controller_supported_commands,
 };
 pub use controller::classification::{
     LeControllerCommandClassification, classify_le_controller_command,
+};
+pub use controller::le::acl::{
+    LE_ACL_DATA_PACKET_CAPACITY, LE_CONTROLLER_ACL_PACKET_CAPACITY,
+    LE_HOST_COMPLETED_PACKETS_ERROR_EVENT_CAPACITY, LE_NUMBER_OF_COMPLETED_PACKETS_EVENT_CAPACITY,
+    LeControllerAclPacket, LeControllerToHostAclProfile, LeHostAclFragment, LeHostAclPacket,
+    LeHostAclPacketRejection, LeHostCompletedPacketsCommand, LeHostCompletedPacketsErrorEvent,
+    LeNumberOfCompletedPacketsEvent,
 };
 pub(crate) use controller::le::advertising::LeLegacyAdvertisingIdleEnableDisposition;
 pub use controller::le::advertising::{
@@ -92,9 +108,17 @@ pub use controller::le::dtm::{
     LeTransmitterTestCommand,
 };
 pub use controller::le::peripheral::{
+    LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY, LE_DISCONNECT_COMMAND_STATUS_EVENT_CAPACITY,
     LE_DISCONNECTION_COMPLETE_EVENT_CAPACITY, LE_PERIPHERAL_CONNECTION_COMPLETE_EVENT_CAPACITY,
-    LeDisconnectionCompleteEvent, LePeripheralConnectionCompleteEvent,
-    LePeripheralConnectionCompleteEventError,
+    LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY,
+    LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY,
+    LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY,
+    LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY, LeConnectionUpdateCompleteEvent,
+    LeDisconnectCommand, LeDisconnectCommandStatusEvent, LeDisconnectionCompleteEvent,
+    LePeripheralConnectionCompleteEvent, LePeripheralConnectionCompleteEventError,
+    LeReadRemoteFeaturesCommand, LeReadRemoteFeaturesCommandStatusEvent,
+    LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCommand,
+    LeReadRemoteVersionInformationCommandStatusEvent, LeReadRemoteVersionInformationCompleteEvent,
 };
 pub use controller::le::scanning::{
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
@@ -105,13 +129,16 @@ pub use controller::le::scanning::{
     LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use controller::order::{
-    LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
-    LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
-    LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
-    LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingDisable,
+    LeControllerAcceptedDisconnect, LeControllerActiveDtmCommandRoute,
+    LeControllerActiveLegacyAdvertisingCommandRoute, LeControllerActiveLegacyScanningCommandRoute,
+    LeControllerActivePeripheralCommandRoute, LeControllerActivePeripheralIntake,
+    LeControllerClassifiedCommand, LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
+    LeControllerCommandReady, LeControllerDeferredDisconnect, LeControllerDeferredDtmCommand,
+    LeControllerDeferredLegacyAdvertisingDisable,
     LeControllerDeferredLegacyConnectableAdvertisingStart,
     LeControllerDeferredLegacyNonconnectableAdvertisingStart,
     LeControllerDeferredLegacyScanningDisable, LeControllerDeferredLegacyScanningStart,
+    LeControllerDeferredReadRemoteFeatures, LeControllerDeferredReadRemoteVersionInformation,
     LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
     LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
@@ -125,10 +152,11 @@ pub use controller::{
     LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
     LePeripheralConnectionEventPublication,
 };
-pub use transport::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
 pub(crate) use transport::{
-    HciClassifiedCommandIntake, InProcessHciChannel, InProcessHciControllerEndpoint,
+    HciActivePeripheralIntake, HciClassifiedCommandIntake, InProcessHciChannel,
+    InProcessHciControllerEndpoint,
 };
+pub use transport::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
 
 pub use transport::{
     ControllerToHostQueue, ControllerToHostQueueError, INITIAL_CONTROLLER_TO_HOST_PACKET_CAPACITY,

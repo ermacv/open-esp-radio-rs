@@ -22,8 +22,8 @@ use std::task::Waker;
 
 use super::LegacyConnectableAdvertisingRecurringHci as Recurring;
 
-type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
-type Endpoints<'epoch> = LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 45>;
+type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 80>;
+type Endpoints<'epoch> = LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 80>;
 
 // Only the radio phase is replaced. HCI authority, classification,
 // publication and queue capacity all use the production implementation.
@@ -64,7 +64,7 @@ fn response<'epoch>(
     ready: LeControllerCommandReady<'epoch, ()>,
 ) -> LeControllerResponsePending<'epoch, ()> {
     block_on(endpoints.host.write(&LeTestEnd::new())).unwrap();
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     let LeControllerCommandIntake::Command { command, .. } = endpoints
         .controller
         .try_receive_classified_command_with_buffer(ready, &mut buffer)
@@ -80,7 +80,7 @@ fn response<'epoch>(
 }
 
 fn read_response(endpoints: &Endpoints<'_>) {
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     let ControllerToHostPacket::Event(event) = block_on(endpoints.host.read(&mut buffer)).unwrap()
     else {
         panic!("the response is an HCI event");
@@ -92,7 +92,7 @@ fn read_response(endpoints: &Endpoints<'_>) {
 }
 
 fn assert_queue_empty(endpoints: &Endpoints<'_>) {
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     let mut read = pin!(
         endpoints
             .host

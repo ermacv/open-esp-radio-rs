@@ -464,7 +464,7 @@ async-not-applicable = "pure-finite-state-transition"
 [[capabilities]]
 id = "portable-peripheral-connection"
 title = "Portable legacy LE peripheral connection admission"
-scope = "Exact CONNECT_IND decode intrinsic uncoded Access Address validation first-window recurring interval latency and supervision relation validation bounded data-channel map negotiated CSA one or two event selection and affine prepare cancel submit complete progression without a hardware or executor dependency"
+scope = "Exact CONNECT_IND decode intrinsic uncoded Access Address validation first-window recurring interval latency and supervision relation validation bounded data-channel map negotiated CSA one or two event selection affine prepare cancel submit complete progression and mutually exclusive pending Central Connection Update or Channel Map Update applied at its exact wrapping instant without a hardware or executor dependency"
 implementation = "complete"
 host = "covered"
 async = "not-applicable"
@@ -514,7 +514,7 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md",
 ]
 gaps = [
-  { axis = "implementation", id = "s31-peripheral-event-reliability-supervision-and-llcp-missing" },
+  { axis = "implementation", id = "initial-establishment-window-policy-other-procedure-timers-and-encryption-missing" },
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
@@ -524,7 +524,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection and portable opaque deferred DTM RX and TX completion domain plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified idle-graph recovery whose neutral shutdown cancellation owners expose no HCI completion edge whose unchanged pre-RUN HEAD-publication and scheduler-start rejections remain actor-owned explicit retries and whose prepared-cancellation-rejected and head-published shutdown runners become opaque non-runnable fail-stop owners and which retains fail-stop ownership for invariant orphan identity list ownership and post-HEAD failures exhaustive active-command classification ordered terminal busy and bootstrap responses chip-private Reset quiescence and restoration Test End progression and one target-only sole command actor whose successful response publication returns one opaque ESP32-S31 IdleCommandTask"
+scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features and Read Remote Version Information transitions bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -533,11 +533,11 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "link-layer-and-acl-router-missing" },
+  { axis = "implementation", id = "remaining-connected-llcp-and-powered-lifecycle-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "unrelated-dispatch-and-acl-credit-selection-missing" },
+  { axis = "async", id = "unrelated-finished-list-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -552,7 +552,7 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "link-layer-runtime-missing" },
+  { axis = "implementation", id = "initial-establishment-window-and-powered-lifecycle-runtime-missing" },
   { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
   { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
@@ -563,13 +563,12 @@ gaps = [
 id = "trouble-host-integration"
 title = "Trouble BLE Host integration"
 scope = "Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
 async = "incomplete"
 depends-on = ["typed-hci-controller", "async-controller-runtime"]
 vendor-not-applicable = "upstream-open-host-integration"
 gaps = [
-  { axis = "implementation", id = "production-trouble-runner-and-gatt-example-missing" },
   { axis = "hil", id = "trouble-gatt-interoperability-cell-missing" },
   { axis = "async", id = "trouble-runner-lifecycle-and-shutdown-missing" },
 ]

@@ -17,7 +17,7 @@ helper="$repository_root/target/debug/open-radio-bluetooth"
 test -x "$helper"
 
 # Validate before replacing the active grant. The executable accepts only a
-# finite operations with validated adapter/address/delay arguments; it exposes
+# finite operation set with validated adapter/address/delay arguments; it exposes
 # no arbitrary HCI API, shell command or output path.
 candidate=$(mktemp)
 trap 'rm -f "$candidate"' EXIT HUP INT TERM

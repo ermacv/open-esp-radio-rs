@@ -3,8 +3,10 @@ use bt_hci::{
         Cmd, Opcode, OpcodeGroup,
         controller_baseband::{Reset, SetEventMask},
         le::{
-            LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr, LeSetScanResponseData,
+            LeReadRemoteFeatures, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr,
+            LeSetScanResponseData,
         },
+        link_control::{Disconnect, ReadRemoteVersionInformation},
     },
     param::{BdAddr, Error as HciError, EventMask, Status},
 };
@@ -14,9 +16,85 @@ use crate::{
     BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapPhase, HciCommandPacket,
     LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE, LE_TEST_END_OPCODE,
     LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE, LeControllerBootstrap,
-    LeControllerBootstrapConfig, LeDtmCommand, LeLegacyAdvertisingConfigurationCommand,
-    OwnedBootstrapCommand,
+    LeControllerBootstrapConfig, LeDisconnectCommand, LeDtmCommand,
+    LeLegacyAdvertisingConfigurationCommand, OwnedBootstrapCommand,
 };
+
+#[test]
+fn disconnect_is_owned_and_malformed_input_keeps_command_status_semantics() {
+    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+        Disconnect::OPCODE,
+        &[1, 0, 0x13],
+    ));
+    let LeControllerCommandClassification::Disconnect(command) = classified else {
+        panic!("valid Disconnect did not become a semantic command");
+    };
+    assert_eq!(command.handle().raw(), 1);
+    assert_eq!(command.reason(), 0x13);
+
+    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+        LeDisconnectCommand::OPCODE,
+        &[1, 0, 0x16],
+    ));
+    let LeControllerCommandClassification::MalformedDisconnect(response) = malformed else {
+        panic!("invalid reason escaped the Disconnect command family");
+    };
+    assert_eq!(
+        response.status(),
+        HciError::INVALID_HCI_PARAMETERS.to_status()
+    );
+}
+
+#[test]
+fn read_remote_features_is_classified_before_the_closed_bootstrap_table() {
+    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+        LeReadRemoteFeatures::OPCODE,
+        &[1, 0],
+    ));
+    let LeControllerCommandClassification::ReadRemoteFeatures(command) = classified else {
+        panic!("valid remote-feature request did not retain its semantic command");
+    };
+    assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
+
+    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+        LeReadRemoteFeatures::OPCODE,
+        &[1],
+    ));
+    let LeControllerCommandClassification::MalformedReadRemoteFeatures(response) = malformed else {
+        panic!("malformed remote-feature request escaped its command family");
+    };
+    assert_eq!(
+        response.status(),
+        HciError::INVALID_HCI_PARAMETERS.to_status()
+    );
+}
+
+#[test]
+fn read_remote_version_is_classified_before_the_closed_bootstrap_table() {
+    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+        ReadRemoteVersionInformation::OPCODE,
+        &[1, 0],
+    ));
+    let LeControllerCommandClassification::ReadRemoteVersionInformation(command) = classified
+    else {
+        panic!("valid remote-version request did not retain its semantic command");
+    };
+    assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
+
+    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+        ReadRemoteVersionInformation::OPCODE,
+        &[1],
+    ));
+    let LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) =
+        malformed
+    else {
+        panic!("malformed remote-version request escaped its command family");
+    };
+    assert_eq!(
+        response.status(),
+        HciError::INVALID_HCI_PARAMETERS.to_status()
+    );
+}
 
 #[test]
 fn bootstrap_command_is_owned_without_advancing_software_state() {

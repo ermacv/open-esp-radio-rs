@@ -334,6 +334,35 @@ pub enum LeConnectionTimingError {
     SupervisionTimeoutTooShort,
 }
 
+/// Timing change applied by a Central Connection Update at one exact instant.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeConnectionTimingTransition {
+    previous: LeConnectionTiming,
+    updated: LeConnectionTiming,
+    instant: u16,
+}
+
+impl LeConnectionTimingTransition {
+    pub const fn previous(self) -> LeConnectionTiming {
+        self.previous
+    }
+
+    pub const fn updated(self) -> LeConnectionTiming {
+        self.updated
+    }
+
+    pub const fn instant(self) -> u16 {
+        self.instant
+    }
+
+    /// Whether the three Host-visible connection parameters changed.
+    pub const fn host_parameters_changed(self) -> bool {
+        self.previous.interval != self.updated.interval
+            || self.previous.peripheral_latency != self.updated.peripheral_latency
+            || self.previous.supervision_timeout != self.updated.supervision_timeout
+    }
+}
+
 /// Complete semantic value carried by one legacy `CONNECT_IND` PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeLegacyConnectionRequest {
@@ -537,6 +566,13 @@ impl LeChannelSelectionAlgorithmTwo {
             self.channel_map.remap(remapping_index)
         }
     }
+
+    const fn with_channel_map(self, channel_map: LeDataChannelMap) -> Self {
+        Self {
+            channel_identifier: self.channel_identifier,
+            channel_map,
+        }
+    }
 }
 
 const fn permute(value: u16) -> u16 {
@@ -555,6 +591,21 @@ enum ConnectionChannelSelector {
 }
 
 impl ConnectionChannelSelector {
+    const fn with_channel_map(self, channel_map: LeDataChannelMap) -> Self {
+        match self {
+            Self::One {
+                hop_increment,
+                last_unmapped,
+                ..
+            } => Self::One {
+                channel_map,
+                hop_increment,
+                last_unmapped,
+            },
+            Self::Two(selector) => Self::Two(selector.with_channel_map(channel_map)),
+        }
+    }
+
     const fn preview(self, event_counter: u16) -> (LeDataChannelIndex, u8) {
         match self {
             Self::One {
@@ -608,6 +659,34 @@ impl ConnectionChannelSelector {
             Self::Two(selector) => Self::Two(selector),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingChannelMapUpdate {
+    channel_map: LeDataChannelMap,
+    instant: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingConnectionUpdate {
+    timing: LeConnectionTiming,
+    instant: u16,
+}
+
+/// Why a peer Channel Map Update cannot enter the pending instant owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralChannelMapUpdateError {
+    InstantPassed,
+    ProcedureAlreadyPending,
+    IncompatibleProcedurePending,
+}
+
+/// Why a peer Connection Update cannot enter the pending instant owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralConnectionUpdateError {
+    InstantPassed,
+    ProcedureAlreadyPending,
+    IncompatibleProcedurePending,
 }
 
 /// Portable connection-establishment state retained between radio events.
@@ -698,6 +777,8 @@ pub struct LePeripheralConnection {
     initial_transmit_window_pending: bool,
     selector: ConnectionChannelSelector,
     state: LePeripheralConnectionState,
+    pending_channel_map: Option<PendingChannelMapUpdate>,
+    pending_connection_update: Option<PendingConnectionUpdate>,
 }
 
 impl LePeripheralConnection {
@@ -731,6 +812,8 @@ impl LePeripheralConnection {
             initial_transmit_window_pending: true,
             selector,
             state: LePeripheralConnectionState::Created,
+            pending_channel_map: None,
+            pending_connection_update: None,
         }
     }
 
@@ -776,12 +859,83 @@ impl LePeripheralConnection {
 
     /// Prepare one exact event without advancing channel or counter state.
     pub const fn prepare_event(self) -> LePeripheralConnectionEventPrepared {
-        let (channel, unmapped) = self.selector.preview(self.event_counter);
+        let mut connection = self;
+        let channel_map_updated =
+            connection.apply_channel_map_for_target(connection.event_counter, 0);
+        let connection_timing_transition =
+            connection.apply_connection_update_for_target(connection.event_counter, 0);
+        let (channel, unmapped) = connection.selector.preview(connection.event_counter);
         LePeripheralConnectionEventPrepared {
-            connection: self,
+            connection,
             channel,
             unmapped,
+            channel_map_updated,
+            connection_timing_transition,
         }
+    }
+
+    const fn channel_map_update_for_target(
+        &self,
+        target: u16,
+        skipped: u16,
+    ) -> Option<PendingChannelMapUpdate> {
+        let update = match self.pending_channel_map {
+            Some(update) => update,
+            None => return None,
+        };
+        let source = target.wrapping_sub(skipped);
+        if update.instant.wrapping_sub(source) <= skipped {
+            Some(update)
+        } else {
+            None
+        }
+    }
+
+    const fn apply_channel_map_for_target(&mut self, target: u16, skipped: u16) -> bool {
+        if let Some(update) = self.channel_map_update_for_target(target, skipped) {
+            self.selector = self.selector.with_channel_map(update.channel_map);
+            self.request.channel_map = update.channel_map;
+            self.pending_channel_map = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    const fn connection_update_for_target(
+        &self,
+        target: u16,
+        skipped: u16,
+    ) -> Option<PendingConnectionUpdate> {
+        let update = match self.pending_connection_update {
+            Some(update) => update,
+            None => return None,
+        };
+        let source = target.wrapping_sub(skipped);
+        if update.instant.wrapping_sub(source) <= skipped {
+            Some(update)
+        } else {
+            None
+        }
+    }
+
+    const fn apply_connection_update_for_target(
+        &mut self,
+        target: u16,
+        skipped: u16,
+    ) -> Option<LeConnectionTimingTransition> {
+        let update = match self.connection_update_for_target(target, skipped) {
+            Some(update) => update,
+            None => return None,
+        };
+        let transition = LeConnectionTimingTransition {
+            previous: self.request.timing,
+            updated: update.timing,
+            instant: update.instant,
+        };
+        self.request.timing = update.timing;
+        self.pending_connection_update = None;
+        Some(transition)
     }
 }
 
@@ -792,6 +946,8 @@ pub struct LePeripheralConnectionEventPrepared {
     connection: LePeripheralConnection,
     channel: LeDataChannelIndex,
     unmapped: u8,
+    channel_map_updated: bool,
+    connection_timing_transition: Option<LeConnectionTimingTransition>,
 }
 
 impl LePeripheralConnectionEventPrepared {
@@ -863,6 +1019,8 @@ impl LePeripheralConnectionEventInFlight {
             mut connection,
             channel,
             unmapped,
+            channel_map_updated,
+            connection_timing_transition,
         } = self.prepared;
         let event_counter = connection.event_counter;
         connection.selector = connection.selector.complete(unmapped);
@@ -893,6 +1051,8 @@ impl LePeripheralConnectionEventInFlight {
             event_counter,
             channel,
             peer_activity,
+            channel_map_updated,
+            connection_timing_transition,
         }
     }
 }
@@ -905,6 +1065,8 @@ pub struct LePeripheralConnectionEventCompleted {
     event_counter: u16,
     channel: LeDataChannelIndex,
     peer_activity: LePeripheralConnectionEventPeerActivity,
+    channel_map_updated: bool,
+    connection_timing_transition: Option<LeConnectionTimingTransition>,
 }
 
 impl LePeripheralConnectionEventCompleted {
@@ -933,6 +1095,11 @@ impl LePeripheralConnectionEventCompleted {
         self.connection.state
     }
 
+    /// Connection parameters applied by the event which just closed.
+    pub const fn connection_timing_transition(&self) -> Option<LeConnectionTimingTransition> {
+        self.connection_timing_transition
+    }
+
     /// Whether six initial connection events have closed without a peer packet.
     ///
     /// Core Vol 6, Part B, 4.5.2 requires failed establishment after six events.
@@ -941,6 +1108,73 @@ impl LePeripheralConnectionEventCompleted {
     pub const fn establishment_failed(&self) -> bool {
         matches!(self.connection.state, LePeripheralConnectionState::Created)
             && self.event_counter >= 5
+    }
+
+    /// Stage a valid Central Channel Map Update until its connection instant.
+    pub fn schedule_channel_map_update(
+        &mut self,
+        channel_map: LeDataChannelMap,
+        instant: u16,
+    ) -> Result<(), LePeripheralChannelMapUpdateError> {
+        if self.connection.pending_channel_map.is_some() {
+            return Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending);
+        }
+        if self.channel_map_updated {
+            return Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending);
+        }
+        if self.connection.pending_connection_update.is_some()
+            || self.connection_timing_transition.is_some()
+        {
+            return Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending);
+        }
+        let distance = instant.wrapping_sub(self.event_counter);
+        if distance >= 0x7fff {
+            return Err(LePeripheralChannelMapUpdateError::InstantPassed);
+        }
+        if distance == 0 {
+            self.connection.selector = self.connection.selector.with_channel_map(channel_map);
+            self.connection.request.channel_map = channel_map;
+            self.channel_map_updated = true;
+            return Ok(());
+        }
+        self.connection.pending_channel_map = Some(PendingChannelMapUpdate {
+            channel_map,
+            instant,
+        });
+        Ok(())
+    }
+
+    /// Stage a valid Central Connection Update until its connection instant.
+    pub fn schedule_connection_update(
+        &mut self,
+        timing: LeConnectionTiming,
+        instant: u16,
+    ) -> Result<(), LePeripheralConnectionUpdateError> {
+        if self.connection.pending_connection_update.is_some() {
+            return Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending);
+        }
+        if self.connection_timing_transition.is_some() {
+            return Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending);
+        }
+        if self.connection.pending_channel_map.is_some() || self.channel_map_updated {
+            return Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending);
+        }
+        let distance = instant.wrapping_sub(self.event_counter);
+        if distance >= 0x7fff {
+            return Err(LePeripheralConnectionUpdateError::InstantPassed);
+        }
+        if distance == 0 {
+            self.connection_timing_transition = Some(LeConnectionTimingTransition {
+                previous: self.connection.request.timing,
+                updated: timing,
+                instant,
+            });
+            self.connection.request.timing = timing;
+            return Ok(());
+        }
+        self.connection.pending_connection_update =
+            Some(PendingConnectionUpdate { timing, instant });
+        Ok(())
     }
 
     /// Preview a recurring event without advancing the retained LL owner.
@@ -955,13 +1189,35 @@ impl LePeripheralConnectionEventCompleted {
     ) -> LePeripheralConnectionRecurringEventProvisional {
         let skipped = delta.skipped();
         let event_counter = self.connection.event_counter.wrapping_add(skipped);
-        let selector = self.connection.selector.skip(skipped);
+        let mut selector = self.connection.selector.skip(skipped);
+        let channel_map_update = self
+            .connection
+            .channel_map_update_for_target(event_counter, skipped);
+        if let Some(update) = channel_map_update {
+            selector = selector.with_channel_map(update.channel_map);
+        }
         let (channel, _) = selector.preview(event_counter);
+        let connection_timing_transition = match self
+            .connection
+            .connection_update_for_target(event_counter, skipped)
+        {
+            Some(update) => Some(LeConnectionTimingTransition {
+                previous: self.connection.request.timing,
+                updated: update.timing,
+                instant: update.instant,
+            }),
+            None => None,
+        };
         LePeripheralConnectionRecurringEventProvisional {
             completed: self,
             delta,
             event_counter,
             channel,
+            channel_map_update_instant: match channel_map_update {
+                Some(update) => Some(update.instant),
+                None => None,
+            },
+            connection_timing_transition,
         }
     }
 
@@ -979,6 +1235,8 @@ pub struct LePeripheralConnectionRecurringEventProvisional {
     delta: LePeripheralConnectionEventDelta,
     event_counter: u16,
     channel: LeDataChannelIndex,
+    channel_map_update_instant: Option<u16>,
+    connection_timing_transition: Option<LeConnectionTimingTransition>,
 }
 
 impl LePeripheralConnectionRecurringEventProvisional {
@@ -998,8 +1256,25 @@ impl LePeripheralConnectionRecurringEventProvisional {
         self.channel
     }
 
+    /// Channel Map Update instant crossed by this provisional event.
+    pub const fn channel_map_update_instant(&self) -> Option<u16> {
+        self.channel_map_update_instant
+    }
+
     pub const fn timing(&self) -> LeConnectionTiming {
-        self.completed.connection.request.timing
+        match self.connection_timing_transition {
+            Some(transition) => transition.updated,
+            None => self.completed.connection.request.timing,
+        }
+    }
+
+    pub const fn connection_state(&self) -> LePeripheralConnectionState {
+        self.completed.connection_state()
+    }
+
+    /// Timing transition which must shape this instant event's scheduler window.
+    pub const fn connection_timing_transition(&self) -> Option<LeConnectionTimingTransition> {
+        self.connection_timing_transition
     }
 
     /// Reject lower admission and recover the exact completed-event owner.
@@ -1014,16 +1289,23 @@ impl LePeripheralConnectionRecurringEventProvisional {
             delta,
             event_counter,
             channel,
+            channel_map_update_instant: _,
+            connection_timing_transition: _,
         } = self;
         let skipped = delta.skipped();
         let mut connection = completed.connection;
         connection.event_counter = event_counter;
         connection.selector = connection.selector.skip(skipped);
+        let channel_map_updated = connection.apply_channel_map_for_target(event_counter, skipped);
+        let connection_timing_transition =
+            connection.apply_connection_update_for_target(event_counter, skipped);
         let (_, unmapped) = connection.selector.preview(event_counter);
         LePeripheralConnectionEventPrepared {
             connection,
             channel,
             unmapped,
+            channel_map_updated,
+            connection_timing_transition,
         }
     }
 }

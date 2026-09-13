@@ -194,9 +194,13 @@ impl LeTxBufferHeaderStorage {
         self.read_word(3) & 0x8000_0000 != 0
     }
 
-    pub(super) fn mark_complete_control_packet(&self) {
-        // Software completion metadata: end of packet and LL control PDU.
-        self.words[4].set(self.read_word(4) | 6);
+    pub(super) fn mark_complete_connection_packet(&self, llid: u8) {
+        assert!(
+            (1..=3).contains(&llid),
+            "connection TX requires a valid LLID"
+        );
+        // Software completion metadata: end of packet plus the two-bit LLID.
+        self.words[4].set(self.read_word(4) | u32::from(llid << 1));
     }
 
     /// Retain the hardware cursor after acknowledging the packet to software.

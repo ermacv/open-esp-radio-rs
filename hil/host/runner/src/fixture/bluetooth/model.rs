@@ -114,7 +114,7 @@ impl std::fmt::Display for PeerAddress {
     }
 }
 
-/// Command-level evidence; Reset timing does not prove an on-air loss boundary.
+/// Central-side connection, ACL echo and Reset evidence for one bounded operation.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConnectionReset {
@@ -125,6 +125,10 @@ pub(crate) struct ConnectionReset {
     pub(crate) initial_powered: Option<bool>,
     pub(crate) initial_soft_blocked: Option<bool>,
     pub(crate) connection_complete: bool,
+    pub(crate) acl_sent: bool,
+    pub(crate) acl_echo_received: bool,
+    pub(crate) acl_payload_bytes: Option<u16>,
+    pub(crate) acl_echo_after_micros: Option<u64>,
     pub(crate) reset_completed: bool,
     pub(crate) connection_after_micros: Option<u64>,
     pub(crate) reset_after_connection_micros: Option<u64>,
@@ -135,13 +139,17 @@ pub(crate) struct ConnectionReset {
 impl ConnectionReset {
     pub(crate) fn new(adapter: Adapter, peer: PeerAddress, hold_ms: u16) -> Self {
         Self {
-            schema: 1,
+            schema: 2,
             adapter: adapter.to_string(),
             peer: peer.to_string(),
             hold_ms,
             initial_powered: None,
             initial_soft_blocked: None,
             connection_complete: false,
+            acl_sent: false,
+            acl_echo_received: false,
+            acl_payload_bytes: None,
+            acl_echo_after_micros: None,
             reset_completed: false,
             connection_after_micros: None,
             reset_after_connection_micros: None,
@@ -151,7 +159,7 @@ impl ConnectionReset {
     }
 
     pub(crate) fn passed(&self, adapter: Adapter, peer: PeerAddress, hold_ms: u16) -> bool {
-        self.schema == 1
+        self.schema == 2
             && self.adapter == adapter.to_string()
             && self.peer == peer.to_string()
             && self.hold_ms == hold_ms
@@ -159,6 +167,10 @@ impl ConnectionReset {
             && self.initial_powered.is_some()
             && self.initial_soft_blocked.is_some()
             && self.connection_complete
+            && self.acl_sent
+            && self.acl_echo_received
+            && self.acl_payload_bytes == Some(12)
+            && self.acl_echo_after_micros.is_some()
             && self.reset_completed
             && self.connection_after_micros.is_some()
             && self.reset_after_connection_micros.is_some()
@@ -218,12 +230,19 @@ mod connection_reset_tests {
         report.initial_powered = Some(false);
         report.initial_soft_blocked = Some(true);
         report.connection_complete = true;
+        report.acl_sent = true;
+        report.acl_echo_received = true;
+        report.acl_payload_bytes = Some(12);
+        report.acl_echo_after_micros = Some(200);
         report.connection_after_micros = Some(100);
         report.reset_after_connection_micros = Some(1);
         report.reset_completed = true;
         assert!(!report.passed(adapter, peer, 0));
         report.restored = true;
         assert!(report.passed(adapter, peer, 0));
+        report.schema = 1;
+        assert!(!report.passed(adapter, peer, 0));
+        report.schema = 2;
         assert!(!report.passed(adapter, peer, 1));
         assert!(!report.passed(Adapter(1), peer, 0));
         assert!(!report.passed(adapter, "30:ED:A0:F3:F6:D2".parse().unwrap(), 0));

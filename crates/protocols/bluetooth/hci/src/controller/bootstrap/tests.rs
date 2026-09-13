@@ -5,7 +5,7 @@ use bt_hci::{
         controller_baseband::{
             HostBufferSize, Reset, SetControllerToHostFlowControl, SetEventMask, SetEventMaskPage2,
         },
-        info::ReadBdAddr,
+        info::{ReadBdAddr, ReadLocalSupportedCmds},
         le::{
             LeReadBufferSize, LeReadFilterAcceptListSize, LeReadLocalSupportedFeatures,
             LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
@@ -14,7 +14,7 @@ use bt_hci::{
     controller::{Controller, ExternalController},
     event::{CommandComplete, CommandCompleteWithStatus, EventKind},
     param::{
-        BdAddr, ControllerToHostFlowControl, Error as HciError, EventMask, EventMaskPage2,
+        BdAddr, CmdMask, ControllerToHostFlowControl, Error as HciError, EventMask, EventMaskPage2,
         LeEventMask, Status,
     },
     transport::{PacketToController, Transport},
@@ -38,9 +38,9 @@ use super::{
     command_error,
 };
 
-type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 32>;
-type TestHost<'channel> = InProcessHciHostTransport<'channel, NoopRawMutex, 1, 1, 32>;
-type TestController<'channel> = InProcessHciControllerEndpoint<'channel, NoopRawMutex, 1, 1, 32>;
+type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 80>;
+type TestHost<'channel> = InProcessHciHostTransport<'channel, NoopRawMutex, 1, 1, 80>;
+type TestController<'channel> = InProcessHciControllerEndpoint<'channel, NoopRawMutex, 1, 1, 80>;
 
 struct TestPacket([u8; 64]);
 
@@ -200,10 +200,20 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
                 &host,
                 &controller,
                 &mut bootstrap,
+                &ReadLocalSupportedCmds::new(),
+            )
+            .await,
+            &super::le_controller_supported_commands(),
+        );
+        assert_success(
+            round_trip(
+                &host,
+                &controller,
+                &mut bootstrap,
                 &LeReadLocalSupportedFeatures::new(),
             )
             .await,
-            &[0; 8],
+            &[1 << 3, 0, 0, 0, 0, 0, 0, 0],
         );
 
         let advertising = round_trip(
@@ -300,7 +310,7 @@ fn external_controller_exec_completes_from_bootstrap_dispatch() {
         let reset = Reset::new();
         let mut event_buffer = external.alloc_buf().unwrap();
         let worker = async {
-            let mut command_buffer = [0; 32];
+            let mut command_buffer = [0; 80];
             let HostToControllerFrame::Command(command) =
                 controller.receive(&mut command_buffer).await.unwrap()
             else {
@@ -396,7 +406,7 @@ async fn drive_bootstrap_until(
     bootstrap: &mut LeControllerBootstrap,
     stop: &Signal<NoopRawMutex, ()>,
 ) {
-    let mut command_buffer = [0; 32];
+    let mut command_buffer = [0; 80];
     loop {
         let command = match select(stop.wait(), controller.receive(&mut command_buffer)).await {
             Either::First(()) => return,
@@ -494,6 +504,7 @@ fn capability_table_excludes_link_layer_and_optional_page_two_commands() {
         SetControllerToHostFlowControl::OPCODE,
         HostBufferSize::OPCODE,
         ReadBdAddr::OPCODE,
+        ReadLocalSupportedCmds::OPCODE,
         LeSetEventMask::OPCODE,
         LeReadBufferSize::OPCODE,
         LeReadLocalSupportedFeatures::OPCODE,
@@ -504,6 +515,62 @@ fn capability_table_excludes_link_layer_and_optional_page_two_commands() {
     }
     assert!(!BootstrapCommand::supports(SetEventMaskPage2::OPCODE));
     assert!(!BootstrapCommand::supports(LeSetAdvEnable::OPCODE));
+}
+
+#[test]
+fn supported_commands_report_matches_the_closed_operational_inventory() {
+    let config = LeControllerBootstrapConfig::new(
+        BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+        251,
+        4,
+    )
+    .unwrap();
+    let mut bootstrap = LeControllerBootstrap::new(config);
+    assert_eq!(
+        bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .status(),
+        Status::SUCCESS
+    );
+
+    let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadLocalSupportedCommands);
+    assert_eq!(response.opcode(), ReadLocalSupportedCmds::OPCODE);
+    assert_eq!(response.status(), Status::SUCCESS);
+    assert_eq!(response.as_bytes().len(), 70);
+    let mask = <&CmdMask>::from_hci_bytes_complete(&response.as_bytes()[6..]).unwrap();
+
+    assert!(mask.disconnect());
+    assert!(mask.read_remote_version_information());
+    assert!(mask.set_event_mask());
+    assert!(mask.reset());
+    assert!(mask.set_controller_to_host_flow_control());
+    assert!(mask.host_buffer_size());
+    assert!(mask.host_number_of_completed_packets());
+    assert!(mask.read_bd_addr());
+    assert!(mask.le_set_event_mask_v1());
+    assert!(mask.le_read_buffer_size_v1());
+    assert!(mask.le_read_local_supported_features());
+    assert!(mask.le_set_random_addr());
+    assert!(mask.le_set_adv_parameters());
+    assert!(mask.le_set_adv_data());
+    assert!(mask.le_set_scan_response_data());
+    assert!(mask.le_set_adv_enable());
+    assert!(mask.le_set_scan_parameters());
+    assert!(mask.le_set_scan_enable());
+    assert!(mask.le_read_filter_accept_list_size());
+    assert!(mask.le_read_remote_features());
+    assert!(mask.le_receiver_test_v1());
+    assert!(mask.le_transmitter_test_v1());
+    assert!(mask.le_test_end());
+    assert!(mask.le_receiver_test_v2());
+    assert!(mask.le_transmitter_test_v2());
+
+    assert!(!mask.inquiry());
+    assert!(!mask.read_local_supported_features());
+    assert!(!mask.le_read_adv_physical_channel_tx_power());
+    assert!(!mask.le_create_conn());
+    assert!(!mask.le_encrypt());
+    assert!(!mask.le_read_phy());
 }
 
 #[test]
@@ -524,13 +591,24 @@ fn bootstrap_config_rejects_profiles_without_acl_capacity() {
         ),
         Err(BootstrapConfigError::ZeroAclDataPacketCount)
     );
+    assert_eq!(
+        LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+            252,
+            1,
+        ),
+        Err(BootstrapConfigError::AclDataPacketLengthTooLarge {
+            length: 252,
+            maximum: 251,
+        })
+    );
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ObservedCommandComplete {
     opcode: Opcode,
     status: Status,
-    parameters: [u8; 8],
+    parameters: [u8; 64],
     parameter_length: usize,
 }
 
@@ -547,7 +625,7 @@ async fn round_trip<T: PacketToController>(
     command: &T,
 ) -> ObservedCommandComplete {
     host.write(command).await.unwrap();
-    let mut command_buffer = [0; 32];
+    let mut command_buffer = [0; 80];
     let HostToControllerFrame::Command(command) =
         controller.receive(&mut command_buffer).await.unwrap()
     else {
@@ -559,14 +637,14 @@ async fn round_trip<T: PacketToController>(
         .await
         .unwrap();
 
-    let mut event_buffer = [0; 32];
+    let mut event_buffer = [0; 80];
     let ControllerToHostPacket::Event(event) = host.read(&mut event_buffer).await.unwrap() else {
         panic!("Command Complete changed packet kind");
     };
     assert_eq!(event.kind, EventKind::CommandComplete);
     let event = CommandComplete::from_hci_bytes_complete(event.data).unwrap();
     let event: CommandCompleteWithStatus<'_> = event.try_into().unwrap();
-    let mut parameters = [0; 8];
+    let mut parameters = [0; 64];
     parameters[..event.return_param_bytes.len()].copy_from_slice(&event.return_param_bytes);
     ObservedCommandComplete {
         opcode: event.cmd_opcode,
@@ -586,6 +664,14 @@ fn dispatch_test_packet(
     command: HciCommandPacket<'_>,
 ) -> super::BootstrapCommandCompleteEvent {
     match classify_le_controller_command(command) {
+        LeControllerCommandClassification::Disconnect(_)
+        | LeControllerCommandClassification::MalformedDisconnect(_)
+        | LeControllerCommandClassification::ReadRemoteFeatures(_)
+        | LeControllerCommandClassification::MalformedReadRemoteFeatures(_)
+        | LeControllerCommandClassification::ReadRemoteVersionInformation(_)
+        | LeControllerCommandClassification::MalformedReadRemoteVersionInformation(_) => {
+            command_error(crate::LeDisconnectCommand::OPCODE, HciError::UNKNOWN_CMD)
+        }
         LeControllerCommandClassification::Bootstrap(command) => bootstrap.dispatch_owned(command),
         LeControllerCommandClassification::MalformedBootstrap(response) => response,
         LeControllerCommandClassification::Dtm(command) => {

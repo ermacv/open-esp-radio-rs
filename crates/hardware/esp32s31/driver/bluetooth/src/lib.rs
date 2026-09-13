@@ -8,8 +8,10 @@
 //!
 //! DTM, advertising and scanning have event lifecycles. Peripheral connection
 //! has a causal first-event path, active completion/recycle/recurrence and
-//! Host-visible establishment/teardown events. The reliable ACL dataplane is
-//! not yet integrated. Initialization and scheduler RUN are not RF evidence.
+//! Host-visible establishment/teardown events. The Host-to-Controller ACL path
+//! owns one HCI packet through legacy LL fragmentation, retransmission and
+//! completed-packet credit return; Controller-to-Host ACL remains unavailable.
+//! Initialization and scheduler RUN are not RF evidence.
 //!
 //! Shared single-item completion and timed preparation engines implement the
 //! common hardware protocol; RX/recycle and packet policy remain role-specific.

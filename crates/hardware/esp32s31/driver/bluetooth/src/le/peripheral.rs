@@ -3,6 +3,9 @@
 #[cfg(target_arch = "riscv32")]
 mod active;
 #[cfg(all(test, not(target_arch = "riscv32")))]
+#[path = "peripheral/active/acl.rs"]
+mod active_acl;
+#[cfg(all(test, not(target_arch = "riscv32")))]
 #[path = "peripheral/active/host_events.rs"]
 mod active_host_events;
 #[cfg(target_arch = "riscv32")]
@@ -10,10 +13,16 @@ pub(crate) mod completion;
 pub(crate) mod connection;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod first_hci;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod procedure;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod recovery;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod start;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod supervision;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod termination;
 
 #[cfg(target_arch = "riscv32")]
 pub use connection::PeripheralConnectionPacketStartTiming;
@@ -63,10 +72,15 @@ pub use start::{
 };
 
 #[cfg(target_arch = "riscv32")]
+pub(crate) use active::acl::PeripheralConnectionAcl;
+#[cfg(target_arch = "riscv32")]
 pub use active::{
     PeripheralConnectionActiveFault, PeripheralConnectionActiveFaultCause,
     PeripheralConnectionActiveSession, PeripheralConnectionActiveStep,
-    PeripheralConnectionActiveWait, PeripheralConnectionHostEventPublication,
+    PeripheralConnectionActiveWait, PeripheralConnectionCommandIntake,
+    PeripheralConnectionCommandMismatch, PeripheralConnectionCommandRoute,
+    PeripheralConnectionHostEventPublication, PeripheralConnectionResetBarrier,
+    PeripheralConnectionResetFault, PeripheralConnectionResetStep,
 };
 
 #[cfg(feature = "dtm-diagnostics")]

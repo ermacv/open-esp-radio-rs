@@ -116,31 +116,31 @@ remains outside the LE program.
 | Feature | Status | Current production boundary |
 | --- | --- | --- |
 | Broadcaster / Observer | PARTIAL | The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent. |
-| Peripheral | PARTIAL | `CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Central-initiated feature exchange has a bounded control-response path; reliable ACL, active commands and general LLCP remain unsupported. |
+| Peripheral | PARTIAL | `CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Central-initiated feature exchange, Connection Update and Channel Map Update have bounded control paths; active HCI command intake, Disconnect, Reset and bidirectional ACL are composed. Controller-to-Host delivery uses a bounded two-packet FIFO and Host-managed credits. General LLCP remains unsupported. |
 | Central / Initiator | ABSENT | No Create Connection/initiator scheduling or Central connection owner exists. |
 | Simultaneous Broadcaster + Observer + Central + Peripheral | ABSENT | Individual role subsets do not form a simultaneous multi-role runtime. |
 | Multiple connections / multi-connection optimization | ABSENT | No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists. |
 | `CONNECT_IND` decoding and admission | IMPLEMENTED | [Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only. |
 | First peripheral connection window | PARTIAL | Causal timestamp projection, window planning, SRAM preparation and first hardware `RUN` exist; a successful connection exchange is not established. |
-| Recurring peripheral events | PARTIAL | [Active lifecycle](src/le/peripheral/active.rs) drives completion, recycle, fresh controller time and contiguous successor RUN through lower recurrence. Requires an explicit local clock accuracy bound; no missed-anchor recovery or hardware timing qualification. |
+| Recurring peripheral events | PARTIAL | [Active lifecycle](src/le/peripheral/active.rs) drives completion, recycle, fresh controller time and successor RUN through lower recurrence. A guarded window missed before publication is cancelled and rebuilt directly at a later established event with accumulated widening. Requires an explicit local clock accuracy bound; initial establishment-window policy and hardware timing qualification remain open. |
 | Channel Selection Algorithm #1 | PARTIAL | Portable channel progression exists within the incomplete connection owner. |
 | Channel Selection Algorithm #2 | PARTIAL | Portable CSA#2 exists, but S31 connectable advertising marks local CSA#2 support unsupported and rejects requests requiring it. |
 | Peripheral latency | PARTIAL | Timing is validated and retained; live skip/recovery scheduling is not complete. |
-| Sleep Clock Accuracy / window widening | PARTIAL | Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned; arbitrary missed-event recovery is not established. |
+| Sleep Clock Accuracy / window widening | PARTIAL | Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned. Established pre-publication missed events advance the widening reference by their exact delta; initial establishment lateness and HIL behavior remain open. |
 | Establishment / supervision timeout | PARTIAL | Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. Abrupt RF loss and CRC-error behavior remain unqualified. |
-| Missed-event recovery | ABSENT | No complete connection resynchronization and accumulated-uncertainty policy exists. |
-| LL Data PDU RX | PARTIAL | Lower peripheral RX extraction and buffer recycling exist without a reliable recurring ACL link. |
-| LL Data PDU TX | PARTIAL | One controller control-PDU payload is retained through publication and descriptor completion; its cursor survives reclamation. ACL TX and general queueing are absent. |
+| Missed-event recovery | PARTIAL | Fresh Controller time detects an established event whose guarded start closed before RUN. The active owner cancels its unpublished reservation and rebuilds directly at a later event counter, preserving LL/TX ownership and accumulating widening across the full delta. Supervision and `T_terminate` bound recovery. Crossing a Connection Update or Channel Map Update instant retires with `0x28`. Initial establishment-window treatment and on-air qualification remain open. |
+| LL Data PDU RX | PARTIAL | Accepted nonempty LLID 1/2 payloads retain their L2CAP boundary in a bounded Controller-to-Host HCI ACL FIFO and split at the Host-declared ACL buffer length. Empty acknowledgements consume no slot. Host-managed credits are enforced. The peripheral recovery HIL workload requires one exact packet per connection, but no recorded hardware run qualifies it; DLE remains absent. |
+| LL Data PDU TX | PARTIAL | The single TX allocation retains control or Host ACL bytes through publication and peer acknowledgement. One 251-byte HCI ACL credit is fragmented into 27-byte legacy Data PDUs; the HCI queue retains later credited packets. The peripheral recovery HIL workload echoes one packet, but has no recorded hardware evidence. Multiple radio-resident packets and DLE remain absent. |
 | SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledgments | PARTIAL | The bounded control path preserves hardware sequence state and uncompleted TX packets; connection RX applies the reviewed acceptance gate. General ACL reliability is not qualified. |
-| LLCP framework | PARTIAL | A bounded peripheral responder queues feature and unknown responses. Procedure timers, general transaction collisions and mandatory live updates are absent. |
-| Connection Update / Channel Map Update | ABSENT | Initial parameters are retained; live negotiation, instant handling and application are absent. |
+| LLCP framework | PARTIAL | A bounded peripheral responder queues feature, version and unknown responses. Central Connection Update and Channel Map Update share a single pending instant-procedure boundary. Same-procedure and incompatible-procedure collisions are distinguished. Local termination has its dedicated supervision-duration timer; Peripheral-initiated Feature and Version Exchange share the 40-second `connProcedureTimeout`, which restarts whenever another LL Control PDU enters the TX graph. Other procedure response timers and LLCP procedures remain absent. |
+| Connection Update / Channel Map Update | PARTIAL | Validated Central `LL_CONNECTION_UPDATE_IND` and `LL_CHANNEL_MAP_IND` values survive scheduler cancellation and apply at their exact wrapping instants. Connection Update uses the old interval plus the new offset for the instant window, then the new interval; it resets supervision and emits LE Connection Update Complete only when interval, latency or timeout changes. Channel Map Update preserves CSA#1 state and updates CSA#1 or CSA#2 selection. Passed instants and procedure collisions request protocol termination; executor recovery crossing either instant retires with `0x28`. HIL qualification remains absent. |
 | PHY Update | ABSENT | No connected PHY negotiation/application owner exists; DTM selection does not implement LLCP. |
 | Data Length Extension / Data Length Update | ABSENT | No negotiated connected packet-length owner exists. |
-| Feature Exchange | PARTIAL | Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with zero optional feature bits. Peripheral-initiated exchange and remote-feature HCI routing are absent. |
-| Version Exchange | PARTIAL | A peer request receives at most one queued reply using the configured Controller identity; no identity is inferred from the chip. Host-initiated version routing is absent. |
+| Feature Exchange | IMPLEMENTED | Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with the used-feature octet intersected against the local mask. Host LE Read Remote Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, retains the request through TX-graph handoff and response, caches a successful page-zero result, reports unsupported peers with `0x1a`, and treats a 40-second response timeout as immediate connection loss with `0x22`. |
+| Version Exchange | IMPLEMENTED | Peer and Host-initiated exchanges share one configured Controller identity and queue at most one `LL_VERSION_IND` per connection. Read Remote Version Information publishes Command Status before LL admission, caches the peer identity, preserves reject and timeout status, and retains its masked completion under backpressure. Its 40-second procedure timer starts at the initiating TX graph update and restarts for each later queued LL Control PDU. A missing local identity is rejected rather than inferred from the chip. HIL interoperability remains absent. |
 | LE Ping | ABSENT | No ping procedure owner exists. |
-| Termination | PARTIAL | An accepted peer `LL_TERMINATE_IND` or supervision timeout retires the unlinked connection, publishes Disconnection Complete under the Host mask and only then restores idle HCI intake. Host-initiated termination is absent. |
-| Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps and CSA progression exist. Dynamic assessment and map updates are absent. |
+| Termination | PARTIAL | An accepted peer `LL_TERMINATE_IND` or supervision timeout retires the unlinked connection, publishes Disconnection Complete under the Host mask and only then restores idle HCI intake. Host Disconnect for the sole handle publishes Command Status, retains `LL_TERMINATE_IND` through retransmission and peer acknowledgment, and reports local-host termination (`0x16`). A fresh Controller sample immediately before first TX allocation arms `T_terminate` for the connection supervision timeout; expiry also retires the link. HIL evidence remains absent. |
+| Adaptive Frequency Hopping / channel assessment | PARTIAL | Initial channel maps, CSA progression and Central-initiated live map application exist. Local channel assessment and Controller-initiated map generation are absent. |
 | LE Channel Classification | ABSENT | No connected classification generation/report/update procedure exists. |
 
 ## Security and privacy
@@ -187,17 +187,18 @@ remains outside the LE program.
 | --- | --- | --- |
 | HCI Command / Event packets | IMPLEMENTED | Bounded in-process transport and typed dispatch own the current bootstrap, DTM and legacy advertising/scanning command/response subset. |
 | ACL / SCO / ISO packet framing | IMPLEMENTED | [Packet validation](../../../../protocols/bluetooth/hci/src/transport/packet.rs) recognizes standard packet kinds and declared lengths. This is framing only, not an operational data plane. |
-| HCI ACL routing and bidirectional flow control | ABSENT | No connected handle, radio queue or credit lifecycle exists. Bootstrap retains Host buffer/flow-control policy; non-command input is quarantined by the Controller composition. |
+| HCI ACL routing and bidirectional flow control | PARTIAL | Host packets for live handle `0x0001` enter one owned ACL slot, preserve HCI packet boundaries across 27-byte LL fragmentation, and return Number Of Completed Packets only after final acknowledgement or teardown cancellation. Foreign, invalid-boundary or profile-rejected data returns its consumed credit. Accepted Controller packets preserve LL start/continuation boundaries in a two-packet FIFO, cannot precede Connection Complete, fragment to Host Buffer Size and consume one Host credit per emitted HCI packet. Host Number Of Completed Packets restores bounded credits without a success event; flow-controlled output keeps command intake live even when the Host ACL owner is occupied, while an older pending normal response retains causal order. The peripheral recovery HIL workload correlates one exact bidirectional packet between a Linux central and the target Host, but no recorded hardware run qualifies it. |
 | HCI SCO / ISO data plane | ABSENT | Generic transport packet representations exist, but no synchronous/isochronous stream routes them to radio execution. |
 | HCI Reset | IMPLEMENTED | Software bootstrap reset and selected active-role reset coordination exist. Complete powered reconstruction remains separate. |
 | Event masks | PARTIAL | Bootstrap retains Host masks. Legacy advertising reports, LE Connection Complete and Disconnection Complete enforce their standard base/LE masks; the complete event inventory is not composed. |
+| Read Local Supported Commands | IMPLEMENTED | The standard 64-octet bitmap declares the closed production classifier's exact bootstrap, legacy advertising/scanning, DTM, connected Disconnect/remote-information and Host ACL-credit inventory. Unsupported neighboring commands remain clear. |
 | Public BD_ADDR / LE Read Buffer Size | IMPLEMENTED | Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support. |
 | LE Set Random Address | PARTIAL | Bootstrap retains the request; hardware application is role-specific and does not establish privacy. |
-| LE Read Local Supported Features command | IMPLEMENTED | [Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns eight zero feature bytes. The query itself is implemented. |
+| LE Read Local Supported Features command | IMPLEMENTED | [Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns only bit 3, Peripheral-initiated Feature Exchange. Every other optional feature bit remains clear. |
 | Optional LE capability advertisement | FAIL-CLOSED | All optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement. |
 | LE Read Filter Accept List Size | IMPLEMENTED | Configured capacity is reported; list operation remains absent. |
-| Connection handles / Connection Complete / Disconnection Complete | PARTIAL | The sole supported peripheral connection uses handle `0x0001`. Successful and failed establishment plus peer/timeout teardown publish standard events in causal order with bounded backpressure. ACL routing, Host termination and multiple-handle allocation remain absent. |
-| Trouble Host integration | PARTIAL | [Portable HCI tests](../../../../protocols/bluetooth/hci/Cargo.toml) use `bt-hci` 0.10.1 and development-only `trouble-host` 0.8.0 for bootstrap. No production Trouble runner or connected GATT interoperability composition exists. |
+| Connection handles / Connection Complete / Disconnection Complete | PARTIAL | The sole supported peripheral connection uses handle `0x0001`. Successful and failed establishment plus peer/timeout/Host teardown publish standard events in causal order with bounded backpressure. Foreign Disconnect handles return Unknown Connection Identifier; foreign Host ACL is discarded with credit return. Controller-to-Host ACL uses the same handle after Connection Complete; multiple-handle allocation remains absent. |
+| Trouble Host integration | PARTIAL | [Production composition](../../../../composition/esp32s31/embassy/bluetooth/src/trouble.rs) consumes the source-owned `bt-hci` Controller facade into a released `trouble-host` 0.8.0 stack with peripheral/GATT support and retains its exact hardware runner beside it. The [`trouble-gatt` standalone application](../../../../../examples/esp32s31-bluetooth-controller/README.md) builds that target composition with a bounded read/write GATT service. A portable integration test proves the affine ownership boundary, while the [typed-HCI tests](../../../../protocols/bluetooth/hci/src/controller/bootstrap/tests.rs) drive the real Trouble runner through bootstrap. Connected GATT interoperability still lacks HIL evidence. |
 ## Controller scheduling, power and lifetime
 
 | Feature | Status | Current production boundary |
@@ -287,11 +288,12 @@ SRAM or HCI packet types do not implement a Classic protocol/runtime owner.
 
 ## Capability advertisement
 
-`LE Read Local Supported Features` currently returns eight zero feature bytes.
+`LE Read Local Supported Features` currently returns only bit 3 for the complete
+Peripheral-initiated Feature Exchange path.
 Each optional bit requires the complete production Controller operation named
 by that feature. A recovered register, SRAM layout, portable parser, DTM-only
 PHY or vendor capability cannot grant advertisement. The command itself is
-implemented; its conservative result is not a claim of a complete Controller.
+implemented; its bounded result is not a claim of a complete Controller.
 
 ## Ownership
 
@@ -324,8 +326,17 @@ seal both owners in `PeripheralConnectionActiveFailStop`.
 supply the local clock accuracy bound. The default configuration leaves it
 unset and stops with `TimingPolicyUnavailable` when recurrence is attempted.
 The actor responds to central feature requests through a bounded TX queue.
-It does not consume active HCI commands, deliver ACL data, implement general
-LLCP, or implement arbitrary missed-event recovery. Established supervision uses the hardware valid-RX timestamp and retires the unlinked owner with `0x08`; abrupt RF loss remains unqualified. A compiled lifecycle does not establish a successful over-air link.
+It consumes active HCI commands and Host-to-Controller ACL packets. Accepted
+peer LL Data fragments enter a bounded Controller-to-Host ACL FIFO after
+Connection Complete and split to the Host-declared ACL buffer length.
+Host Number Of Completed Packets restores the bounded single-handle credits;
+the special command remains serialized behind an older pending normal response
+or retained Host ACL packet.
+Central Connection Update and Channel Map Update are retained to their wrapping
+connection instants; general LLCP and arbitrary missed-event recovery remain absent. Established
+supervision uses the hardware valid-RX timestamp and retires the unlinked owner
+with `0x08`; abrupt RF loss remains unqualified. A compiled lifecycle does not
+establish a successful over-air link.
 
 Lower recurrence requires a caller-owned local clock accuracy bound. Its
 software window widening does not establish arbitrary missed-event anchor

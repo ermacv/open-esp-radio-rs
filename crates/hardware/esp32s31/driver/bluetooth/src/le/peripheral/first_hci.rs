@@ -100,6 +100,21 @@ impl<'runtime, Owner> LegacyConnectablePeripheralFirstHciOrder<'runtime, Owner> 
         }
     }
 
+    pub(super) fn accepts_endpoint<
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> bool {
+        match self {
+            Self::CommandReady(ready) => ready.accepts_endpoint(controller),
+            Self::ResponsePending(pending) => pending.matches_endpoint(controller),
+        }
+    }
+
     pub(super) fn into_parts(
         self,
     ) -> (
@@ -623,6 +638,12 @@ where
                 response.owner().event_counter()
             }
         }
+    }
+
+    pub(crate) fn local_version_information(
+        &self,
+    ) -> Option<oer_bluetooth_ll::control::LeVersionInformation> {
+        self.order.owner().local_version_information()
     }
 
     /// Separate the running peripheral owner from its exact HCI-order axis.

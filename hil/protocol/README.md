@@ -1,6 +1,6 @@
-# HIL protocol v129
+# HIL protocol v130
 
-Host and firmware must both use version 129. Other versions are rejected
+Host and firmware must both use version 130. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
@@ -26,10 +26,12 @@ reset. Feature discovery identifies images implementing this diagnostic.
 `ADV_IND` on channel 37 through production HCI. `Snapshot` returns boot-lifetime
 advertising/peripheral RUN and disconnection counts, retries, the first terminal
 reason, and separately decoded Host-side Connection/Disconnection Complete
-counts. Invalid, out-of-order or profile-mismatched lifecycle events increment
-`host_event_faults`; the last decoded disconnection reason is retained.
-These are software publication observations; a peer observation is required
-to establish RF delivery. The start response includes the public address.
+counts. It also reports nonempty Controller-to-Host ACL packets, ACL echoes
+accepted back from the target Host, and ACL profile or queue faults. Invalid,
+out-of-order or profile-mismatched lifecycle events increment
+`host_event_faults`; the last decoded disconnection reason is retained. These
+are software publication observations; a correlated peer observation is
+required to establish RF delivery. The start response includes the public address.
 HCI rejection stages are Reset (0), address read (1), parameters (2), data (3)
 and enable (4).
 
@@ -38,8 +40,7 @@ DTM is rejected once the peripheral probe starts. Another advertising start is
 accepted only after the previous connection has reported idle restoration;
 that restart omits HCI Reset. The diagnostic detail includes the cumulative
 closed-connection count and last disconnect reason (including `0x3e` for
-failed establishment). Active LL Reset is not composed.
-The host ends the probe with a
+failed establishment). The host ends the probe with a
 board reset; after 30 seconds the target reports lease expiry and resets the
 whole board. A USB failure during the probe also resets the board. Neither
 path reports logical HCI quiescence. The default connection timing policy

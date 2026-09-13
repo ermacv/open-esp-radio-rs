@@ -469,11 +469,25 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             return None;
         }
         let epoch = (*self.scheduler_epoch)?;
+        let update_anchor = if completed
+            .link_layer_completion()
+            .connection_timing_transition()
+            .is_some()
+        {
+            Some(completed.recurring_phase().nominal_anchor())
+        } else {
+            None
+        };
+        let reference = crate::le::peripheral::supervision::supervision_reference(
+            crate::SchedulerInstant::from_image(
+                epoch.project_peripheral_receive_time(completed.receive_time()),
+            ),
+            update_anchor,
+            completed.packet_start().is_some(),
+        );
         Some(
             crate::le::peripheral::supervision::PeripheralSupervisionDeadline::new(
-                crate::SchedulerInstant::from_image(
-                    epoch.project_peripheral_receive_time(completed.receive_time()),
-                ),
+                reference,
                 completed
                     .link_layer_completion()
                     .timing()
@@ -489,13 +503,23 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         completed.retire(self.peripheral_connection_resources)
     }
 
+    pub(crate) fn peripheral_version_information(
+        &self,
+    ) -> Option<oer_bluetooth_ll::control::LeVersionInformation> {
+        self.peripheral_connection_resources
+            .config()
+            .version_information()
+    }
+
     pub(crate) fn process_peripheral_control(
         &mut self,
         completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
-    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
+        acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
+    ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
         completed.process_control(
             control,
+            acl,
             self.peripheral_connection_resources
                 .config()
                 .version_information(),
@@ -635,6 +659,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Fresh Controller time for arming a procedure immediately before its
+    /// transmit graph is mutated.
+    pub(crate) fn peripheral_current_instant(&self) -> crate::SchedulerInstant {
+        crate::SchedulerInstant::from_image(self.epoch.project_without_reanchor(&self.sample))
+    }
+
     pub(crate) fn check_peripheral_supervision(
         &self,
         deadline: crate::le::peripheral::supervision::PeripheralSupervisionDeadline,
@@ -646,6 +676,54 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 self.epoch
                     .project_peripheral_event_start(admitted.raw_window()),
             ),
+        )
+    }
+
+    pub(crate) fn check_peripheral_termination(
+        &self,
+        deadline: crate::le::peripheral::termination::PeripheralTerminationDeadline,
+        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+    ) -> crate::le::peripheral::termination::PeripheralTerminationDecision {
+        deadline.decide(
+            self.peripheral_current_instant(),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_start(admitted.raw_window()),
+            ),
+        )
+    }
+
+    pub(crate) fn check_peripheral_procedure(
+        &self,
+        deadline: crate::le::peripheral::procedure::PeripheralProcedureDeadline,
+        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+    ) -> crate::le::peripheral::procedure::PeripheralProcedureDecision {
+        deadline.decide(
+            self.peripheral_current_instant(),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_start(admitted.raw_window()),
+            ),
+        )
+    }
+
+    pub(crate) fn decide_peripheral_missed_anchor(
+        &self,
+        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+    ) -> crate::le::peripheral::recovery::PeripheralMissedAnchorDecision {
+        crate::le::peripheral::recovery::decide_missed_anchor(
+            admitted.connection_state(),
+            self.peripheral_current_instant(),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_start(admitted.raw_window()),
+            ),
+            self.controller
+                .runtime
+                .scheduler_config()
+                .late_start_guard_micros(),
+            admitted.timing().interval_micros(),
+            admitted.delta(),
         )
     }
 

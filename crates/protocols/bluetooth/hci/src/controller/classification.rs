@@ -4,14 +4,21 @@ use bt_hci::cmd::Opcode;
 
 use super::bootstrap::{BootstrapCommandDecodeError, invalid_parameters};
 
+use super::le::peripheral::{
+    LeDisconnectDecodeError, LeReadRemoteFeaturesDecodeError,
+    LeReadRemoteVersionInformationDecodeError,
+};
 use crate::{
-    BootstrapCommandCompleteEvent, HciCommandPacket, HciEpochBound, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
+    BootstrapCommandCompleteEvent, HciCommandPacket, HciEpochBound, LeDisconnectCommand,
+    LeDisconnectCommandStatusEvent, LeDtmCommand, LeDtmCommandCompleteEvent,
+    LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
     LeLegacyAdvertisingEnableCommand, LeLegacyScanningCommand,
     LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
-    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand, LeTestEndCommand,
-    OwnedBootstrapCommand, UnknownCommandCompleteEvent,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand,
+    LeReadRemoteFeaturesCommand, LeReadRemoteFeaturesCommandStatusEvent,
+    LeReadRemoteVersionInformationCommand, LeReadRemoteVersionInformationCommandStatusEvent,
+    LeTestEndCommand, OwnedBootstrapCommand, UnknownCommandCompleteEvent,
 };
 
 /// One finite result of classifying a validated HCI command packet.
@@ -24,6 +31,18 @@ use crate::{
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "a classified HCI command must be routed or answered exactly once"]
 pub enum LeControllerCommandClassification {
+    /// A validated Disconnect command awaits the active connection lifecycle.
+    Disconnect(LeDisconnectCommand),
+    /// Disconnect had an invalid parameter body.
+    MalformedDisconnect(LeDisconnectCommandStatusEvent),
+    /// A validated LE Read Remote Features command awaits a live connection.
+    ReadRemoteFeatures(LeReadRemoteFeaturesCommand),
+    /// LE Read Remote Features had an invalid parameter body.
+    MalformedReadRemoteFeatures(LeReadRemoteFeaturesCommandStatusEvent),
+    /// A validated Read Remote Version Information command awaits a live connection.
+    ReadRemoteVersionInformation(LeReadRemoteVersionInformationCommand),
+    /// Read Remote Version Information had an invalid parameter body.
+    MalformedReadRemoteVersionInformation(LeReadRemoteVersionInformationCommandStatusEvent),
     /// A decoded bootstrap command awaits session-aware software dispatch.
     Bootstrap(OwnedBootstrapCommand),
     /// A known bootstrap opcode had malformed parameters and produced this response.
@@ -52,6 +71,14 @@ impl LeControllerCommandClassification {
     /// Opcode retained by this exact classification result.
     pub const fn opcode(&self) -> Opcode {
         match self {
+            Self::Disconnect(_) | Self::MalformedDisconnect(_) => LeDisconnectCommand::OPCODE,
+            Self::ReadRemoteFeatures(_) | Self::MalformedReadRemoteFeatures(_) => {
+                LeReadRemoteFeaturesCommand::OPCODE
+            }
+            Self::ReadRemoteVersionInformation(_)
+            | Self::MalformedReadRemoteVersionInformation(_) => {
+                LeReadRemoteVersionInformationCommand::OPCODE
+            }
             Self::Bootstrap(command) => command.opcode(),
             Self::MalformedBootstrap(response) => response.opcode(),
             Self::Dtm(command) => command.kind().opcode(),
@@ -100,6 +127,38 @@ impl<'epoch> HciEpochBound<'epoch, LeDtmCommand> {
 pub fn classify_le_controller_command(
     command: HciCommandPacket<'_>,
 ) -> LeControllerCommandClassification {
+    match LeDisconnectCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::Disconnect(command),
+        Err(LeDisconnectDecodeError::Malformed) => {
+            return LeControllerCommandClassification::MalformedDisconnect(
+                LeDisconnectCommandStatusEvent::invalid_parameters(),
+            );
+        }
+        Err(LeDisconnectDecodeError::Unsupported) => {}
+    }
+
+    match LeReadRemoteFeaturesCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::ReadRemoteFeatures(command),
+        Err(LeReadRemoteFeaturesDecodeError::Malformed) => {
+            return LeControllerCommandClassification::MalformedReadRemoteFeatures(
+                LeReadRemoteFeaturesCommandStatusEvent::invalid_parameters(),
+            );
+        }
+        Err(LeReadRemoteFeaturesDecodeError::Unsupported) => {}
+    }
+
+    match LeReadRemoteVersionInformationCommand::decode(command) {
+        Ok(command) => {
+            return LeControllerCommandClassification::ReadRemoteVersionInformation(command);
+        }
+        Err(LeReadRemoteVersionInformationDecodeError::Malformed) => {
+            return LeControllerCommandClassification::MalformedReadRemoteVersionInformation(
+                LeReadRemoteVersionInformationCommandStatusEvent::invalid_parameters(),
+            );
+        }
+        Err(LeReadRemoteVersionInformationDecodeError::Unsupported) => {}
+    }
+
     if LeLegacyAdvertisingCommandKind::from_opcode(command.opcode()).is_some() {
         return match LeLegacyAdvertisingCommand::decode(command) {
             Ok(command) => match LeLegacyAdvertisingConfigurationCommand::from_command(command) {

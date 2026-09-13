@@ -429,21 +429,44 @@ impl PeripheralConnectionCompletedEvent {
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        acl: &mut super::super::active::acl::PeripheralConnectionAcl,
         version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
-    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
-        let acknowledged = self.graph.reclaim_control_transmission();
+    ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
+        let acknowledged = self.graph.reclaim_transmission();
+        control.observe_transmission_completion(acknowledged);
+        acl.observe_transmission_completion(acknowledged);
         #[cfg(feature = "dtm-diagnostics")]
         super::super::diagnostics::record_received(&self.batch, acknowledged);
         #[cfg(not(feature = "dtm-diagnostics"))]
         let _ = acknowledged;
         for index in 0..self.batch.len() {
-            control.receive(
+            let received = control.receive(
                 self.batch
                     .packet(index)
                     .expect("bounded RX batch")
                     .as_bytes(),
                 version,
             )?;
+            match received {
+                oer_bluetooth_ll::control::LePeripheralReceive::Data(fragment) => {
+                    acl.accept_controller_fragment(fragment);
+                }
+                oer_bluetooth_ll::control::LePeripheralReceive::ChannelMapUpdate(update) => {
+                    self.event
+                        .schedule_channel_map_update(update.channel_map(), update.instant())
+                        .map_err(
+                            oer_bluetooth_ll::control::LePeripheralControlError::ChannelMapUpdate,
+                        )?;
+                }
+                oer_bluetooth_ll::control::LePeripheralReceive::ConnectionUpdate(update) => {
+                    self.event
+                        .schedule_connection_update(update.timing(), update.instant())
+                        .map_err(
+                            oer_bluetooth_ll::control::LePeripheralControlError::ConnectionUpdate,
+                        )?;
+                }
+                oer_bluetooth_ll::control::LePeripheralReceive::Control => {}
+            }
         }
         if let Some(response) = control.pending_response()
             && self
@@ -454,8 +477,18 @@ impl PeripheralConnectionCompletedEvent {
             control.response_enqueued();
             #[cfg(feature = "dtm-diagnostics")]
             super::super::diagnostics::record_enqueued();
+            return Ok(true);
+        } else if let Some(fragment) = acl.next_fragment() {
+            let length = fragment.payload().len();
+            if self
+                .graph
+                .enqueue_acl_transmission(fragment.is_continuing(), fragment.payload())
+                .expect("a legacy ACL fragment fits the connection TX allocation")
+            {
+                acl.fragment_enqueued(length);
+            }
         }
-        Ok(())
+        Ok(false)
     }
 
     pub(crate) const fn link_layer_completion(&self) -> &LePeripheralConnectionEventCompleted {

@@ -19,13 +19,15 @@ use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
     HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
     InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY,
-    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeControllerBootstrap,
-    LeControllerBootstrapConfig, LeControllerCommandReady, LeDisconnectionCompleteEvent,
-    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingConfigurationCommand,
-    LeLegacyAdvertisingEnableCommand, LeLegacyAdvertisingIdleEnableDisposition,
-    LeLegacyAdvertisingReportEvent, LeLegacyScanningCommandCompleteEvent,
-    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand,
-    LePeripheralConnectionCompleteEvent, OwnedBootstrapCommand,
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeConnectionUpdateCompleteEvent,
+    LeControllerBootstrap, LeControllerBootstrapConfig, LeControllerCommandReady,
+    LeDisconnectionCompleteEvent, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningConfigurationCommand,
+    LeLegacyScanningEnableCommand, LeNumberOfCompletedPacketsEvent,
+    LePeripheralConnectionCompleteEvent, LeReadRemoteFeaturesCompleteEvent,
+    LeReadRemoteVersionInformationCompleteEvent, OwnedBootstrapCommand,
 };
 
 mod endpoint;

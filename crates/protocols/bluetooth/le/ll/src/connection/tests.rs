@@ -439,3 +439,232 @@ fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
             .select(1)
     );
 }
+
+#[test]
+fn channel_map_update_applies_at_the_exact_csa1_instant() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmOne,
+    ));
+    let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
+    completed.schedule_channel_map_update(new_map, 6).unwrap();
+    let mut connection = completed.into_connection();
+
+    for event_counter in 1..6 {
+        let prepared = connection.prepare_event();
+        assert_eq!(prepared.event_counter(), event_counter);
+        assert_eq!(prepared.request().channel_map(), request.channel_map());
+        connection = prepared
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .into_connection();
+    }
+
+    let instant = connection.prepare_event();
+    assert_eq!(instant.event_counter(), 6);
+    assert_eq!(instant.request().channel_map(), new_map);
+    assert_eq!(instant.channel().get(), 1);
+}
+
+#[test]
+fn skipped_channel_map_instant_is_previewed_without_consuming_cancel_owner() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmOne,
+    ));
+    let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
+    completed.schedule_channel_map_update(new_map, 6).unwrap();
+    let delta = LePeripheralConnectionEventDelta::new(6).unwrap();
+
+    let restored = completed.prepare_recurring_event(delta).cancel();
+    assert_eq!(
+        restored
+            .into_connection()
+            .prepare_event()
+            .request()
+            .channel_map(),
+        request.channel_map()
+    );
+
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmOne,
+    ));
+    completed.schedule_channel_map_update(new_map, 6).unwrap();
+    let provisional = completed.prepare_recurring_event(delta);
+    assert_eq!(provisional.event_counter(), 6);
+    assert_eq!(provisional.channel().get(), 1);
+    let prepared = provisional.commit();
+    assert_eq!(prepared.request().channel_map(), new_map);
+    assert_eq!(prepared.channel().get(), 1);
+}
+
+#[test]
+fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 0xfffa;
+    let mut completed = complete_missed(connection);
+    let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
+
+    completed
+        .schedule_channel_map_update(new_map, 0xfffa)
+        .unwrap();
+    assert_eq!(
+        completed.connection.prepare_event().request().channel_map(),
+        new_map
+    );
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 0xfffa;
+    let mut completed = complete_missed(connection);
+    assert_eq!(
+        completed.schedule_channel_map_update(new_map, 0x7ff9),
+        Err(LePeripheralChannelMapUpdateError::InstantPassed)
+    );
+    completed.schedule_channel_map_update(new_map, 0).unwrap();
+    assert_eq!(
+        completed.schedule_channel_map_update(LeDataChannelMap::all(), 1),
+        Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending)
+    );
+
+    let prepared = completed
+        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(6).unwrap())
+        .commit();
+    assert_eq!(prepared.event_counter(), 0);
+    assert_eq!(prepared.request().channel_map(), new_map);
+    assert_eq!(
+        prepared.channel(),
+        LeChannelSelectionAlgorithmTwo::new(request.access_address(), new_map).select(0)
+    );
+}
+
+#[test]
+fn connection_update_commits_timing_only_at_the_exact_instant() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
+    let updated = LeConnectionTiming::new(2, 1, 40, 3, 200).unwrap();
+    completed.schedule_connection_update(updated, 4).unwrap();
+    let mut connection = completed.into_connection();
+
+    for event_counter in 1..3 {
+        let prepared = connection.prepare_event();
+        assert_eq!(prepared.event_counter(), event_counter);
+        assert_eq!(prepared.timing(), request.timing());
+        connection = prepared
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .into_connection();
+    }
+
+    let completed = complete_missed(connection);
+    let provisional =
+        completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap());
+    let transition = provisional.connection_timing_transition().unwrap();
+    assert_eq!(transition.previous(), request.timing());
+    assert_eq!(transition.updated(), updated);
+    assert_eq!(transition.instant(), 4);
+    assert!(transition.host_parameters_changed());
+    assert_eq!(provisional.timing(), updated);
+
+    let restored = provisional.cancel();
+    assert_eq!(restored.timing(), request.timing());
+    let prepared = restored
+        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap())
+        .commit();
+    assert_eq!(prepared.event_counter(), 4);
+    assert_eq!(prepared.timing(), updated);
+    let applied = prepared
+        .into_submitted()
+        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+    assert_eq!(applied.connection_timing_transition(), Some(transition));
+    assert_eq!(applied.timing(), updated);
+}
+
+#[test]
+fn connection_anchor_move_is_not_a_host_parameter_change() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
+    let timing = request.timing();
+    let anchor_move = LeConnectionTiming::new(
+        timing.window_size_units(),
+        timing.window_offset_units() + 1,
+        timing.interval_units(),
+        timing.peripheral_latency(),
+        timing.supervision_timeout_units(),
+    )
+    .unwrap();
+    completed
+        .schedule_connection_update(anchor_move, 1)
+        .unwrap();
+    let transition = completed
+        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap())
+        .connection_timing_transition()
+        .unwrap();
+    assert!(!transition.host_parameters_changed());
+}
+
+#[test]
+fn connection_update_handles_same_event_past_instant_and_procedure_collisions() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let updated = LeConnectionTiming::new(2, 1, 40, 3, 200).unwrap();
+    let map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 0xfffa;
+    let mut completed = complete_missed(connection);
+
+    completed
+        .schedule_connection_update(updated, 0xfffa)
+        .unwrap();
+    assert_eq!(completed.timing(), updated);
+    assert_eq!(
+        completed.connection_timing_transition().unwrap().instant(),
+        0xfffa
+    );
+    assert_eq!(
+        completed.schedule_connection_update(updated, 0xfffa),
+        Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending)
+    );
+    assert_eq!(
+        completed.schedule_channel_map_update(map, 0xfffa),
+        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+    );
+
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 0xfffa;
+    let mut completed = complete_missed(connection);
+    assert_eq!(
+        completed.schedule_connection_update(updated, 0x7ff9),
+        Err(LePeripheralConnectionUpdateError::InstantPassed)
+    );
+    completed.schedule_channel_map_update(map, 0).unwrap();
+    assert_eq!(
+        completed.schedule_connection_update(updated, 1),
+        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+    );
+
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 0xfffa;
+    let mut completed = complete_missed(connection);
+    completed.schedule_connection_update(updated, 0).unwrap();
+    assert_eq!(
+        completed.schedule_channel_map_update(map, 1),
+        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+    );
+    assert_eq!(
+        completed.schedule_connection_update(updated, 2),
+        Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending)
+    );
+}

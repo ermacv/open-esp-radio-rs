@@ -53,6 +53,7 @@ Build and flash the complete application from the repository root:
 cargo xtask build firmware bluetooth-controller
 cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/ttyACM0
 cargo xtask build firmware bluetooth-controller --features advertising-smoke
+cargo xtask build firmware bluetooth-controller --features trouble-gatt
 ```
 
 The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
@@ -81,3 +82,25 @@ progress only: a successful Enable response or elapsed dwell does not prove
 scheduler RUN, repeated events or RF transmission. Use scheduler evidence and a
 BLE observer for those claims. Add `--flash --monitor --port /dev/ttyACM0` to the `xtask` advertising command
 to flash this variant and open the monitor.
+
+`trouble-gatt` replaces the direct command/read loops with the released
+`trouble-host` 0.8.0 peripheral Host. The application consumes the production
+`BluetoothSystem` through `into_trouble`, then polls the Trouble runner and the
+exact hardware runner concurrently. It repeatedly advertises as
+`open-radio-gatt`, accepts one connection and exposes service `0xfff0` with the
+one-byte read/write characteristic `0xfff1`. Accepted writes are printed and a
+disconnect returns to advertising without reconstructing the Controller.
+
+The Trouble Host owns bounded static resources for one connection and three
+L2CAP channels. Its legacy connectable advertisement explicitly selects
+channel 37 to match the current response-capable radio graph. The example
+configures a 500-ppm software widening bound and an explicit unassigned
+development Version Information identity; these are application policy, not
+measurements or assigned product identity. `trouble-gatt` and
+`advertising-smoke` are mutually exclusive because each consumes the sole Host
+side of the HCI transport.
+
+Repository checks compile this complete target composition and host tests
+verify its fixed advertising/profile payload. An on-air connection, ATT
+read/write and reconnection still require the Bluetooth HIL interoperability
+cell and are not established by a successful build.

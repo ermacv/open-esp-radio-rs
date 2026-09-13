@@ -30,6 +30,7 @@ use super::{
     PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
     PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
     PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionTransmitPduKind,
 };
 
 use vcell::VolatileCell;
@@ -695,10 +696,7 @@ impl PeripheralConnectionMemoryGraphStorage {
     }
 
     /// Called only by the reclaimed live graph, never while a RUN owns SRAM.
-    pub(super) fn reclaim_control_tx(
-        &self,
-        binding: &PeripheralConnectionMemoryGraphBinding,
-    ) -> bool {
+    pub(super) fn reclaim_tx(&self, binding: &PeripheralConnectionMemoryGraphBinding) -> bool {
         if !self.tx_pending.get() {
             return false;
         }
@@ -719,16 +717,17 @@ impl PeripheralConnectionMemoryGraphStorage {
         true
     }
 
-    pub(super) fn enqueue_control_tx(
+    pub(super) fn enqueue_tx(
         self: Pin<&mut Self>,
         binding: &PeripheralConnectionMemoryGraphBinding,
+        kind: PeripheralConnectionTransmitPduKind,
         payload: &[u8],
     ) -> Result<bool, LeTxPacketPrepareError> {
         if self.tx_pending.get() {
             return Ok(false);
         }
         let graph = self.project();
-        graph.tx_packet.prepare_pdu(3, payload)?;
+        graph.tx_packet.prepare_pdu(kind.llid(), payload)?;
         let (current, next, next_address) = if graph.tx_current_second.get() {
             (graph.tx_successor, graph.tx_sentinel, binding.tx_sentinel)
         } else {
@@ -739,7 +738,7 @@ impl PeripheralConnectionMemoryGraphStorage {
             )
         };
         next.initialize_bound_tx(binding.tx_packet());
-        next.mark_complete_control_packet();
+        next.mark_complete_connection_packet(kind.llid());
         current.link_successor(next_address);
         graph.link_state.words[LINK_STATE_TX_TAIL].set(next_address.controller_address().address());
         graph.tx_pending.set(true);
@@ -747,7 +746,7 @@ impl PeripheralConnectionMemoryGraphStorage {
     }
 
     #[cfg(test)]
-    pub(super) fn model_transmit_control(
+    pub(super) fn model_transmit_packet(
         &self,
         binding: &PeripheralConnectionMemoryGraphBinding,
         acknowledged: bool,

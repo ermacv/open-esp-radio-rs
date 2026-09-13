@@ -12,6 +12,7 @@ use bt_hci::{
         },
     },
     controller::Controller,
+    data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
     event::{Event as HciEvent, le::LeEvent},
     param::{LeConnRole, Status},
 };
@@ -57,6 +58,9 @@ struct PeripheralHostEvents {
     connections: AtomicU32,
     disconnections: AtomicU32,
     faults: AtomicU32,
+    acl_received: AtomicU32,
+    acl_queued: AtomicU32,
+    acl_faults: AtomicU32,
     last_disconnect_reason: AtomicU32,
 }
 
@@ -65,6 +69,9 @@ struct PeripheralHostEventSnapshot {
     connections: u32,
     disconnections: u32,
     faults: u32,
+    acl_received: u32,
+    acl_queued: u32,
+    acl_faults: u32,
     last_disconnect_reason: Option<u8>,
 }
 
@@ -74,6 +81,9 @@ impl PeripheralHostEvents {
             connections: AtomicU32::new(0),
             disconnections: AtomicU32::new(0),
             faults: AtomicU32::new(0),
+            acl_received: AtomicU32::new(0),
+            acl_queued: AtomicU32::new(0),
+            acl_faults: AtomicU32::new(0),
             last_disconnect_reason: AtomicU32::new(NO_DISCONNECT_REASON),
         }
     }
@@ -133,6 +143,9 @@ impl PeripheralHostEvents {
             connections: self.connections.load(Ordering::Relaxed),
             disconnections: self.disconnections.load(Ordering::Relaxed),
             faults: self.faults.load(Ordering::Relaxed),
+            acl_received: self.acl_received.load(Ordering::Relaxed),
+            acl_queued: self.acl_queued.load(Ordering::Relaxed),
+            acl_faults: self.acl_faults.load(Ordering::Relaxed),
             last_disconnect_reason: u8::try_from(last_disconnect_reason).ok(),
         }
     }
@@ -228,7 +241,38 @@ async fn pump(hci: &Host) {
             .read(&mut buffer)
             .await
             .unwrap_or_else(|_| panic!("HCI transport failed"));
-        PERIPHERAL_HOST_EVENTS.observe(packet);
+        match packet {
+            ControllerToHostPacket::Acl(packet) => {
+                let boundary = match packet.boundary_flag() {
+                    AclPacketBoundary::FirstFlushable => AclPacketBoundary::FirstNonFlushable,
+                    AclPacketBoundary::Continuing => AclPacketBoundary::Continuing,
+                    _ => {
+                        PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+                        continue;
+                    }
+                };
+                if packet.handle().raw() != 1
+                    || packet.broadcast_flag() != AclBroadcastFlag::PointToPoint
+                    || packet.data().is_empty()
+                {
+                    PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+                    continue;
+                }
+                PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_received);
+                let echo = AclPacket::new(
+                    packet.handle(),
+                    boundary,
+                    AclBroadcastFlag::PointToPoint,
+                    packet.data(),
+                );
+                if hci.write_acl_data(&echo).await.is_ok() {
+                    PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_queued);
+                } else {
+                    PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+                }
+            }
+            packet => PERIPHERAL_HOST_EVENTS.observe(packet),
+        }
     }
 }
 
@@ -554,6 +598,9 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         connection_complete_events: host_events.connections,
         disconnection_complete_events: host_events.disconnections,
         host_event_faults: host_events.faults,
+        host_acl_received_packets: host_events.acl_received,
+        host_acl_queued_packets: host_events.acl_queued,
+        host_acl_faults: host_events.acl_faults,
         last_disconnect_reason: host_events.last_disconnect_reason,
         retries: snapshot.retries,
         terminal: snapshot.terminal,

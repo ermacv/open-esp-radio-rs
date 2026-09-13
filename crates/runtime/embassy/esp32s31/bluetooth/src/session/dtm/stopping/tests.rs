@@ -121,7 +121,7 @@ impl StoppingWaitBackend<AtomicBool, AtomicBool> for AtomicWaitBackend {
     }
 }
 
-type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
+type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 80>;
 
 fn controller_resources() -> ControllerResources {
     LeControllerHciResources::new(
@@ -136,11 +136,11 @@ fn controller_resources() -> ControllerResources {
 }
 
 fn test_end_pending_with_ready<'epoch>(
-    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 45>,
+    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 80>,
     ready: LeControllerCommandReady<'epoch, ()>,
 ) -> LeControllerResponsePending<'epoch, ()> {
     block_on(endpoints.host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let LeControllerCommandIntake::Command {
         command: classified,
         ..
@@ -160,7 +160,7 @@ fn test_end_pending_with_ready<'epoch>(
 }
 
 fn initial_test_end_pending<'epoch>(
-    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 45>,
+    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 80>,
 ) -> LeControllerResponsePending<'epoch, ()> {
     let LeControllerCommandReadyClaim::Ready(ready) =
         endpoints.controller.claim_initial_command_ready(())

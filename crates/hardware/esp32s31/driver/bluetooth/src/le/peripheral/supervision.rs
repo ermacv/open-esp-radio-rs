@@ -13,6 +13,21 @@ pub(crate) enum PeripheralSupervisionDecision {
     Expired,
 }
 
+/// Select the reset reference after a Connection Update instant.
+///
+/// A valid packet resets supervision at its receive time. Without one, the
+/// update procedure still resets it at the start of the new transmit window.
+pub(crate) const fn supervision_reference(
+    receive_reference: SchedulerInstant,
+    connection_update_anchor: Option<SchedulerInstant>,
+    packet_start_observed: bool,
+) -> SchedulerInstant {
+    if !packet_start_observed && let Some(anchor) = connection_update_anchor {
+        return anchor;
+    }
+    receive_reference
+}
+
 impl PeripheralSupervisionDeadline {
     pub(crate) const fn new(reference: SchedulerInstant, timeout_micros: u32) -> Self {
         Self(reference.wrapping_add(timeout_micros))
@@ -121,6 +136,24 @@ mod tests {
         assert_eq!(
             deadline.decide(at(99_900), at(100_000)),
             PeripheralSupervisionDecision::Expired
+        );
+    }
+
+    #[test]
+    fn connection_update_resets_at_window_start_until_a_packet_is_observed() {
+        let previous_receive = at(10_000);
+        let update_anchor = at(40_000);
+        assert_eq!(
+            supervision_reference(previous_receive, Some(update_anchor), false),
+            update_anchor
+        );
+        assert_eq!(
+            supervision_reference(at(40_125), Some(update_anchor), true),
+            at(40_125)
+        );
+        assert_eq!(
+            supervision_reference(previous_receive, None, false),
+            previous_receive
         );
     }
 }

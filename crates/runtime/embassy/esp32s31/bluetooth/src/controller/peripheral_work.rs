@@ -13,17 +13,47 @@ pub(super) enum HciWork {
     None,
     OrderedResponse,
     HostEvent,
+    Command,
 }
 
 /// Preserve an older command completion ahead of an unsolicited connection event.
-pub(super) const fn select_hci_work(response_pending: bool, host_event_pending: bool) -> HciWork {
+pub(super) const fn select_hci_work(
+    response_pending: bool,
+    host_event_pending: bool,
+    command_ready: bool,
+) -> HciWork {
     if response_pending {
         HciWork::OrderedResponse
     } else if host_event_pending {
         HciWork::HostEvent
+    } else if command_ready {
+        HciWork::Command
     } else {
         HciWork::None
     }
+}
+
+/// Select active-connection HCI work while preserving ordered output.
+///
+/// A flow-controlled Controller ACL packet must keep command intake live even
+/// while the sole Host ACL owner is occupied. That intake is the only path by
+/// which Host Number Of Completed Packets can return the blocked Controller
+/// credit. If the Host violates its advertised packet credit and supplies a
+/// second ACL packet instead, the active ACL owner consumes and completes that
+/// packet without replacing the retained first packet.
+pub(super) const fn select_active_hci_work(
+    response_pending: bool,
+    host_event_pending: bool,
+    host_event_flow_controlled: bool,
+    can_accept_host_packet: bool,
+) -> HciWork {
+    select_hci_work(
+        response_pending,
+        host_event_pending && !host_event_flow_controlled,
+        !response_pending
+            && (!host_event_pending || host_event_flow_controlled)
+            && (can_accept_host_packet || host_event_flow_controlled),
+    )
 }
 
 /// An absent pending response cannot synthesize work or spin a command-ready actor.
@@ -158,8 +188,29 @@ mod tests {
 
     #[test]
     fn ordered_response_precedes_unsolicited_connection_event() {
-        assert_eq!(select_hci_work(true, true), HciWork::OrderedResponse);
-        assert_eq!(select_hci_work(false, true), HciWork::HostEvent);
-        assert_eq!(select_hci_work(false, false), HciWork::None);
+        assert_eq!(select_hci_work(true, true, true), HciWork::OrderedResponse);
+        assert_eq!(select_hci_work(false, true, true), HciWork::HostEvent);
+        assert_eq!(select_hci_work(false, false, true), HciWork::Command);
+        assert_eq!(select_hci_work(false, false, false), HciWork::None);
+    }
+
+    #[test]
+    fn flow_control_keeps_credit_command_intake_live_with_an_occupied_host_acl_owner() {
+        assert_eq!(
+            select_active_hci_work(false, true, true, false),
+            HciWork::Command
+        );
+        assert_eq!(
+            select_active_hci_work(false, true, true, true),
+            HciWork::Command
+        );
+        assert_eq!(
+            select_active_hci_work(false, true, false, true),
+            HciWork::HostEvent
+        );
+        assert_eq!(
+            select_active_hci_work(true, true, true, true),
+            HciWork::OrderedResponse
+        );
     }
 }

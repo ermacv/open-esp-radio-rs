@@ -2,33 +2,53 @@
 //!
 //! Requires an explicit local-clock timing policy in the runtime configuration.
 //! Central feature requests and unsupported optional LLCP requests enter a
-//! bounded control-response queue. Active HCI commands, ACL delivery, mandatory
-//! connection updates and host-initiated teardown remain unavailable. Peer
-//! termination retires the unlinked graph and restores ordered idle HCI intake.
+//! bounded control-response queue. Active HCI commands share the radio wait;
+//! Disconnect retains Command Status order through acknowledged LL termination,
+//! and Reset retires the exact graph before bootstrap mutation. Host ACL packets
+//! are retained as one credit, fragmented into legacy 27-byte LL Data PDUs and
+//! completed only after final peer acknowledgement. Accepted peer LL Data PDUs
+//! enter a bounded Controller-to-Host ACL queue after Connection Complete.
+//! Host Buffer Size and Host Number Of Completed Packets bound delivery for the
+//! sole live handle. The special credit command remains serialized behind an
+//! older pending normal response, but flow-controlled output keeps intake live
+//! when the Host ACL owner is occupied. Central Connection Update and Channel Map
+//! Update retain their exact instant transitions through scheduler admission.
+//! Peer termination retires the unlinked graph and restores ordered idle HCI intake.
 //! An unanswered initial transmit window recurs with its full WinSize; six
 //! events without establishment retire the connection with reason `0x3e`.
 //! Established supervision uses the independent hardware valid-RX time and
 //! retires expired unlinked connections with reason `0x08`.
+//! A guarded recurring window missed before RUN is cancelled and rebuilt at a
+//! later established event; supervision bounds the jump, while a crossed
+//! Connection Update or Channel Map Update instant closes with reason `0x28`.
+//! Local termination arms `T_terminate` from fresh Controller time immediately
+//! before the first PDU enters the TX graph and retires on acknowledgement or
+//! expiry after the connection supervision timeout.
 //! Version exchange requires a caller-supplied Controller implementation identity.
 //! Any radio fault or unsupported mandatory-control transition seals its owners.
 
 #![forbid(unsafe_code)]
 
+pub(crate) mod acl;
 mod host_events;
 mod radio;
 
 use super::first_hci::{
     LegacyConnectablePeripheralFirstHciAxis as Axis,
     LegacyConnectablePeripheralFirstHciOrder as Order,
+    LegacyConnectablePeripheralFirstHciOrderPublication as OrderPublication,
     LegacyConnectablePeripheralFirstHciResponsePublication as Publication,
     LegacyConnectablePeripheralFirstHciResponseWait as ResponseWait,
     LegacyConnectablePeripheralFirstHciRunning as FirstRunning,
-    LegacyConnectablePeripheralFirstHciRunningOrder as RunningOrder, map_order_publication,
+    LegacyConnectablePeripheralFirstHciRunningOrder as RunningOrder,
 };
 use crate::controller::SchedulerRunInterruptStorage;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::{
-    HciChannelError, LeControllerCommandEndpoint, LeControllerEndpointMismatch,
+    HciChannelError, HciEpochBound, HostToControllerFrame,
+    LeControllerActivePeripheralCommandRoute as HciCommandRoute,
+    LeControllerActivePeripheralIntake as HciIntake, LeControllerClassifiedCommand,
+    LeControllerCommandEndpoint, LeControllerEndpointMismatch, LeControllerResetBarrier,
 };
 pub use radio::{PeripheralConnectionActiveFaultCause, PeripheralConnectionActiveWait};
 
@@ -39,6 +59,8 @@ pub enum PeripheralConnectionHostEventPublication<Session> {
     Published(Session),
     Masked(Session),
     Pending(Session),
+    FlowControlled(Session),
+    EndpointMismatch(Session),
     Fault {
         session: Session,
         error: HciChannelError,
@@ -51,7 +73,126 @@ pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage
     order: Order<'a, radio::Radio<'a, S, N>>,
     control: oer_bluetooth_ll::control::LePeripheralControl,
     supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
+    termination: Option<super::termination::PeripheralTerminationDeadline>,
+    procedure: Option<super::procedure::PeripheralProcedureDeadline>,
     host_events: host_events::PeripheralConnectionHostEvents,
+    acl: acl::PeripheralConnectionAcl,
+    disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
+    read_remote_features_after_status: bool,
+    read_remote_version_after_status: bool,
+}
+
+struct PeripheralConnectionState<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    radio: radio::Radio<'a, S, N>,
+    control: oer_bluetooth_ll::control::LePeripheralControl,
+    supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
+    termination: Option<super::termination::PeripheralTerminationDeadline>,
+    procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    host_events: host_events::PeripheralConnectionHostEvents,
+    acl: acl::PeripheralConnectionAcl,
+    disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
+    read_remote_features_after_status: bool,
+    read_remote_version_after_status: bool,
+}
+
+/// Reset plus the complete active connection graph awaiting quiescence.
+#[must_use = "retain Reset and the active connection until quiescence"]
+pub struct PeripheralConnectionResetBarrier<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    barrier: LeControllerResetBarrier<'a, PeripheralConnectionState<'a, S, N>>,
+}
+
+/// One finite Reset-quiescence transition.
+#[must_use = "retain the stopping connection, idle Reset barrier, or sealed fault"]
+pub enum PeripheralConnectionResetStep<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    Continue(PeripheralConnectionResetBarrier<'a, S, N>),
+    Ready(crate::controller::ControllerIdleResetBarrier<'a, S, N>),
+    Fault(PeripheralConnectionResetFault<'a, S, N>),
+}
+
+/// Sealed Reset and lower radio owner after a quiescence failure.
+#[must_use = "retain the Reset fault until the hardware is quarantined"]
+pub struct PeripheralConnectionResetFault<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    radio: radio::Fault<'a, S, N>,
+    _barrier: LeControllerResetBarrier<'a, ()>,
+    _control: oer_bluetooth_ll::control::LePeripheralControl,
+    _supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
+    _termination: Option<super::termination::PeripheralTerminationDeadline>,
+    _procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    _host_events: host_events::PeripheralConnectionHostEvents,
+    _acl: acl::PeripheralConnectionAcl,
+    _disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
+    _read_remote_features_after_status: bool,
+    _read_remote_version_after_status: bool,
+}
+
+impl<S: SchedulerRunInterruptStorage, const N: usize> PeripheralConnectionResetFault<'_, S, N> {
+    pub const fn cause(&self) -> PeripheralConnectionActiveFaultCause {
+        self.radio.cause
+    }
+}
+
+/// Opaque mismatch after active peripheral command intake.
+#[must_use = "retain the command and active connection owner"]
+pub struct PeripheralConnectionCommandMismatch<
+    'a,
+    'command,
+    S: SchedulerRunInterruptStorage,
+    const N: usize,
+> {
+    _command: LeControllerClassifiedCommand<'a, 'command, PeripheralConnectionState<'a, S, N>>,
+}
+
+/// Routed command outcome for one active peripheral connection.
+#[must_use = "retain the returned lifecycle owner"]
+pub enum PeripheralConnectionCommandRoute<
+    'a,
+    'command,
+    S: SchedulerRunInterruptStorage,
+    const N: usize,
+> {
+    ResponsePending(PeripheralConnectionActiveSession<'a, S, N>),
+    ResetBarrier(PeripheralConnectionResetBarrier<'a, S, N>),
+    EndpointMismatch(PeripheralConnectionCommandMismatch<'a, 'command, S, N>),
+}
+
+/// One non-blocking command intake through the connection's affine HCI authority.
+#[must_use = "route the command or retain the returned active connection"]
+pub enum PeripheralConnectionCommandIntake<
+    'a,
+    'command,
+    'buffer,
+    S: SchedulerRunInterruptStorage,
+    const N: usize,
+> {
+    Routed {
+        route: PeripheralConnectionCommandRoute<'a, 'command, S, N>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    Acl {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        buffer: &'buffer mut [u8],
+    },
+    HostCompletedPackets {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        buffer: &'buffer mut [u8],
+    },
+    NonCommand {
+        session: PeripheralConnectionActiveSession<'a, S, N>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
 }
 
 /// One finite radio transition; only `Published` represents a new scheduler RUN.
@@ -84,6 +225,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     PeripheralConnectionActiveSession<'a, S, N>
 {
     pub fn from_first(first: FirstRunning<'a, S, N>) -> Self {
+        let local_version = first.local_version_information();
         let (running, order) = first.into_parts();
         let order = match order {
             RunningOrder::CommandReady(order) => Order::CommandReady(order),
@@ -91,9 +233,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         };
         Self {
             order: order.map_owner(|()| radio::Radio::Running(running)),
-            control: oer_bluetooth_ll::control::LePeripheralControl::new(),
+            control: oer_bluetooth_ll::control::LePeripheralControl::new()
+                .with_local_version(local_version),
             supervision: None,
+            termination: None,
+            procedure: None,
             host_events: host_events::PeripheralConnectionHostEvents::new(),
+            acl: acl::PeripheralConnectionAcl::new(),
+            disconnect: None,
+            read_remote_features_after_status: false,
+            read_remote_version_after_status: false,
         }
     }
 
@@ -101,14 +250,262 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         self.order.axis()
     }
 
+    /// Wait until the matching Host queue may contain another command.
+    pub async fn wait_command_available<
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        match &self.order {
+            Order::CommandReady(ready) => controller.wait_command_available(ready).await,
+            Order::ResponsePending(_) => {
+                unreachable!("a response-pending connection cannot accept a command")
+            }
+        }
+    }
+
+    /// Consume and route at most one command while preserving both active axes.
+    pub fn try_route_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<'command, M, H2C, C2H, PACKET>,
+        buffer: &'buffer mut [u8],
+    ) -> PeripheralConnectionCommandIntake<'a, 'command, 'buffer, S, N> {
+        let Self {
+            order,
+            control,
+            supervision,
+            termination,
+            procedure,
+            host_events,
+            acl,
+            disconnect,
+            read_remote_features_after_status,
+            read_remote_version_after_status,
+        } = self;
+        let Order::CommandReady(ready) = order else {
+            unreachable!("a response-pending connection cannot route a command")
+        };
+        let live_handle = host_events.live_handle();
+        let local_procedure_busy = control.local_procedure_pending();
+        let local_version_available = control.remote_version_request_available();
+        let ready = ready.map_owner(|radio| PeripheralConnectionState {
+            radio,
+            control,
+            supervision,
+            termination,
+            procedure,
+            host_events,
+            acl,
+            disconnect,
+            read_remote_features_after_status,
+            read_remote_version_after_status,
+        });
+        match controller.try_receive_active_peripheral_with_buffer(
+            ready,
+            live_handle,
+            buffer,
+            |mut state, packet| {
+                state.acl.accept_host_packet(packet);
+                let completed = state.acl.take_completed_host_packets();
+                state.host_events.observe_acl_completed(completed);
+                state
+            },
+        ) {
+            HciIntake::Command { command, buffer } => {
+                let route = match controller.route_active_peripheral_classified_command(
+                    command,
+                    live_handle,
+                    local_procedure_busy,
+                    local_version_available,
+                ) {
+                    HciCommandRoute::ResponsePending(pending) => {
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
+                    HciCommandRoute::Disconnect(disconnect) => {
+                        let pending = disconnect.into_accepted_status().map_owner(|accepted| {
+                            let (mut state, command) = accepted.into_parts();
+                            state.disconnect = Some(command);
+                            state
+                        });
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
+                    HciCommandRoute::ReadRemoteFeatures(request) => {
+                        let pending = request.into_accepted_status().map_owner(|mut state| {
+                            use oer_bluetooth_ll::control::LeRemoteFeaturesAdmission;
+                            assert!(matches!(
+                                state.control.admit_remote_feature_request(),
+                                LeRemoteFeaturesAdmission::Admitted
+                                    | LeRemoteFeaturesAdmission::Cached(_)
+                            ));
+                            state.read_remote_features_after_status = true;
+                            state
+                        });
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
+                    HciCommandRoute::ReadRemoteVersionInformation(request) => {
+                        let pending = request.into_accepted_status().map_owner(|mut state| {
+                            use oer_bluetooth_ll::control::LeRemoteVersionAdmission;
+                            assert!(matches!(
+                                state.control.admit_remote_version_request(),
+                                LeRemoteVersionAdmission::Admitted
+                                    | LeRemoteVersionAdmission::Cached(_)
+                            ));
+                            state.read_remote_version_after_status = true;
+                            state
+                        });
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
+                    HciCommandRoute::ResetBarrier(barrier) => {
+                        PeripheralConnectionCommandRoute::ResetBarrier(
+                            PeripheralConnectionResetBarrier { barrier },
+                        )
+                    }
+                    HciCommandRoute::EndpointMismatch(command) => {
+                        PeripheralConnectionCommandRoute::EndpointMismatch(
+                            PeripheralConnectionCommandMismatch { _command: command },
+                        )
+                    }
+                };
+                PeripheralConnectionCommandIntake::Routed { route, buffer }
+            }
+            HciIntake::Acl { ready, buffer } => PeripheralConnectionCommandIntake::Acl {
+                session: Self::from_ready(ready),
+                buffer,
+            },
+            HciIntake::HostCompletedPackets {
+                ready,
+                command,
+                buffer,
+            } => {
+                let (mut state, ready) = ready.into_parts();
+                let result = command.and_then(|command| {
+                    state
+                        .acl
+                        .accept_host_completed_packets(command, live_handle)
+                });
+                match result {
+                    Ok(()) => PeripheralConnectionCommandIntake::HostCompletedPackets {
+                        session: state.into_session(Order::CommandReady(ready)),
+                        buffer,
+                    },
+                    Err(response) => {
+                        let pending = ready
+                            .map_owner(|()| state)
+                            .begin_host_completed_packets_error(response);
+                        PeripheralConnectionCommandIntake::Routed {
+                            route: PeripheralConnectionCommandRoute::ResponsePending(
+                                Self::from_pending(pending),
+                            ),
+                            buffer,
+                        }
+                    }
+                }
+            }
+            HciIntake::Empty { ready, buffer } => PeripheralConnectionCommandIntake::Empty {
+                session: Self::from_ready(ready),
+                buffer,
+            },
+            HciIntake::EndpointMismatch { ready, buffer } => {
+                PeripheralConnectionCommandIntake::EndpointMismatch {
+                    session: Self::from_ready(ready),
+                    buffer,
+                }
+            }
+            HciIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => PeripheralConnectionCommandIntake::Channel {
+                session: Self::from_ready(ready),
+                buffer,
+                error,
+            },
+            HciIntake::NonCommand { ready, frame } => {
+                PeripheralConnectionCommandIntake::NonCommand {
+                    session: Self::from_ready(ready),
+                    frame,
+                }
+            }
+        }
+    }
+
+    fn from_ready(
+        ready: oer_bluetooth_hci::LeControllerCommandReady<'a, PeripheralConnectionState<'a, S, N>>,
+    ) -> Self {
+        let (state, ready) = ready.into_parts();
+        state.into_session(Order::CommandReady(ready))
+    }
+
+    fn from_pending(
+        pending: oer_bluetooth_hci::LeControllerResponsePending<
+            'a,
+            PeripheralConnectionState<'a, S, N>,
+        >,
+    ) -> Self {
+        let (state, pending) = pending.into_parts();
+        state.into_session(Order::ResponsePending(pending))
+    }
+
     /// Borrow readiness from the retained phase. `None` requires an immediate step.
     pub fn radio_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
+        if self
+            .order
+            .owner()
+            .completed_receive_batch_len()
+            .is_some_and(|len| !self.acl.can_accept_controller_batch(len))
+        {
+            return Some(PeripheralConnectionActiveWait::HostEventCapacity);
+        }
         self.order.owner().wait()
     }
 
     /// Whether an established/failed connection or disconnection event awaits HCI publication.
     pub const fn has_pending_host_event(&self) -> bool {
-        self.host_events.has_pending()
+        self.host_events.has_pending() || self.acl.has_controller_packet()
+    }
+
+    /// Whether command/data intake has room for another owned Host ACL packet.
+    pub const fn can_accept_host_packet(&self) -> bool {
+        self.acl.can_accept_host_packet()
+    }
+
+    /// Whether the next retained Controller ACL packet awaits a Host credit.
+    pub fn host_event_is_flow_controlled<
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> bool {
+        if !self.host_events.connection_result_published() || !self.acl.has_controller_packet() {
+            return false;
+        }
+        let profile = controller.controller_to_host_acl_profile();
+        self.acl.controller_packet_is_flow_controlled(
+            profile.is_flow_controlled(),
+            profile.total_packets(),
+        )
     }
 
     /// Wait for possible capacity without moving the retained connection event.
@@ -120,8 +517,12 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     >(
         &self,
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
-    ) {
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        if !self.order.accepts_endpoint(controller) {
+            return Err(LeControllerEndpointMismatch);
+        }
         controller.wait_peripheral_connection_event_capacity().await;
+        Ok(())
     }
 
     /// Try the next ordered unsolicited event after older command completion.
@@ -135,6 +536,35 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
     ) -> PeripheralConnectionHostEventPublication<Self> {
         use host_events::PeripheralConnectionHostEventPublication as Publication;
+        if !self.order.accepts_endpoint(controller) {
+            return PeripheralConnectionHostEventPublication::EndpointMismatch(self);
+        }
+        if self.host_events.connection_result_published() {
+            let profile = controller.controller_to_host_acl_profile();
+            match self.acl.try_publish_controller_packet(
+                controller,
+                profile.maximum_payload(),
+                profile.is_flow_controlled(),
+                profile.total_packets(),
+            ) {
+                acl::ControllerAclPublication::Published => {
+                    return PeripheralConnectionHostEventPublication::Published(self);
+                }
+                acl::ControllerAclPublication::Pending => {
+                    return PeripheralConnectionHostEventPublication::Pending(self);
+                }
+                acl::ControllerAclPublication::FlowControlled => {
+                    return PeripheralConnectionHostEventPublication::FlowControlled(self);
+                }
+                acl::ControllerAclPublication::Fault(error) => {
+                    return PeripheralConnectionHostEventPublication::Fault {
+                        session: self,
+                        error,
+                    };
+                }
+                acl::ControllerAclPublication::None => {}
+            }
+        }
         match self.host_events.try_publish(controller) {
             Publication::None => PeripheralConnectionHostEventPublication::None(self),
             Publication::Published => PeripheralConnectionHostEventPublication::Published(self),
@@ -155,12 +585,24 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             order,
             mut control,
             mut supervision,
+            mut termination,
+            mut procedure,
             mut host_events,
+            mut acl,
+            disconnect,
+            read_remote_features_after_status,
+            read_remote_version_after_status,
         } = self;
         let (radio, order) = order.into_parts();
+        if matches!(&radio, radio::Radio::Stopped { .. }) {
+            control.close_remote_feature_request();
+            control.close_remote_version_request();
+        }
+        observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
+        observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
         let (radio, order) = match (radio, order) {
             (radio::Radio::Stopped { task, reason }, Order::CommandReady(ready))
-                if host_events.ready_to_restore_idle() =>
+                if host_events.ready_to_restore_idle() && !acl.has_controller_packet() =>
             {
                 return PeripheralConnectionActiveStep::Stopped {
                     task: crate::controller::ControllerIdleCommandTask::from_parts(task, ready),
@@ -169,18 +611,40 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             }
             pair => pair,
         };
-        match radio.step(&mut control, &mut supervision, &mut host_events) {
+        let step = radio.step(
+            &mut control,
+            &mut acl,
+            &mut supervision,
+            &mut termination,
+            &mut procedure,
+            &mut host_events,
+        );
+        observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
+        observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
+        match step {
             radio::Step::Continue(radio) => PeripheralConnectionActiveStep::Continue(Self {
                 order: order.map_owner(|()| radio),
                 control,
                 supervision,
+                termination,
+                procedure,
                 host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
             }),
             radio::Step::Published(radio) => PeripheralConnectionActiveStep::Published(Self {
                 order: order.map_owner(|()| radio),
                 control,
                 supervision,
+                termination,
+                procedure,
                 host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
             }),
             radio::Step::Fault(radio) => {
                 PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
@@ -215,15 +679,191 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     ) -> Publication<Self> {
         let Self {
             order,
-            control,
+            mut control,
             supervision,
-            host_events,
+            termination,
+            mut procedure,
+            mut host_events,
+            acl,
+            disconnect,
+            read_remote_features_after_status,
+            read_remote_version_after_status,
         } = self;
-        map_order_publication(order.try_publish_response(controller), |order| Self {
-            order,
-            control,
-            supervision,
-            host_events,
-        })
+        match order.try_publish_response(controller) {
+            OrderPublication::CommandReady(order) => Publication::CommandReady(Self {
+                order,
+                control,
+                supervision,
+                termination,
+                procedure,
+                host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
+            }),
+            OrderPublication::Published(order) => {
+                if let Some(command) = disconnect {
+                    control.request_local_termination(command.reason());
+                }
+                if read_remote_features_after_status {
+                    if matches!(order.owner(), radio::Radio::Stopped { .. }) {
+                        control.close_remote_feature_request();
+                    } else if let Some(features) = control.activate_remote_feature_request() {
+                        host_events.observe_remote_features(
+                            oer_bluetooth_ll::control::LeRemoteFeaturesResult::Success(features),
+                        );
+                    }
+                    observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
+                }
+                if read_remote_version_after_status {
+                    if matches!(order.owner(), radio::Radio::Stopped { .. }) {
+                        control.close_remote_version_request();
+                    } else if let Some(version) = control.activate_remote_version_request() {
+                        host_events.observe_remote_version(
+                            oer_bluetooth_ll::control::LeRemoteVersionResult::Success(version),
+                        );
+                    }
+                    observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
+                }
+                Publication::Published(Self {
+                    order,
+                    control,
+                    supervision,
+                    termination,
+                    procedure,
+                    host_events,
+                    acl,
+                    disconnect: None,
+                    read_remote_features_after_status: false,
+                    read_remote_version_after_status: false,
+                })
+            }
+            OrderPublication::Pending(order) => Publication::Pending(Self {
+                order,
+                control,
+                supervision,
+                termination,
+                procedure,
+                host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
+            }),
+            OrderPublication::EndpointMismatch(order) => Publication::EndpointMismatch(Self {
+                order,
+                control,
+                supervision,
+                termination,
+                procedure,
+                host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
+            }),
+            OrderPublication::Fault { order, error } => Publication::Fault {
+                state: Self {
+                    order,
+                    control,
+                    supervision,
+                    termination,
+                    procedure,
+                    host_events,
+                    acl,
+                    disconnect,
+                    read_remote_features_after_status,
+                    read_remote_version_after_status,
+                },
+                error,
+            },
+        }
+    }
+}
+
+fn observe_remote_feature_result(
+    control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+    procedure: &mut Option<super::procedure::PeripheralProcedureDeadline>,
+    host_events: &mut host_events::PeripheralConnectionHostEvents,
+) {
+    if let Some(result) = control.take_remote_features_result() {
+        *procedure = None;
+        host_events.observe_remote_features(result);
+    }
+}
+
+fn observe_remote_version_result(
+    control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+    procedure: &mut Option<super::procedure::PeripheralProcedureDeadline>,
+    host_events: &mut host_events::PeripheralConnectionHostEvents,
+) {
+    if let Some(result) = control.take_remote_version_result() {
+        *procedure = None;
+        host_events.observe_remote_version(result);
+    }
+}
+
+impl<'a, S: SchedulerRunInterruptStorage, const N: usize> PeripheralConnectionState<'a, S, N> {
+    fn into_session(self, order: Order<'a, ()>) -> PeripheralConnectionActiveSession<'a, S, N> {
+        PeripheralConnectionActiveSession {
+            order: order.map_owner(|()| self.radio),
+            control: self.control,
+            supervision: self.supervision,
+            termination: self.termination,
+            procedure: self.procedure,
+            host_events: self.host_events,
+            acl: self.acl,
+            disconnect: self.disconnect,
+            read_remote_features_after_status: self.read_remote_features_after_status,
+            read_remote_version_after_status: self.read_remote_version_after_status,
+        }
+    }
+}
+
+impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
+    PeripheralConnectionResetBarrier<'a, S, N>
+{
+    /// Borrow the current radio wait while retaining Reset ownership.
+    pub fn radio_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
+        self.barrier.owner().radio.wait()
+    }
+
+    /// Retire the connection graph before exposing the idle Reset barrier.
+    pub fn step(self) -> PeripheralConnectionResetStep<'a, S, N> {
+        let (mut state, barrier) = self.barrier.into_parts();
+        match state.radio.step_reset(
+            &mut state.control,
+            &mut state.acl,
+            &mut state.supervision,
+            &mut state.termination,
+            &mut state.procedure,
+            &mut state.host_events,
+        ) {
+            radio::ResetStep::Continue(radio) => {
+                state.radio = radio;
+                PeripheralConnectionResetStep::Continue(Self {
+                    barrier: barrier.map_owner(|()| state),
+                })
+            }
+            radio::ResetStep::Quiesced(task) => PeripheralConnectionResetStep::Ready(
+                crate::controller::ControllerIdleResetBarrier::new(barrier.map_owner(|()| task)),
+            ),
+            radio::ResetStep::Fault(radio) => {
+                PeripheralConnectionResetStep::Fault(PeripheralConnectionResetFault {
+                    radio,
+                    _barrier: barrier,
+                    _control: state.control,
+                    _supervision: state.supervision,
+                    _termination: state.termination,
+                    _procedure: state.procedure,
+                    _host_events: state.host_events,
+                    _acl: state.acl,
+                    _disconnect: state.disconnect,
+                    _read_remote_features_after_status: state.read_remote_features_after_status,
+                    _read_remote_version_after_status: state.read_remote_version_after_status,
+                })
+            }
+        }
     }
 }

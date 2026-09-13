@@ -71,6 +71,16 @@ impl PeripheralConnectionRecurringProtocolCandidate {
     }
 
     #[cfg(target_arch = "riscv32")]
+    const fn connection_state(&self) -> oer_bluetooth_ll::connection::LePeripheralConnectionState {
+        self.provisional.connection_state()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    const fn timing(&self) -> oer_bluetooth_ll::connection::LeConnectionTiming {
+        self.provisional.timing()
+    }
+
+    #[cfg(target_arch = "riscv32")]
     const fn channel(&self) -> oer_bluetooth_ll::connection::LeDataChannelIndex {
         self.provisional.channel()
     }
@@ -131,17 +141,49 @@ fn prepare_recurring_protocol_proposal(
         });
     }
     let provisional = completed.prepare_recurring_event(delta);
+    if provisional
+        .connection_timing_transition()
+        .is_some_and(|transition| transition.instant() != provisional.event_counter())
+    {
+        return ControlFlow::Break(PeripheralConnectionRecurringProtocolFailure {
+            completed: provisional.cancel(),
+            original_phase,
+            delta,
+            error: PeripheralConnectionRecurringCandidateError::ConnectionUpdateInstantSkipped,
+        });
+    }
+    if provisional
+        .channel_map_update_instant()
+        .is_some_and(|instant| instant != provisional.event_counter())
+    {
+        return ControlFlow::Break(PeripheralConnectionRecurringProtocolFailure {
+            completed: provisional.cancel(),
+            original_phase,
+            delta,
+            error: PeripheralConnectionRecurringCandidateError::ChannelMapUpdateInstantSkipped,
+        });
+    }
     let planning_phase = match packet_start {
         Some(packet_start) => original_phase.correct_from_normalized_packet_start(packet_start),
         None => original_phase,
     };
-    let plan = match planning_phase.plan(
-        provisional.request(),
-        delta,
-        epoch,
-        scheduler_config,
-        timing_policy,
-    ) {
+    let plan = match match provisional.connection_timing_transition() {
+        Some(transition) => planning_phase.plan_connection_update(
+            provisional.request(),
+            transition,
+            delta,
+            epoch,
+            scheduler_config,
+            timing_policy,
+        ),
+        None => planning_phase.plan(
+            provisional.request(),
+            delta,
+            epoch,
+            scheduler_config,
+            timing_policy,
+        ),
+    } {
         Ok(plan) => plan,
         Err(error) => {
             return ControlFlow::Break(PeripheralConnectionRecurringProtocolFailure {
@@ -180,6 +222,10 @@ pub enum PeripheralConnectionRecurringCandidateError {
     EstablishmentFailed,
     /// The Peripheral must listen in each event while the anchor is unknown.
     EstablishmentEventSkipped,
+    /// The Connection Update instant must be submitted rather than skipped.
+    ConnectionUpdateInstantSkipped,
+    /// The Channel Map Update instant must be submitted rather than skipped.
+    ChannelMapUpdateInstantSkipped,
     Timing(PeripheralConnectionRecurringTimingError),
 }
 
@@ -278,6 +324,16 @@ impl PeripheralConnectionRecurringEventCandidate {
 
     pub const fn delta(&self) -> LePeripheralConnectionEventDelta {
         self.protocol.proposal.delta
+    }
+
+    pub const fn connection_state(
+        &self,
+    ) -> oer_bluetooth_ll::connection::LePeripheralConnectionState {
+        self.protocol.connection_state()
+    }
+
+    pub const fn timing(&self) -> oer_bluetooth_ll::connection::LeConnectionTiming {
+        self.protocol.timing()
     }
 
     pub const fn raw_window(&self) -> SchedulerRawWindow {

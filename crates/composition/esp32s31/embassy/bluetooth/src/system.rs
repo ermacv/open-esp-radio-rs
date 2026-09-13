@@ -30,6 +30,10 @@ use oer_esp32s31_radio_platform_esp_hal::{
     EspHalBluetoothModemLpTimerStorageError, PublishedEspHalBluetoothInterruptOwners,
 };
 
+use trouble_host::{HostResources, PacketPool};
+
+use crate::{BluetoothTroubleSystem, trouble::compose_trouble_bluetooth_system};
+
 type PublishedStorage = PublishedEspHalBluetoothInterruptOwners;
 type RuntimeWakers = RuntimeNotifications<CriticalSectionRawMutex>;
 
@@ -100,4 +104,64 @@ pub struct BluetoothRunners<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
+}
+
+impl<
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothSystem<
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+{
+    /// Consume this exact Controller epoch into a released Trouble Host stack.
+    ///
+    /// The returned `stack.runner()` and `hardware.run()` futures must be
+    /// polled concurrently. Peripheral and GATT application handles are
+    /// obtained directly from the returned Trouble stack.
+    pub fn into_trouble<
+        'resources,
+        P: PacketPool,
+        const CONNECTIONS: usize,
+        const L2CAP_CHANNELS: usize,
+        const ADVERTISING_SETS: usize,
+        const BONDS: usize,
+    >(
+        self,
+        resources: &'resources mut HostResources<
+            P,
+            CONNECTIONS,
+            L2CAP_CHANNELS,
+            ADVERTISING_SETS,
+            BONDS,
+        >,
+    ) -> BluetoothTroubleSystem<
+        'resources,
+        BluetoothHostController<
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        P,
+        BluetoothHardwareRunner<
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    > {
+        let BluetoothSystem {
+            hci,
+            runners: BluetoothRunners { hardware },
+        } = self;
+        compose_trouble_bluetooth_system(hci, hardware, resources)
+    }
 }

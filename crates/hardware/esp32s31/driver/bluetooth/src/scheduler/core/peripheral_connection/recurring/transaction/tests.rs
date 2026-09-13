@@ -183,6 +183,59 @@ fn establishment_cannot_skip_a_receive_window() {
 }
 
 #[test]
+fn connection_update_instant_cannot_be_skipped() {
+    let current_request = request(24, 4);
+    let mut completed = completed_event(current_request);
+    completed
+        .schedule_connection_update(request(40, 4).timing(), 2)
+        .unwrap();
+    let original_phase = phase(10_000);
+    let ControlFlow::Break(failure) = prepare_recurring_protocol_proposal(
+        completed,
+        original_phase,
+        None,
+        LePeripheralConnectionEventDelta::new(3).unwrap(),
+        epoch(0),
+        SchedulerSoftwareConfig::reviewed_standalone(),
+        software_policy(),
+    ) else {
+        panic!("the peripheral must not jump over a Connection Update instant");
+    };
+    assert_eq!(
+        failure.error,
+        PeripheralConnectionRecurringCandidateError::ConnectionUpdateInstantSkipped
+    );
+    assert_eq!(failure.completed.event_counter(), 0);
+    assert_eq!(failure.delta.get(), 3);
+}
+
+#[test]
+fn channel_map_update_instant_cannot_be_skipped() {
+    let mut completed = completed_event(request(24, 4));
+    completed
+        .schedule_channel_map_update(LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap(), 2)
+        .unwrap();
+    let original_phase = phase(10_000);
+    let ControlFlow::Break(failure) = prepare_recurring_protocol_proposal(
+        completed,
+        original_phase,
+        None,
+        LePeripheralConnectionEventDelta::new(3).unwrap(),
+        epoch(0),
+        SchedulerSoftwareConfig::reviewed_standalone(),
+        software_policy(),
+    ) else {
+        panic!("the peripheral must not jump over a Channel Map Update instant");
+    };
+    assert_eq!(
+        failure.error,
+        PeripheralConnectionRecurringCandidateError::ChannelMapUpdateInstantSkipped
+    );
+    assert_eq!(failure.completed.event_counter(), 0);
+    assert_eq!(failure.delta.get(), 3);
+}
+
+#[test]
 fn protocol_proposal_keeps_completed_owner_provisional_while_capture_advances_full_delta() {
     let request = request(24, 4);
     let original_phase = phase(9_900);

@@ -264,4 +264,87 @@ where
             .try_publish(event.kind(), event.as_bytes())?;
         Ok(LePeripheralConnectionEventPublication::Published)
     }
+
+    /// Publish a completed Central connection-parameter update if Host-enabled.
+    pub fn try_publish_connection_update_complete(
+        &self,
+        event: &LeConnectionUpdateCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self
+                .bootstrap
+                .le_event_mask()
+                .is_le_conn_update_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish a completed remote feature procedure if Host-enabled.
+    pub fn try_publish_read_remote_features_complete(
+        &self,
+        event: &LeReadRemoteFeaturesCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self
+                .bootstrap
+                .le_event_mask()
+                .is_le_read_remote_features_page_0_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish a completed remote version procedure if Host-enabled.
+    pub fn try_publish_read_remote_version_information_complete(
+        &self,
+        event: &LeReadRemoteVersionInformationCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self
+            .bootstrap
+            .event_mask()
+            .is_read_remote_version_information_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish Host-to-Controller ACL credits released by radio completion.
+    pub fn try_publish_number_of_completed_packets(
+        &self,
+        event: &LeNumberOfCompletedPacketsEvent,
+    ) -> Result<(), crate::HciChannelError> {
+        self.transport().try_publish(event.kind(), event.as_bytes())
+    }
+
+    /// Publish one retained Controller-to-Host ACL fragment.
+    pub fn try_publish_controller_acl(
+        &self,
+        packet: &crate::LeControllerAclPacket,
+    ) -> Result<(), crate::HciChannelError> {
+        self.transport()
+            .try_publish(bt_hci::PacketKind::AclData, packet.as_bytes())
+    }
+
+    /// Current Host-declared Controller-to-Host ACL packet and credit policy.
+    pub fn controller_to_host_acl_profile(&self) -> crate::LeControllerToHostAclProfile {
+        let buffers = self.bootstrap.host_buffers();
+        crate::LeControllerToHostAclProfile::new(
+            buffers.map_or(crate::LE_ACL_DATA_PACKET_CAPACITY, |buffers| {
+                usize::from(buffers.acl_data_packet_length).min(crate::LE_ACL_DATA_PACKET_CAPACITY)
+            }),
+            buffers.map(|buffers| buffers.total_acl_data_packets),
+            self.bootstrap.controller_to_host_flow_control()
+                == bt_hci::param::ControllerToHostFlowControl::AclOnSyncOff,
+        )
+    }
 }

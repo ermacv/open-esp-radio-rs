@@ -19,6 +19,8 @@ pub enum BootstrapCommand {
     HostBufferSize,
     /// Read BD_ADDR.
     ReadBdAddr,
+    /// Read Local Supported Commands.
+    ReadLocalSupportedCommands,
     /// LE Set Event Mask.
     LeSetEventMask,
     /// LE Read Buffer Size.
@@ -45,6 +47,8 @@ impl BootstrapCommand {
             Some(Self::HostBufferSize)
         } else if raw == ReadBdAddr::OPCODE.to_raw() {
             Some(Self::ReadBdAddr)
+        } else if raw == ReadLocalSupportedCmds::OPCODE.to_raw() {
+            Some(Self::ReadLocalSupportedCommands)
         } else if raw == LeSetEventMask::OPCODE.to_raw() {
             Some(Self::LeSetEventMask)
         } else if raw == LeReadBufferSize::OPCODE.to_raw() {
@@ -73,6 +77,7 @@ impl BootstrapCommand {
             Self::SetControllerToHostFlowControl => SetControllerToHostFlowControl::OPCODE,
             Self::HostBufferSize => HostBufferSize::OPCODE,
             Self::ReadBdAddr => ReadBdAddr::OPCODE,
+            Self::ReadLocalSupportedCommands => ReadLocalSupportedCmds::OPCODE,
             Self::LeSetEventMask => LeSetEventMask::OPCODE,
             Self::LeReadBufferSize => LeReadBufferSize::OPCODE,
             Self::LeReadLocalSupportedFeatures => LeReadLocalSupportedFeatures::OPCODE,
@@ -105,6 +110,8 @@ pub enum OwnedBootstrapCommand {
     },
     /// Read the configured public device address.
     ReadBdAddr,
+    /// Read the exact closed command inventory.
+    ReadLocalSupportedCommands,
     /// Replace the LE Meta event mask.
     LeSetEventMask(LeEventMask),
     /// Read the configured LE ACL buffer profile.
@@ -128,6 +135,7 @@ impl OwnedBootstrapCommand {
             }
             Self::HostBufferSize { .. } => BootstrapCommand::HostBufferSize,
             Self::ReadBdAddr => BootstrapCommand::ReadBdAddr,
+            Self::ReadLocalSupportedCommands => BootstrapCommand::ReadLocalSupportedCommands,
             Self::LeSetEventMask(_) => BootstrapCommand::LeSetEventMask,
             Self::LeReadBufferSize => BootstrapCommand::LeReadBufferSize,
             Self::LeReadLocalSupportedFeatures => BootstrapCommand::LeReadLocalSupportedFeatures,
@@ -195,6 +203,12 @@ impl OwnedBootstrapCommand {
                 }
                 Self::ReadBdAddr
             }
+            BootstrapCommand::ReadLocalSupportedCommands => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::ReadLocalSupportedCommands
+            }
             BootstrapCommand::LeSetEventMask => Self::LeSetEventMask(
                 parse_complete(parameters).ok_or(BootstrapCommandDecodeError::Malformed(kind))?,
             ),
@@ -222,6 +236,28 @@ impl OwnedBootstrapCommand {
         };
         Ok(decoded)
     }
+}
+
+/// Standard 64-octet command mask for every command claimed by the closed
+/// Controller classifier.
+///
+/// Read Local Supported Commands itself has no assigned bit. Commands remain
+/// advertised when their execution is state-dependent; unsupported optional
+/// commands stay clear even when adjacent commands share an octet.
+pub const fn le_controller_supported_commands() -> [u8; 64] {
+    let mut commands = [0; 64];
+    commands[0] = 1 << 5; // Disconnect.
+    commands[2] = 1 << 7; // Read Remote Version Information.
+    commands[5] = (1 << 6) | (1 << 7); // Set Event Mask, Reset.
+    commands[10] = (1 << 5) | (1 << 6) | (1 << 7); // Flow control and Host buffers.
+    commands[15] = 1 << 1; // Read BD_ADDR.
+    commands[25] = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 7);
+    commands[26] = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6);
+    commands[27] = 1 << 5; // LE Read Remote Features.
+    commands[28] = (1 << 4) | (1 << 5) | (1 << 6); // LE DTM v1 and Test End.
+    commands[35] = 1 << 7; // LE Receiver Test v2.
+    commands[36] = 1 << 0; // LE Transmitter Test v2.
+    commands
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

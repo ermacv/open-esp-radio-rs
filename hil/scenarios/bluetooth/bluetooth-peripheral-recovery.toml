@@ -1,10 +1,10 @@
 schema = 4
 id = "bluetooth-peripheral-recovery"
-description = "Two real LE peripheral connections with Host-visible completion and supervision-timeout disconnection events followed by advertising recovery"
+description = "Two real LE peripheral connections with bidirectional ACL echo, Host-visible lifecycle events, supervision-timeout disconnection and advertising recovery"
 image = "bluetooth-dtm"
 isolation = "reset"
 repetitions = 3
-tags = ["bluetooth", "peripheral", "connection", "recovery"]
+tags = ["bluetooth", "peripheral", "connection", "acl", "recovery"]
 
 [workload]
 kind = "bluetooth-peripheral"

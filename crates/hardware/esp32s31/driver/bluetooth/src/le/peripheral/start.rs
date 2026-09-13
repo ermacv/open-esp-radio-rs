@@ -493,6 +493,12 @@ where
         self.event_counter
     }
 
+    pub(crate) fn local_version_information(
+        &self,
+    ) -> Option<oer_bluetooth_ll::control::LeVersionInformation> {
+        self.task.peripheral_version_information()
+    }
+
     pub const fn advertising_set(&self) -> LegacyConnectableAdvertisingSet<'static> {
         self.evidence.advertising_set()
     }

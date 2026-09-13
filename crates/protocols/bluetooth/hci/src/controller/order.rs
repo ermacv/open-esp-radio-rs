@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+use bt_hci::param::ConnHandle;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use super::le::advertising::LeLegacyAdvertisingActiveEnableDisposition;
@@ -15,13 +16,15 @@ use super::le::scanning::{
     LeLegacyScanningActiveEnableDisposition, LeLegacyScanningIdleEnableDisposition,
 };
 use crate::{
-    HciChannelError, HciClassifiedCommandIntake, HciControllerResponse, HciEpochBound,
-    HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
-    LeControllerCommandComplete, LeControllerCommandEndpoint, LeDtmActiveSessionDisposition,
-    LeDtmCommand, LeDtmIdleSessionDisposition, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyConnectableAdvertisingEnableRequest,
-    LeLegacyNonconnectableAdvertisingEnableRequest, LeLegacyScanningEnableCommand,
-    LeLegacyScanningEnableRequest, LeReceiverTestCommand, LeTestEndCommand,
+    HciActivePeripheralIntake, HciChannelError, HciClassifiedCommandIntake, HciControllerResponse,
+    HciEpochBound, HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
+    LeControllerCommandComplete, LeControllerCommandEndpoint, LeDisconnectCommand,
+    LeDtmActiveSessionDisposition, LeDtmCommand, LeDtmIdleSessionDisposition, LeHostAclPacket,
+    LeHostAclPacketRejection, LeHostCompletedPacketsCommand, LeHostCompletedPacketsErrorEvent,
+    LeLegacyAdvertisingEnableCommand, LeLegacyAdvertisingIdleEnableDisposition,
+    LeLegacyConnectableAdvertisingEnableRequest, LeLegacyNonconnectableAdvertisingEnableRequest,
+    LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest, LeReadRemoteFeaturesCommand,
+    LeReadRemoteVersionInformationCommand, LeReceiverTestCommand, LeTestEndCommand,
     LeTransmitterTestCommand, OwnedBootstrapCommand,
 };
 
@@ -89,6 +92,41 @@ pub enum LeControllerCommandIntake<'epoch, 'command, 'buffer, Owner> {
         /// Unchanged next-command authority for later command intake.
         ready: LeControllerCommandReady<'epoch, Owner>,
         /// Data frame retaining its source-epoch proof and buffer borrow.
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
+}
+
+/// Active-peripheral intake with copied ACL packet ownership.
+#[must_use = "route the command or ACL packet, or retain the returned authority"]
+pub enum LeControllerActivePeripheralIntake<'epoch, 'command, 'buffer, Owner> {
+    Command {
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
+        buffer: &'buffer mut [u8],
+    },
+    Acl {
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &'buffer mut [u8],
+    },
+    HostCompletedPackets {
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        command: Result<LeHostCompletedPacketsCommand, LeHostCompletedPacketsErrorEvent>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        ready: LeControllerCommandReady<'epoch, Owner>,
         frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
     },
 }
@@ -568,6 +606,115 @@ pub enum LeControllerActiveLegacyScanningCommandRoute<'epoch, 'command, Owner> {
     EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
 }
 
+/// Portable command policy while one peripheral connection owns the radio.
+#[must_use = "publish the response or retain Disconnect/Reset through link quiescence"]
+pub enum LeControllerActivePeripheralCommandRoute<'epoch, 'command, Owner> {
+    /// A command completed without changing the connection lifecycle.
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
+    /// A matching Disconnect remains ordered until its Command Status is published.
+    Disconnect(LeControllerDeferredDisconnect<'epoch, Owner>),
+    /// A matching remote-feature request awaits ordered Command Status.
+    ReadRemoteFeatures(LeControllerDeferredReadRemoteFeatures<'epoch, Owner>),
+    /// A matching remote-version request awaits ordered Command Status.
+    ReadRemoteVersionInformation(LeControllerDeferredReadRemoteVersionInformation<'epoch, Owner>),
+    /// Reset remains ordered and undispatched until the connection graph is quiescent.
+    ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
+    /// The aggregate belongs to another endpoint and remains inseparable.
+    EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
+}
+
+/// Endpoint-validated remote-feature request retaining command-order authority.
+#[must_use = "publish Command Status before beginning the Link Layer procedure"]
+pub struct LeControllerDeferredReadRemoteFeatures<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeReadRemoteFeaturesCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredReadRemoteFeatures<'epoch, Owner> {
+    /// Borrow the current connection owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Convert an admitted request into its ordered successful status.
+    pub fn into_accepted_status(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_accepted_status())
+    }
+}
+
+/// Endpoint-validated remote-version request retaining command-order authority.
+#[must_use = "publish Command Status before beginning the Link Layer procedure"]
+pub struct LeControllerDeferredReadRemoteVersionInformation<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeReadRemoteVersionInformationCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredReadRemoteVersionInformation<'epoch, Owner> {
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    pub fn into_accepted_status(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_accepted_status())
+    }
+}
+
+/// Lifecycle owner and accepted Disconnect retained beyond Command Status.
+#[must_use = "retain the Disconnect request until Link Layer termination completes"]
+pub struct LeControllerAcceptedDisconnect<Owner> {
+    owner: Owner,
+    command: LeDisconnectCommand,
+}
+
+impl<Owner> LeControllerAcceptedDisconnect<Owner> {
+    /// Borrow the independently progressing connection owner.
+    pub const fn owner(&self) -> &Owner {
+        &self.owner
+    }
+
+    /// Borrow the exact accepted Disconnect semantics.
+    pub const fn command(&self) -> &LeDisconnectCommand {
+        &self.command
+    }
+
+    /// Consume the aggregate only when the Link Layer lifecycle takes ownership.
+    pub fn into_parts(self) -> (Owner, LeDisconnectCommand) {
+        (self.owner, self.command)
+    }
+}
+
+/// Endpoint-validated Disconnect retaining its command-order authority.
+#[must_use = "publish Command Status before beginning Link Layer termination"]
+pub struct LeControllerDeferredDisconnect<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeDisconnectCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredDisconnect<'epoch, Owner> {
+    /// Borrow the current connection owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Borrow the validated Disconnect command.
+    pub const fn command(&self) -> &LeDisconnectCommand {
+        &self.command
+    }
+
+    /// Admit the procedure and retain it as the response owner.
+    pub fn into_accepted_status(
+        self,
+    ) -> LeControllerResponsePending<'epoch, LeControllerAcceptedDisconnect<Owner>> {
+        let command = self.command;
+        let response = command.into_accepted_status();
+        self.ready
+            .map_owner(|owner| LeControllerAcceptedDisconnect { owner, command })
+            .begin_next_response(response)
+    }
+}
+
 /// Endpoint-bound Test End retained until active hardware has quiesced.
 #[must_use = "retain Test End until the exact terminal packet count is available"]
 pub struct LeControllerDeferredTestEnd<'epoch, Owner> {
@@ -815,6 +962,14 @@ impl<'epoch, Owner> LeControllerCommandReady<'epoch, Owner> {
         }
     }
 
+    /// Retain the exceptional error response for Host Number Of Completed Packets.
+    pub fn begin_host_completed_packets_error(
+        self,
+        response: LeHostCompletedPacketsErrorEvent,
+    ) -> LeControllerResponsePending<'epoch, Owner> {
+        self.begin_next_response(response)
+    }
+
     /// Whether an endpoint belongs to the HCI epoch carrying this authority.
     ///
     /// Only the command-ready state exposes this authority, so command intake cannot
@@ -912,6 +1067,65 @@ where
         }
     }
 
+    /// Consume one active-peripheral command or copy one Host ACL packet.
+    pub fn try_receive_active_peripheral_with_buffer<'epoch, 'buffer, Owner>(
+        &self,
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        live_handle: Option<ConnHandle>,
+        buffer: &'buffer mut [u8],
+        accept_acl: impl FnOnce(Owner, Result<LeHostAclPacket, LeHostAclPacketRejection>) -> Owner,
+    ) -> LeControllerActivePeripheralIntake<'epoch, 'resources, 'buffer, Owner> {
+        if !ready.accepts_endpoint(self) {
+            return LeControllerActivePeripheralIntake::EndpointMismatch { ready, buffer };
+        }
+        match self.transport().try_receive_active_peripheral_with_buffer(
+            buffer,
+            live_handle,
+            self.bootstrap_config().le_acl_data_packet_length(),
+            ready,
+            |ready, packet| ready.map_owner(|owner| accept_acl(owner, packet)),
+        ) {
+            HciActivePeripheralIntake::Command {
+                command,
+                state: ready,
+                buffer,
+            } => LeControllerActivePeripheralIntake::Command {
+                command: LeControllerClassifiedCommand { ready, command },
+                buffer,
+            },
+            HciActivePeripheralIntake::Acl {
+                state: ready,
+                buffer,
+            } => LeControllerActivePeripheralIntake::Acl { ready, buffer },
+            HciActivePeripheralIntake::HostCompletedPackets {
+                state: ready,
+                command,
+                buffer,
+            } => LeControllerActivePeripheralIntake::HostCompletedPackets {
+                ready,
+                command,
+                buffer,
+            },
+            HciActivePeripheralIntake::Empty {
+                state: ready,
+                buffer,
+            } => LeControllerActivePeripheralIntake::Empty { ready, buffer },
+            HciActivePeripheralIntake::Channel {
+                state: ready,
+                error,
+                buffer,
+            } => LeControllerActivePeripheralIntake::Channel {
+                ready,
+                buffer,
+                error,
+            },
+            HciActivePeripheralIntake::NonCommand {
+                state: ready,
+                frame,
+            } => LeControllerActivePeripheralIntake::NonCommand { ready, frame },
+        }
+    }
+
     /// Wait until response capacity is observed while borrowing the response.
     ///
     /// The wait reserves no slot and borrows `pending`, so cancellation leaves
@@ -951,6 +1165,36 @@ where
             .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
 
         match classification {
+            LeControllerCommandClassification::Disconnect(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedDisconnect(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteFeatures(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Dtm(command) => {
                 match command.into_idle_session_disposition() {
                     LeDtmIdleSessionDisposition::StartReceiver(command) => {
@@ -1086,6 +1330,36 @@ where
         let LeControllerClassifiedCommand { ready, command } = command;
         match command.try_into_for_endpoint(self.transport()) {
             Ok(classification) => match classification {
+                LeControllerCommandClassification::Disconnect(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(command.into_unknown_connection_status()),
+                    )
+                }
+                LeControllerCommandClassification::MalformedDisconnect(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::ReadRemoteFeatures(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(command.into_unknown_connection_status()),
+                    )
+                }
+                LeControllerCommandClassification::MalformedReadRemoteFeatures(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(command.into_unknown_connection_status()),
+                    )
+                }
+                LeControllerCommandClassification::MalformedReadRemoteVersionInformation(
+                    response,
+                ) => LeControllerClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                ),
                 LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
                     LeControllerClassifiedCommandRoute::ResetBarrier(LeControllerResetBarrier {
                         ready,
@@ -1160,6 +1434,138 @@ where
         }
     }
 
+    /// Route one command while a peripheral connection owns the radio lifecycle.
+    ///
+    /// A matching Disconnect is retained for the chip-owned Link Layer procedure.
+    /// Reset remains a barrier until that same graph is quiescent. Other commands
+    /// complete under the same radio-active policy used by the existing roles.
+    pub fn route_active_peripheral_classified_command<'epoch, 'command, Owner>(
+        &mut self,
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
+        live_handle: Option<ConnHandle>,
+        local_procedure_busy: bool,
+        local_version_available: bool,
+    ) -> LeControllerActivePeripheralCommandRoute<'epoch, 'command, Owner> {
+        if !command.ready.accepts_endpoint(self)
+            || !command.command.originates_from(self.transport())
+        {
+            return LeControllerActivePeripheralCommandRoute::EndpointMismatch(command);
+        }
+        let LeControllerClassifiedCommand { ready, command } = command;
+        let classification = command
+            .try_into_for_endpoint(self.transport())
+            .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
+
+        let pending = |pending| LeControllerActivePeripheralCommandRoute::ResponsePending(pending);
+        match classification {
+            LeControllerCommandClassification::Disconnect(command)
+                if Some(command.handle()) == live_handle =>
+            {
+                LeControllerActivePeripheralCommandRoute::Disconnect(
+                    LeControllerDeferredDisconnect { ready, command },
+                )
+            }
+            LeControllerCommandClassification::Disconnect(command) => {
+                pending(ready.begin_next_response(command.into_unknown_connection_status()))
+            }
+            LeControllerCommandClassification::MalformedDisconnect(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command)
+                if Some(command.handle()) == live_handle && !local_procedure_busy =>
+            {
+                LeControllerActivePeripheralCommandRoute::ReadRemoteFeatures(
+                    LeControllerDeferredReadRemoteFeatures { ready, command },
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command)
+                if Some(command.handle()) == live_handle =>
+            {
+                pending(ready.begin_next_response(command.into_command_disallowed_status()))
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command) => {
+                pending(ready.begin_next_response(command.into_unknown_connection_status()))
+            }
+            LeControllerCommandClassification::MalformedReadRemoteFeatures(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command)
+                if Some(command.handle()) == live_handle
+                    && !local_procedure_busy
+                    && local_version_available =>
+            {
+                LeControllerActivePeripheralCommandRoute::ReadRemoteVersionInformation(
+                    LeControllerDeferredReadRemoteVersionInformation { ready, command },
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command)
+                if Some(command.handle()) == live_handle =>
+            {
+                pending(ready.begin_next_response(command.into_command_disallowed_status()))
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
+                pending(ready.begin_next_response(command.into_unknown_connection_status()))
+            }
+            LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
+                LeControllerActivePeripheralCommandRoute::ResetBarrier(LeControllerResetBarrier {
+                    ready,
+                    command,
+                })
+            }
+            LeControllerCommandClassification::Bootstrap(command) => {
+                pending(ready.begin_next_response(
+                    self.dispatch_bootstrap_command_while_radio_active(command),
+                ))
+            }
+            LeControllerCommandClassification::MalformedBootstrap(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::Dtm(command) => {
+                let response = match command.into_idle_session_disposition() {
+                    LeDtmIdleSessionDisposition::CompleteNoTest(response) => response,
+                    LeDtmIdleSessionDisposition::StartReceiver(command) => {
+                        command.into_radio_unavailable_command_complete()
+                    }
+                    LeDtmIdleSessionDisposition::StartTransmitter(command) => {
+                        command.into_radio_unavailable_command_complete()
+                    }
+                };
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::MalformedDtm(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => pending(
+                ready.begin_next_response(self.dispatch_legacy_advertising_configuration(command)),
+            ),
+            LeControllerCommandClassification::LegacyAdvertisingEnable(command) => {
+                pending(ready.begin_next_response(
+                    self.complete_legacy_advertising_enable_while_radio_unavailable(command),
+                ))
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::LegacyScanningConfiguration(command) => pending(
+                ready.begin_next_response(self.dispatch_legacy_scanning_configuration(command)),
+            ),
+            LeControllerCommandClassification::LegacyScanningEnable(command) => {
+                pending(ready.begin_next_response(
+                    self.complete_legacy_scanning_enable_while_radio_unavailable(command),
+                ))
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::Unsupported(response) => {
+                pending(ready.begin_next_response(response))
+            }
+        }
+    }
+
     /// Route one command while legacy advertising owns the radio lifecycle.
     ///
     /// Advertising configuration is immutable from accepted Enable through
@@ -1181,6 +1587,36 @@ where
             .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
 
         match classification {
+            LeControllerCommandClassification::Disconnect(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedDisconnect(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteFeatures(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
                 LeControllerActiveLegacyAdvertisingCommandRoute::ResetBarrier(
                     LeControllerResetBarrier { ready, command },
@@ -1286,6 +1722,36 @@ where
             .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
 
         match classification {
+            LeControllerCommandClassification::Disconnect(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedDisconnect(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteFeatures(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteFeatures(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_status()),
+                )
+            }
+            LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
                 LeControllerActiveLegacyScanningCommandRoute::ResetBarrier(
                     LeControllerResetBarrier { ready, command },

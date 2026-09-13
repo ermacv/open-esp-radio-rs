@@ -78,6 +78,20 @@ impl PeripheralConnectionRecurringPreSequence {
     pub(crate) const fn raw_window(&self) -> SchedulerRawWindow {
         self.candidate.raw_window()
     }
+
+    pub(crate) const fn delta(&self) -> LePeripheralConnectionEventDelta {
+        self.candidate.delta()
+    }
+
+    pub(crate) const fn connection_state(
+        &self,
+    ) -> oer_bluetooth_ll::connection::LePeripheralConnectionState {
+        self.candidate.connection_state()
+    }
+
+    pub(crate) const fn timing(&self) -> oer_bluetooth_ll::connection::LeConnectionTiming {
+        self.candidate.timing()
+    }
 }
 
 /// Why one recurring connection event could not reach a sequence-ready image.

@@ -4,15 +4,17 @@ use bt_hci::{
         Cmd, Opcode, OpcodeGroup,
         controller_baseband::{Reset, SetEventMask},
         le::{
-            LeReceiverTest, LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams,
-            LeSetRandomAddr, LeSetScanEnable, LeSetScanParams, LeSetScanResponseData, LeTestEnd,
-            LeTransmitterTestV2,
+            LeReadRemoteFeatures, LeReceiverTest, LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable,
+            LeSetAdvParams, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
+            LeSetScanResponseData, LeTestEnd, LeTransmitterTestV2,
         },
+        link_control::{Disconnect, ReadRemoteVersionInformation},
     },
-    event::{CommandComplete, CommandCompleteWithStatus, EventKind},
+    data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
+    event::{CommandComplete, CommandCompleteWithStatus, CommandStatus, EventKind},
     param::{
-        AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration, Error as HciError,
-        LeScanKind, ScanningFilterPolicy, Status,
+        AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, ConnHandle, Duration,
+        Error as HciError, LeScanKind, ScanningFilterPolicy, Status,
     },
     transport::{PacketToController, Transport},
 };
@@ -24,9 +26,10 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::{
     LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
-    LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
-    LeControllerCommandIntake, LeControllerCommandReady, LeControllerIdleClassifiedCommandRoute,
-    LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
+    LeControllerActiveLegacyScanningCommandRoute, LeControllerActivePeripheralCommandRoute,
+    LeControllerActivePeripheralIntake, LeControllerClassifiedCommand, LeControllerCommandIntake,
+    LeControllerCommandReady, LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
+    LeControllerResponsePending, LeControllerResponsePublication,
 };
 use crate::{
     BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LE_RECEIVER_TEST_V1_OPCODE,
@@ -42,14 +45,19 @@ struct RadioOwner(u32);
 #[derive(Debug, Eq, PartialEq)]
 struct QuiescedOwner(u32);
 
-type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
+struct AclOwner {
+    id: u32,
+    packet: Option<crate::LeHostAclPacket>,
+}
+
+type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 80>;
 
 fn controller_resources() -> ControllerResources {
     controller_resources_with_output_depth()
 }
 
 fn controller_resources_with_output_depth<const CONTROLLER_TO_HOST_DEPTH: usize>()
--> LeControllerHciResources<NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 45> {
+-> LeControllerHciResources<NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 80> {
     LeControllerHciResources::new(
         LeControllerBootstrapConfig::new(
             BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
@@ -154,12 +162,12 @@ impl PacketToController for RawCommand<'_> {
 }
 
 fn receiver_start_pending<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
-    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 45>,
+    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 80>,
     owner: Owner,
 ) -> LeControllerResponsePending<'epoch, Owner> {
     block_on(endpoints.host.write(&LeReceiverTest::new(7)))
         .expect("the receiver command enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let ready = claim_initial_ready(&mut endpoints.controller, owner);
     let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) = endpoints
@@ -172,14 +180,14 @@ fn receiver_start_pending<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
 }
 
 fn publish_probe_response<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
-    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 45>,
+    endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 80>,
     owner: Owner,
 ) -> LeControllerCommandReady<'epoch, Owner> {
     let opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x1f);
     block_on(endpoints.host.write(&RawCommand::new(opcode, &[])))
         .expect("the probe command enters the Host queue");
     let ready = claim_initial_ready(&mut endpoints.controller, owner);
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
         endpoints.controller.route_idle_classified_command(command)
@@ -209,7 +217,7 @@ fn full_queue_retains_the_transformed_radio_until_exact_publication() {
     let ready = publish_probe_response(&mut endpoints, 11_u8);
     block_on(endpoints.host.write(&LeReceiverTest::new(7)))
         .expect("the receiver command enters the Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
         endpoints.controller.route_idle_classified_command(command)
@@ -233,7 +241,7 @@ fn full_queue_retains_the_transformed_radio_until_exact_publication() {
     };
     assert_eq!(*pending.owner(), 31);
 
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     assert_probe_response(
         block_on(endpoints.host.read(&mut buffer)).expect("the Host drains the older response"),
     );
@@ -262,7 +270,7 @@ fn combined_intake_wait_and_retry_preserve_authority_and_buffer() {
     ));
     assert!(matches!(cancelled, Either::First(())));
 
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     let LeControllerCommandIntake::Empty {
         ready,
         buffer: returned,
@@ -272,7 +280,7 @@ fn combined_intake_wait_and_retry_preserve_authority_and_buffer() {
     else {
         panic!("an empty queue returns exact authority and scratch storage");
     };
-    assert_eq!(returned.len(), 45);
+    assert_eq!(returned.len(), 80);
 
     block_on(endpoints.host.write(&LeTestEnd::new()))
         .expect("Test End enters the Host queue after the cancelled wait");
@@ -284,7 +292,7 @@ fn combined_intake_wait_and_retry_preserve_authority_and_buffer() {
         buffer: returned,
         error:
             HciChannelError::DestinationTooSmall {
-                required: 45,
+                required: 80,
                 available: 15,
             },
     } = endpoints
@@ -334,7 +342,7 @@ fn successful_publication_is_exact_once_and_preserves_existing_fifo_order() {
     let ready = publish_probe_response(&mut endpoints, 43_u8);
     block_on(endpoints.host.write(&LeReceiverTest::new(7)))
         .expect("the receiver command enters the Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
         endpoints.controller.route_idle_classified_command(command)
@@ -350,7 +358,7 @@ fn successful_publication_is_exact_once_and_preserves_existing_fifo_order() {
     };
     assert_eq!(*published.owner(), 43);
 
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     assert_probe_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
     assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
 
@@ -371,7 +379,7 @@ fn published_response_orders_the_next_dtm_completion() {
         panic!("the empty queue must accept the start response");
     };
     block_on(endpoints.host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::Dtm(deferred) =
         endpoints.controller.route_classified_command(classified)
@@ -390,7 +398,7 @@ fn published_response_orders_the_next_dtm_completion() {
     };
     assert_eq!(ended.owner(), &47);
 
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
     assert_test_end_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
 }
@@ -401,7 +409,7 @@ fn idle_router_defers_both_start_kinds_until_explicit_started_response() {
     let mut receiver = receiver_resources.split();
     block_on(receiver.host.write(&LeReceiverTestV2::new(13, 2, 1)))
         .expect("the receiver command enters the real Host queue");
-    let mut receiver_buffer = [0; 45];
+    let mut receiver_buffer = [0; 80];
     let ready = claim_initial_ready(&mut receiver.controller, RadioOwner(71));
     let classified = intake_command(&receiver.controller, ready, &mut receiver_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) = receiver
@@ -428,7 +436,7 @@ fn idle_router_defers_both_start_kinds_until_explicit_started_response() {
         panic!("explicit receiver start completion publishes once");
     };
     assert_eq!(published.owner(), &RadioOwner(72));
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_command_status(
         block_on(receiver.host.read(&mut response_buffer)).unwrap(),
         LE_RECEIVER_TEST_V2_OPCODE,
@@ -443,7 +451,7 @@ fn idle_router_defers_both_start_kinds_until_explicit_started_response() {
             .write(&LeTransmitterTestV2::new(17, 23, 2, 4)),
     )
     .expect("the transmitter command enters the real Host queue");
-    let mut transmitter_buffer = [0; 45];
+    let mut transmitter_buffer = [0; 80];
     let ready = claim_initial_ready(&mut transmitter.controller, RadioOwner(73));
     let classified = intake_command(&transmitter.controller, ready, &mut transmitter_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartTransmitter(start) = transmitter
@@ -479,7 +487,7 @@ fn hardware_failure_status_preserves_backpressure_and_order() {
     let mut receiver = receiver_resources.split();
     let ready = publish_probe_response(&mut receiver, RadioOwner(91));
     block_on(receiver.host.write(&LeReceiverTestV2::new(13, 3, 0))).unwrap();
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let command = intake_command(&receiver.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
         receiver.controller.route_idle_classified_command(command)
@@ -494,7 +502,7 @@ fn hardware_failure_status_preserves_backpressure_and_order() {
     else {
         panic!("the older response must backpressure the portable failure");
     };
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_probe_response(block_on(receiver.host.read(&mut response_buffer)).unwrap());
     let LeControllerResponsePublication::Published(ready) =
         pending.try_publish(&receiver.controller)
@@ -515,7 +523,7 @@ fn idle_router_retains_zero_count_test_end_through_backpressure() {
     let mut endpoints = resources.split();
     let ready = publish_probe_response(&mut endpoints, RadioOwner(67));
     block_on(endpoints.host.write(&LeTestEnd::new())).expect("Test End enters the Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) = endpoints
         .controller
@@ -530,7 +538,7 @@ fn idle_router_retains_zero_count_test_end_through_backpressure() {
     };
     assert_eq!(pending.owner(), &RadioOwner(67));
 
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_probe_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
     let LeControllerResponsePublication::Published(published) =
         pending.try_publish(&endpoints.controller)
@@ -550,7 +558,7 @@ fn idle_router_barriers_reset_and_dispatches_non_reset_exactly_once() {
     let mut endpoints = resources.split();
     let ready = publish_probe_response(&mut endpoints, RadioOwner(81));
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
         endpoints.controller.route_idle_classified_command(reset)
@@ -580,7 +588,7 @@ fn idle_router_barriers_reset_and_dispatches_non_reset_exactly_once() {
         endpoints.controller.bootstrap_phase(),
         BootstrapPhase::Configuring
     );
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_probe_response(
         block_on(endpoints.host.read(&mut response_buffer)).expect("the older response is drained"),
     );
@@ -619,7 +627,7 @@ fn idle_router_barriers_reset_and_dispatches_non_reset_exactly_once() {
 
 #[test]
 fn idle_advertising_enable_retains_snapshot_and_order_until_started() {
-    let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(
+    let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
         LeControllerBootstrapConfig::new(
             BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
             12,
@@ -630,8 +638,8 @@ fn idle_advertising_enable_retains_snapshot_and_order_until_started() {
     .expect("the advertising commands fit the transport");
     let mut endpoints = resources.split();
     let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(101));
-    let mut command_buffer = [0; 45];
-    let mut response_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
+    let mut response_buffer = [0; 80];
 
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
     let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -742,8 +750,8 @@ fn connectable_advertising_start_has_distinct_type_and_ordered_scan_response() {
     let mut resources = controller_resources();
     let mut endpoints = resources.split();
     let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(103));
-    let mut command_buffer = [0; 45];
-    let mut response_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
+    let mut response_buffer = [0; 80];
 
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
     let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -868,8 +876,8 @@ fn passive_scanner_enable_and_disable_follow_hardware_lifecycle() {
     let mut resources = controller_resources();
     let mut endpoints = resources.split();
     let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(111));
-    let mut command_buffer = [0; 45];
-    let mut response_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
+    let mut response_buffer = [0; 80];
 
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
     let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -1046,7 +1054,7 @@ fn idle_router_orders_malformed_and_unsupported_classifications() {
         let ready = publish_probe_response(&mut endpoints, RadioOwner(owner));
         block_on(endpoints.host.write(&RawCommand::new(opcode, parameters)))
             .expect("the command enters the real Host queue");
-        let mut command_buffer = [0; 45];
+        let mut command_buffer = [0; 80];
         let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
         let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) = endpoints
             .controller
@@ -1064,7 +1072,7 @@ fn idle_router_orders_malformed_and_unsupported_classifications() {
             panic!("the full queue retains the exact terminal response");
         };
         assert_eq!(pending.owner(), &RadioOwner(owner));
-        let mut response_buffer = [0; 45];
+        let mut response_buffer = [0; 80];
         assert_probe_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
         let LeControllerResponsePublication::Published(published) =
             pending.try_publish(&endpoints.controller)
@@ -1087,7 +1095,7 @@ fn idle_router_cross_epoch_mismatch_retains_owner_order_and_full_classification(
     let mut second_resources = controller_resources();
     let mut second = second_resources.split();
     block_on(second.host.write(&Reset::new())).expect("foreign Reset enters its Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let second_ready = claim_initial_ready(&mut second.controller, RadioOwner(97));
     let command = intake_command(&second.controller, second_ready, &mut command_buffer);
     let LeControllerIdleClassifiedCommandRoute::EndpointMismatch(command) =
@@ -1151,7 +1159,7 @@ fn classified_router_rejects_both_active_start_kinds_through_owned_order() {
 
     block_on(endpoints.host.write(&LeReceiverTestV2::new(11, 2, 0)))
         .expect("the receiver command enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let receiver = intake_command(&endpoints.controller, started, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::Dtm(deferred) =
         endpoints.controller.route_classified_command(receiver)
@@ -1169,7 +1177,7 @@ fn classified_router_rejects_both_active_start_kinds_through_owned_order() {
     else {
         panic!("the queued start response must backpressure Controller Busy");
     };
-    let mut buffer = [0; 45];
+    let mut buffer = [0; 80];
     assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
     let LeControllerResponsePublication::Published(ready) =
         pending.try_publish(&endpoints.controller)
@@ -1223,7 +1231,7 @@ fn classified_router_hands_test_end_to_session_policy_with_published_order() {
         panic!("the empty queue must accept the start response");
     };
     block_on(endpoints.host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::Dtm(deferred) =
         endpoints.controller.route_classified_command(classified)
@@ -1241,7 +1249,7 @@ fn classified_router_hands_test_end_to_session_policy_with_published_order() {
     else {
         panic!("the queued start response must backpressure Test End");
     };
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
     let LeControllerResponsePublication::Published(ready) =
         pending.try_publish(&endpoints.controller)
@@ -1265,7 +1273,7 @@ fn active_advertising_disable_retains_command_order_until_quiescence() {
             .write(&RawCommand::new(LeSetAdvEnable::OPCODE, &[0])),
     )
     .expect("Disable enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(107));
     let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
     let LeControllerActiveLegacyAdvertisingCommandRoute::Disable(disable) = endpoints
@@ -1286,7 +1294,7 @@ fn active_advertising_disable_retains_command_order_until_quiescence() {
         panic!("the empty response queue accepts the completed Disable");
     };
     assert_eq!(ready.owner(), &QuiescedOwner(108));
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_command_status(
         block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
         LeSetAdvEnable::OPCODE,
@@ -1296,7 +1304,7 @@ fn active_advertising_disable_retains_command_order_until_quiescence() {
 
 #[test]
 fn active_advertising_reenable_is_noop_but_configuration_and_dtm_start_are_rejected() {
-    let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(
+    let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
         LeControllerBootstrapConfig::new(
             BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
             12,
@@ -1307,8 +1315,8 @@ fn active_advertising_reenable_is_noop_but_configuration_and_dtm_start_are_rejec
     .expect("the profile fits its source-owned storage");
     let mut endpoints = resources.split();
     let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(109));
-    let mut command_buffer = [0; 45];
-    let mut response_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
+    let mut response_buffer = [0; 80];
 
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the real Host queue");
     let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -1496,7 +1504,7 @@ fn reset_completion_is_exact_once_and_retained_through_backpressure() {
     );
 
     block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the real Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) =
         endpoints.controller.route_classified_command(classified)
@@ -1531,7 +1539,7 @@ fn reset_completion_is_exact_once_and_retained_through_backpressure() {
     };
     assert_eq!(pending.owner(), &QuiescedOwner(61));
 
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
 
     let LeControllerResponsePublication::Published(published) =
@@ -1557,7 +1565,7 @@ fn reset_completion_cross_epoch_rejection_retains_barrier_without_mutation() {
         panic!("the first endpoint must publish its start response");
     };
     block_on(first.host.write(&Reset::new())).expect("Reset enters the first Host transport");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let classified = intake_command(&first.controller, started, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) =
         first.controller.route_classified_command(classified)
@@ -1605,7 +1613,7 @@ fn reset_completion_cross_epoch_rejection_retains_barrier_without_mutation() {
     };
     assert_eq!(pending.owner(), &QuiescedOwner(72));
 
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     assert_start_response(block_on(first.host.read(&mut response_buffer)).unwrap());
     let LeControllerResponsePublication::Published(published) =
         pending.try_publish(&first.controller)
@@ -1630,8 +1638,8 @@ fn classified_router_orders_malformed_and_unsupported_responses_through_backpres
     else {
         panic!("the empty queue must accept the start response");
     };
-    let mut command_buffer = [0; 45];
-    let mut response_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
+    let mut response_buffer = [0; 80];
 
     block_on(
         endpoints
@@ -1736,7 +1744,7 @@ fn classified_router_cross_epoch_rejection_retains_both_exact_owners() {
     let mut second = second_resources.split();
     block_on(second.host.write(&LeTestEnd::new()))
         .expect("the foreign DTM command enters its own Host queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let second_ready = claim_initial_ready(&mut second.controller, RadioOwner(63));
     let classified = intake_command(&second.controller, second_ready, &mut command_buffer);
     let LeControllerClassifiedCommandRoute::EndpointMismatch(classified) =
@@ -1756,6 +1764,356 @@ fn classified_router_cross_epoch_rejection_retains_both_exact_owners() {
         panic!("the retained Test End must remain semantic");
     };
     assert_eq!(test_end.owner(), &RadioOwner(63));
+}
+
+#[test]
+fn active_peripheral_disconnect_publishes_status_without_losing_procedure_owner() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(81));
+    block_on(
+        endpoints
+            .host
+            .write(&RawCommand::new(Disconnect::OPCODE, &[1, 0, 0x13])),
+    )
+    .expect("Disconnect enters the real Host queue");
+    let mut command_buffer = [0; 80];
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::Disconnect(disconnect) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+        )
+    else {
+        panic!("the live handle must retain Disconnect for Link Layer execution");
+    };
+    assert_eq!(disconnect.owner(), &RadioOwner(81));
+    assert_eq!(disconnect.command().reason(), 0x13);
+
+    let pending = disconnect.into_accepted_status();
+    assert_eq!(pending.owner().owner(), &RadioOwner(81));
+    assert_eq!(pending.owner().command().handle(), ConnHandle::new(1));
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty output queue must accept Disconnect Command Status");
+    };
+    assert_eq!(ready.owner().owner(), &RadioOwner(81));
+    assert_eq!(ready.owner().command().reason(), 0x13);
+
+    let mut response_buffer = [0; 80];
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("Disconnect status changed packet kind");
+    };
+    assert_eq!(event.kind, EventKind::CommandStatus);
+    let status = CommandStatus::from_hci_bytes_complete(event.data)
+        .expect("Disconnect response is a complete Command Status");
+    assert_eq!(status.status, Status::SUCCESS);
+    assert_eq!(status.cmd_opcode, Disconnect::OPCODE);
+}
+
+#[test]
+fn active_peripheral_rejects_a_foreign_disconnect_handle_in_order() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(82));
+    block_on(
+        endpoints
+            .host
+            .write(&RawCommand::new(Disconnect::OPCODE, &[2, 0, 0x13])),
+    )
+    .expect("Disconnect enters the real Host queue");
+    let mut command_buffer = [0; 80];
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ResponsePending(pending) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+        )
+    else {
+        panic!("an unknown handle must complete without changing the live connection");
+    };
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty output queue must accept the rejection");
+    };
+    assert_eq!(ready.owner(), &RadioOwner(82));
+
+    let mut response_buffer = [0; 80];
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("Disconnect rejection changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data)
+        .expect("Disconnect rejection is a complete Command Status");
+    assert_eq!(status.status, HciError::UNKNOWN_CONN_IDENTIFIER.to_status());
+    assert_eq!(status.cmd_opcode, Disconnect::OPCODE);
+}
+
+#[test]
+fn active_peripheral_remote_features_admits_one_live_procedure() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(83));
+    block_on(
+        endpoints
+            .host
+            .write(&RawCommand::new(LeReadRemoteFeatures::OPCODE, &[1, 0])),
+    )
+    .unwrap();
+    let mut command_buffer = [0; 80];
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ReadRemoteFeatures(request) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+        )
+    else {
+        panic!("the sole live handle must retain the LL feature procedure");
+    };
+    assert_eq!(request.owner(), &RadioOwner(83));
+    let pending = request.into_accepted_status();
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept Command Status");
+    };
+    assert_eq!(ready.owner(), &RadioOwner(83));
+
+    let mut response_buffer = [0; 80];
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("remote-feature status changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(status.status, Status::SUCCESS);
+    assert_eq!(status.cmd_opcode, LeReadRemoteFeatures::OPCODE);
+
+    block_on(
+        endpoints
+            .host
+            .write(&RawCommand::new(LeReadRemoteFeatures::OPCODE, &[1, 0])),
+    )
+    .unwrap();
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ResponsePending(pending) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            true,
+            true,
+        )
+    else {
+        panic!("a concurrent remote-feature request must complete in order");
+    };
+    let LeControllerResponsePublication::Published(_ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept the busy status");
+    };
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("remote-feature rejection changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(status.status, HciError::CMD_DISALLOWED.to_status());
+}
+
+#[test]
+fn active_peripheral_remote_version_requires_identity_and_serializes_procedures() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(84));
+    block_on(endpoints.host.write(&RawCommand::new(
+        ReadRemoteVersionInformation::OPCODE,
+        &[1, 0],
+    )))
+    .unwrap();
+    let mut command_buffer = [0; 80];
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ReadRemoteVersionInformation(request) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+        )
+    else {
+        panic!("the live configured connection must retain version exchange");
+    };
+    let pending = request.into_accepted_status();
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept remote-version status");
+    };
+    let mut response_buffer = [0; 80];
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("remote-version status changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(status.status, Status::SUCCESS);
+    assert_eq!(status.cmd_opcode, ReadRemoteVersionInformation::OPCODE);
+
+    block_on(endpoints.host.write(&RawCommand::new(
+        ReadRemoteVersionInformation::OPCODE,
+        &[1, 0],
+    )))
+    .unwrap();
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ResponsePending(pending) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            true,
+            true,
+        )
+    else {
+        panic!("a second local procedure must complete with a busy status");
+    };
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept remote-version rejection");
+    };
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("remote-version rejection changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(status.status, HciError::CMD_DISALLOWED.to_status());
+
+    block_on(endpoints.host.write(&RawCommand::new(
+        ReadRemoteVersionInformation::OPCODE,
+        &[1, 0],
+    )))
+    .unwrap();
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ResponsePending(pending) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            false,
+        )
+    else {
+        panic!("an unconfigured local identity must reject version exchange");
+    };
+    let LeControllerResponsePublication::Published(_) = pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept the unavailable status");
+    };
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("unavailable remote-version status changed packet kind");
+    };
+    let status = CommandStatus::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(status.status, HciError::CMD_DISALLOWED.to_status());
+}
+
+#[test]
+fn active_peripheral_acl_intake_copies_packet_and_returns_scratch_storage() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(
+        &mut endpoints.controller,
+        AclOwner {
+            id: 91,
+            packet: None,
+        },
+    );
+    let payload = [1, 2, 3, 4, 5, 6, 7, 8];
+    block_on(endpoints.host.write(&AclPacket::new(
+        ConnHandle::new(1),
+        AclPacketBoundary::FirstNonFlushable,
+        AclBroadcastFlag::PointToPoint,
+        &payload,
+    )))
+    .expect("ACL enters the bounded Host queue");
+
+    let mut scratch = [0xa5; 80];
+    let LeControllerActivePeripheralIntake::Acl { ready, buffer } = endpoints
+        .controller
+        .try_receive_active_peripheral_with_buffer(
+            ready,
+            Some(ConnHandle::new(1)),
+            &mut scratch,
+            |mut owner, packet| {
+                owner.packet = packet.ok();
+                owner
+            },
+        )
+    else {
+        panic!("the active endpoint must copy the matching ACL packet");
+    };
+    assert_eq!(ready.owner().id, 91);
+    assert_eq!(buffer, &[0xa5; 80]);
+    let fragment = ready
+        .owner()
+        .packet
+        .as_ref()
+        .unwrap()
+        .next_fragment(27)
+        .unwrap();
+    assert!(!fragment.is_continuing());
+    assert_eq!(fragment.payload(), payload);
+}
+
+#[test]
+fn active_peripheral_acl_intake_rejects_foreign_handle_without_losing_authority() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(92));
+    block_on(endpoints.host.write(&AclPacket::new(
+        ConnHandle::new(2),
+        AclPacketBoundary::Complete,
+        AclBroadcastFlag::PointToPoint,
+        &[1, 2, 3, 4],
+    )))
+    .expect("ACL enters the bounded Host queue");
+
+    let mut scratch = [0; 80];
+    let LeControllerActivePeripheralIntake::Acl { ready, .. } = endpoints
+        .controller
+        .try_receive_active_peripheral_with_buffer(
+            ready,
+            Some(ConnHandle::new(1)),
+            &mut scratch,
+            |owner, packet| {
+                assert_eq!(
+                    packet,
+                    Err(crate::LeHostAclPacketRejection::UnknownConnectionIdentifier)
+                );
+                owner
+            },
+        )
+    else {
+        panic!("the active endpoint must reject the foreign ACL handle");
+    };
+    assert_eq!(ready.owner(), &RadioOwner(92));
 }
 
 fn assert_start_response(packet: ControllerToHostPacket<'_>) {

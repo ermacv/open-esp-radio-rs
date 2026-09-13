@@ -53,6 +53,27 @@ pub const BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT: usize = 2;
 /// Bytes retained by the initially empty transmit queue sentinel.
 pub const BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES: usize = 0x18;
 
+/// Link Layer kind for one packet appended to the live connection TX cursor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PeripheralConnectionTransmitPduKind {
+    /// LLID 0b01, continuing an L2CAP PDU.
+    DataContinuation,
+    /// LLID 0b10, starting or completing an L2CAP PDU.
+    DataStartOrComplete,
+    /// LLID 0b11, Link Layer control.
+    Control,
+}
+
+impl PeripheralConnectionTransmitPduKind {
+    pub(super) const fn llid(self) -> u8 {
+        match self {
+            Self::DataContinuation => 1,
+            Self::DataStartOrComplete => 2,
+            Self::Control => 3,
+        }
+    }
+}
+
 /// Air-interface identity consumed by the S31 connection link state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PeripheralConnectionIdentity {
@@ -1395,13 +1416,10 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
             && self.pool.connection_resources_ready()
     }
 
-    /// Reclaim a completed control payload while retaining the hardware cursor.
+    /// Reclaim a completed connection payload while retaining the hardware cursor.
     /// A scheduler completion by itself does not complete a queued transmission.
-    pub fn reclaim_control_transmission(&mut self) -> bool {
-        self.storage
-            .as_ref()
-            .get_ref()
-            .reclaim_control_tx(&self.binding)
+    pub fn reclaim_transmission(&mut self) -> bool {
+        self.storage.as_ref().get_ref().reclaim_tx(&self.binding)
     }
 
     /// Queue a control payload under exclusive CPU ownership. `false` leaves
@@ -1410,9 +1428,30 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
         &mut self,
         payload: &[u8],
     ) -> Result<bool, crate::LeTxPacketPrepareError> {
+        self.storage.as_mut().enqueue_tx(
+            &self.binding,
+            PeripheralConnectionTransmitPduKind::Control,
+            payload,
+        )
+    }
+
+    /// Queue one unencrypted ACL fragment under exclusive CPU ownership.
+    ///
+    /// `false` retains the existing packet and its hardware retransmission
+    /// state. The fragment must remain owned until peer acknowledgement.
+    pub fn enqueue_acl_transmission(
+        &mut self,
+        continuing: bool,
+        payload: &[u8],
+    ) -> Result<bool, crate::LeTxPacketPrepareError> {
+        let kind = if continuing {
+            PeripheralConnectionTransmitPduKind::DataContinuation
+        } else {
+            PeripheralConnectionTransmitPduKind::DataStartOrComplete
+        };
         self.storage
             .as_mut()
-            .enqueue_control_tx(&self.binding, payload)
+            .enqueue_tx(&self.binding, kind, payload)
     }
 
     /// Prepare the reviewed dynamic fields for one software-widened recurrence.

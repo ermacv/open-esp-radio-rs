@@ -33,6 +33,12 @@ pub struct BluetoothPeripheralEvidence {
     pub disconnection_complete_events: u32,
     /// Connection/disconnection events that failed the HIL profile checks or decoding.
     pub host_event_faults: u32,
+    /// Nonempty ACL packets delivered by the Controller to the target Host.
+    pub host_acl_received_packets: u32,
+    /// Validated ACL echo packets accepted from the target Host by HCI.
+    pub host_acl_queued_packets: u32,
+    /// Controller ACL packets that violated the single-link HIL echo profile or could not be queued.
+    pub host_acl_faults: u32,
     pub last_disconnect_reason: Option<u8>,
     pub retries: u32,
     pub terminal: bool,
@@ -130,6 +136,9 @@ mod tests {
                     connection_complete_events: 1,
                     disconnection_complete_events: 1,
                     host_event_faults: 0,
+                    host_acl_received_packets: 1,
+                    host_acl_queued_packets: 1,
+                    host_acl_faults: 0,
                     last_disconnect_reason: Some(8),
                     retries: 3,
                     terminal: true,
@@ -163,6 +172,9 @@ mod tests {
             connection_complete_events: 0,
             disconnection_complete_events: 0,
             host_event_faults: 0,
+            host_acl_received_packets: 0,
+            host_acl_queued_packets: 0,
+            host_acl_faults: 0,
             last_disconnect_reason: None,
             retries: 0,
             terminal: false,

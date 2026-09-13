@@ -6,16 +6,447 @@
 
 use bt_hci::{
     PacketKind,
-    event::{EventKind, le::LeConnectionComplete, le::LeEventParams},
+    cmd::{
+        Cmd, Opcode,
+        le::LeReadRemoteFeatures,
+        link_control::{Disconnect, ReadRemoteVersionInformation},
+    },
+    event::{
+        EventKind,
+        le::{LeConnectionComplete, LeConnectionUpdateComplete, LeEventParams},
+    },
     param::{AddrKind, BdAddr, ClockAccuracy, ConnHandle, Duration, LeConnRole, Status},
 };
 
-use crate::HciControllerResponse;
+use crate::{HciCommandPacket, HciControllerResponse};
 
 /// Complete LE Connection Complete event size without an H4 indicator.
 pub const LE_PERIPHERAL_CONNECTION_COMPLETE_EVENT_CAPACITY: usize = 21;
 /// Complete Disconnection Complete event size without an H4 indicator.
 pub const LE_DISCONNECTION_COMPLETE_EVENT_CAPACITY: usize = 6;
+/// Complete Disconnect Command Status event size without an H4 indicator.
+pub const LE_DISCONNECT_COMMAND_STATUS_EVENT_CAPACITY: usize = 6;
+/// Complete LE Connection Update Complete event size without an H4 indicator.
+pub const LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY: usize = 12;
+/// Complete LE Read Remote Features Complete event size without an H4 indicator.
+pub const LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY: usize = 14;
+/// Complete LE Read Remote Features Command Status event size without an H4 indicator.
+pub const LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY: usize = 6;
+/// Complete Read Remote Version Information Complete event size without an H4 indicator.
+pub const LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY: usize = 10;
+/// Complete Read Remote Version Information Command Status event size without an H4 indicator.
+pub const LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY: usize = 6;
+
+/// The single Link Control command implemented by the peripheral profile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeDisconnectCommand {
+    handle: ConnHandle,
+    reason: u8,
+}
+
+/// Owned request to fetch page zero of the sole live peer's LE features.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteFeaturesCommand {
+    handle: ConnHandle,
+}
+
+/// Owned request to fetch the sole live LE peer's Link Layer version.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteVersionInformationCommand {
+    handle: ConnHandle,
+}
+
+impl LeReadRemoteVersionInformationCommand {
+    /// Standard HCI Read Remote Version Information opcode.
+    pub const OPCODE: Opcode = ReadRemoteVersionInformation::OPCODE;
+
+    pub(crate) fn decode(
+        command: HciCommandPacket<'_>,
+    ) -> Result<Self, LeReadRemoteVersionInformationDecodeError> {
+        if command.opcode() != Self::OPCODE {
+            return Err(LeReadRemoteVersionInformationDecodeError::Unsupported);
+        }
+        let [handle_low, handle_high] = command.parameters() else {
+            return Err(LeReadRemoteVersionInformationDecodeError::Malformed);
+        };
+        let handle = u16::from_le_bytes([*handle_low, *handle_high]);
+        if handle > 0x0eff {
+            return Err(LeReadRemoteVersionInformationDecodeError::Malformed);
+        }
+        Ok(Self {
+            handle: ConnHandle::new(handle),
+        })
+    }
+
+    pub const fn handle(self) -> ConnHandle {
+        self.handle
+    }
+
+    pub fn into_accepted_status(self) -> LeReadRemoteVersionInformationCommandStatusEvent {
+        LeReadRemoteVersionInformationCommandStatusEvent::new(Status::SUCCESS)
+    }
+
+    pub fn into_unknown_connection_status(
+        self,
+    ) -> LeReadRemoteVersionInformationCommandStatusEvent {
+        LeReadRemoteVersionInformationCommandStatusEvent::new(
+            bt_hci::param::Error::UNKNOWN_CONN_IDENTIFIER.to_status(),
+        )
+    }
+
+    pub fn into_command_disallowed_status(
+        self,
+    ) -> LeReadRemoteVersionInformationCommandStatusEvent {
+        LeReadRemoteVersionInformationCommandStatusEvent::new(
+            bt_hci::param::Error::CMD_DISALLOWED.to_status(),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LeReadRemoteVersionInformationDecodeError {
+    Unsupported,
+    Malformed,
+}
+
+/// Owned Command Status for Read Remote Version Information.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteVersionInformationCommandStatusEvent {
+    bytes: [u8; LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY],
+    status: Status,
+}
+
+impl LeReadRemoteVersionInformationCommandStatusEvent {
+    pub(crate) fn new(status: Status) -> Self {
+        let opcode = LeReadRemoteVersionInformationCommand::OPCODE
+            .to_raw()
+            .to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::CommandStatus.0,
+                (LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                1,
+                opcode[0],
+                opcode[1],
+            ],
+            status,
+        }
+    }
+
+    pub(crate) fn invalid_parameters() -> Self {
+        Self::new(bt_hci::param::Error::INVALID_HCI_PARAMETERS.to_status())
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub const fn status(self) -> Status {
+        self.status
+    }
+}
+
+impl HciControllerResponse for LeReadRemoteVersionInformationCommandStatusEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// Owned Read Remote Version Information Complete event retained across backpressure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteVersionInformationCompleteEvent {
+    bytes: [u8; LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY],
+}
+
+impl LeReadRemoteVersionInformationCompleteEvent {
+    pub fn new(
+        status: Status,
+        handle: ConnHandle,
+        version: u8,
+        company_identifier: u16,
+        subversion: u16,
+    ) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        let company_identifier = company_identifier.to_le_bytes();
+        let subversion = subversion.to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::ReadRemoteVersionInformationComplete.0,
+                (LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                handle[0],
+                handle[1],
+                version,
+                company_identifier[0],
+                company_identifier[1],
+                subversion[0],
+                subversion[1],
+            ],
+        }
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeReadRemoteVersionInformationCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl LeReadRemoteFeaturesCommand {
+    /// Standard HCI LE Read Remote Features opcode.
+    pub const OPCODE: Opcode = LeReadRemoteFeatures::OPCODE;
+
+    pub(crate) fn decode(
+        command: HciCommandPacket<'_>,
+    ) -> Result<Self, LeReadRemoteFeaturesDecodeError> {
+        if command.opcode() != Self::OPCODE {
+            return Err(LeReadRemoteFeaturesDecodeError::Unsupported);
+        }
+        let [handle_low, handle_high] = command.parameters() else {
+            return Err(LeReadRemoteFeaturesDecodeError::Malformed);
+        };
+        let handle = u16::from_le_bytes([*handle_low, *handle_high]);
+        if handle > 0x0eff {
+            return Err(LeReadRemoteFeaturesDecodeError::Malformed);
+        }
+        Ok(Self {
+            handle: ConnHandle::new(handle),
+        })
+    }
+
+    /// Connection handle selected by the Host.
+    pub const fn handle(self) -> ConnHandle {
+        self.handle
+    }
+
+    /// Accept the asynchronous Link Layer procedure.
+    pub fn into_accepted_status(self) -> LeReadRemoteFeaturesCommandStatusEvent {
+        LeReadRemoteFeaturesCommandStatusEvent::new(Status::SUCCESS)
+    }
+
+    /// Reject a request for a handle outside the live connection epoch.
+    pub fn into_unknown_connection_status(self) -> LeReadRemoteFeaturesCommandStatusEvent {
+        LeReadRemoteFeaturesCommandStatusEvent::new(
+            bt_hci::param::Error::UNKNOWN_CONN_IDENTIFIER.to_status(),
+        )
+    }
+
+    /// Reject a second request while the first procedure remains active.
+    pub fn into_command_disallowed_status(self) -> LeReadRemoteFeaturesCommandStatusEvent {
+        LeReadRemoteFeaturesCommandStatusEvent::new(
+            bt_hci::param::Error::CMD_DISALLOWED.to_status(),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LeReadRemoteFeaturesDecodeError {
+    Unsupported,
+    Malformed,
+}
+
+/// Owned Command Status for LE Read Remote Features.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteFeaturesCommandStatusEvent {
+    bytes: [u8; LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY],
+    status: Status,
+}
+
+impl LeReadRemoteFeaturesCommandStatusEvent {
+    pub(crate) fn new(status: Status) -> Self {
+        let opcode = LeReadRemoteFeaturesCommand::OPCODE.to_raw().to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::CommandStatus.0,
+                (LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                1,
+                opcode[0],
+                opcode[1],
+            ],
+            status,
+        }
+    }
+
+    pub(crate) fn invalid_parameters() -> Self {
+        Self::new(bt_hci::param::Error::INVALID_HCI_PARAMETERS.to_status())
+    }
+
+    /// Complete HCI Event body without an H4 indicator.
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Status reported for the retained command opcode.
+    pub const fn status(self) -> Status {
+        self.status
+    }
+}
+
+impl HciControllerResponse for LeReadRemoteFeaturesCommandStatusEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// Owned LE Read Remote Features Complete event retained across backpressure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeReadRemoteFeaturesCompleteEvent {
+    bytes: [u8; LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY],
+}
+
+impl LeReadRemoteFeaturesCompleteEvent {
+    /// Build a completion for the sole connection handle.
+    pub fn new(status: Status, handle: ConnHandle, features: [u8; 8]) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        let mut bytes = [0; LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY];
+        bytes[0] = EventKind::Le.0;
+        bytes[1] = (LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY - 2) as u8;
+        bytes[2] = 0x04;
+        bytes[3] = status.into_inner();
+        bytes[4] = handle[0];
+        bytes[5] = handle[1];
+        bytes[6..].copy_from_slice(&features);
+        Self { bytes }
+    }
+
+    /// Complete HCI Event body without an H4 indicator.
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeReadRemoteFeaturesCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl LeDisconnectCommand {
+    /// Standard HCI Disconnect opcode.
+    pub const OPCODE: Opcode = Disconnect::OPCODE;
+
+    /// Decode a complete Disconnect parameter body.
+    pub(crate) fn decode(command: HciCommandPacket<'_>) -> Result<Self, LeDisconnectDecodeError> {
+        if command.opcode() != Self::OPCODE {
+            return Err(LeDisconnectDecodeError::Unsupported);
+        }
+        let [handle_low, handle_high, reason] = command.parameters() else {
+            return Err(LeDisconnectDecodeError::Malformed);
+        };
+        let handle = u16::from_le_bytes([*handle_low, *handle_high]);
+        if handle > 0x0eff || !is_disconnect_reason(*reason) {
+            return Err(LeDisconnectDecodeError::Malformed);
+        }
+        Ok(Self {
+            handle: ConnHandle::new(handle),
+            reason: *reason,
+        })
+    }
+
+    /// Connection handle selected by the Host.
+    pub const fn handle(&self) -> ConnHandle {
+        self.handle
+    }
+
+    /// Standard reason byte to place in `LL_TERMINATE_IND`.
+    pub const fn reason(&self) -> u8 {
+        self.reason
+    }
+
+    /// Build the immediate successful Command Status after lifecycle admission.
+    pub fn into_accepted_status(self) -> LeDisconnectCommandStatusEvent {
+        LeDisconnectCommandStatusEvent::new(Status::SUCCESS)
+    }
+
+    /// Reject a well-formed command whose handle is not live in this epoch.
+    pub fn into_unknown_connection_status(self) -> LeDisconnectCommandStatusEvent {
+        LeDisconnectCommandStatusEvent::new(
+            bt_hci::param::Error::UNKNOWN_CONN_IDENTIFIER.to_status(),
+        )
+    }
+}
+
+const fn is_disconnect_reason(reason: u8) -> bool {
+    matches!(reason, 0x05 | 0x13 | 0x14 | 0x15 | 0x1a | 0x29 | 0x3b)
+}
+
+/// Decode result distinguishing this command family from malformed input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LeDisconnectDecodeError {
+    Unsupported,
+    Malformed,
+}
+
+/// Owned Command Status for one HCI Disconnect command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeDisconnectCommandStatusEvent {
+    bytes: [u8; LE_DISCONNECT_COMMAND_STATUS_EVENT_CAPACITY],
+    status: Status,
+}
+
+impl LeDisconnectCommandStatusEvent {
+    pub(crate) fn new(status: Status) -> Self {
+        let opcode = LeDisconnectCommand::OPCODE.to_raw().to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::CommandStatus.0,
+                (LE_DISCONNECT_COMMAND_STATUS_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                1,
+                opcode[0],
+                opcode[1],
+            ],
+            status,
+        }
+    }
+
+    /// Build the required invalid-parameters status for malformed Disconnect.
+    pub(crate) fn invalid_parameters() -> Self {
+        Self::new(bt_hci::param::Error::INVALID_HCI_PARAMETERS.to_status())
+    }
+
+    /// Complete HCI Event body without an H4 indicator.
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Status reported for the retained Disconnect opcode.
+    pub const fn status(&self) -> Status {
+        self.status
+    }
+}
+
+impl HciControllerResponse for LeDisconnectCommandStatusEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
 
 /// Why an established legacy connection cannot be represented by this event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,6 +560,51 @@ impl LePeripheralConnectionCompleteEvent {
 }
 
 impl HciControllerResponse for LePeripheralConnectionCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// One owned successful LE Connection Update Complete event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeConnectionUpdateCompleteEvent {
+    bytes: [u8; LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY],
+}
+
+impl LeConnectionUpdateCompleteEvent {
+    pub fn new(
+        handle: ConnHandle,
+        connection_interval: Duration<1_250>,
+        peripheral_latency: u16,
+        supervision_timeout: Duration<10_000>,
+    ) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        let interval = connection_interval.as_u16().to_le_bytes();
+        let latency = peripheral_latency.to_le_bytes();
+        let timeout = supervision_timeout.as_u16().to_le_bytes();
+        let mut bytes = [0; LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY];
+        bytes[0] = EventKind::Le.0;
+        bytes[1] = (LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY - 2) as u8;
+        bytes[2] = LeConnectionUpdateComplete::SUBEVENT_CODE;
+        bytes[3] = Status::SUCCESS.into_inner();
+        bytes[4..6].copy_from_slice(&handle);
+        bytes[6..8].copy_from_slice(&interval);
+        bytes[8..10].copy_from_slice(&latency);
+        bytes[10..12].copy_from_slice(&timeout);
+        Self { bytes }
+    }
+
+    /// Complete HCI Event body without an H4 packet indicator.
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeConnectionUpdateCompleteEvent {
     fn kind(&self) -> PacketKind {
         PacketKind::Event
     }

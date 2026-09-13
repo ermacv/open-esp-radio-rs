@@ -49,18 +49,20 @@ Rebuild and reinstall the helper after updating its command set. The fixture
 owns the adapter's exclusive HCI user channel, uses legacy LE initiation with
 a 100-ms connection interval, zero latency and a 2-second supervision timeout,
 and waits at most 10 seconds for the exact peer's connection completion. It
-then sends HCI Reset, without issuing HCI Disconnect. `--hold-ms` is bounded
-to 0..5000; the default sends Reset as soon as the completion is received.
+then sends one exact 12-byte L2CAP-shaped HCI ACL packet and requires the peer
+to echo its handle, packet boundary and payload within 5 seconds. After the
+echo it sends HCI Reset, without issuing HCI Disconnect. `--hold-ms` is bounded
+to 0..5000; the default sends Reset as soon as the echo is received.
 Both success and failure restore the adapter's original power and rfkill state.
 
 The runner archives the helper report and errors under
 `target/hil/fixture-checks/bluetooth-connect-reset-*`. The report separates
-connection completion, Reset completion, local elapsed times and restoration.
-It proves command execution only: the Controller may already have exchanged
-packets before reporting its connection to the Host, and Reset is not a
-measured RF power cut. Target-side evidence must determine whether failed
-establishment or established-link supervision was exercised. This fixture
-does not start, flash or reset the ESP.
+connection completion, exact ACL send/echo, Reset completion, local elapsed
+times and restoration. The ACL report proves what the central observed over
+the selected link. Target-side evidence correlates that exchange with the
+production HCI and radio path and determines whether failed establishment or
+established-link supervision was exercised. Reset is not a measured RF power
+cut. This fixture does not start, flash or reset the ESP.
 
 ## ESP and adapter RF scenario
 
@@ -91,15 +93,18 @@ USB responses write and flush within one two-second deadline, including
 responses whose encoded length is an exact USB packet multiple.
 
 The peripheral recovery scenario starts the target's public `ADV_IND`, asks
-the same finite helper to connect as a central and reset its local Controller,
-then waits for the target's 2-second supervision timeout. Each cycle requires
-the external central's Connection Complete and restoration report, one exact
-target-side peripheral retirement, and ordered standard LE Connection Complete
-and Disconnection Complete events consumed by the target's Host facade. The
+the same finite helper to connect as a central, send the exact ACL packet,
+validate its echo and reset its local Controller. It then waits for the target's
+2-second supervision timeout. Each cycle requires the external central's
+Connection Complete, ACL echo and restoration report, exactly one target Host
+ACL receive and echo queue, one target-side peripheral retirement, and ordered
+standard LE Connection Complete and Disconnection Complete events. The
 disconnect status must be successful, the sole profile handle must be `0x0001`,
 and the reason must be `0x08`. The catalog runs two cycles per boot and three
 fresh repetitions, proving that advertising can restart after the first idle
-restoration. The scenario does not send ACL data and makes no ACL claim.
+restoration. A passing physical run establishes the tested one-packet
+bidirectional ACL path; broader traffic, fragmentation and GATT remain outside
+this scenario.
 
 Test End and logical Reset share bounded production scheduler stop and exact
 descriptor retirement. A deadline or ownership fault retains the graph and

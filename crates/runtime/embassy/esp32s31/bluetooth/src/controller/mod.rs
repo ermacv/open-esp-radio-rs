@@ -153,7 +153,10 @@ use oer_esp32s31_bluetooth::{
             LegacyConnectablePeripheralFirstHciResponsePublication,
             PeripheralConnectionActiveFault, PeripheralConnectionActiveSession,
             PeripheralConnectionActiveStep, PeripheralConnectionActiveWait,
-            PeripheralConnectionHostEventPublication,
+            PeripheralConnectionCommandIntake, PeripheralConnectionCommandMismatch,
+            PeripheralConnectionCommandRoute, PeripheralConnectionHostEventPublication,
+            PeripheralConnectionResetBarrier, PeripheralConnectionResetFault,
+            PeripheralConnectionResetStep,
         },
         scanning::{
             PassiveScanHciActiveCommandIntake, PassiveScanHciActiveCommandMismatch,

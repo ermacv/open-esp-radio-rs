@@ -7,8 +7,10 @@ use bt_hci::{
 };
 
 use crate::{
-    BootstrapCommandCompleteEvent, LeDtmCommandCompleteEvent,
-    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyScanningCommandCompleteEvent,
+    BootstrapCommandCompleteEvent, LeDisconnectCommandStatusEvent, LeDtmCommandCompleteEvent,
+    LeHostCompletedPacketsErrorEvent, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyScanningCommandCompleteEvent, LeReadRemoteFeaturesCommandStatusEvent,
+    LeReadRemoteVersionInformationCommandStatusEvent,
 };
 
 const UNKNOWN_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
@@ -94,16 +96,24 @@ impl HciControllerResponse for BootstrapCommandCompleteEvent {
     }
 }
 
-/// Closed Command Complete response set for the initial LE Controller.
+/// Closed ordered command-response set for the initial LE Controller.
 ///
-/// Bootstrap, DTM, Link Layer role, and terminal Unknown Command responses
+/// Bootstrap, DTM, Link Layer role, Disconnect status, and terminal responses
 /// have different storage types but share the same publication boundary.
 /// Keeping the distinction typed avoids copying a response into an unvalidated
 /// byte scratch buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeControllerCommandComplete {
+    /// Immediate status for an admitted or rejected Disconnect command.
+    DisconnectStatus(LeDisconnectCommandStatusEvent),
+    /// Immediate status for an admitted or rejected remote-feature request.
+    ReadRemoteFeaturesStatus(LeReadRemoteFeaturesCommandStatusEvent),
+    /// Immediate status for an admitted or rejected remote-version request.
+    ReadRemoteVersionInformationStatus(LeReadRemoteVersionInformationCommandStatusEvent),
     /// Pure software bootstrap command completion.
     Bootstrap(BootstrapCommandCompleteEvent),
+    /// Exceptional invalid-parameters response for Host completed-packet credits.
+    HostCompletedPacketsError(LeHostCompletedPacketsErrorEvent),
     /// Completion supplied by the hardware-owned DTM session.
     Dtm(LeDtmCommandCompleteEvent),
     /// Completion for accepted or rejected advertising configuration.
@@ -121,7 +131,11 @@ impl HciControllerResponse for LeControllerCommandComplete {
 
     fn as_bytes(&self) -> &[u8] {
         match self {
+            Self::DisconnectStatus(response) => response.as_bytes(),
+            Self::ReadRemoteFeaturesStatus(response) => response.as_bytes(),
+            Self::ReadRemoteVersionInformationStatus(response) => response.as_bytes(),
             Self::Bootstrap(response) => response.as_bytes(),
+            Self::HostCompletedPacketsError(response) => response.as_bytes(),
             Self::Dtm(response) => response.as_bytes(),
             Self::LegacyAdvertising(response) => response.as_bytes(),
             Self::LegacyScanning(response) => response.as_bytes(),
@@ -133,6 +147,30 @@ impl HciControllerResponse for LeControllerCommandComplete {
 impl From<BootstrapCommandCompleteEvent> for LeControllerCommandComplete {
     fn from(response: BootstrapCommandCompleteEvent) -> Self {
         Self::Bootstrap(response)
+    }
+}
+
+impl From<LeDisconnectCommandStatusEvent> for LeControllerCommandComplete {
+    fn from(response: LeDisconnectCommandStatusEvent) -> Self {
+        Self::DisconnectStatus(response)
+    }
+}
+
+impl From<LeReadRemoteFeaturesCommandStatusEvent> for LeControllerCommandComplete {
+    fn from(response: LeReadRemoteFeaturesCommandStatusEvent) -> Self {
+        Self::ReadRemoteFeaturesStatus(response)
+    }
+}
+
+impl From<LeReadRemoteVersionInformationCommandStatusEvent> for LeControllerCommandComplete {
+    fn from(response: LeReadRemoteVersionInformationCommandStatusEvent) -> Self {
+        Self::ReadRemoteVersionInformationStatus(response)
+    }
+}
+
+impl From<LeHostCompletedPacketsErrorEvent> for LeControllerCommandComplete {
+    fn from(response: LeHostCompletedPacketsErrorEvent) -> Self {
+        Self::HostCompletedPacketsError(response)
     }
 }
 

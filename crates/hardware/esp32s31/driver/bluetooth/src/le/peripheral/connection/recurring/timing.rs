@@ -14,7 +14,10 @@ use crate::{
     scheduler::{SchedulerRawWindow, SchedulerSoftwareConfig},
 };
 
-use oer_bluetooth_ll::connection::{LeLegacyConnectionRequest, LePeripheralConnectionEventDelta};
+use oer_bluetooth_ll::connection::{
+    LeConnectionTiming, LeConnectionTimingTransition, LeLegacyConnectionRequest,
+    LePeripheralConnectionEventDelta,
+};
 
 use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionEventSpan, PeripheralConnectionRecurringReceiveWait,
@@ -133,6 +136,17 @@ impl PeripheralConnectionRecurringPhase {
         }
     }
 
+    #[cfg_attr(
+        not(target_arch = "riscv32"),
+        allow(
+            dead_code,
+            reason = "supervision reset consumes this on the S31 target"
+        )
+    )]
+    pub(crate) const fn nominal_anchor(self) -> SchedulerInstant {
+        self.nominal_anchor
+    }
+
     /// Correct the phase from an actual normalized packet-start capture.
     ///
     /// The actual start becomes the new nominal anchor and widening reference.
@@ -164,6 +178,82 @@ impl PeripheralConnectionRecurringPhase {
         timing_policy: PeripheralConnectionRecurringTimingPolicy,
     ) -> Result<PeripheralConnectionRecurringEventPlan, PeripheralConnectionRecurringTimingError>
     {
+        let interval_micros = request.timing().interval_micros();
+        let Some(anchor_advance_micros) = interval_micros.checked_mul(delta.get() as u32) else {
+            return Err(
+                PeripheralConnectionRecurringTimingError::AnchorAdvanceOutsideForwardHalfRange,
+            );
+        };
+        self.plan_with(
+            request,
+            request.timing(),
+            self.anchor,
+            anchor_advance_micros,
+            delta,
+            epoch,
+            scheduler_config,
+            timing_policy,
+        )
+    }
+
+    /// Form the instant event for one validated Connection Update.
+    ///
+    /// The instant remains one old interval after its predecessor, followed by
+    /// the Central-selected offset. The new interval and transmit-window width
+    /// shape the event at the instant and all later recurrence.
+    pub(crate) fn plan_connection_update(
+        self,
+        request: LeLegacyConnectionRequest,
+        transition: LeConnectionTimingTransition,
+        delta: LePeripheralConnectionEventDelta,
+        epoch: ControllerSchedulerEpoch,
+        scheduler_config: SchedulerSoftwareConfig,
+        timing_policy: PeripheralConnectionRecurringTimingPolicy,
+    ) -> Result<PeripheralConnectionRecurringEventPlan, PeripheralConnectionRecurringTimingError>
+    {
+        if request.timing() != transition.previous() {
+            return Err(PeripheralConnectionRecurringTimingError::ConnectionUpdateTimingMismatch);
+        }
+        let Some(anchor_advance_micros) = transition
+            .previous()
+            .interval_micros()
+            .checked_mul(delta.get() as u32)
+            .and_then(|advance| {
+                advance.checked_add(u32::from(transition.updated().window_offset_units()) * 1_250)
+            })
+        else {
+            return Err(
+                PeripheralConnectionRecurringTimingError::AnchorAdvanceOutsideForwardHalfRange,
+            );
+        };
+        self.plan_with(
+            request,
+            transition.updated(),
+            PeripheralConnectionAnchor::TransmitWindowStart,
+            anchor_advance_micros,
+            delta,
+            epoch,
+            scheduler_config,
+            timing_policy,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the inputs are distinct typed timing authorities"
+    )]
+    fn plan_with(
+        self,
+        request: LeLegacyConnectionRequest,
+        event_timing: LeConnectionTiming,
+        proposed_anchor_kind: PeripheralConnectionAnchor,
+        anchor_advance_micros: u32,
+        delta: LePeripheralConnectionEventDelta,
+        epoch: ControllerSchedulerEpoch,
+        scheduler_config: SchedulerSoftwareConfig,
+        timing_policy: PeripheralConnectionRecurringTimingPolicy,
+    ) -> Result<PeripheralConnectionRecurringEventPlan, PeripheralConnectionRecurringTimingError>
+    {
         match timing_policy.window_widening_mode {
             PeripheralConnectionWindowWideningMode::Unknown => {
                 return Err(PeripheralConnectionRecurringTimingError::WindowWideningModeUnknown);
@@ -179,20 +269,15 @@ impl PeripheralConnectionRecurringPhase {
             return Err(PeripheralConnectionRecurringTimingError::LocalSleepClockAccuracyUnknown);
         };
 
-        let interval_micros = request.timing().interval_micros();
+        let interval_micros = event_timing.interval_micros();
         // Before the first packet, the Central may choose any position within
         // WinSize. Every subsequent transmit window retains that entire width
         // (Core Vol 6, Part B, 4.5.5), in addition to clock widening.
-        let transmit_window_micros = match self.anchor {
+        let transmit_window_micros = match proposed_anchor_kind {
             PeripheralConnectionAnchor::TransmitWindowStart => {
-                u32::from(request.timing().window_size_units()) * 1_250
+                u32::from(event_timing.window_size_units()) * 1_250
             }
             PeripheralConnectionAnchor::PacketStart => 0,
-        };
-        let Some(anchor_advance_micros) = interval_micros.checked_mul(delta.get() as u32) else {
-            return Err(
-                PeripheralConnectionRecurringTimingError::AnchorAdvanceOutsideForwardHalfRange,
-            );
         };
         let elapsed_before = self
             .nominal_anchor
@@ -293,7 +378,7 @@ impl PeripheralConnectionRecurringPhase {
             proposed_phase: Self {
                 nominal_anchor: proposed_anchor,
                 window_widening_reference: self.window_widening_reference,
-                anchor: self.anchor,
+                anchor: proposed_anchor_kind,
             },
             proposed_anchor,
             window,
@@ -384,6 +469,7 @@ pub enum PeripheralConnectionRecurringTimingError {
     EventSpanUnrepresentable,
     ReceiveWaitUnrepresentable,
     SchedulerWindowUnrepresentable,
+    ConnectionUpdateTimingMismatch,
 }
 
 #[cfg(test)]

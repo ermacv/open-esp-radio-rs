@@ -19,7 +19,7 @@ use super::{DtmRestoredReset, DtmRestoredResetCompletion};
 #[derive(Debug, Eq, PartialEq)]
 struct RestoredOwner(u32);
 
-type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
+type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 80>;
 
 fn resources() -> Resources {
     Resources::new(
@@ -43,7 +43,7 @@ fn restored_reset_retains_affinity_and_response_through_backpressure() {
         panic!("the epoch exposes its sole initial command authority");
     };
     block_on(first.host.write(&LeTestEnd::new())).expect("idle Test End enters its origin queue");
-    let mut command_buffer = [0; 45];
+    let mut command_buffer = [0; 80];
     let LeControllerCommandIntake::Command { command, .. } = first
         .controller
         .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
@@ -107,7 +107,7 @@ fn restored_reset_retains_affinity_and_response_through_backpressure() {
     };
     assert_eq!(pending.owner(), &RestoredOwner(41));
 
-    let mut response_buffer = [0; 45];
+    let mut response_buffer = [0; 80];
     block_on(
         first
             .host

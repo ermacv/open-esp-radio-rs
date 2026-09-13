@@ -10,9 +10,10 @@ They require a fresh boot. After an observed disconnect or failed establishment,
 advertising may restart without a board or HCI Reset; the host resets the board when the probe
 ends. The commands alone do not qualify a connection or ACL traffic. The
 `bluetooth-peripheral-recovery` scenario coordinates a real Linux central with
-two connection/supervision-timeout cycles and requires ordered Host-visible
-completion events before each advertising restart. It still carries no ACL
-traffic claim. See the
+two connection/ACL-echo/supervision-timeout cycles. It requires one exact
+bidirectional packet through the target Host facade and ordered Host-visible
+completion events before each advertising restart. The source-backed scenario
+has no recorded hardware evidence by itself. See the
 [Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
 
 The peripheral diagnostic explicitly configures software window widening with

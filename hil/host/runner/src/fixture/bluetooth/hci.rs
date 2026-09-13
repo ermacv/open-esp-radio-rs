@@ -148,6 +148,14 @@ impl Socket {
         self.send(&bytes)
     }
 
+    pub(super) fn send_acl(&self, packet: &bt_hci::data::AclPacket<'_>) -> Result<()> {
+        let mut bytes = vec![0; 1 + bt_hci::WriteHci::size(packet)];
+        bytes[0] = bt_hci::PacketKind::AclData as u8;
+        bt_hci::WriteHci::write_hci(packet, &mut bytes[1..])
+            .map_err(|error| format!("HCI ACL encode: {error:?}"))?;
+        self.send(&bytes)
+    }
+
     pub(super) fn command<C: SyncCmd>(&self, command: C) -> Result<C::Return> {
         self.send_command(&command)?;
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -263,6 +271,12 @@ mod tests {
             event.extend(peer.0);
             event.extend([80, 0, 0, 0, 200, 0, 0]);
             server.send(&event).unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 17);
+            let mut acl = vec![2, 1, 0, 12, 0];
+            acl.extend(super::super::connection_reset::ACL_ECHO_PAYLOAD);
+            assert_eq!(&bytes[..17], acl.as_slice());
+            acl[2] = 0x20;
+            server.send(&acl).unwrap();
             assert_eq!(server.recv(&mut bytes).unwrap(), 4);
             assert_eq!(&bytes[..4], &[1, 3, 12, 0]);
             server.send(&[4, 14, 4, 1, 3, 12, 0]).unwrap();
@@ -272,6 +286,9 @@ mod tests {
         super::super::connection_reset::run(&Socket(client.into()), peer, 0, &mut report).unwrap();
         worker.join().unwrap();
         assert!(report.connection_complete && report.reset_completed);
+        assert!(report.acl_sent && report.acl_echo_received);
+        assert_eq!(report.acl_payload_bytes, Some(12));
+        assert!(report.acl_echo_after_micros.is_some());
         assert!(report.reset_after_connection_micros.is_some());
         assert!(!report.restored);
     }

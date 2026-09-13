@@ -139,6 +139,9 @@ impl LeControllerBootstrap {
             OwnedBootstrapCommand::ReadBdAddr => {
                 command_success(opcode, self.config.public_address.hci_wire_address().raw())
             }
+            OwnedBootstrapCommand::ReadLocalSupportedCommands => {
+                command_success(opcode, &super::le_controller_supported_commands())
+            }
             OwnedBootstrapCommand::LeSetEventMask(mask) => {
                 self.le_event_mask = mask;
                 command_success(opcode, &[])
@@ -150,10 +153,9 @@ impl LeControllerBootstrap {
                 command_success(opcode, &response)
             }
             OwnedBootstrapCommand::LeReadLocalSupportedFeatures => {
-                // The initial profile advertises no optional LE features. A
-                // backend must close each independent feature before setting
-                // its bit here.
-                command_success(opcode, &[0; 8])
+                // Bit 3 is the composed Peripheral-initiated Feature Exchange
+                // procedure. Every other optional feature remains clear.
+                command_success(opcode, &[1 << 3, 0, 0, 0, 0, 0, 0, 0])
             }
             OwnedBootstrapCommand::LeSetRandomAddress(address) => {
                 self.requested_random_address = Some(address);

@@ -10,7 +10,7 @@ use oer_bluetooth_hci::{
 
 use super::{ControllerHciBindError, validate_hci_bind};
 
-fn hci() -> LeControllerHciResources<NoopRawMutex, 1, 1, 45> {
+fn hci() -> LeControllerHciResources<NoopRawMutex, 1, 1, 80> {
     let config = LeControllerBootstrapConfig::new(
         BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
         27,

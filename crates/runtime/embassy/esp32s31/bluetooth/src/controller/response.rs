@@ -96,6 +96,12 @@ where
     PeripheralConnectionActive,
     /// Completion or recurrence failed closed with radio and HCI owners retained.
     PeripheralConnectionActiveFailStop(PeripheralConnectionActiveFault<'runtime, S, CAPACITY>),
+    /// Active peripheral Reset quiescence failed with the Reset token retained.
+    PeripheralConnectionActiveResetFailStop(PeripheralConnectionResetFault<'runtime, S, CAPACITY>),
+    /// Active peripheral classification unexpectedly belonged to another endpoint.
+    PeripheralConnectionCommandEndpointMismatch(
+        PeripheralConnectionCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
+    ),
     /// Accepted-connection publication failed closed before the first peripheral `RUN`.
     PeripheralConnectionFirstFailStop(
         LegacyConnectablePeripheralFirstHciFailStop<'runtime, S, CAPACITY>,

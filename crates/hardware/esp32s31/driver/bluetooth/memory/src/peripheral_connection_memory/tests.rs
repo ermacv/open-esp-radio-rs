@@ -639,30 +639,65 @@ fn control_tx_retains_unacknowledged_payload_and_rotates_after_ack() {
         assert!(!owner.enqueue_control_transmission(&second).unwrap());
         let storage = owner.storage.as_ref().get_ref();
         let transmitted = storage
-            .model_transmit_control(&owner.binding, false)
+            .model_transmit_packet(&owner.binding, false)
             .unwrap();
         assert_eq!(&transmitted[..2], &[3, 9]);
         assert_eq!(&transmitted[2..], &first);
-        assert!(!owner.reclaim_control_transmission());
+        assert!(!owner.reclaim_transmission());
         let storage = owner.storage.as_ref().get_ref();
         assert_eq!(
-            storage
-                .model_transmit_control(&owner.binding, true)
-                .unwrap(),
+            storage.model_transmit_packet(&owner.binding, true).unwrap(),
             transmitted
         );
-        assert!(owner.reclaim_control_transmission());
-        assert!(!owner.reclaim_control_transmission());
+        assert!(owner.reclaim_transmission());
+        assert!(!owner.reclaim_transmission());
         assert!(owner.enqueue_control_transmission(&second).unwrap());
         let storage = owner.storage.as_ref().get_ref();
         assert_eq!(
-            storage
-                .model_transmit_control(&owner.binding, true)
-                .unwrap(),
+            storage.model_transmit_packet(&owner.binding, true).unwrap(),
             [3, 2, 7, 0xf1]
         );
-        assert!(owner.reclaim_control_transmission());
+        assert!(owner.reclaim_transmission());
     }
+}
+
+#[test]
+fn acl_tx_preserves_llid_and_payload_until_peer_acknowledgement() {
+    let mut owner = active_graph(0x2f00_4000);
+    let start = [0x41; 27];
+    assert!(owner.enqueue_acl_transmission(false, &start).unwrap());
+    let transmitted = owner
+        .storage
+        .as_ref()
+        .get_ref()
+        .model_transmit_packet(&owner.binding, false)
+        .unwrap();
+    assert_eq!(&transmitted[..2], &[2, 27]);
+    assert_eq!(&transmitted[2..], &start);
+    assert!(!owner.reclaim_transmission());
+    assert_eq!(
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_transmit_packet(&owner.binding, true)
+            .unwrap(),
+        transmitted
+    );
+    assert!(owner.reclaim_transmission());
+
+    let continuation = [0x82; 5];
+    assert!(owner.enqueue_acl_transmission(true, &continuation).unwrap());
+    assert_eq!(
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .model_transmit_packet(&owner.binding, true)
+            .unwrap(),
+        [1, 5, 0x82, 0x82, 0x82, 0x82, 0x82]
+    );
+    assert!(owner.reclaim_transmission());
 }
 
 #[test]
@@ -680,16 +715,16 @@ fn cancelling_recurring_preparation_preserves_a_pending_control_response() {
             92,
         )
         .cancel();
-    assert!(!owner.reclaim_control_transmission());
+    assert!(!owner.reclaim_transmission());
     assert!(!owner.enqueue_control_transmission(&[7, 0xf1]).unwrap());
     let pdu = owner
         .storage
         .as_ref()
         .get_ref()
-        .model_transmit_control(&owner.binding, true)
+        .model_transmit_packet(&owner.binding, true)
         .unwrap();
     assert_eq!(&pdu[2..], &response);
-    assert!(owner.reclaim_control_transmission());
+    assert!(owner.reclaim_transmission());
 }
 
 #[test]
@@ -701,7 +736,7 @@ fn oversized_control_payload_leaves_empty_queue_reusable() {
             .storage
             .as_ref()
             .get_ref()
-            .model_transmit_control(&owner.binding, false)
+            .model_transmit_packet(&owner.binding, false)
             .is_none()
     );
     assert!(owner.enqueue_control_transmission(&[7, 0xf1]).unwrap());

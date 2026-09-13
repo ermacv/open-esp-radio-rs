@@ -29,7 +29,7 @@ use super::{
     reduce_dtm_session_transition,
 };
 
-type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 45>;
+type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 80>;
 
 fn test_resources() -> TestResources {
     let config = LeControllerBootstrapConfig::new(
@@ -162,7 +162,7 @@ fn production_controller_intake_preserves_fifo_buffer_and_epoch() {
         panic!("the fresh test epoch exposes initial command authority")
     };
 
-    let mut storage = [0; 45];
+    let mut storage = [0; 80];
     let storage_address = storage.as_mut_ptr();
     let (command_ready, buffer) = match foreign
         .controller
@@ -223,7 +223,7 @@ fn production_combined_intake_transfers_exact_acl() {
     );
     block_on(endpoints.host.write(&acl)).unwrap();
 
-    let mut storage = [0; 45];
+    let mut storage = [0; 80];
     let frame = match endpoints
         .controller
         .try_receive_classified_command_with_buffer(command_ready, &mut storage)
@@ -264,7 +264,7 @@ fn production_combined_intake_preserves_the_real_channel_fault() {
     assert_eq!(
         error,
         HciChannelError::DestinationTooSmall {
-            required: 45,
+            required: 80,
             available: 0,
         }
     );

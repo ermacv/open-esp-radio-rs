@@ -24,7 +24,7 @@ use std::{boxed::Box, task::Waker};
 
 use super::{DtmActiveRadioSignal, RadioFirst, select_radio_first};
 
-type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 45>;
+type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 80>;
 
 fn test_resources() -> TestResources {
     let config = LeControllerBootstrapConfig::new(
@@ -78,7 +78,7 @@ fn production_readiness_keeps_command_on_radio_tie_then_sync_routes_it() {
     ));
     assert!(matches!(second, RadioFirst::Other(Ok(()))));
 
-    let mut packet = [0; 45];
+    let mut packet = [0; 80];
     let command = match endpoints
         .controller
         .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -115,7 +115,7 @@ fn production_readiness_leaves_exact_acl_for_synchronous_receive() {
     ));
     assert!(matches!(selected, RadioFirst::Other(Ok(()))));
 
-    let mut packet = [0; 45];
+    let mut packet = [0; 80];
     let LeControllerCommandIntake::NonCommand { frame, .. } = endpoints
         .controller
         .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -160,7 +160,7 @@ fn cancelling_notified_production_readiness_leaves_exact_command() {
         )),
         RadioFirst::Other(Ok(()))
     ));
-    let mut packet = [0; 45];
+    let mut packet = [0; 80];
     let command = match endpoints
         .controller
         .try_receive_classified_command_with_buffer(command_ready, &mut packet)

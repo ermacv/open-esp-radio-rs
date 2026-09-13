@@ -233,9 +233,16 @@ reason = "shutdown future retains the unique interrupt, connected runner and tas
 [[reviewed_frames]]
 function_contains = "::controller::owner::ControllerCommandTask<"
 source_ends_with = ["crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs"]
-max_bytes = 43008
+max_bytes = 50176
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "Bluetooth command dispatch retains typed mutually exclusive controller transitions on CPU0; the fixed 192-KiB application stack also accommodates its caller and interrupt handling uses SRAM"
+reason = "Bluetooth command dispatch retains typed mutually exclusive controller transitions, including the bounded bidirectional ACL owners and 64-octet Supported Commands response, on CPU0; the fixed 192-KiB application stack also accommodates its caller and interrupt handling uses SRAM"
+
+[[reviewed_frames]]
+function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
+source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active.rs"]
+max_bytes = 9472
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet and the bounded two-packet Controller ACL queue across HCI backpressure"
 
 [[reviewed_frames]]
 function_contains = "::cold_start::start_esp32s31_bluetooth"

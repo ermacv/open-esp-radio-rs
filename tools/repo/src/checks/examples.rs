@@ -57,6 +57,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         ("access-point", "owned-network"),
         ("access-point", "compat-network"),
         ("bluetooth-controller", "advertising-smoke"),
+        ("bluetooth-controller", "trouble-gatt"),
     ] {
         process::run(
             ctx.cargo()

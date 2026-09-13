@@ -28,6 +28,7 @@ mod runner_policy;
 mod system;
 #[cfg(target_arch = "riscv32")]
 mod system_storage;
+mod trouble;
 
 #[cfg(target_arch = "riscv32")]
 pub use cold_start::{
@@ -57,6 +58,7 @@ pub use system_storage::{
     BluetoothPublishedController, BluetoothSystemSlot, BluetoothSystemStorage,
     BluetoothSystemStorageInUse,
 };
+pub use trouble::BluetoothTroubleSystem;
 
 #[cfg(not(target_arch = "riscv32"))]
 use oer_esp32s31_bluetooth_memory::{

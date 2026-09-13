@@ -158,6 +158,9 @@ struct PeripheralBaseline {
     connection_complete_events: u32,
     disconnection_complete_events: u32,
     host_event_faults: u32,
+    host_acl_received_packets: u32,
+    host_acl_queued_packets: u32,
+    host_acl_faults: u32,
 }
 
 impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
@@ -168,6 +171,9 @@ impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
             connection_complete_events: evidence.connection_complete_events,
             disconnection_complete_events: evidence.disconnection_complete_events,
             host_event_faults: evidence.host_event_faults,
+            host_acl_received_packets: evidence.host_acl_received_packets,
+            host_acl_queued_packets: evidence.host_acl_queued_packets,
+            host_acl_faults: evidence.host_acl_faults,
         }
     }
 }
@@ -228,7 +234,11 @@ fn probe_peripheral(
     }
     for cycle in 1..=connections {
         let start = capture.bluetooth_peripheral(BluetoothPeripheralOperation::StartAdvertising)?;
-        if start.terminal || start.saturated || start.host_event_faults != 0 {
+        if start.terminal
+            || start.saturated
+            || start.host_event_faults != 0
+            || start.host_acl_faults != 0
+        {
             return Err("Bluetooth peripheral was unhealthy before the connection".into());
         }
         let address = start
@@ -278,6 +288,9 @@ fn peripheral_cycle_complete(
     if current.host_event_faults != baseline.host_event_faults {
         return Err("Bluetooth Host observed an invalid or out-of-order connection event".into());
     }
+    if current.host_acl_faults != baseline.host_acl_faults {
+        return Err("Bluetooth Host observed an invalid or unqueueable ACL packet".into());
+    }
     let expected_runs = baseline
         .peripheral_runs
         .checked_add(1)
@@ -294,9 +307,19 @@ fn peripheral_cycle_complete(
         .disconnection_complete_events
         .checked_add(1)
         .ok_or("Bluetooth Host disconnection-event counter was exhausted")?;
+    let expected_acl_received = baseline
+        .host_acl_received_packets
+        .checked_add(1)
+        .ok_or("Bluetooth Host ACL receive counter was exhausted")?;
+    let expected_acl_queued = baseline
+        .host_acl_queued_packets
+        .checked_add(1)
+        .ok_or("Bluetooth Host ACL echo counter was exhausted")?;
     if current.peripheral_disconnections > expected_disconnections
         || current.connection_complete_events > expected_connections
         || current.disconnection_complete_events > expected_host_disconnections
+        || current.host_acl_received_packets > expected_acl_received
+        || current.host_acl_queued_packets > expected_acl_queued
     {
         return Err(
             "Bluetooth peripheral emitted more than one lifecycle edge for one cycle".into(),
@@ -305,7 +328,9 @@ fn peripheral_cycle_complete(
     let complete = current.peripheral_runs >= expected_runs
         && current.peripheral_disconnections == expected_disconnections
         && current.connection_complete_events == expected_connections
-        && current.disconnection_complete_events == expected_host_disconnections;
+        && current.disconnection_complete_events == expected_host_disconnections
+        && current.host_acl_received_packets == expected_acl_received
+        && current.host_acl_queued_packets == expected_acl_queued;
     if complete && current.last_disconnect_reason != Some(0x08) {
         return Err("Bluetooth Host disconnection reason was not supervision timeout".into());
     }
@@ -327,6 +352,9 @@ mod peripheral_tests {
             connection_complete_events: 0,
             disconnection_complete_events: 0,
             host_event_faults: 0,
+            host_acl_received_packets: 0,
+            host_acl_queued_packets: 0,
+            host_acl_faults: 0,
             last_disconnect_reason: None,
             retries: 0,
             terminal: false,
@@ -348,9 +376,17 @@ mod peripheral_tests {
         assert!(!peripheral_cycle_complete(baseline, &current).unwrap());
         current.peripheral_disconnections = 1;
         current.disconnection_complete_events = 1;
+        current.host_acl_received_packets = 1;
+        current.host_acl_queued_packets = 1;
         current.last_disconnect_reason = Some(0x08);
         assert!(peripheral_cycle_complete(baseline, &current).unwrap());
         current.host_event_faults = 1;
+        assert!(peripheral_cycle_complete(baseline, &current).is_err());
+        current.host_event_faults = 0;
+        current.host_acl_faults = 1;
+        assert!(peripheral_cycle_complete(baseline, &current).is_err());
+        current.host_acl_faults = 0;
+        current.host_acl_queued_packets = 2;
         assert!(peripheral_cycle_complete(baseline, &current).is_err());
     }
 }

@@ -10,7 +10,7 @@ use bt_hci::{
             HostBufferSize, HostBufferSizeParams, Reset, SetControllerToHostFlowControl,
             SetEventMask,
         },
-        info::ReadBdAddr,
+        info::{ReadBdAddr, ReadLocalSupportedCmds},
         le::{
             LeReadBufferSize, LeReadFilterAcceptListSize, LeReadLocalSupportedFeatures,
             LeSetEventMask, LeSetRandomAddr,
@@ -29,7 +29,7 @@ mod response;
 mod state;
 
 pub(crate) use command::BootstrapCommandDecodeError;
-pub use command::{BootstrapCommand, OwnedBootstrapCommand};
+pub use command::{BootstrapCommand, OwnedBootstrapCommand, le_controller_supported_commands};
 pub use config::{BluetoothPublicDeviceAddress, BootstrapConfigError, LeControllerBootstrapConfig};
 pub(crate) use response::invalid_parameters;
 pub use response::{BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent};

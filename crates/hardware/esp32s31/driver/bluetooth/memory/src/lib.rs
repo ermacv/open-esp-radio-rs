@@ -228,7 +228,7 @@ pub use peripheral_connection_memory::{
     PeripheralConnectionMemoryGraphStorage, PeripheralConnectionReceiveTime,
     PeripheralConnectionReceiveWait, PeripheralConnectionRecurringReceiveWait,
     PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
 };
 
 pub use rx_memory_list::RxMemoryListClass;

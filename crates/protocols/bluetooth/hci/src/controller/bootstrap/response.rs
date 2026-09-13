@@ -5,9 +5,9 @@ use super::*;
 /// Maximum complete HCI Event body emitted by the bootstrap state machine.
 ///
 /// This includes the two-byte Event header. The largest supported response is
-/// LE Read Local Supported Features: six Command Complete bytes plus eight
-/// conservative feature bytes.
-pub const BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 14;
+/// Read Local Supported Commands: six Command Complete bytes plus the standard
+/// 64-octet command mask.
+pub const BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 70;
 
 /// Complete, validated Command Complete HCI Event emitted by bootstrap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

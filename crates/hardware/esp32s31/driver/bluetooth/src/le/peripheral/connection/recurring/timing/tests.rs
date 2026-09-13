@@ -6,7 +6,8 @@ use crate::{
 
 use oer_bluetooth_ll::connection::{
     LEGACY_CONNECT_IND_PAYLOAD_BYTES, LEGACY_CONNECT_IND_PDU_BYTES, LeDataChannelMap,
-    LeLegacyConnectionRequest, LePeripheralConnectionEventDelta,
+    LeLegacyConnectionRequest, LePeripheralConnection, LePeripheralConnectionEventDelta,
+    LePeripheralConnectionEventPeerActivity,
 };
 
 use oer_esp32s31_bluetooth_memory::PeripheralConnectionEventSpan;
@@ -144,6 +145,71 @@ fn immediate_successor_forms_all_typed_recurring_inputs() {
     assert_eq!(
         plan.receive_wait().total_micros(),
         LE_RECURRING_FIXED_GUARD_MICROS + 2 * widening + LE_RECURRING_RECEIVE_CPU_TIME_TAIL_MICROS
+    );
+}
+
+#[test]
+fn connection_update_instant_uses_old_interval_offset_and_new_window() {
+    let previous = request(24, 4);
+    let updated = request(40, 4);
+    let mut completed = LePeripheralConnection::from_request(
+        previous,
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
+    )
+    .prepare_event()
+    .into_submitted()
+    .complete(LePeripheralConnectionEventPeerActivity::Observed);
+    completed
+        .schedule_connection_update(updated.timing(), 1)
+        .unwrap();
+    let provisional =
+        completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap());
+    let transition = provisional.connection_timing_transition().unwrap();
+    let epoch = epoch(0);
+    let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let plan = phase(10_000)
+        .plan_connection_update(
+            previous,
+            transition,
+            LePeripheralConnectionEventDelta::new(1).unwrap(),
+            epoch,
+            config,
+            software_policy(),
+        )
+        .unwrap();
+    let expected_anchor = 10_000
+        + previous.timing().interval_micros()
+        + u32::from(updated.timing().window_offset_units()) * 1_250;
+    assert_eq!(plan.proposed_anchor().image(), expected_anchor);
+    assert_eq!(
+        plan.event_span(),
+        PeripheralConnectionEventSpan::new(epoch.raw_duration_ticks_for_micros(
+            updated.timing().interval_micros() - LE_CONNECTION_COMMON_RESERVE_MICROS,
+        ))
+        .unwrap()
+    );
+    assert!(
+        plan.receive_wait().total_micros()
+            >= u32::from(updated.timing().window_size_units()) * 1_250
+    );
+
+    let (_, proposed_phase, _, _, _, _) = plan.into_parts();
+    let following = proposed_phase
+        .plan(
+            updated,
+            LePeripheralConnectionEventDelta::new(1).unwrap(),
+            epoch,
+            config,
+            software_policy(),
+        )
+        .unwrap();
+    assert_eq!(
+        following.proposed_anchor().image(),
+        expected_anchor + updated.timing().interval_micros()
+    );
+    assert!(
+        following.receive_wait().total_micros()
+            >= u32::from(updated.timing().window_size_units()) * 1_250
     );
 }
 

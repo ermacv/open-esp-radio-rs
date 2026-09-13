@@ -29,7 +29,9 @@ use queue::AsyncPacketQueue;
 
 use crate::{
     ControllerToHostQueueError, HostToControllerFrame, LeControllerCommandClassification,
-    classify_le_controller_command, wire::command_from_validated_bytes,
+    LeHostAclPacket, LeHostAclPacketRejection, LeHostCompletedPacketsCommand,
+    LeHostCompletedPacketsErrorEvent, classify_le_controller_command,
+    wire::command_from_validated_bytes,
 };
 
 /// Opaque identity of one live in-process HCI resource epoch.
@@ -254,6 +256,37 @@ pub(crate) enum HciClassifiedCommandIntake<'epoch, 'packet> {
     },
     /// The oldest Host packet is data and retains its buffer borrow.
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
+}
+
+/// Active-peripheral intake which copies ACL data out of transport storage.
+pub(crate) enum HciActivePeripheralIntake<'epoch, 'packet, State> {
+    Command {
+        command: HciEpochBound<'epoch, LeControllerCommandClassification>,
+        state: State,
+        buffer: &'packet mut [u8],
+    },
+    Acl {
+        state: State,
+        buffer: &'packet mut [u8],
+    },
+    HostCompletedPackets {
+        state: State,
+        command: Result<LeHostCompletedPacketsCommand, LeHostCompletedPacketsErrorEvent>,
+        buffer: &'packet mut [u8],
+    },
+    Empty {
+        state: State,
+        buffer: &'packet mut [u8],
+    },
+    Channel {
+        state: State,
+        error: HciChannelError,
+        buffer: &'packet mut [u8],
+    },
+    NonCommand {
+        state: State,
+        frame: HciEpochBound<'epoch, HostToControllerFrame<'packet>>,
+    },
 }
 
 /// Two bounded packet queues joining an HCI Host and one raw Controller owner.
@@ -615,6 +648,102 @@ where
             }
         };
         HciClassifiedCommandIntake::NonCommand(HciEpochBound::bind(self.identity, frame))
+    }
+
+    /// Consume one packet for an active LE peripheral, copying ACL ownership.
+    pub(crate) fn try_receive_active_peripheral_with_buffer<'buffer, State>(
+        &self,
+        buffer: &'buffer mut [u8],
+        live_handle: Option<bt_hci::param::ConnHandle>,
+        acl_capacity: u16,
+        state: State,
+        accept_acl: impl FnOnce(State, Result<LeHostAclPacket, LeHostAclPacketRejection>) -> State,
+    ) -> HciActivePeripheralIntake<'channel, 'buffer, State> {
+        if let Err(error) = require_profile_buffer::<PACKET_CAPACITY>(buffer.len()) {
+            return HciActivePeripheralIntake::Channel {
+                state,
+                error,
+                buffer,
+            };
+        }
+        let mut slot = match self.host_to_controller.try_receive() {
+            Ok(slot) => slot,
+            Err(()) => return HciActivePeripheralIntake::Empty { state, buffer },
+        };
+        let bytes = &slot.bytes[..slot.length];
+        if validate_host_packet(slot.kind, bytes).is_err() {
+            slot.bytes[..slot.length].fill(0);
+            return HciActivePeripheralIntake::Channel {
+                state,
+                error: HciChannelError::CorruptRetainedPacket,
+                buffer,
+            };
+        }
+
+        if slot.kind == PacketKind::Cmd {
+            let command = command_from_validated_bytes(bytes);
+            match LeHostCompletedPacketsCommand::decode(command) {
+                Ok(command) => {
+                    slot.bytes[..slot.length].fill(0);
+                    return HciActivePeripheralIntake::HostCompletedPackets {
+                        state,
+                        command: Ok(command),
+                        buffer,
+                    };
+                }
+                Err(crate::controller::le::acl::LeHostCompletedPacketsDecodeError::Malformed) => {
+                    slot.bytes[..slot.length].fill(0);
+                    return HciActivePeripheralIntake::HostCompletedPackets {
+                        state,
+                        command: Err(LeHostCompletedPacketsErrorEvent::invalid_parameters()),
+                        buffer,
+                    };
+                }
+                Err(crate::controller::le::acl::LeHostCompletedPacketsDecodeError::Unsupported) => {
+                }
+            }
+            let command =
+                HciEpochBound::bind(self.identity, classify_le_controller_command(command));
+            slot.bytes[..slot.length].fill(0);
+            return HciActivePeripheralIntake::Command {
+                command,
+                state,
+                buffer,
+            };
+        }
+        if slot.kind == PacketKind::AclData {
+            let (packet, _) = AclPacket::from_hci_bytes(bytes)
+                .unwrap_or_else(|_| unreachable!("validated retained ACL must decode"));
+            let packet = LeHostAclPacket::copy_from(packet, live_handle, acl_capacity);
+            slot.bytes[..slot.length].fill(0);
+            return HciActivePeripheralIntake::Acl {
+                state: accept_acl(state, packet),
+                buffer,
+            };
+        }
+
+        buffer[..slot.length].copy_from_slice(bytes);
+        slot.bytes[..slot.length].fill(0);
+        let bytes = &buffer[..slot.length];
+        let frame = match slot.kind {
+            PacketKind::SyncData => {
+                let (packet, _) = SyncPacket::from_hci_bytes(bytes)
+                    .unwrap_or_else(|_| unreachable!("validated retained Sync must decode"));
+                HostToControllerFrame::Sync(packet)
+            }
+            PacketKind::IsoData => {
+                let (packet, _) = IsoPacket::from_hci_bytes(bytes)
+                    .unwrap_or_else(|_| unreachable!("validated retained ISO must decode"));
+                HostToControllerFrame::Iso(packet)
+            }
+            PacketKind::Cmd | PacketKind::AclData | PacketKind::Event => {
+                unreachable!("handled or invalid-direction kinds returned above")
+            }
+        };
+        HciActivePeripheralIntake::NonCommand {
+            state,
+            frame: HciEpochBound::bind(self.identity, frame),
+        }
     }
 
     #[cfg(test)]

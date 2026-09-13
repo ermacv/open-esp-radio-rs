@@ -9,6 +9,13 @@ pub enum BootstrapConfigError {
     ZeroAclDataPacketLength,
     /// Trouble cannot acquire link credits when the Controller reports zero.
     ZeroAclDataPacketCount,
+    /// The initial LE data path cannot retain a larger complete Host packet.
+    AclDataPacketLengthTooLarge {
+        /// Requested Host-to-Controller payload length.
+        length: u16,
+        /// Maximum payload owned by this Controller profile.
+        maximum: u16,
+    },
 }
 
 /// Public Bluetooth device identity in canonical display order.
@@ -62,6 +69,14 @@ impl LeControllerBootstrapConfig {
     ) -> Result<Self, BootstrapConfigError> {
         if le_acl_data_packet_length == 0 {
             return Err(BootstrapConfigError::ZeroAclDataPacketLength);
+        }
+        if le_acl_data_packet_length
+            > crate::controller::le::acl::LE_ACL_DATA_PACKET_CAPACITY as u16
+        {
+            return Err(BootstrapConfigError::AclDataPacketLengthTooLarge {
+                length: le_acl_data_packet_length,
+                maximum: crate::controller::le::acl::LE_ACL_DATA_PACKET_CAPACITY as u16,
+            });
         }
         if total_num_le_acl_data_packets == 0 {
             return Err(BootstrapConfigError::ZeroAclDataPacketCount);

@@ -376,9 +376,10 @@ impl PeripheralConnectionSchedulerCompleted {
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
         version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
-    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
-        self.event.process_control(control, version)
+    ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
+        self.event.process_control(control, acl, version)
     }
 
     /// Portable completion record with the exactly-once advanced successor.
@@ -408,6 +409,12 @@ impl PeripheralConnectionSchedulerCompleted {
     /// Normalized packet start when peer activity was captured.
     pub const fn packet_start(&self) -> Option<&PeripheralConnectionPacketStartTiming> {
         self.event.packet_start()
+    }
+
+    pub(crate) const fn recurring_phase(
+        &self,
+    ) -> crate::le::peripheral::connection::PeripheralConnectionRecurringPhase {
+        self.event.recurring_phase()
     }
 }
 

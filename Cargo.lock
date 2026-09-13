@@ -2428,6 +2428,7 @@ dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
  "esp-hal",
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
@@ -2437,6 +2438,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-radio-platform-esp-hal",
  "static_cell",
+ "trouble-host",
 ]
 
 [[package]]

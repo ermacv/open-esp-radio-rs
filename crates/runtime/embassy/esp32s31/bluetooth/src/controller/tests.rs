@@ -169,6 +169,10 @@ fn reducer_closes_start_test_end_and_reset_paths_back_to_idle() {
         Retain
     );
     assert_eq!(
+        reduce_controller_command_transition(PeripheralConnectionActivePhase, IdleReset),
+        Advance(IdleResetPhase)
+    );
+    assert_eq!(
         reduce_controller_command_transition(LegacyConnectableAdvertisingActivePhase, IdleReset,),
         Advance(IdleResetPhase)
     );

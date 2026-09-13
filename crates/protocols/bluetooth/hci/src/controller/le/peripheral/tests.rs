@@ -1,6 +1,6 @@
 use bt_hci::{
     FromHciBytes,
-    event::{Event, le::LeEvent},
+    event::{CommandStatus, Event, le::LeEvent},
     param::{
         AddrKind, BdAddr, ClockAccuracy, ConnHandle, Duration, Error as HciError, LeConnRole,
         Status,
@@ -8,9 +8,139 @@ use bt_hci::{
 };
 
 use super::{
-    LeDisconnectionCompleteEvent, LePeripheralConnectionCompleteEvent,
-    LePeripheralConnectionCompleteEventError,
+    LeConnectionUpdateCompleteEvent, LeDisconnectCommand, LeDisconnectCommandStatusEvent,
+    LeDisconnectDecodeError, LeDisconnectionCompleteEvent, LePeripheralConnectionCompleteEvent,
+    LePeripheralConnectionCompleteEventError, LeReadRemoteFeaturesCommand,
+    LeReadRemoteFeaturesCommandStatusEvent, LeReadRemoteFeaturesCompleteEvent,
+    LeReadRemoteFeaturesDecodeError, LeReadRemoteVersionInformationCommand,
+    LeReadRemoteVersionInformationCommandStatusEvent, LeReadRemoteVersionInformationCompleteEvent,
+    LeReadRemoteVersionInformationDecodeError,
 };
+use crate::HciCommandPacket;
+
+#[test]
+fn disconnect_decode_owns_validated_handle_and_reason() {
+    let command = LeDisconnectCommand::decode(HciCommandPacket::for_test(
+        LeDisconnectCommand::OPCODE,
+        &[0xbc, 0x0a, 0x13],
+    ))
+    .expect("the standard parameter body is valid");
+    assert_eq!(command.handle(), ConnHandle::new(0x0abc));
+    assert_eq!(command.reason(), 0x13);
+
+    for parameters in [
+        &[][..],
+        &[1, 0][..],
+        &[1, 0, 0x16][..],
+        &[0, 0x10, 0x13][..],
+    ] {
+        assert_eq!(
+            LeDisconnectCommand::decode(HciCommandPacket::for_test(
+                LeDisconnectCommand::OPCODE,
+                parameters,
+            )),
+            Err(LeDisconnectDecodeError::Malformed)
+        );
+    }
+}
+
+#[test]
+fn disconnect_status_roundtrips_through_bt_hci() {
+    let event = LeDisconnectCommandStatusEvent::new(Status::SUCCESS);
+    let Event::CommandStatus(decoded) = Event::from_hci_bytes_complete(event.as_bytes())
+        .expect("bt-hci decodes the complete Command Status")
+    else {
+        panic!("Disconnect response changed standard event kind");
+    };
+    let _: CommandStatus = decoded;
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.num_hci_cmd_pkts, 1);
+    assert_eq!(decoded.cmd_opcode, LeDisconnectCommand::OPCODE);
+}
+
+#[test]
+fn read_remote_features_command_and_events_use_standard_wire_shapes() {
+    let command = LeReadRemoteFeaturesCommand::decode(HciCommandPacket::for_test(
+        LeReadRemoteFeaturesCommand::OPCODE,
+        &[0xbc, 0x0a],
+    ))
+    .unwrap();
+    assert_eq!(command.handle(), ConnHandle::new(0x0abc));
+    assert_eq!(
+        LeReadRemoteFeaturesCommand::decode(HciCommandPacket::for_test(
+            LeReadRemoteFeaturesCommand::OPCODE,
+            &[0, 0x10],
+        )),
+        Err(LeReadRemoteFeaturesDecodeError::Malformed)
+    );
+
+    let status = LeReadRemoteFeaturesCommandStatusEvent::new(Status::SUCCESS);
+    let Event::CommandStatus(decoded) = Event::from_hci_bytes_complete(status.as_bytes()).unwrap()
+    else {
+        panic!("remote-feature status changed event kind");
+    };
+    assert_eq!(decoded.cmd_opcode, LeReadRemoteFeaturesCommand::OPCODE);
+    assert_eq!(decoded.status, Status::SUCCESS);
+
+    let features = [1, 2, 3, 4, 5, 6, 7, 8];
+    let complete =
+        LeReadRemoteFeaturesCompleteEvent::new(Status::SUCCESS, ConnHandle::new(0x0abc), features);
+    let Event::Le(LeEvent::LeReadRemoteFeaturesComplete(decoded)) =
+        Event::from_hci_bytes_complete(complete.as_bytes()).unwrap()
+    else {
+        panic!("remote-feature completion changed event kind");
+    };
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
+    assert!(decoded.le_features.supports_le_encryption());
+    assert_eq!(&complete.as_bytes()[6..], &features);
+}
+
+#[test]
+fn read_remote_version_command_and_events_use_standard_wire_shapes() {
+    let command = LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::for_test(
+        LeReadRemoteVersionInformationCommand::OPCODE,
+        &[0xbc, 0x0a],
+    ))
+    .unwrap();
+    assert_eq!(command.handle(), ConnHandle::new(0x0abc));
+    assert_eq!(
+        LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::for_test(
+            LeReadRemoteVersionInformationCommand::OPCODE,
+            &[0, 0x10],
+        )),
+        Err(LeReadRemoteVersionInformationDecodeError::Malformed)
+    );
+
+    let status = LeReadRemoteVersionInformationCommandStatusEvent::new(Status::SUCCESS);
+    let Event::CommandStatus(decoded) = Event::from_hci_bytes_complete(status.as_bytes()).unwrap()
+    else {
+        panic!("remote-version status changed event kind");
+    };
+    assert_eq!(
+        decoded.cmd_opcode,
+        LeReadRemoteVersionInformationCommand::OPCODE
+    );
+    assert_eq!(decoded.status, Status::SUCCESS);
+
+    let complete = LeReadRemoteVersionInformationCompleteEvent::new(
+        Status::SUCCESS,
+        ConnHandle::new(0x0abc),
+        0x0d,
+        0x1234,
+        0x5678,
+    );
+    let Event::ReadRemoteVersionInformationComplete(decoded) =
+        Event::from_hci_bytes_complete(complete.as_bytes()).unwrap()
+    else {
+        panic!("remote-version completion changed event kind");
+    };
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
+    assert_eq!(decoded.company_id, 0x1234);
+    assert_eq!(decoded.subversion, 0x5678);
+    assert_eq!(&complete.as_bytes()[5..], &[0x0d, 0x34, 0x12, 0x78, 0x56]);
+}
 
 #[test]
 fn peripheral_connection_complete_roundtrips_through_bt_hci() {
@@ -98,4 +228,26 @@ fn disconnection_complete_roundtrips_through_bt_hci() {
     assert_eq!(decoded.status, Status::SUCCESS);
     assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
     assert_eq!(decoded.reason, reason);
+}
+
+#[test]
+fn connection_update_complete_roundtrips_through_bt_hci() {
+    let event = LeConnectionUpdateCompleteEvent::new(
+        ConnHandle::new(0x0abc),
+        Duration::from_u16(40),
+        3,
+        Duration::from_u16(200),
+    );
+
+    let Event::Le(LeEvent::LeConnectionUpdateComplete(decoded)) =
+        Event::from_hci_bytes_complete(event.as_bytes())
+            .expect("bt-hci decodes the complete standard event")
+    else {
+        panic!("the emitted event changed standard kind");
+    };
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
+    assert_eq!(decoded.conn_interval, Duration::from_u16(40));
+    assert_eq!(decoded.peripheral_latency, 3);
+    assert_eq!(decoded.supervision_timeout, Duration::from_u16(200));
 }

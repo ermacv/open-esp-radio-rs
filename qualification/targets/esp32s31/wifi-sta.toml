@@ -363,7 +363,6 @@ hil-requirements = [
 ]
 gaps = [
   { axis = "vendor", id = "combined-close-cache-replay-restart-not-release-evidence" },
-  { axis = "hil", id = "current-clean-repeated-restart-evidence-missing" },
 ]
 
 [[capabilities]]

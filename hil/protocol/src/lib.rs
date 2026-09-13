@@ -19,7 +19,7 @@ mod phy;
 pub use phy::{
     PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyRxGainEvidence,
     PhyRxGainExecutionEvidence, PhyTimingEvidence, PhyTxWaitEvidence, PhyWaitTiming,
-    RfpllCorrectionEvidence, RfpllEvidence,
+    RfpllCorrectionEvidence, RfpllEvidence, TemperatureEvidence,
 };
 mod memory_benchmark;
 mod message;

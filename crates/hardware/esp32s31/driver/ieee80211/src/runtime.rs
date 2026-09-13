@@ -7,7 +7,18 @@ use oer_esp32s31_hal::{
     types::MacInterruptEnableState,
 };
 
-use oer_esp32s31_phy::{PhyCalibrationCache, RegisteredWifiPhy};
+#[cfg(target_arch = "riscv32")]
+use oer_esp32s31_hal::owner::{Radio, state as radio_state};
+
+use oer_esp32s31_phy::{
+    PhyCalibrationCache, RegisteredPhyClientReleaseDisposition, RegisteredWifiPhy,
+};
+
+#[cfg(target_arch = "riscv32")]
+use oer_esp32s31_phy::{
+    RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased, RegisteredPhyRadio,
+    RegisteredPhyRfCloseFailure,
+};
 
 use oer_esp32s31_wifi_mac::sta_ap_registers::disable_all_role_receive_registers;
 
@@ -51,6 +62,97 @@ impl<P> WifiStopped<P> {
 
     pub const fn phy_client_snapshot(&self) -> oer_esp32s31_phy::state::client::PhyClientSnapshot {
         self.phy.client_snapshot()
+    }
+
+    /// Retire the Wi-Fi PHY client from this fully stopped runtime frontier.
+    ///
+    /// The runtime register and inactive IRQ owners are reunited before the
+    /// client result is attached to the physical radio. Wi-Fi RX is disabled
+    /// at the vendor-shaped per-client edge. The returned last-client owner is
+    /// still physically powered; RF close and shared-clock release are later
+    /// whole-radio lifecycle transactions.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure must return the complete stopped Wi-Fi frontier"
+    )]
+    pub fn release_phy_client(
+        self,
+    ) -> Result<RegisteredPhyClientReleaseDisposition<P>, WifiPhyClientReleaseFailure<P>> {
+        let Self {
+            platform,
+            registers,
+            interrupt_setup,
+            phy,
+            start_report,
+            transition_report,
+            current_channel,
+        } = self;
+        let mut radio = Radio::<P, radio_state::Running>::from_runtime_parts(
+            platform,
+            registers,
+            interrupt_setup,
+        )
+        .reunite_powered();
+        radio.disable_wifi_rx();
+        match phy.release_wifi_client() {
+            Ok(release) => Ok(release.reunite(radio).into_disposition()),
+            Err(failure) => {
+                radio.enable_wifi_rx();
+                let (platform, registers, interrupt_setup) =
+                    radio.into_running().into_runtime_parts();
+                Err(WifiPhyClientReleaseFailure {
+                    error: failure.error(),
+                    owner: Self {
+                        platform,
+                        registers,
+                        interrupt_setup,
+                        phy: failure.into_owner(),
+                        start_report,
+                        transition_report,
+                        current_channel,
+                    },
+                })
+            }
+        }
+    }
+
+    /// Release the stopped Wi-Fi client and close the shared RF domain when it
+    /// was the final protocol client.
+    ///
+    /// A non-final release returns the still-registered shared radio without
+    /// touching its physical RF state. A final release executes the complete
+    /// source-owned RF close and cold-owner reunion, returning a cache captured
+    /// from the final post-maintenance calibration state.
+    ///
+    /// # Cancellation
+    ///
+    /// Once the final-client close future is polled, it must be driven to a
+    /// terminal result. Dropping it can strand a temperature transaction or a
+    /// partially closed RF epoch.
+    #[cfg(target_arch = "riscv32")]
+    #[must_use = "radio release must reach an owned shared or cold disposition"]
+    pub async fn release_radio<D: oer_esp32s31_phy::PhyAsyncDelay>(
+        self,
+    ) -> Result<WifiRadioReleaseDisposition<P>, WifiRadioReleaseFailure<P>> {
+        match self
+            .release_phy_client()
+            .map_err(WifiRadioReleaseFailure::Client)?
+        {
+            RegisteredPhyClientReleaseDisposition::Remaining(radio) => {
+                Ok(WifiRadioReleaseDisposition::Shared(radio))
+            }
+            RegisteredPhyClientReleaseDisposition::Last(idle) => {
+                let closed = idle
+                    .close_rf::<D>()
+                    .await
+                    .map_err(WifiRadioReleaseFailure::RfClose)?;
+                let cold = closed
+                    .release_to_cold()
+                    .map_err(WifiRadioReleaseFailure::ColdRelease)?;
+                Ok(WifiRadioReleaseDisposition::Cold(cold))
+            }
+        }
     }
 
     /// Borrow the role-neutral radio state for stopped-only operations.
@@ -173,6 +275,45 @@ impl<P> WifiStopped<P> {
                 current_channel: self.current_channel,
             },
         }
+    }
+}
+
+/// Whole-radio disposition after a stopped Wi-Fi client is released.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the returned owner is the only authority for the next radio epoch"]
+pub enum WifiRadioReleaseDisposition<P> {
+    /// Another protocol client keeps the shared registered PHY powered.
+    Shared(RegisteredPhyRadio<P>),
+    /// Wi-Fi was the last client and the RF domain reached the cold frontier.
+    Cold(RegisteredPhyColdReleased<P>),
+}
+
+/// Fail-stop frontier for the composed stopped-Wi-Fi release transaction.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "release failure retains the exact recoverable or poisoned owner"]
+pub enum WifiRadioReleaseFailure<P> {
+    /// Wi-Fi client release failed before physical RF close was selected.
+    Client(WifiPhyClientReleaseFailure<P>),
+    /// RF-close preparation failed recoverably or physical close was poisoned.
+    RfClose(RegisteredPhyRfCloseFailure<P>),
+    /// RF was closed, but the cold PAC ownership reunion failed.
+    ColdRelease(RegisteredPhyColdReleaseFailure<P>),
+}
+
+/// Failed stopped-frontier PHY client release retaining all Wi-Fi owners.
+#[must_use = "failed PHY client release retains the complete stopped Wi-Fi frontier"]
+pub struct WifiPhyClientReleaseFailure<P> {
+    error: oer_esp32s31_phy::state::client::PhyClientReleaseError,
+    owner: WifiStopped<P>,
+}
+
+impl<P> WifiPhyClientReleaseFailure<P> {
+    pub const fn error(&self) -> oer_esp32s31_phy::state::client::PhyClientReleaseError {
+        self.error
+    }
+
+    pub fn into_owner(self) -> WifiStopped<P> {
+        self.owner
     }
 }
 

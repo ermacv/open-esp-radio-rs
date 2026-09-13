@@ -670,11 +670,23 @@ fn retained_cache(identity: PhyCalibrationIdentity) -> crate::state::PhyCalibrat
         current_channel: 11,
         calibration_performed: true,
     });
-    state.calibration_cache(identity)
+    let mut snapshot = state.calibration_cache(identity).into_snapshot();
+    snapshot.common.rc_calibrated = true;
+    snapshot.wifi.pwdet_calibrated = true;
+    snapshot.wifi.tx_iq_calibrated = true;
+    snapshot.wifi.rx_gain_dc_calibrated = true;
+    snapshot.wifi.rx_gain_tables_initialized = true;
+    snapshot.wifi.wifi_rx_table_last_index =
+        crate::calibration::baseband::PHY_WIFI_RX_GAIN_LAST_INDEX;
+    snapshot.wifi.shared_rx_table_last_index =
+        crate::calibration::baseband::PHY_SHARED_RX_GAIN_LAST_INDEX;
+    snapshot.bluetooth.tx_dc_calibrated = true;
+    snapshot.bluetooth.tx_power_calibrated = true;
+    crate::state::PhyCalibrationCache::from_snapshot(snapshot).unwrap()
 }
 
 #[test]
-fn structurally_valid_cache_is_replaced_until_hardware_replay_is_owned() {
+fn complete_cache_selects_partial_calibration_and_republishes_hardware_tables() {
     let cache = retained_cache(CALIBRATION_IDENTITY);
     let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
         CALIBRATION_IDENTITY,
@@ -688,20 +700,42 @@ fn structurally_valid_cache_is_replaced_until_hardware_replay_is_owned() {
     );
     assert_eq!(
         transition.calibration_path,
-        PhyCalibrationPath::FullAfterRejectedCache
+        PhyCalibrationPath::PartialFromCache
     );
     assert!(transition.calibration_cache().is_none());
-    assert!(!transition.state().unwrap().baseband_calibration_complete());
+    assert!(transition.state().unwrap().baseband_calibration_complete());
     assert!(
-        !transition
+        transition
             .state()
             .unwrap()
             .tx_power_parameters()
             .already_calibrated
     );
+    assert!(transition.state().unwrap().rc_calibration_complete());
+    assert!(
+        transition
+            .state()
+            .unwrap()
+            .rx_gain_init_parameters()
+            .dc_calibrated
+    );
+    assert!(
+        !transition
+            .state()
+            .unwrap()
+            .rx_gain_init_parameters()
+            .tables_initialized
+    );
+    assert!(
+        !transition
+            .state()
+            .unwrap()
+            .channel_frequency_control()
+            .frequency_table_initialized
+    );
     let temperature = transition.temperature_control.unwrap();
     assert!(temperature.updates_offset_130());
-    assert!(temperature.updates_reference_copies());
+    assert!(!temperature.updates_reference_copies());
 }
 
 #[test]
@@ -736,6 +770,33 @@ fn rejected_caller_cache_falls_back_to_full_calibration() {
     let temperature = transition.temperature_control.unwrap();
     assert!(temperature.updates_offset_130());
     assert!(temperature.updates_reference_copies());
+}
+
+#[test]
+fn incomplete_cache_falls_back_without_retaining_partial_state() {
+    let cache = retained_cache(CALIBRATION_IDENTITY);
+    let mut snapshot = cache.into_snapshot();
+    snapshot.wifi.rx_gain_dc_calibrated = false;
+    let cache = crate::state::PhyCalibrationCache::from_snapshot(snapshot).unwrap();
+    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
+        CALIBRATION_IDENTITY,
+        Some(cache),
+    );
+    transition.phase = Some(super::Phase::Prelude(super::PreludeStep::ApplyProfile));
+
+    assert_eq!(
+        transition.step_local().unwrap(),
+        PhyRegisterLocalStep::StateAdvanced
+    );
+    assert_eq!(
+        transition.calibration_path,
+        PhyCalibrationPath::FullAfterRejectedCache
+    );
+    let state = transition.state().unwrap();
+    assert!(!state.baseband_calibration_complete());
+    assert!(!state.rx_gain_init_parameters().dc_calibrated);
+    assert!(!state.rx_gain_init_parameters().tables_initialized);
+    assert!(!state.tx_power_parameters().already_calibrated);
 }
 
 #[test]

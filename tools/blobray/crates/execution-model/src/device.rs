@@ -95,6 +95,10 @@ impl DeviceModelRegistry {
         })
     }
 
+    pub fn get(&self, id: &str) -> Option<Arc<dyn DeviceModel>> {
+        self.models.get(id).cloned()
+    }
+
     pub fn ids(&self) -> impl Iterator<Item = &str> {
         self.models.keys().map(String::as_str)
     }

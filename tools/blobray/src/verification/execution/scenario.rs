@@ -110,6 +110,24 @@ pub(crate) struct SymbolWord {
     pub(crate) observe: bool,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct RamFill {
+    pub(crate) address: u32,
+    pub(crate) length: u32,
+    pub(crate) value: u8,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct SymbolFill {
+    pub(crate) symbol: String,
+    #[serde(default)]
+    pub(crate) offset: u32,
+    pub(crate) length: u32,
+    pub(crate) value: u8,
+}
+
 const fn symbol_word_observed_by_default() -> bool {
     true
 }
@@ -158,10 +176,17 @@ impl MemoryObservation {
 pub(crate) struct NamedScenario {
     pub(crate) name: String,
     pub(crate) scenario: execution::Scenario,
+    pub(crate) vendor_arguments: Option<Vec<u32>>,
+    pub(crate) rust_arguments: Option<Vec<u32>>,
+    pub(crate) provider_device_models: Vec<String>,
     pub(crate) vendor_symbol_words: Vec<SymbolWord>,
     pub(crate) rust_symbol_words: Vec<SymbolWord>,
+    pub(crate) vendor_symbol_fills: Vec<SymbolFill>,
+    pub(crate) rust_symbol_fills: Vec<SymbolFill>,
     pub(crate) vendor_ram_words: Vec<(u32, u32)>,
     pub(crate) rust_ram_words: Vec<(u32, u32)>,
+    pub(crate) vendor_ram_fills: Vec<RamFill>,
+    pub(crate) rust_ram_fills: Vec<RamFill>,
     pub(crate) vendor_mmio_reads: Vec<(u32, u32)>,
     pub(crate) rust_mmio_reads: Vec<(u32, u32)>,
     pub(crate) vendor_stack_fill: Option<u8>,
@@ -189,10 +214,17 @@ impl NamedScenario {
         Self {
             name,
             scenario: execution::Scenario::default(),
+            vendor_arguments: None,
+            rust_arguments: None,
+            provider_device_models: Vec::new(),
             vendor_symbol_words: Vec::new(),
             rust_symbol_words: Vec::new(),
+            vendor_symbol_fills: Vec::new(),
+            rust_symbol_fills: Vec::new(),
             vendor_ram_words: Vec::new(),
             rust_ram_words: Vec::new(),
+            vendor_ram_fills: Vec::new(),
+            rust_ram_fills: Vec::new(),
             vendor_mmio_reads: Vec::new(),
             rust_mmio_reads: Vec::new(),
             vendor_stack_fill: None,
@@ -317,7 +349,8 @@ pub(crate) struct ExecutionComparisonPolicy<'a> {
     pub(crate) effect_policy: Option<&'a crate::verification::effect_contract::EffectPolicy>,
     pub(crate) call_equivalences: &'a [profiles::CallEquivalence],
     pub(crate) diagnostic_contracts: crate::DiagnosticContractsReport,
-    pub(crate) coverage_domain: &'a [profiles::ProfileCoverageConstraint],
+    pub(crate) vendor_coverage_domain: &'a [profiles::ProfileCoverageConstraint],
+    pub(crate) rust_coverage_domain: &'a [profiles::ProfileCoverageConstraint],
     pub(crate) vendor_setup: &'a [profiles::VendorSetupPhase],
 }
 
@@ -327,6 +360,13 @@ pub(crate) fn resolved_scenario(
     vendor: bool,
 ) -> Result<execution::Scenario> {
     let mut scenario = named.scenario.clone();
+    if let Some(arguments) = if vendor {
+        &named.vendor_arguments
+    } else {
+        &named.rust_arguments
+    } {
+        scenario.arguments.clone_from(arguments);
+    }
     scenario.private_stack_fill = if vendor {
         named.vendor_stack_fill
     } else {
@@ -342,6 +382,25 @@ pub(crate) fn resolved_scenario(
     } else {
         &named.rust_ram_words
     };
+    let ram_fills = if vendor {
+        &named.vendor_ram_fills
+    } else {
+        &named.rust_ram_fills
+    };
+    for fill in ram_fills {
+        if fill.length == 0 {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} has an empty {} RAM fill",
+                named.name,
+                if vendor { "vendor" } else { "Rust" }
+            )));
+        }
+        for offset in 0..fill.length {
+            scenario
+                .memory_initial
+                .insert(fill.address.wrapping_add(offset), fill.value);
+        }
+    }
     for (address, value) in ram_words {
         write_ram_word(&mut scenario, *address, *value);
     }
@@ -404,6 +463,36 @@ pub(crate) fn resolved_scenario(
         &named.name,
         if vendor { "vendor" } else { "Rust" },
     )?;
+    let symbol_fills = if vendor {
+        &named.vendor_symbol_fills
+    } else {
+        &named.rust_symbol_fills
+    };
+    for fill in symbol_fills {
+        if fill.symbol.is_empty() || fill.length == 0 {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} has an invalid {} symbol fill",
+                named.name,
+                if vendor { "vendor" } else { "Rust" }
+            )));
+        }
+        let address = image
+            .symbol_address(&fill.symbol)
+            .map(|address| address.wrapping_add(fill.offset))
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "scenario {} refers to missing {} fill symbol {}",
+                    named.name,
+                    if vendor { "vendor" } else { "Rust" },
+                    fill.symbol
+                ))
+            })?;
+        for offset in 0..fill.length {
+            scenario
+                .memory_initial
+                .insert(address.wrapping_add(offset), fill.value);
+        }
+    }
     for word in words {
         let value = match (word.symbol.as_deref(), word.value) {
             (Some(symbol), None) => image.symbol_address(symbol).ok_or_else(|| {

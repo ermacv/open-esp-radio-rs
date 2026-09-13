@@ -151,6 +151,7 @@ pub struct RxGainExecution {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Report {
     pub rfpll: Option<super::rfpll::Observation>,
+    pub temperature: Option<crate::analog::temperature::PhyTemperatureOutcome>,
     pub timings: [Timing; OPERATION_COUNT],
     pub polls: [PollTiming; POLLED_COUNT],
     pub rx_gain_execution: Option<RxGainExecution>,
@@ -164,6 +165,7 @@ impl Default for Report {
     fn default() -> Self {
         Self {
             rfpll: None,
+            temperature: None,
             timings: [Timing::default(); OPERATION_COUNT],
             polls: [PollTiming::default(); POLLED_COUNT],
             rx_gain_execution: None,
@@ -191,6 +193,7 @@ impl Report {
 /// The caller owns the monotonic clock and decides where this storage lives.
 pub struct Recorder {
     rfpll: Option<super::rfpll::Observation>,
+    temperature: Option<crate::analog::temperature::PhyTemperatureOutcome>,
     timings: [Timing; OPERATION_COUNT],
     polls: [PollTiming; POLLED_COUNT],
     rx_gain_execution: Option<RxGainExecution>,
@@ -208,6 +211,7 @@ impl Default for Recorder {
     fn default() -> Self {
         Self {
             rfpll: None,
+            temperature: None,
             timings: [Timing::default(); OPERATION_COUNT],
             polls: [PollTiming::default(); POLLED_COUNT],
             rx_gain_execution: None,
@@ -224,6 +228,17 @@ impl Default for Recorder {
 }
 
 impl Recorder {
+    pub fn observe_temperature(
+        &mut self,
+        outcome: crate::analog::temperature::PhyTemperatureOutcome,
+    ) {
+        if self.active[Operation::Temperature as usize].is_none()
+            || self.temperature.replace(outcome).is_some()
+        {
+            self.invalid = true;
+        }
+    }
+
     pub fn observe_rx_gain_execution(&mut self, execution: RxGainExecution) {
         if self.active[Operation::RxGain as usize].is_none() || self.rx_gain_execution.is_some() {
             self.invalid = true;
@@ -410,6 +425,7 @@ impl Recorder {
     pub fn report(&self) -> Report {
         Report {
             rfpll: self.rfpll,
+            temperature: self.temperature,
             timings: self.timings,
             polls: self.polls,
             rx_gain_execution: self.rx_gain_execution,

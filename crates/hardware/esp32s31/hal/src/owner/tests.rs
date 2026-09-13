@@ -35,6 +35,43 @@ fn validation_powered_owner_preserves_the_unique_owner() {
 }
 
 #[test]
+fn inactive_runtime_parts_reunite_into_the_same_powered_owner() {
+    let powered = Radio::claim(TestPeripheral { id: 9, ready: true })
+        .unwrap_or_else(|_| panic!("validation radio must be available"))
+        .assume_powered_for_validation();
+    let running = powered.into_running();
+    let (platform, registers, interrupts) = running.into_runtime_parts();
+    let powered = Radio::<_, state::Running>::from_runtime_parts(platform, registers, interrupts)
+        .reunite_powered();
+    require_powered(&powered);
+    assert_eq!(powered.peripheral(), &TestPeripheral { id: 9, ready: true });
+}
+
+#[test]
+fn closed_powered_route_reunites_with_the_cold_owner() {
+    let powered = Radio::claim(TestPeripheral {
+        id: 11,
+        ready: true,
+    })
+    .unwrap_or_else(|_| panic!("validation radio must be available"))
+    .assume_powered_for_validation();
+    let cold = powered
+        .reunite_cold_after_phy_close()
+        .unwrap_or_else(|_| panic!("pristine closed route must reunite"));
+    require_owned(&cold);
+    let (peripheral, _hardware) = cold
+        .release()
+        .unwrap_or_else(|_| panic!("reunited cold route must release"));
+    assert_eq!(
+        peripheral,
+        TestPeripheral {
+            id: 11,
+            ready: true
+        }
+    );
+}
+
+#[test]
 fn channel_capability_is_a_temporary_borrow_not_a_consuming_split() {
     let owned = Radio::claim(TestPeripheral {
         id: 10,

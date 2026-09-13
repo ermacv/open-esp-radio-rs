@@ -183,7 +183,10 @@ pub enum EffectSelector {
         width: u8,
         field: String,
     },
-    Delay,
+    Delay {
+        #[serde(default)]
+        micros: Option<u32>,
+    },
     AwaitReady {
         condition: String,
     },
@@ -220,7 +223,10 @@ impl EffectSelector {
             }
             Self::StateRead { width, field } => format!("state-read {width} {field}"),
             Self::StateWrite { width, field } => format!("state-write {width} {field}"),
-            Self::Delay => "delay".to_owned(),
+            Self::Delay {
+                micros: Some(micros),
+            } => format!("delay {micros}us"),
+            Self::Delay { micros: None } => "delay".to_owned(),
             Self::AwaitReady { condition } => format!("await-ready {condition}"),
             Self::PlatformCall { operation } => {
                 format!("platform-call {}", operation.label())
@@ -263,7 +269,12 @@ impl ContractEffect {
                 width: field.width,
                 field: field.id(),
             },
-            Self::Delay { .. } => EffectSelector::Delay,
+            Self::Delay { micros } => EffectSelector::Delay {
+                micros: match micros {
+                    ContractValue::Concrete(value) => Some(*value),
+                    ContractValue::ReadResult { .. } | ContractValue::Symbolic(_) => None,
+                },
+            },
             Self::AwaitReady { condition, .. } => EffectSelector::AwaitReady {
                 condition: condition.id(),
             },
@@ -441,12 +452,14 @@ pub enum EffectDisposition {
 #[serde(rename_all = "kebab-case")]
 pub enum RustAdditionReason {
     DeviceOrdering,
+    MinimumHardwareSettle,
 }
 
 impl RustAdditionReason {
     pub const fn label(self) -> &'static str {
         match self {
             Self::DeviceOrdering => "device-ordering",
+            Self::MinimumHardwareSettle => "minimum-hardware-settle",
         }
     }
 }
@@ -546,7 +559,22 @@ impl EffectPolicy {
     }
 
     pub fn disposition(&self, selector: &EffectSelector) -> Option<&EffectDisposition> {
-        self.rules.get(selector)
+        self.resolved_rule(selector)
+            .map(|(_, disposition)| disposition)
+    }
+
+    pub fn resolved_rule(
+        &self,
+        selector: &EffectSelector,
+    ) -> Option<(&EffectSelector, &EffectDisposition)> {
+        self.rules
+            .get_key_value(selector)
+            .or_else(|| match selector {
+                EffectSelector::Delay { micros: Some(_) } => self
+                    .rules
+                    .get_key_value(&EffectSelector::Delay { micros: None }),
+                _ => None,
+            })
     }
 }
 
@@ -603,7 +631,7 @@ fn validate_effect_rule(selector: &EffectSelector, disposition: &EffectDispositi
             | EffectDisposition::Forbidden,
         )
         | (
-            EffectSelector::Delay | EffectSelector::MmioRead { .. },
+            EffectSelector::Delay { .. } | EffectSelector::MmioRead { .. },
             EffectDisposition::ReplacedByAsync { .. },
         )
         | (
@@ -620,10 +648,13 @@ fn validate_effect_rule(selector: &EffectSelector, disposition: &EffectDispositi
             EffectSelector::StateWrite { .. } | EffectSelector::PlatformCall { .. },
             EffectDisposition::PublishedEvent { .. },
         )
-        | (EffectSelector::Fence { .. }, EffectDisposition::RustAddition(_))
+        | (
+            EffectSelector::Fence { .. } | EffectSelector::Delay { .. },
+            EffectDisposition::RustAddition(_),
+        )
         | (_, EffectDisposition::InitializationPrerequisite { .. }) => Ok(()),
         (_, EffectDisposition::RustAddition(_)) => {
-            Err("rust-addition applies only to fence effects".into())
+            Err("rust-addition applies only to fence or delay effects".into())
         }
         (_, EffectDisposition::AllowedOmission(_)) => {
             Err("allowed-omission applies only to platform-call effects".into())

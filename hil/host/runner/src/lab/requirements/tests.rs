@@ -47,6 +47,8 @@ fn udp_evidence_and_optional_observer_have_distinct_owners() {
     let mut scenario = scenario(Workload::Udp {
         station_pause: None,
         station_pause_after_millis: None,
+        station_pause_attempts: None,
+        station_pause_interval_millis: None,
         direction: Direction::Rx,
         duration_seconds: 1,
         rx_rate_bps: Some(1000),

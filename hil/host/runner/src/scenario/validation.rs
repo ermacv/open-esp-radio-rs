@@ -547,6 +547,8 @@ impl Scenario {
                 payload_bytes,
                 station_pause,
                 station_pause_after_millis,
+                station_pause_attempts,
+                station_pause_interval_millis,
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
@@ -562,9 +564,56 @@ impl Scenario {
                         "station_pause_after_millis requires a station_pause operation".into(),
                     );
                 }
+                if station_pause_attempts.is_some() && station_pause.is_none() {
+                    return Err("station_pause_attempts requires a station_pause operation".into());
+                }
+                if station_pause_interval_millis.is_some() && station_pause_attempts.is_none() {
+                    return Err(
+                        "station_pause_interval_millis requires station_pause_attempts".into(),
+                    );
+                }
+                let attempts = station_pause_attempts.unwrap_or(1);
+                if attempts == 0 || attempts > 60 {
+                    return Err("station_pause_attempts must be between 1 and 60".into());
+                }
+                if attempts > 1 {
+                    if !matches!(
+                        station_pause,
+                        Some(open_esp_radio_hil_protocol::StationPauseOperation::RfpllObserved)
+                    ) || !self.criteria.require_nonzero_rfpll_correction
+                    {
+                        return Err("repeated station pause attempts require strict RFPLL-observed qualification".into());
+                    }
+                    if station_pause_after_millis.is_none() {
+                        return Err(
+                            "repeated RFPLL observation requires an explicit cold traffic interval"
+                                .into(),
+                        );
+                    }
+                    if !station_pause_interval_millis
+                        .is_some_and(|interval| (100..=5_000).contains(&interval))
+                    {
+                        return Err(
+                            "repeated station pause attempts require a 100..=5000 ms interval"
+                                .into(),
+                        );
+                    }
+                } else if station_pause_interval_millis.is_some() {
+                    return Err(
+                        "station_pause_interval_millis requires more than one attempt".into(),
+                    );
+                }
                 if let Some(delay_millis) = station_pause_after_millis {
                     let workload_millis = u32::from(*duration_seconds).saturating_mul(1_000);
-                    if *delay_millis == 0 || delay_millis.saturating_add(2_000) > workload_millis {
+                    let repeated_wait_millis = station_pause_interval_millis
+                        .unwrap_or(0)
+                        .saturating_mul(u32::from(attempts.saturating_sub(1)));
+                    if *delay_millis == 0
+                        || delay_millis
+                            .saturating_add(repeated_wait_millis)
+                            .saturating_add(2_000)
+                            > workload_millis
+                    {
                         return Err("station_pause_after_millis must be nonzero and leave at least two seconds for maintenance and restored traffic".into());
                     }
                 }

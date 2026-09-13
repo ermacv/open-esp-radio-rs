@@ -8,11 +8,18 @@
 /// verdict or an assertion of equivalence to every possible input artifact.
 pub const PROVIDER: ExecutionModelProviderSpec = ExecutionModelProviderSpec {
     id: "esp32s31-radio-reconstruction-models",
-    revision: 1,
+    revision: 2,
     kind: ExecutionModelKind::ManualReconstruction,
     applicability: "Exact body/address and relocation/context guards per reconstruction; no caller-owned DTM input bound is assumed.",
     evidence: "verification/vendor/projects/esp32s31/blobray-provider/OWNERSHIP.md",
+    device_models,
 };
+
+pub fn device_models() -> execution_model::DeviceModelRegistry {
+    let mut registry = execution_model::DeviceModelRegistry::default();
+    phy_calibration::register(&mut registry);
+    registry
+}
 
 pub use open_radio_vendor_backend_riscv::{
     ReferenceResolver, ReviewedMemoryAccessClassification, ReviewedMemoryAccessOccurrence,
@@ -24,6 +31,7 @@ pub use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_harness_esp32s31::{CONTRACTS, entry_contract, external_abi};
 pub use open_radio_vendor_semantics::*;
 
+pub mod phy_calibration;
 pub mod phy_i2c;
 mod reviewed_summaries;
 
@@ -56,7 +64,7 @@ const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
 };
 
 pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
-    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-runtime-models@1+esp32s31-radio-reconstruction-models@1",
+    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-runtime-models@1+esp32s31-radio-reconstruction-models@2",
     contracts: &CONTRACTS,
     summaries: &RISCV_SUMMARIES,
     compressed_pointer_encodings: open_radio_vendor_chip_models_esp32s31_rev0::RISCV_HARNESS

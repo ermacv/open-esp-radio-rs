@@ -379,6 +379,26 @@ pub(crate) fn execution_model_providers(
     Ok(models)
 }
 
+pub(crate) fn resolve_device_model(
+    provider: &str,
+    id: &str,
+) -> crate::Result<std::sync::Arc<dyn crate::ExecutionDeviceModel>> {
+    let mut matches = execution_model_providers(provider)?
+        .into_iter()
+        .filter_map(|models| ((models.device_models)()).get(id));
+    let model = matches.next().ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "knowledge provider {provider:?} has no peripheral model {id:?}"
+        ))
+    })?;
+    if matches.next().is_some() {
+        return Err(crate::Error::invalid(format!(
+            "knowledge provider {provider:?} resolves peripheral model {id:?} more than once"
+        )));
+    }
+    Ok(model)
+}
+
 pub(crate) fn contracts(provider: &str) -> crate::Result<&'static crate::KnowledgeContractSpec> {
     Ok(knowledge_descriptor(provider)?.contracts)
 }
@@ -534,6 +554,7 @@ mod tests {
             kind: crate::ExecutionModelKind::ManualReconstruction,
             applicability: "synthetic exact body guard",
             evidence: "synthetic model fixture",
+            device_models: crate::ExecutionDeviceModelRegistry::default,
         };
         static MODELS_V2: crate::ExecutionModelProviderSpec = crate::ExecutionModelProviderSpec {
             revision: 2,
@@ -608,6 +629,7 @@ mod tests {
             kind: crate::ExecutionModelKind::RuntimeSemantics,
             applicability: "",
             evidence: "unverified source reference",
+            device_models: crate::ExecutionDeviceModelRegistry::default,
         };
         static PROVIDERS: &[KnowledgeProviderDescriptor] = &[KnowledgeProviderDescriptor {
             id: "fixture-facts",

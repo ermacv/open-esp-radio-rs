@@ -7,6 +7,75 @@ const IDENTITY: crate::calibration::registration::PhyCalibrationIdentity =
         mac_extension: 17,
     };
 
+fn complete_calibration_cache() -> PhyCalibrationCache {
+    let mut state = PhyState::new(PhyConfig::production());
+    state.common.temperature = 23;
+    state.common.sensor_index = 3;
+    state.common.crystal_selector = 2;
+    state.common.rc_result = 41;
+    state.common.filter_dcap = [2, 3, 4, 5, 6];
+    state.common.rc_calibrated = true;
+    state.common.dcode = [1, 2, 3, 4, 5, 6, 7, 8];
+    state.common.i2c_frequency_parameter = 9;
+    state.common.xtal_duty = [10, 11, 12];
+    state.common.clear_tone_after_ready = true;
+    state.common.calibrated_attenuation = 13;
+    state.wifi.tx_gain_adjustment = -3;
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::BASEBAND, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::PWDET, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::TX_POWER, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::TX_IQ, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::RX_GAIN_DC, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::RX_GAIN_TABLES, true);
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::RX_SATURATION, true);
+    state.wifi.tx_dco = [[14; 4]; 5];
+    state.wifi.tx_reference_codes = [15, 16];
+    state.wifi.tx_capacitance = [17; 6];
+    state.wifi.tx_power_curve = [18, 19, 20];
+    state.wifi.tx_power_corrections = [21, 22, 23];
+    state.wifi.tx_power_adjustment = 24;
+    state.wifi.tx_iq_config = 25;
+    state.wifi.tx_iq_coefficient = 26;
+    state.wifi.rx_iq_coefficients = [27; 4];
+    state.wifi.external_dcode = [28, 29];
+    state.wifi.calibration_temperature = 30;
+    state.wifi.current_channel = 11;
+    state.wifi.wifi_rx_table_last_index = PHY_WIFI_RX_GAIN_LAST_INDEX;
+    state.wifi.shared_rx_table_last_index = PHY_SHARED_RX_GAIN_LAST_INDEX;
+    state.wifi.wifi_index_dc = [[31; 2]; 8];
+    state.wifi.wifi_dc_base = [32; 2];
+    state.wifi.shared_index_dc = [[33; 2]; 11];
+    state.wifi.rxbb_dc_adjustments = [[34; 2]; 6];
+    state.bluetooth.tx_dc_calibrated = true;
+    state.bluetooth.tx_power_calibrated = true;
+    state.bluetooth.tx_dco = [[35; 4]; 3];
+    state.bluetooth.tx_power_curve = [36, 37, 38];
+    state.bluetooth.tx_power_corrections = [39, 40, 41];
+    state.bluetooth.tx_power_adjustment = 42;
+    state.calibration_cache(IDENTITY)
+}
+
 #[test]
 fn rfpll_tracking_reference_is_initialized_and_committed_only_on_update() {
     let mut state = PhyState::new(PhyConfig::production());
@@ -119,8 +188,18 @@ fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
     assert_eq!(state.wifi.shared_rx_table_last_index, 75);
     assert_eq!(state.wifi.wifi_index_dc, [[1; 2]; 8]);
     assert_eq!(state.wifi.shared_index_dc, [[3; 2]; 11]);
-    assert!(state.wifi.rx_gain_dc_calibrated);
-    assert!(state.wifi.rx_gain_tables_initialized);
+    assert!(
+        state
+            .wifi
+            .calibration
+            .contains(WifiCalibrationStatus::RX_GAIN_DC)
+    );
+    assert!(
+        state
+            .wifi
+            .calibration
+            .contains(WifiCalibrationStatus::RX_GAIN_TABLES)
+    );
     assert_eq!(state.current_wifi_channel(), 11);
     assert_eq!(state.common.temperature, 50);
     assert_eq!(state.tx_dc_pwdet_parameters().dco, [[5; 4]; 3]);
@@ -185,6 +264,7 @@ fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
 #[test]
 fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {
     let mut state = PhyState::new(PhyConfig::production());
+    let immutable_config = state.config;
     state.apply_temperature_outcome(PhyTemperatureOutcome {
         temperature: 25,
         sensor_index: 3,
@@ -213,6 +293,7 @@ fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {
     });
     assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
     assert_eq!(state.channel_parameters().tx_gain_base, 0);
+    assert_eq!(state.config, immutable_config);
     assert_eq!(
         state.tx_power_tracking_parameters(false),
         PhyTxPowerTrackingParameters {
@@ -343,6 +424,125 @@ fn cache_schema_is_checked_before_artifact_admission() {
     let mut snapshot = cache.into_snapshot();
     snapshot.schema += 1;
     assert!(PhyCalibrationCache::from_snapshot(snapshot).is_none());
+}
+
+#[test]
+fn cache_replay_validation_rejects_identity_incomplete_and_invalid_table_shape() {
+    let cache = complete_calibration_cache();
+    assert_eq!(cache.validate_for_replay(IDENTITY), Ok(()));
+    assert_eq!(
+        cache.validate_for_replay(crate::calibration::registration::PhyCalibrationIdentity {
+            rf_cal_version: IDENTITY.rf_cal_version + 1,
+            ..IDENTITY
+        }),
+        Err(PhyCalibrationCacheError::IdentityMismatch)
+    );
+
+    let mut incomplete = cache.into_snapshot();
+    incomplete.wifi.tx_iq_calibrated = false;
+    assert_eq!(
+        PhyCalibrationCache::from_snapshot(incomplete)
+            .unwrap()
+            .validate_for_replay(IDENTITY),
+        Err(PhyCalibrationCacheError::IncompleteCalibration)
+    );
+
+    let mut invalid_table = complete_calibration_cache().into_snapshot();
+    invalid_table.wifi.shared_rx_table_last_index -= 1;
+    assert_eq!(
+        PhyCalibrationCache::from_snapshot(invalid_table)
+            .unwrap()
+            .validate_for_replay(IDENTITY),
+        Err(PhyCalibrationCacheError::InvalidRxGainTable)
+    );
+}
+
+#[test]
+fn cached_calibration_restores_products_but_resets_runtime_and_hardware_epoch_state() {
+    let cache = complete_calibration_cache();
+    let snapshot = *cache.snapshot();
+    let config = PhyConfig::production();
+    let mut state = PhyState::new(PhyConfig::esp32s31_default());
+    state.set_dot11p_configuration(1, 7);
+    state.set_current_level(8);
+    state.set_bt_power_tracking(0);
+    state.set_ble_channel_base(9);
+    state.common.registered = true;
+    state.common.frequency_table_initialized = true;
+    state.wifi.channel_initialized = true;
+
+    state
+        .begin_cached_calibration(config, &cache, IDENTITY)
+        .unwrap();
+
+    assert_eq!(state.config, config);
+    assert_eq!(state.common.temperature, snapshot.common.temperature);
+    assert_eq!(
+        state.common.calibration_tracking_temperature,
+        snapshot.common.temperature
+    );
+    assert_eq!(
+        state.common.txdc_tracking_temperature,
+        snapshot.common.temperature
+    );
+    assert_eq!(state.common.calibrated_attenuation, 13);
+    assert_eq!(state.wifi.tx_dco, snapshot.wifi.tx_dco);
+    assert_eq!(state.wifi.wifi_index_dc, snapshot.wifi.wifi_index_dc);
+    assert_eq!(state.bluetooth.tx_dco, snapshot.bluetooth.tx_dco);
+    assert!(
+        state
+            .wifi
+            .calibration
+            .contains(WifiCalibrationStatus::BASEBAND)
+    );
+    assert!(
+        state
+            .wifi
+            .calibration
+            .contains(WifiCalibrationStatus::RX_GAIN_DC)
+    );
+    assert!(
+        !state
+            .wifi
+            .calibration
+            .contains(WifiCalibrationStatus::RX_GAIN_TABLES)
+    );
+    assert!(!state.common.frequency_table_initialized);
+    assert!(!state.wifi.channel_initialized);
+    assert!(!state.common.registered);
+    assert_eq!(
+        state.common.temperature_acquisition,
+        crate::tracking::temperature::StoredAcquisition::UNOBSERVED
+    );
+    assert_eq!(state.dot11p_configuration().enabled, 0);
+    assert_eq!(state.current_level(), 0);
+    assert_eq!(state.bt_power_tracking(), 1);
+    assert_eq!(state.ble_channel_base(), 0);
+    assert_eq!(
+        state.wifi.tracking_gain_base,
+        config.initial_wifi_tx_gain_base
+    );
+    assert_eq!(
+        state.bluetooth.tracking_gain_base,
+        config.initial_bluetooth_tx_gain_base
+    );
+}
+
+#[test]
+fn rejected_cache_does_not_modify_live_state() {
+    let mut cache = complete_calibration_cache().into_snapshot();
+    cache.bluetooth.tx_power_calibrated = false;
+    let cache = PhyCalibrationCache::from_snapshot(cache).unwrap();
+    let mut state = PhyState::new(PhyConfig::esp32s31_default());
+    state.set_current_level(19);
+    let before = state.calibration_snapshot(IDENTITY);
+
+    assert_eq!(
+        state.begin_cached_calibration(PhyConfig::production(), &cache, IDENTITY),
+        Err(PhyCalibrationCacheError::IncompleteCalibration)
+    );
+    assert_eq!(state.calibration_snapshot(IDENTITY), before);
+    assert_eq!(state.current_level(), 19);
 }
 
 #[test]

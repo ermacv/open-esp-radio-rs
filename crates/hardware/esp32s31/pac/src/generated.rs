@@ -164,10 +164,12 @@ impl LpTsensPhyConversionEnable {
     }
 }
 
-/// The sole reviewed enabled image for LP_TSENS.CTRL.POWER_UP.
+/// Reviewed images for LP_TSENS.CTRL.POWER_UP.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LpTsensPowerEnable {
+    /// Bit twenty-two cleared by complete ROM phy_set_tsens_power_ for argument zero.
+    Disabled = 0x00000000,
     /// Bit twenty-two set by complete ROM phy_set_tsens_power_.
     Enabled = 0x00400000,
 }
@@ -5334,6 +5336,12 @@ pub(crate) fn disable_baseband_i2c_power_tie(registers: &crate::svd::PmuRadio) {
     crate::svd::field_replace_modify::disable_baseband_i2c_power_tie(registers);
 }
 
+/// Typed bridge for the reviewed `clear_phy_rf_immediate_clock_power` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_rf_immediate_clock_power(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::clear_phy_rf_immediate_clock_power(registers);
+}
+
 /// Typed bridge for the reviewed `power_on_analog_i2c` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn power_on_analog_i2c(registers: &crate::svd::PmuRadio) {
@@ -5413,6 +5421,12 @@ pub(crate) fn set_wifi_mac_reset(
 #[inline]
 pub(crate) fn clear_cold_start_wifi_control(registers: &crate::svd::ModemSysconRadio) {
     crate::svd::field_replace_modify::clear_cold_start_wifi_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_rf_baseband_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_rf_baseband_control(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::clear_phy_rf_baseband_control(registers);
 }
 
 /// Typed bridge for the reviewed `set_wifi_baseband_enable` field-replacement transaction.

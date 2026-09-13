@@ -681,6 +681,47 @@ pub struct PowerUpFailure<P> {
     pub(crate) error: PowerError,
 }
 
+/// Failed release of a physically closed radio back to the cold owner.
+///
+/// This type is constructed only by the post-PHY-close path. It retains the
+/// exact powered owner because a pending PAC restore invariant prevented
+/// neutral-root reconstruction.
+#[must_use = "failed cold reunion retains the complete closed hardware owner"]
+pub struct ColdReunionFailure<P> {
+    _radio: Radio<P, state::Powered>,
+    error: ColdReunionError,
+}
+
+impl<P> ColdReunionFailure<P> {
+    pub const fn error(&self) -> ColdReunionError {
+        self.error
+    }
+}
+
+/// Restore invariant which prevented a closed radio from reaching cold state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ColdReunionError {
+    TxDcPwdetRestorePending,
+    TxIqToneControlRestorePending,
+    RxDcoControlRestorePending,
+    BluetoothTxPowerControlRestorePending,
+}
+
+impl From<RadioPhyReleaseError> for ColdReunionError {
+    fn from(error: RadioPhyReleaseError) -> Self {
+        match error {
+            RadioPhyReleaseError::TxDcPwdetRestorePending => Self::TxDcPwdetRestorePending,
+            RadioPhyReleaseError::TxIqToneControlRestorePending => {
+                Self::TxIqToneControlRestorePending
+            }
+            RadioPhyReleaseError::RxDcoControlRestorePending => Self::RxDcoControlRestorePending,
+            RadioPhyReleaseError::BluetoothTxPowerControlRestorePending => {
+                Self::BluetoothTxPowerControlRestorePending
+            }
+        }
+    }
+}
+
 impl<P> PowerUpFailure<P> {
     /// Inspect the exact failed read-back checkpoint.
     pub const fn error(&self) -> PowerError {
@@ -870,6 +911,38 @@ impl<P> Radio<P, state::Powered> {
     pub fn phy_hal_mut(&mut self) -> &mut PhyHal {
         &mut self.state.registers
     }
+
+    /// Return a physically closed radio to the cold ownership frontier.
+    ///
+    /// This method performs only retained shared-clock release and ownership
+    /// reunion. The PHY layer must complete RF close and temperature-sensor
+    /// power-down before calling it; ordinary application flow reaches it only
+    /// through the registered PHY cold-release transaction. This does not
+    /// restore every platform clock/reset image changed by cold power-up.
+    #[doc(hidden)]
+    pub fn reunite_cold_after_phy_close(
+        self,
+    ) -> Result<Radio<P, state::Owned>, ColdReunionFailure<P>> {
+        let Radio {
+            peripheral,
+            state: state::Powered { registers },
+        } = self;
+        match registers.registers.release() {
+            Ok(hardware) => Ok(Radio::from_hardware(peripheral, hardware)),
+            Err(failure) => {
+                let (registers, error) = failure.into_parts();
+                Err(ColdReunionFailure {
+                    _radio: Radio {
+                        peripheral,
+                        state: state::Powered {
+                            registers: PhyHal { registers },
+                        },
+                    },
+                    error: error.into(),
+                })
+            }
+        }
+    }
 }
 
 impl<P> Radio<P, state::Powered> {
@@ -919,6 +992,27 @@ impl<P> Radio<P, state::Running> {
             },
         }
     }
+
+    /// Reunite an inactive runtime partition into the powered cold frontier.
+    ///
+    /// This is an ownership-only transition and performs no MMIO. The caller
+    /// must have completed its protocol stop before reconstructing `Running`:
+    /// no DMA owner or installed interrupt route may remain outside this
+    /// value. RF and shared clocks stay physically powered.
+    #[doc(hidden)]
+    pub fn reunite_powered(self) -> Radio<P, state::Powered> {
+        let registers = self
+            .state
+            .registers
+            .registers
+            .into_cold(self.state.interrupts.inner);
+        Radio {
+            peripheral: self.peripheral,
+            state: state::Powered {
+                registers: PhyHal { registers },
+            },
+        }
+    }
 }
 
 impl<P> Radio<P, state::Powered> {
@@ -930,6 +1024,16 @@ impl<P> Radio<P, state::Powered> {
     pub fn enable_wifi_rx(&mut self) {
         let (_, registers) = self.phy_hal_parts();
         crate::phy::frequency::set_wifi_enabled(registers, true);
+    }
+
+    /// Disable the Wi-Fi RX/baseband path at a stopped protocol frontier.
+    ///
+    /// This is the per-client release edge used before shared RF sleep or a
+    /// handoff to another protocol. It does not close RF or release clocks.
+    #[cfg(target_arch = "riscv32")]
+    pub fn disable_wifi_rx(&mut self) {
+        let (_, registers) = self.phy_hal_parts();
+        crate::phy::frequency::set_wifi_enabled(registers, false);
     }
 }
 

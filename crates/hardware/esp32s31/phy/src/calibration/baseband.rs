@@ -24,6 +24,11 @@ pub const fn set_bb_wdg() {}
 pub const PHY_TX_CFR_ENTRY_COUNT: u8 = 32;
 const PHY_TX_CFR_DATA_PREFIX_ENTRY_COUNT: u8 = 10;
 const PHY_TX_CFR_DATA_PREFIX_VALUE: u32 = 0x0000_0e13;
+/// Hardware initialization count/limit used by `phy_reg_init`.
+///
+/// This is not either generated gain bank's final valid index. Use
+/// [`PHY_WIFI_RX_GAIN_LAST_INDEX`] or [`PHY_SHARED_RX_GAIN_LAST_INDEX`] when
+/// validating a generated or cached bank.
 pub const PHY_RX_TABLE_ENTRY_COUNT: u8 = 0x4f;
 pub const PHY_WIFI_RX_GAIN_GENERATED_CAPACITY: usize = 0x55;
 
@@ -212,6 +217,14 @@ pub const fn generate_phy_rx_gain_table(bank: PhyRxGainBank) -> PhyGeneratedRxGa
         gain = gain.wrapping_add(1);
     }
 }
+
+/// Highest valid index produced for the Wi-Fi receive-gain bank.
+pub const PHY_WIFI_RX_GAIN_LAST_INDEX: u8 =
+    generate_phy_rx_gain_table(PhyRxGainBank::Wifi).last_index;
+
+/// Highest valid index produced for the shared Bluetooth/IEEE 802.15.4 bank.
+pub const PHY_SHARED_RX_GAIN_LAST_INDEX: u8 =
+    generate_phy_rx_gain_table(PhyRxGainBank::Shared).last_index;
 
 /// The two explicit `phy_param` bytes consumed by ROM `phy_reg_init`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

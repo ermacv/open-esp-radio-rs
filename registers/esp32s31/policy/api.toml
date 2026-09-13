@@ -301,7 +301,13 @@ sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 
 [[enum-domains]]
 name = "LpTsensPowerEnable"
-description = "The sole reviewed enabled image for LP_TSENS.CTRL.POWER_UP."
+description = "Reviewed images for LP_TSENS.CTRL.POWER_UP."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0x00000000
+description = "Bit twenty-two cleared by complete ROM phy_set_tsens_power_ for argument zero."
+sources = ["ROM_REV0_PHY_TSENS"]
 
 [[enum-domains.values]]
 name = "Enabled"
@@ -6125,6 +6131,18 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
 
+[[field-replace-modifies]]
+name = "clear_phy_rf_immediate_clock_power"
+peripheral = "PMU_RADIO"
+register = "IMM_HP_CK_POWER_0"
+fields = [
+    { field = "TIE_HIGH_XPD_BB_I2C", source-bit-offset = 0 },
+    { field = "PHY_RF_SHUTDOWN_UNKNOWN_HIGH", source-bit-offset = 1 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
+
 [[field-reads]]
 name = "observe_analog_i2c_power"
 peripheral = "PMU_RADIO"
@@ -6406,6 +6424,18 @@ fields = [
 value = 0
 exposure = "facade"
 sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_rf_baseband_control"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "WIFI_BB_CFG"
+fields = [
+    { field = "COLD_START_CLEAR_UNKNOWN", source-bit-offset = 0 },
+    { field = "WIFI_ENABLE", source-bit-offset = 1 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
 
 [[field-reads]]
 name = "observe_wifi_baseband_enable"

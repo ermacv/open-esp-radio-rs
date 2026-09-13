@@ -70,10 +70,10 @@ completion is not an observation of RF quality or even proof of PLL lock.
 | Common / Wi-Fi / Bluetooth calibration state | IMPLEMENTED | [State](src/state.rs) holds semantic calibration/configuration values rather than a vendor parameter-memory image. |
 | Calibration snapshot | IMPLEMENTED | Typed snapshot carries schema, identity and retained results. Snapshot construction is not hardware restoration. |
 | Calibration cache representation/export | IMPLEMENTED | `PhyCalibrationCache` owns a snapshot and validates its schema/identity. Persistence/storage belongs to the caller. |
-| Full initial calibration | IMPLEMENTED | All currently admitted registration paths execute full calibration. Output reports the selected path and can return a fresh cache. |
-| Cache-backed cold restore / partial cold calibration | FAIL-CLOSED | Registration does not own complete hardware replay after reset. Any supplied cache selects `FullAfterRejectedCache` and full calibration; restoring software flags cannot skip hardware work. |
+| Full initial calibration | IMPLEMENTED | Registration without an admitted cache executes full calibration. Output reports the selected path and can return a fresh cache. |
+| Cache-backed cold restore / partial cold calibration | IMPLEMENTED | Registration validates schema, chip identity, completion guards and RX table shape before restoring semantic products. The cold RF/baseband graph regenerates frequency memory, republishes RX/TX gain state and repeats the mandatory RXIQ/tail work. Invalid caches select `FullAfterRejectedCache`. Persistent storage, retained-sleep wakeup and broad RF qualification remain separate. |
 | Runtime parameter-tracking invocation | IMPLEMENTED | [Parameter graph](src/tracking/parameters.rs), bounded executor and target runners complete selected RFPLL, calibration, power, I2C and temperature children while retaining the client owner. Periodic scheduling is separate. |
-| Current-archive measured RFPLL correction | IMPLEMENTED | [Measured correction](src/tracking/rfpll/README.md) owns the thermal gate, bounded search, signed frequency-memory update and typed frequency-control restoration. The outer RFPLL action and read-only inspection use this child; its completion commits the reference only after restoration. Registered policy still disables RFPLL pending physical qualification; compiled comparisons cover child effects and the RFPLL-enabled parent. Exclusive caller admission does not qualify joint coexistence grants. |
+| Current-archive measured RFPLL correction | IMPLEMENTED | [Measured correction](src/tracking/rfpll/README.md) owns the thermal gate, bounded search, signed frequency-memory update and typed frequency-control restoration. The outer RFPLL action and read-only inspection use this child; its completion commits the reference only after restoration. Compiled comparisons cover child effects and the RFPLL-enabled parent. A bounded HIL scenario covers the first nonzero heating correction and same-epoch traffic restoration; the opposite thermal direction, repeated cycles and radiated RF quality remain unqualified. Registered policy still disables automatic RFPLL selection. Exclusive caller admission does not qualify joint coexistence grants. |
 | Runtime calibration-tracking invocation | IMPLEMENTED | [Calibration tracking](src/tracking/calibration.rs) evaluates RX and shared TX temperature references; Wi-Fi then BT/154 run inside one TX envelope. The parent calls it once after both power branches. Compiled combined-parent comparison covers ordered child effects, thermal decisions and semantic RX/TX publication on channel 13/HT40 with synthetic measurements. The full outer comparison additionally covers power/I2C state and final temperature, including a validation-only RFPLL-enabled profile with signed capacitor corrections. Joint grants, physical RFPLL behavior and elapsed timing remain unqualified. This is not cold-cache replay. |
 | TX power tracking | IMPLEMENTED | [Power tracking](src/tracking/power.rs) provides the selected parameter-tracking child with target execution. |
 | Wi-Fi I2C parameter tracking | IMPLEMENTED | [I2C tracking](src/tracking/i2c.rs) owns the Wi-Fi-specific child; its existence does not create periodic service. |
@@ -101,7 +101,7 @@ selected, every channel is usable or all radio clients can run concurrently.
 | Periodic parameter/calibration tracking | PARTIAL: opt-in connected-station observation service; current parent order at role boundaries; no default automatic service or qualified RFPLL execution | PARTIAL: initial tracking exists; periodic Controller maintenance remains incomplete | PARTIAL: target tracking entry exists; RF/runtime service remains incomplete |
 | Operational power selection | IMPLEMENTED: configured Wi-Fi ceiling reaches per-rate MAC codes | PARTIAL: default event power encoding, not general live power control | PARTIAL: provider-index resolution lacks calibrated provider/MMIO composition |
 | Resume after RF sleep | ABSENT | ABSENT | ABSENT |
-| Complete last-client RF/analog shutdown | ABSENT | ABSENT | ABSENT |
+| Complete last-client RF/analog shutdown | PARTIAL: stopped Wi-Fi can release its client; the resulting last-client owner has target RF close and cold-owner reunion transactions, but no production composition invokes the chain or restores every platform clock/reset image yet | ABSENT | ABSENT |
 
 The relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),
 [Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),
@@ -115,14 +115,14 @@ refcount ownership, IRQ routing, DMA ownership and operational MAC service.
 
 | PHY capability | Status | Current source boundary |
 | --- | --- | --- |
-| Client acquire/release bookkeeping | IMPLEMENTED | Client state rejects duplicate acquisition/invalid release, retains pending tracking and records last-client disposition. This is state ownership, not physical power release. |
+| Client acquire/release bookkeeping | IMPLEMENTED | Client state rejects duplicate acquisition/invalid release and retains pending tracking. Releasing a non-final client returns the ordinary registered owner; final release returns a distinct `RegisteredPhyPoweredIdle` owner so its physical disposition cannot be silently erased. This state is still powered. |
 | Target-bound registration/client proof | IMPLEMENTED | Registered wrappers couple state/proof to the hardware epoch; target runners produce the completion authority. A model-only result is insufficient. |
 | Cold RF activation | PARTIAL | Registration and the Wi-Fi cold-power path compose initialization; protocol-wide reusable wake semantics are not supplied by that cold path. |
-| RF wake from retained sleep | ABSENT | No complete shared sleep/resume transaction restores RF/PHY/baseband and retained calibration for all clients. |
-| RF sleep/power-down | ABSENT | No complete operational shared-PHY sleep transaction exists. Calibration quiesce/restore is a temporary algorithm step, not modem sleep. |
-| Stop tracking / release last client | PARTIAL | Model release disarms tracking state on the last client. Physical timer stop, final PHY-client release and analog shutdown are not one completed lifetime. |
-| RF and analog shutdown | ABSENT | No complete last-owner hardware shutdown/reconstruction transaction is composed. |
-| Re-registration after owned shutdown | PARTIAL | Fresh cold registration exists, but an owned shutdown-to-cold-restart cycle remains incomplete. |
+| RF wake from retained sleep | ABSENT | `RegisteredPhyRfClosed` retains semantic state, but no direct wake transaction restores its physical RF/PHY/baseband state. |
+| RF sleep/power-down | PARTIAL | The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The distinct cold-release edge powers down the temperature sensor and releases retained route clocks. No production supervisor invokes it yet. |
+| Stop tracking / release last client | IMPLEMENTED | Model release disarms tracking state and produces a distinct powered-idle hardware owner on the last client. Non-final release cannot enter RF close. Runtime timer cancellation remains a composition responsibility before stopped-owner reunion. |
+| RF and analog shutdown | IMPLEMENTED | `RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor and returns the cold radio owner. This is source coverage, not silicon qualification or complete platform-clock power-down. |
+| Re-registration after owned shutdown | IMPLEMENTED | Consuming cold release with the platform-derived physical identity returns `Radio<P, Owned>` together with a cache captured from the final post-tracking state; the ordinary power-up and target-registration entry validate that cache and replay hardware-resident frequency/RX/TX state. |
 | Tracking failure containment | FAIL-CLOSED | Failed target tracking consumes the unique request into a poisoned epoch. Target futures must reach a terminal result; cancellation requires out-of-band hardware reset rather than reuse of partial state. |
 
 ## Qualification boundary
@@ -136,5 +136,7 @@ This inventory does not promote their proof states.
 PLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,
 and calibration stability across sleep/wake require their own hardware evidence.
 A completed source transition or protocol cold start cannot substitute for those
-measurements. Cache restore and complete shutdown remain explicit unsupported
-boundaries even when individual calibration algorithms are implemented.
+measurements. Cache-backed cold partial calibration and
+RF-close-to-cold-registration ownership are implemented. Direct retained
+sleep/wake remains unsupported; the cold-release path is not yet composed or
+hardware-qualified end to end.

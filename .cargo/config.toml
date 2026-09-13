@@ -2,7 +2,7 @@
 xtask = "run -p oer-xtask --"
 hil = "run --quiet -p open-esp-radio-hil-runner --"
 memory = "run --quiet -p open-esp-radio-memory-report --"
-qualification = "run --quiet -p open-esp-radio-qualification-check --"
+qualification = "run --quiet --profile qualification -p open-esp-radio-qualification-check --"
 # Keep Cargo's preparation phase visible. In particular, do not hide a
 # compiler rebuild or `Blocking waiting for file lock` behind a silent pause;
 # the Blobray UI can only start after Cargo launches the binary.

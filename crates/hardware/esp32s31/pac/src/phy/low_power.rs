@@ -73,6 +73,15 @@ impl RadioPhyRegisters {
         );
     }
 
+    /// Power down the temperature sensor through complete ROM
+    /// `phy_set_tsens_power_(0)` semantics.
+    pub fn disable_temperature_sensor_power(&mut self) {
+        crate::generated::enable_lp_tsens_power(
+            &self.peripherals.lp_tsens,
+            LpTsensPowerEnable::Disabled,
+        );
+    }
+
     /// Sample and return the unsigned temperature code exactly once.
     pub fn read_temperature_sensor_code(&self) -> u8 {
         crate::svd::field_read::read_lp_temperature_sensor_code(&self.peripherals.lp_tsens)

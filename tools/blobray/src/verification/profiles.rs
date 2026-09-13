@@ -11,8 +11,8 @@ use open_radio_vendor_semantics::VerificationClaim;
 use serde::Deserialize;
 
 use crate::{
-    MemoryObservation, NamedScenario, Result, RuntimeMemoryInstance, SymbolWord, observe_memory,
-    seed_ram_word,
+    MemoryObservation, NamedScenario, RamFill, Result, RuntimeMemoryInstance, SymbolFill,
+    SymbolWord, observe_memory, seed_ram_word,
 };
 
 use super::dispositions::validate_source_id;
@@ -261,6 +261,52 @@ impl Profile {
             constraints = expanded;
         }
         Ok(constraints)
+    }
+
+    pub fn coverage_constraints_for(&self, vendor: bool) -> Result<Vec<ProfileCoverageConstraint>> {
+        let side_specific = self.scenarios.iter().any(|scenario| {
+            if vendor {
+                scenario.vendor_arguments.is_some()
+            } else {
+                scenario.rust_arguments.is_some()
+            }
+        });
+        if !side_specific {
+            return self.coverage_constraints();
+        }
+        let mut constraints = BTreeSet::new();
+        for scenario in &self.scenarios {
+            let arguments = if vendor {
+                scenario.vendor_arguments.as_ref()
+            } else {
+                scenario.rust_arguments.as_ref()
+            }
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "profile {} mixes common and side-specific {} arguments",
+                    self.name,
+                    if vendor { "vendor" } else { "Rust" }
+                ))
+            })?;
+            if arguments.len() > 8 {
+                return Err(crate::Error::invalid(format!(
+                    "profile {} case {} has more than eight side-specific RV32 register arguments",
+                    self.name, scenario.name
+                )));
+            }
+            let mut words = [None; 8];
+            for (slot, value) in words.iter_mut().zip(arguments) {
+                *slot = Some(*value);
+            }
+            constraints.insert(words);
+        }
+        Ok(constraints
+            .into_iter()
+            .map(|arguments| ProfileCoverageConstraint {
+                arguments,
+                stable_words: BTreeMap::new(),
+            })
+            .collect())
     }
 }
 
@@ -537,6 +583,10 @@ struct ScenarioInput {
     name: String,
     #[serde(default)]
     arguments: Vec<u32>,
+    vendor_arguments: Option<Vec<u32>>,
+    rust_arguments: Option<Vec<u32>>,
+    #[serde(default)]
+    provider_device_models: Vec<String>,
     #[serde(default)]
     mmio_initial: Vec<WordInput>,
     #[serde(default)]
@@ -558,6 +608,10 @@ struct ScenarioInput {
     #[serde(default)]
     rust_ram: Vec<WordInput>,
     #[serde(default)]
+    vendor_ram_fills: Vec<RamFill>,
+    #[serde(default)]
+    rust_ram_fills: Vec<RamFill>,
+    #[serde(default)]
     persistent_memory: Vec<RangeInput>,
     #[serde(default)]
     vendor_persistent_memory: Vec<RangeInput>,
@@ -567,6 +621,10 @@ struct ScenarioInput {
     vendor_ram_symbols: Vec<SymbolWord>,
     #[serde(default)]
     rust_ram_symbols: Vec<SymbolWord>,
+    #[serde(default)]
+    vendor_ram_symbol_fills: Vec<SymbolFill>,
+    #[serde(default)]
+    rust_ram_symbol_fills: Vec<SymbolFill>,
     #[serde(default)]
     vendor_tables: Vec<crate::execution_model::TableInstance>,
     #[serde(default)]
@@ -729,6 +787,16 @@ impl ProfileInput {
             &argument_values,
             &scenarios,
         )?;
+        if (!argument_ranges.is_empty() || !argument_values.is_empty())
+            && scenarios.iter().any(|scenario| {
+                scenario.vendor_arguments.is_some() || scenario.rust_arguments.is_some()
+            })
+        {
+            return Err(crate::Error::invalid(format!(
+                "profile {} cannot combine common argument domains with side-specific arguments",
+                self.name
+            )));
+        }
         let mut mmio_domains = self
             .mmio_domains
             .into_iter()
@@ -784,6 +852,10 @@ impl ProfileInput {
             &argument_values,
             &mmio_domains,
             &mmio_images,
+            scenarios.iter().all(|scenario| {
+                !scenario.scenario.device_models.is_empty()
+                    || !scenario.provider_device_models.is_empty()
+            }),
         )?;
         Ok(Profile {
             name: self.name,
@@ -875,6 +947,9 @@ impl ScenarioInput {
     fn finish(self) -> Result<NamedScenario> {
         let mut output = NamedScenario::new(self.name);
         output.scenario.arguments = self.arguments;
+        output.vendor_arguments = self.vendor_arguments;
+        output.rust_arguments = self.rust_arguments;
+        output.provider_device_models = self.provider_device_models;
         for word in self.mmio_initial {
             output
                 .scenario
@@ -914,6 +989,8 @@ impl ScenarioInput {
             .into_iter()
             .map(|word| (word.address, word.value))
             .collect();
+        output.vendor_ram_fills = self.vendor_ram_fills;
+        output.rust_ram_fills = self.rust_ram_fills;
         output.rust_ram_words = self
             .rust_ram
             .into_iter()
@@ -945,6 +1022,8 @@ impl ScenarioInput {
             .collect();
         output.vendor_symbol_words = self.vendor_ram_symbols;
         output.rust_symbol_words = self.rust_ram_symbols;
+        output.vendor_symbol_fills = self.vendor_ram_symbol_fills;
+        output.rust_symbol_fills = self.rust_ram_symbol_fills;
         output.vendor_table_instances = self.vendor_tables;
         output.rust_table_instances = self.rust_tables;
         output.vendor_fifo_services = self.vendor_fifo_services;
@@ -980,6 +1059,31 @@ impl ScenarioInput {
         validation::validate_scenario(&output)?;
         Ok(output)
     }
+}
+
+pub(crate) fn resolve_provider_device_models(
+    profile: &Profile,
+    knowledge_provider: Option<&str>,
+) -> Result<Profile> {
+    let mut resolved = profile.clone();
+    for scenario in &mut resolved.scenarios {
+        if scenario.provider_device_models.is_empty() {
+            continue;
+        }
+        let provider = knowledge_provider.ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "profile {} case {} requires compiled peripheral models without a configured knowledge provider",
+                profile.name, scenario.name
+            ))
+        })?;
+        for id in &scenario.provider_device_models {
+            scenario
+                .scenario
+                .device_models
+                .push(crate::providers::resolve_device_model(provider, id)?);
+        }
+    }
+    Ok(resolved)
 }
 
 #[tracing::instrument(name = "load_verification_profiles", fields(path = %path.display()))]
@@ -1163,6 +1267,69 @@ mod schema_tests {
         );
         let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
         assert_eq!(profiles[0].case_execution, CaseExecution::Stateful);
+    }
+
+    #[test]
+    fn cases_keep_explicit_side_abi_and_provider_models() {
+        let input = minimal_profile(
+            "independent",
+            "[[profiles.cases]]\nname = \"first\"\nvendor-arguments = [1]\nrust-arguments = [2, 3]\nprovider-device-models = [\"phy-i2c.case-a\"]\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+        let profile = &profiles[0];
+        let scenario = &profile.scenarios[0];
+
+        assert_eq!(scenario.vendor_arguments.as_deref(), Some([1].as_slice()));
+        assert_eq!(scenario.rust_arguments.as_deref(), Some([2, 3].as_slice()));
+        assert_eq!(scenario.provider_device_models, ["phy-i2c.case-a"]);
+        assert_eq!(
+            profile.coverage_constraints_for(true).unwrap()[0].arguments[0],
+            Some(1)
+        );
+        assert_eq!(
+            profile.coverage_constraints_for(false).unwrap()[0].arguments[..2],
+            [Some(2), Some(3)]
+        );
+    }
+
+    #[test]
+    fn cases_keep_absolute_and_symbol_relative_ram_fills() {
+        let input = minimal_profile(
+            "independent",
+            "[[profiles.cases]]\nname = \"first\"\n\
+             vendor-ram-fills = [{ address = 4096, length = 12, value = 90 }]\n\
+             rust-ram-fills = [{ address = 8192, length = 24, value = 165 }]\n\
+             vendor-ram-symbol-fills = [{ symbol = \"phy_param\", offset = 4, length = 516, value = 0 }]\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+        let scenario = &profiles[0].scenarios[0];
+
+        assert_eq!(scenario.vendor_ram_fills.len(), 1);
+        assert_eq!(scenario.vendor_ram_fills[0].address, 4096);
+        assert_eq!(scenario.vendor_ram_fills[0].length, 12);
+        assert_eq!(scenario.vendor_ram_fills[0].value, 90);
+        assert_eq!(scenario.rust_ram_fills.len(), 1);
+        assert_eq!(scenario.vendor_symbol_fills.len(), 1);
+        assert_eq!(scenario.vendor_symbol_fills[0].symbol, "phy_param");
+        assert_eq!(scenario.vendor_symbol_fills[0].offset, 4);
+        assert_eq!(scenario.vendor_symbol_fills[0].length, 516);
+    }
+
+    #[test]
+    fn side_specific_arguments_must_be_consistent_across_cases() {
+        let input = minimal_profile(
+            "independent",
+            "[[profiles.cases]]\nname = \"first\"\nvendor-arguments = [1]\nrust-arguments = [2]\n\n[[profiles.cases]]\nname = \"second\"\nrust-arguments = [3]\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+
+        assert!(
+            profiles[0]
+                .coverage_constraints_for(true)
+                .unwrap_err()
+                .to_string()
+                .contains("mixes common and side-specific vendor arguments")
+        );
     }
 
     #[test]

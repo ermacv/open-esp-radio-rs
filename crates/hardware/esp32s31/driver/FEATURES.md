@@ -35,7 +35,7 @@ transition cannot grant readiness to a different protocol or lifecycle stage.
 | Exclusive radio-root ownership | IMPLEMENTED | [HAL ownership](../hal/src/owner.rs) and PAC root leases prevent a second safe hardware claim. This is exclusivity, not concurrent radio sharing. |
 | Inactive route release/reselection | IMPLEMENTED | Cold owners can return the protocol-neutral root and platform witness. Outstanding calibration restore state rejects release and retains the owner. This does not stop an active radio. |
 | Shared RF/analog borrow | IMPLEMENTED | `PhyHal` / `SharedPhyHal` provide narrow access bounded by an owning protocol route. A borrow cannot acquire, release or recover its underlying PAC owner. |
-| PHY client acquire/release state | PARTIAL | [PHY ownership](../phy/FEATURES.md#lifecycle-boundaries) has typed acquisition, tracking and release bookkeeping; last-client physical shutdown is not composed. |
+| PHY client acquire/release state | PARTIAL | [PHY ownership](../phy/FEATURES.md#lifecycle-boundaries) has typed acquisition, tracking and release bookkeeping. The stopped Wi-Fi frontier can reunite runtime/IRQ ownership, disable Wi-Fi RX and return either a shared registered owner or the distinct powered-idle last-client owner. The latter has RF-close and cold-release transactions; no composition invokes the complete chain yet. |
 | Protocol-specific PHY handoff | PARTIAL | [PHY consumer matrix](../phy/FEATURES.md#protocol-consumer-composition) distinguishes Wi-Fi cold state, settled Bluetooth acquisition and incomplete IEEE timing/operational composition. Shared types do not make these paths equivalent. |
 | Active protocol switch | ABSENT | No complete active-radio stop, RF/client release and transfer to another operational protocol is composed. Inactive root reselection is a narrower operation. |
 
@@ -65,12 +65,12 @@ own owners and prerequisites.
 | --- | --- | --- |
 | Protocol active operation | PARTIAL | The linked protocol inventories define the supported subsets. Wi-Fi operation does not establish a reliable Bluetooth ACL link or a public IEEE 802.15.4 RF-ready service. |
 | Shared PHY tracking | PARTIAL | PHY has bounded target tracking invocations and client/deadline models. Complete periodic scheduling and final tracking teardown are not composed across protocols. |
-| Calibration state/cache | PARTIAL | PHY owns snapshots and cache export. Cold hardware replay is deliberately rejected in favor of full calibration; see the PHY inventory for this fail-closed boundary. |
-| Shared RF idle lifecycle | ABSENT | No complete last-active-client policy transitions all radio hardware into a validated resumable idle state. A software idle MAC or empty queue is insufficient. |
-| RF sleep / modem power-down | ABSENT | No complete shared RF/PHY/baseband/clock stop and retention owner exists. Protocol power-save signaling does not supply it. |
+| Calibration state/cache | IMPLEMENTED | PHY owns schema- and identity-validated snapshots, cache export and cold partial replay. Cold release regenerates the cache from the final post-tracking state instead of returning the potentially stale cold-start snapshot. The cold graph restores semantic calibration products, rebuilds hardware-resident frequency/RX gain state and falls back to full calibration for invalid input. Retained-sleep resume remains a separate absent lifecycle. |
+| Shared RF powered-idle frontier | IMPLEMENTED | Final client release produces an affine owner proving an empty client set while retaining the physically powered radio and calibration state. Only this owner can enter the source-owned RF close transaction. |
+| RF sleep / modem power-down | PARTIAL | PHY exposes exact RF close followed by temperature-sensor shutdown, retained route-clock release and cold-owner reconstruction. A direct retained wake, complete platform clock/reset reversal and production supervisor composition are absent. Protocol power-save signaling does not supply this boundary. |
 | RF wake / resume | ABSENT | No complete retained-state resume transaction restores RF, clocks and calibration across protocol clients. Cold activation is separate. |
-| Full powered shutdown | PARTIAL | Selected stop/reset, DMA/IRQ reclamation and rollback paths exist. They do not close shared tracking stop, last-client release, RF/analog shutdown and platform-resource return as one lifetime. |
-| Cold reconstruction after shutdown | ABSENT | Fresh cold-start paths exist, but there is no complete owned shutdown-to-reconstructed-radio cycle. |
+| Full powered shutdown | PARTIAL | The stopped Wi-Fi and PHY layers cover runtime/IRQ reunion, last-client release, exact RF/analog shutdown and cold-owner return. A production composition still needs to invoke this chain and the platform layer must restore its remaining cold power-up clock/reset state. |
+| Cold reconstruction after shutdown | PARTIAL | PHY cold release returns the original cold radio owner; the role-neutral driver `restart_esp32s31_radio` captures the final post-tracking cache with the platform identity and feeds it directly into validated cold registration. Production supervisor composition and HIL are not yet present. |
 
 Power saving has both shared and protocol-specific requirements. The shared
 sleep/wake transaction cannot substitute for TIM/TWT, Bluetooth link timing,

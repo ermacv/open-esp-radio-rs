@@ -505,14 +505,22 @@ The host retains the first operation in `station-temperature.json` and RFPLL
 in `station-pause.json`; a missing/deferred result fails the scenario.
 
 `diagnostic-station-phy-rfpll-thermal-observed` keeps the same station and PHY
-epoch under a 20 Mbit/s TX workload for 60 seconds before acquiring the fresh
-temperature and requesting RFPLL evaluation. The delay is part of the scenario
-manifest and leaves 30 seconds for the operation and restored traffic. It is the
-manual thermal-stimulus profile; the runner still owns router setup, capture,
-the maintenance request and cleanup. Unlike the ordinary observation profile,
-this scenario requires a nonzero capacitor delta. The existing typed RFPLL
-validation consequently also requires frequency-memory updates, current-index
-restoration and publication of the fresh temperature as the new reference.
+epoch under a 20 Mbit/s TX workload. After ten seconds of cold traffic, the
+runner performs at most 45 fresh-temperature/RFPLL transactions at one-second
+intervals and stops at the first nonzero correction. The attempt count, cadence
+and initial delay are part of the scenario manifest; each attempt is retained
+separately, while the canonical temperature and pause files contain the latest
+attempt. The operator supplies only the thermal stimulus. The runner still owns
+router setup, capture, maintenance requests and cleanup. The typed RFPLL
+validation requires a nonzero capacitor delta, frequency-memory updates,
+current-index restoration and publication of the fresh temperature as the new
+reference.
+
+`diagnostic-station-phy-temperature-thermal-control` uses the same 90-second
+traffic load and a fixed 60-second exposure, but performs only temperature
+acquisition. It characterizes degradation caused by sustained thermal stimulus
+without an RFPLL correction; it never updates RFPLL frequency memory or the
+retained RFPLL reference. Manual heating profiles are not assumed identical.
 
 RFPLL detail includes `sample_age_micros`, measured from sensor acquisition
 start to RFPLL entry, including acquisition waits and the subsequent handoff.

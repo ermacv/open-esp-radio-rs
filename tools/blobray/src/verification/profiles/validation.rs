@@ -191,6 +191,26 @@ pub(super) fn validate_coverage_domain(
 }
 
 pub(super) fn validate_scenario(scenario: &NamedScenario) -> Result<()> {
+    for (side, arguments) in [
+        ("vendor", scenario.vendor_arguments.as_ref()),
+        ("Rust", scenario.rust_arguments.as_ref()),
+    ] {
+        if arguments.is_some_and(|arguments| arguments.len() > 72) {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} {side} arguments exceed the RV32 register and stack ABI capacity",
+                scenario.name
+            )));
+        }
+    }
+    let mut model_ids = BTreeSet::new();
+    for id in &scenario.provider_device_models {
+        if id.trim().is_empty() || !model_ids.insert(id) {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} has an empty or duplicate provider peripheral model ID",
+                scenario.name
+            )));
+        }
+    }
     for range in scenario
         .scenario
         .persistent_memory
@@ -425,6 +445,10 @@ pub(super) fn validate_argument_domain(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "claim validation checks the parallel declarative profile fields without introducing a second aggregate representation"
+)]
 pub(super) fn validate_claim(
     profile: &str,
     claim: VerificationClaim,
@@ -433,6 +457,7 @@ pub(super) fn validate_claim(
     values: &[ArgumentValues],
     mmio_domains: &[MmioDomain],
     mmio_images: &[MmioImage],
+    finite_device_domain: bool,
 ) -> Result<()> {
     match claim {
         VerificationClaim::WholeFunctionEquivalence => {
@@ -463,9 +488,10 @@ pub(super) fn validate_claim(
                 && values.is_empty()
                 && mmio_domains.is_empty()
                 && mmio_images.is_empty()
+                && !finite_device_domain
             {
                 return Err(crate::Error::invalid(format!(
-                    "reviewed-domain profile {profile} must declare a finite argument or MMIO domain"
+                    "reviewed-domain profile {profile} must declare a finite argument, MMIO, or peripheral-model domain"
                 )));
             }
         }

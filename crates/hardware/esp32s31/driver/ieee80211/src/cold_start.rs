@@ -100,16 +100,65 @@ impl<P> WifiColdStart<P> {
     reason = "the allocation-free failure retains the exact opaque radio/PHY owner"
 )]
 pub enum WifiColdStartFailure<P> {
-    Power(PowerUpFailure<P>),
+    Power(WifiColdPowerFailure<P>),
     Registration(TargetPhyRegisterFailure<P>),
-    ClientAcquire(RegisteredPhyClientAcquireFailure<P>),
-    InitialTracking(TargetPhyParamTrackingFailure<P>),
+    ClientAcquire(WifiColdClientAcquireFailure<P>),
+    InitialTracking(WifiColdInitialTrackingFailure<P>),
     InitialChannel {
         radio: RegisteredPhyRadio<P>,
         calibration_cache: Option<PhyCalibrationCache>,
         report: WifiColdStartReport,
         error: PhyTargetPortError,
     },
+}
+
+/// Recoverable prerequisite failure retaining the caller's replay cache.
+#[must_use = "power failure retains the cold radio and calibration cache"]
+pub struct WifiColdPowerFailure<P> {
+    failure: PowerUpFailure<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
+}
+
+impl<P> WifiColdPowerFailure<P> {
+    pub fn into_parts(self) -> (PowerUpFailure<P>, Option<PhyCalibrationCache>) {
+        (self.failure, self.calibration_cache)
+    }
+}
+
+/// Rejected first-client acquisition with the completed registration cache.
+#[must_use = "client-acquire failure retains the registered radio and calibration cache"]
+pub struct WifiColdClientAcquireFailure<P> {
+    failure: RegisteredPhyClientAcquireFailure<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
+}
+
+impl<P> WifiColdClientAcquireFailure<P> {
+    pub fn into_parts(
+        self,
+    ) -> (
+        RegisteredPhyClientAcquireFailure<P>,
+        Option<PhyCalibrationCache>,
+    ) {
+        (self.failure, self.calibration_cache)
+    }
+}
+
+/// Fail-stop initial tracking result retaining, but not releasing, the cache
+/// which predates the ambiguous hardware transaction.
+#[must_use = "tracking failure retains the complete poisoned cold-start frontier"]
+pub struct WifiColdInitialTrackingFailure<P> {
+    failure: TargetPhyParamTrackingFailure<P>,
+    _calibration_cache: Option<PhyCalibrationCache>,
+}
+
+impl<P> WifiColdInitialTrackingFailure<P> {
+    pub const fn error(&self) -> oer_esp32s31_phy::TargetPhyParamTrackingError {
+        self.failure.error()
+    }
+
+    pub const fn state(&self) -> &oer_esp32s31_phy::PhyState {
+        self.failure.state()
+    }
 }
 
 /// Run the common production cold-start sequence without diagnostics or board
@@ -131,7 +180,15 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let powered = radio.power_up().map_err(WifiColdStartFailure::Power)?;
+    let powered = match radio.power_up() {
+        Ok(powered) => powered,
+        Err(failure) => {
+            return Err(WifiColdStartFailure::Power(WifiColdPowerFailure {
+                failure,
+                calibration_cache,
+            }));
+        }
+    };
     let attempt = TargetPhyRegisterAttempt::with_production_config_and_calibration(
         powered,
         config.calibration_identity,
@@ -147,22 +204,43 @@ where
             .map_err(WifiColdStartFailure::Registration)?;
     let (powered, calibration_cache, registration, port_counters) =
         target_registration.into_registered_parts();
-    let acquired = powered
-        .acquire_client(PhyModemClient::Wifi, clock)
-        .map_err(WifiColdStartFailure::ClientAcquire)?;
+    let acquired = match powered.acquire_client(PhyModemClient::Wifi, clock) {
+        Ok(acquired) => acquired,
+        Err(failure) => {
+            return Err(WifiColdStartFailure::ClientAcquire(
+                WifiColdClientAcquireFailure {
+                    failure,
+                    calibration_cache,
+                },
+            ));
+        }
+    };
     let (mut powered, initial_tracking) = match acquired.into_owner() {
         Ok(powered) => (powered, None),
         Err(pending) => {
-            let success = run_target_phy_param_tracking::<_, D, _>(
+            let success = match run_target_phy_param_tracking::<_, D, _>(
                 pending.begin_tracking(),
                 observer.clone(),
             )
             .await
-            .map_err(WifiColdStartFailure::InitialTracking)?;
+            {
+                Ok(success) => success,
+                Err(failure) => {
+                    return Err(WifiColdStartFailure::InitialTracking(
+                        WifiColdInitialTrackingFailure {
+                            failure,
+                            // Tracking may already have changed hardware, so this
+                            // snapshot remains opaque with the fail-stop frontier.
+                            _calibration_cache: calibration_cache,
+                        },
+                    ));
+                }
+            };
             let (powered, outcome) = success.into_parts();
             (powered, Some(outcome))
         }
     };
+    let calibration_cache = calibration_cache.map(|cache| powered.refresh_calibration_cache(cache));
     let report = WifiColdStartReport {
         registration,
         port_counters,

@@ -1,6 +1,6 @@
 schema = 4
 id = "diagnostic-station-phy-rfpll-thermal-observed"
-description = "Fresh temperature and RFPLL evaluation after a recorded same-epoch thermal preconditioning interval"
+description = "Bounded one-second fresh-temperature/RFPLL observations until the first nonzero thermal correction"
 repetitions = 1
 image = "correctness"
 isolation = "reset"
@@ -17,7 +17,9 @@ duration_seconds = 90
 tx_rate_bps = 20000000
 payload_bytes = 1200
 station_pause = "rfpll-observed"
-station_pause_after_millis = 60000
+station_pause_after_millis = 10000
+station_pause_attempts = 45
+station_pause_interval_millis = 1000
 
 [criteria]
 exact_delivery = false

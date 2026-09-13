@@ -83,3 +83,50 @@ disposition = { kind = "required" }
 [[functions.effects]]
 selector = { kind = "mmio-write", width = 32, address = 0x201078c8 }
 disposition = { kind = "required" }
+
+[[functions]]
+source = "rom"
+symbol = "phy_pbus_clear_reg"
+disposition = "bounded-feature"
+protocol = "shared"
+rust-component = "oer_esp32s31_phy::target_port::calibration::clear_pbus"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_phy_calibration_trace_pbus_clear"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+compare-return = false
+
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100884 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20100884 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010088c }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010088c }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100890 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20109c18 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20109c18 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010702c }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010702c }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "delay", micros = 2 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "delay", micros = 1 }
+disposition = { kind = "required-when-observed" }

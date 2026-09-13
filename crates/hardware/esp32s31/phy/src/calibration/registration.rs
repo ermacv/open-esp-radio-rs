@@ -2,8 +2,9 @@
 //!
 //! The pinned archive parent is 486 bytes. Persistence remains outside the
 //! radio driver: callers may provide and retrieve a typed calibration cache,
-//! while this transition owns validation and full calibration. Hardware cache
-//! replay is not implemented: supplying a cache still selects full calibration.
+//! while this transition owns validation and calibration. A valid snapshot
+//! seeds partial calibration; hardware-resident state is republished by the
+//! ordinary cold RF/baseband graph.
 //! All retained radio work is represented by owned state plus
 //! one externally completed MMIO, PHY-I2C, timer or observation edge.
 
@@ -104,6 +105,10 @@ pub enum PhyCalibrationPath {
     /// A supplied cache could not be safely replayed; full calibration
     /// replaces it.
     FullAfterRejectedCache,
+    /// A valid cache seeded semantic calibration state; cold RF/baseband
+    /// initialization republishes hardware-resident products and performs the
+    /// remaining partial-calibration work.
+    PartialFromCache,
 }
 
 impl PhyCalibrationPath {
@@ -270,6 +275,12 @@ impl RegisteredPhyState {
         &self.state
     }
 
+    /// Retire registration proof after the physical RF epoch is shut down.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_retired_state(self) -> crate::state::PhyState {
+        self.state
+    }
+
     /// Project periodic-tracking policy from the one registered PHY epoch.
     ///
     /// Keeping this method on the registration proof prevents callers from
@@ -407,11 +418,9 @@ impl PhyRegisterTransition {
         )
     }
 
-    /// Return the freshly completed full-calibration cache.
+    /// Return the freshly completed full- or partial-calibration cache.
     ///
-    /// A supplied cache is validation input only until complete hardware
-    /// replay exists. Failed/in-progress transitions never expose a cache as
-    /// persistable.
+    /// Failed and in-progress transitions never expose a cache as persistable.
     pub fn calibration_cache(&self) -> Option<&crate::state::PhyCalibrationCache> {
         (self.calibration_cache_ready && matches!(self.phase.as_ref(), Some(Phase::Complete(_))))
             .then_some(())
@@ -568,18 +577,21 @@ impl PhyRegisterTransition {
                     self.phase = Some(Phase::Prelude(PreludeStep::ApplyProfile));
                     return Err(PhyRegisterTransitionError::MissingStateOwner);
                 };
-                // A retained snapshot owns calibrated values, but the current
-                // driver does not yet own the complete hardware replay which
-                // republishes every skipped RF/baseband register after reset.
-                // HIL proved that restoring software flags alone produces an
-                // unstable link. Until that replay is a typed transition, a
-                // supplied cache is untrusted for cold admission and is
-                // replaced by a complete calibration.
-                if self.calibration_candidate {
-                    self.calibration_path = PhyCalibrationPath::FullAfterRejectedCache;
-                }
                 self.calibration_cache_ready = false;
-                state.begin_full_calibration(config);
+                let restored = match (self.calibration_identity, self.calibration_cache.as_ref()) {
+                    (Some(identity), Some(cache)) => state
+                        .begin_cached_calibration(config, cache, identity)
+                        .is_ok(),
+                    _ => false,
+                };
+                if restored {
+                    self.calibration_path = PhyCalibrationPath::PartialFromCache;
+                } else {
+                    if self.calibration_candidate {
+                        self.calibration_path = PhyCalibrationPath::FullAfterRejectedCache;
+                    }
+                    state.begin_full_calibration(config);
+                }
                 // Pinned parent saves this flag word before either child can
                 // mutate it and uses the snapshot after both return.
                 self.temperature_control = Some(state.register_temperature_control());
@@ -1082,7 +1094,10 @@ impl PhyRegisterTransition {
                 Phase::Complete(PhyRegisterOutcome {
                     #[cfg(feature = "registration-diagnostics")]
                     rf_calibration: self.rf_calibration,
-                    full_calibration_performed: true,
+                    full_calibration_performed: !matches!(
+                        self.calibration_path,
+                        PhyCalibrationPath::PartialFromCache
+                    ),
                     calibration_path: self.calibration_path,
                 })
             }

@@ -22,6 +22,41 @@ fn owner() -> RegisteredWifiPhy {
         clients,
     }
 }
+
+#[test]
+fn wifi_release_reunites_only_after_preserving_the_last_client_fact() {
+    let released = owner()
+        .release_wifi_client()
+        .unwrap_or_else(|_| panic!("registered Wi-Fi client must release"));
+    assert!(released.is_last());
+    let radio =
+        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+    let release = released.reunite(radio);
+    let crate::RegisteredPhyClientReleaseDisposition::Last(idle) = release.into_disposition()
+    else {
+        panic!("last detached Wi-Fi release must mint the powered-idle owner");
+    };
+    assert!(idle.client_snapshot().is_empty());
+}
+
+#[test]
+fn missing_wifi_release_returns_the_exact_detached_owner() {
+    let owner = RegisteredWifiPhy {
+        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
+            PhyConfig::production(),
+        )),
+        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+    };
+    let failure = owner
+        .release_wifi_client()
+        .err()
+        .expect("missing Wi-Fi client must fail");
+    assert_eq!(
+        failure.error(),
+        crate::state::client::PhyClientReleaseError::NotAcquired(PhyModemClient::Wifi)
+    );
+    assert!(failure.into_owner().client_snapshot().is_empty());
+}
 #[test]
 fn early_maintenance_preserves_owner_and_deadline() {
     let owner = owner();

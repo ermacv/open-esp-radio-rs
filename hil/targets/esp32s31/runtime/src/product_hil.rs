@@ -1709,6 +1709,7 @@ pub async fn run(
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
+            PhyCalibrationPath::PartialFromCache => StartupArtifactDisposition::Restored,
             PhyCalibrationPath::FullForCache if artifact_was_supplied => {
                 // Transport-valid bytes can still carry an unknown HIL wire
                 // schema. They are untrusted input, so a decode rejection

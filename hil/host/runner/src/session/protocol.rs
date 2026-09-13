@@ -75,7 +75,10 @@ impl SerialCapture {
     /// Establishes the typed link and provisions this boot from host-owned
     /// local configuration. The passphrase is never echoed by the target or
     /// appended to the UART capture.
-    pub(crate) fn prepare_protocol(&self, context: &Context<'_>) -> Result<Capabilities> {
+    fn prepare_protocol(
+        &self,
+        context: &Context<'_>,
+    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
         let artifact_path = context.lab.device.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
@@ -94,7 +97,7 @@ impl SerialCapture {
         if capabilities.features.runtime_initialization {
             self.initialize(context, PROTOCOL_READY_TIMEOUT)?;
         }
-        if capabilities.features.startup_artifact
+        let startup_artifact_status = if capabilities.features.startup_artifact
             && let Some(path) = artifact_path
         {
             let status = self.wait_for_startup_artifact_status_after(
@@ -119,8 +122,11 @@ impl SerialCapture {
                 bytes.len(),
                 status.initialization_elapsed_micros,
             );
-        }
-        Ok(capabilities)
+            Some(status)
+        } else {
+            None
+        };
+        Ok((capabilities, startup_artifact_status))
     }
 
     fn wait_for_startup_artifact_status_after(
@@ -227,12 +233,21 @@ impl SerialCapture {
         context: &Context<'_>,
         timeout: Duration,
     ) -> Result<Capabilities> {
-        let capabilities = self.prepare_protocol(context)?;
+        self.prepare_station_with_startup_artifact_status(context, timeout)
+            .map(|(capabilities, _)| capabilities)
+    }
+
+    pub(crate) fn prepare_station_with_startup_artifact_status(
+        &self,
+        context: &Context<'_>,
+        timeout: Duration,
+    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
+        let (capabilities, startup_artifact_status) = self.prepare_protocol(context)?;
         let lifecycle_cursor = self.station_lifecycle_cursor();
         let handle = self.request_station_start(context)?;
         self.wait_wifi_role_transition(handle, timeout)?;
         self.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
-        Ok(capabilities)
+        Ok((capabilities, startup_artifact_status))
     }
 
     pub(crate) fn query_operation_status(&self, timeout: Duration) -> Result<OperationStatus> {
@@ -680,6 +695,10 @@ impl SerialCapture {
             state.messages.get(handle.first_event..).unwrap_or_default(),
             &event,
         )?;
+        let temperature = pause::temperature(
+            state.messages.get(handle.first_event..).unwrap_or_default(),
+            &event,
+        )?;
         let rx_gain = pause::rx_gain(
             state.messages.get(handle.first_event..).unwrap_or_default(),
             &event,
@@ -687,6 +706,7 @@ impl SerialCapture {
         Ok(pause::Report {
             rx_gain,
             rfpll,
+            temperature,
             evidence,
             tx_waits: waits,
             timer,

@@ -24,7 +24,9 @@ use crate::{
 use oer_esp32s31_hal::owner::Radio;
 
 use oer_esp32s31_phy::state::client::PhyPllTrackClock;
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyCalibrationCache, PhyTargetObserver};
+use oer_esp32s31_phy::{
+    PhyAsyncDelay, PhyCalibrationCache, PhyTargetObserver, RegisteredPhyColdReleased,
+};
 
 /// Inputs for the one common PHY/MAC transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,4 +88,31 @@ where
         wifi: runtime.wifi,
         calibration_cache: runtime.calibration_cache,
     })
+}
+
+/// Reconstruct a role-neutral Wi-Fi runtime after a completed cold release.
+///
+/// The released owner captures a cache from the final post-maintenance PHY
+/// state using the same platform-derived identity selected for this cold
+/// registration. Registration still validates the cache and republishes every
+/// hardware-resident product; this is a cold restart, not retained sleep.
+///
+/// # Cancellation
+///
+/// This has the same fail-stop cancellation contract as
+/// [`start_esp32s31_radio`]. Once polled, it must reach a terminal result.
+#[must_use = "cold radio restart must be driven to a terminal result"]
+pub async fn restart_esp32s31_radio<P, D, O>(
+    released: RegisteredPhyColdReleased<P>,
+    config: RadioStartConfig,
+    observer: O,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<RadioReady<P>, RadioStartFailure<P>>
+where
+    P: WifiMacPlatform,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver + Clone,
+{
+    let (radio, calibration_cache) = released.into_parts(config.wifi.calibration_identity);
+    start_esp32s31_radio::<P, D, O>(radio, config, Some(calibration_cache), observer, clock).await
 }

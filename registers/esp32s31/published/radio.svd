@@ -5437,6 +5437,12 @@
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
+            <field>
+              <name>PHY_RF_SHUTDOWN_UNKNOWN_HIGH</name>
+              <description>Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
           </fields>
         </register>
         <register>

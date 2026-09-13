@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 126;
+pub const PROTOCOL_VERSION: u16 = 127;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -2373,6 +2373,7 @@ pub enum Event {
     StationPauseCompleted(StationPauseEvidence),
     StationPhyTxWaits(crate::PhyTxWaitEvidence),
     StationPhyRxGain(crate::PhyRxGainEvidence),
+    StationTemperatureObserved(crate::TemperatureEvidence),
     StationRfpllObserved(crate::RfpllEvidence),
     StationTrackingService(crate::StationTrackingServiceEvidence),
     StationTimerObserved(crate::TimerWindowEvidence),

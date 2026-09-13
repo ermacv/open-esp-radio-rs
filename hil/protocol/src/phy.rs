@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 mod rfpll;
 pub use rfpll::{RfpllCorrectionEvidence, RfpllEvidence, STATION_RFPLL_SAMPLE_MAX_AGE_MICROS};
 
+/// Committed result of one explicit PHY temperature acquisition.
+/// Values use the vendor PHY sensor domain; they are not degrees Celsius.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TemperatureEvidence {
+    pub temperature: i16,
+    pub sensor_index: u8,
+    pub next_dac: u8,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyOperationTiming {
     pub started: u16,

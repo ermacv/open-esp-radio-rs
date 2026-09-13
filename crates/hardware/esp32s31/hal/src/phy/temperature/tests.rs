@@ -9,6 +9,7 @@ enum Operation {
     PhyReadout,
     PhyConversion,
     Power,
+    PowerDown,
 }
 
 #[derive(Default)]
@@ -36,6 +37,10 @@ impl PhyTemperatureSystemControl for FakePlatform {
 
     fn enable_temperature_sensor_power(&mut self) {
         self.operations.push(Operation::Power);
+    }
+
+    fn disable_temperature_sensor_power(&mut self) {
+        self.operations.push(Operation::PowerDown);
     }
 
     fn read_temperature_sensor_code(&self) -> u8 {
@@ -66,4 +71,11 @@ fn code_sample_reads_one_shared_word_and_extracts_only_the_low_byte() {
         operations: Vec::new(),
     };
     assert_eq!(read_code(&platform), 0xfe);
+}
+
+#[test]
+fn power_down_uses_the_distinct_lifecycle_edge() {
+    let mut platform = FakePlatform::default();
+    power_down(&mut platform);
+    assert_eq!(platform.operations, [Operation::PowerDown]);
 }

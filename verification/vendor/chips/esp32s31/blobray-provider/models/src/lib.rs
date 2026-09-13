@@ -8,6 +8,7 @@ pub const PROVIDER: ExecutionModelProviderSpec = ExecutionModelProviderSpec {
     kind: ExecutionModelKind::RuntimeSemantics,
     applicability: "Selected ESP32-S31 rev0 target and RV32 ABI; exact public runtime symbols; individual C/ESP-IDF adapters enforce body policy.",
     evidence: "verification/vendor/chips/esp32s31/blobray-provider/models/README.md",
+    device_models: open_radio_vendor_execution_model::DeviceModelRegistry::default,
 };
 
 pub use open_radio_vendor_backend_riscv::{

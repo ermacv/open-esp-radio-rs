@@ -6,6 +6,7 @@ pub(crate) struct Report {
     pub evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
     pub rx_gain: Option<open_esp_radio_hil_protocol::PhyRxGainEvidence>,
     pub tx_waits: Option<PhyTxWaitEvidence>,
+    pub temperature: Option<open_esp_radio_hil_protocol::TemperatureEvidence>,
     pub rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
     pub timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
     pub service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
@@ -17,6 +18,16 @@ pub(super) fn rfpll(
 ) -> crate::Result<Option<open_esp_radio_hil_protocol::RfpllEvidence>> {
     detail(messages, completion, |event| match event {
         Event::StationRfpllObserved(value) => Some(*value),
+        _ => None,
+    })
+}
+
+pub(super) fn temperature(
+    messages: &[Envelope<Event>],
+    completion: &Envelope<Event>,
+) -> crate::Result<Option<open_esp_radio_hil_protocol::TemperatureEvidence>> {
+    detail(messages, completion, |event| match event {
+        Event::StationTemperatureObserved(value) => Some(*value),
         _ => None,
     })
 }

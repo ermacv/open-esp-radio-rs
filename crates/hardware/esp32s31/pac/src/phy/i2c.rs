@@ -118,6 +118,12 @@ pub mod analog_registers {
     pub const RFPLL_SDM_UPPER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x04);
     pub const RFPLL_SDM_LOWER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x05);
     pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::recovered(0x6b, 0x02);
+    /// Analog close image written by complete `phy_xpd_rf_new`.
+    pub const RF_CLOSE_CONTROL: PhyI2cAddress = PhyI2cAddress::recovered(0x67, 0x02);
+    /// First retained-close analog image written by complete `phy_close_rf`.
+    pub const RF_CLOSE_RETENTION_ZERO: PhyI2cAddress = PhyI2cAddress::recovered(0x6a, 0x00);
+    /// Second retained-close analog image written by complete `phy_close_rf`.
+    pub const RF_CLOSE_RETENTION_ONE: PhyI2cAddress = PhyI2cAddress::recovered(0x6a, 0x01);
 }
 
 const PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT: usize = 45;

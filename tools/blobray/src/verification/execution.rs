@@ -453,7 +453,8 @@ pub(crate) fn compare_execution_scenarios(
         effect_policy,
         call_equivalences,
         diagnostic_contracts,
-        coverage_domain,
+        vendor_coverage_domain,
+        rust_coverage_domain,
         vendor_setup,
     } = policy;
     let compare_under_effect_contract = matches!(
@@ -506,7 +507,7 @@ pub(crate) fn compare_execution_scenarios(
         static_inventory_for_argument_domain(
             &vendor_image,
             vendor.symbol,
-            coverage_domain,
+            vendor_coverage_domain,
             scenarios
                 .iter()
                 .map(|scenario| scenario.vendor_goal.clone()),
@@ -518,7 +519,7 @@ pub(crate) fn compare_execution_scenarios(
         static_inventory_for_argument_domain(
             &rust_image,
             rust.symbol,
-            coverage_domain,
+            rust_coverage_domain,
             scenarios.iter().map(|scenario| scenario.rust_goal.clone()),
         )?
     };
@@ -980,7 +981,8 @@ mod tests {
                     knowledge_provider: None,
                     calls: vec![],
                 },
-                coverage_domain: &[],
+                vendor_coverage_domain: &[],
+                rust_coverage_domain: &[],
                 vendor_setup: &[],
             },
             &[],

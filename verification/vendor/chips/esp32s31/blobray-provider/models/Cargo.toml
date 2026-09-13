@@ -14,6 +14,7 @@ open-radio-vendor-addon-c = { path = "../../../../../../tools/blobray/addons/c" 
 open-radio-vendor-addon-esp-idf = { path = "../../../../../../tools/blobray/addons/esp-idf" }
 open-radio-vendor-backend-riscv = { path = "../../../../../../tools/blobray/crates/backend-riscv" }
 open-radio-vendor-chip-contracts-esp32s31-rev0 = { path = "../contracts" }
+open-radio-vendor-execution-model = { path = "../../../../../../tools/blobray/crates/execution-model" }
 open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
 
 [lints]

@@ -13384,11 +13384,20 @@ pub mod pmu_radio {
         pub type TieHighXpdBbI2cR = crate::BitReader;
         #[doc = "Field `TIE_HIGH_XPD_BB_I2C` writer - Force the baseband analog-I2C power control high."]
         pub type TieHighXpdBbI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PHY_RF_SHUTDOWN_UNKNOWN_HIGH` reader - Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+        pub type PhyRfShutdownUnknownHighR = crate::FieldReader;
+        #[doc = "Field `PHY_RF_SHUTDOWN_UNKNOWN_HIGH` writer - Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+        pub type PhyRfShutdownUnknownHighW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl R {
             #[doc = "Bit 28 - Force the baseband analog-I2C power control high."]
             #[inline(always)]
             pub fn tie_high_xpd_bb_i2c(&self) -> TieHighXpdBbI2cR {
                 TieHighXpdBbI2cR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bits 29:31 - Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+            #[inline(always)]
+            pub fn phy_rf_shutdown_unknown_high(&self) -> PhyRfShutdownUnknownHighR {
+                PhyRfShutdownUnknownHighR::new(((self.bits >> 29) & 7) as u8)
             }
         }
         impl W {
@@ -13396,6 +13405,13 @@ pub mod pmu_radio {
             #[inline(always)]
             pub fn tie_high_xpd_bb_i2c(&mut self) -> TieHighXpdBbI2cW<'_, ImmHpCkPower0Spec> {
                 TieHighXpdBbI2cW::new(self, 28)
+            }
+            #[doc = "Bits 29:31 - Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+            #[inline(always)]
+            pub fn phy_rf_shutdown_unknown_high(
+                &mut self,
+            ) -> PhyRfShutdownUnknownHighW<'_, ImmHpCkPower0Spec> {
+                PhyRfShutdownUnknownHighW::new(self, 29)
             }
         }
         #[doc = "Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power_0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -66733,6 +66749,23 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields `[TIE_HIGH_XPD_BB_I2C, PHY_RF_SHUTDOWN_UNKNOWN_HIGH]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_rf_immediate_clock_power(registers: &crate::PmuRadio) {
+        registers.imm_hp_ck_power_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tie_high_xpd_bb_i2c()
+                    .bit((input & 0x00000001) != 0)
+                    .phy_rf_shutdown_unknown_high()
+                    .bits(((input >> 1) & 0x00000007) as u8)
+            }
+        });
+    }
+
     /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields `[XPD_PERIF_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn power_on_analog_i2c(registers: &crate::PmuRadio) {
@@ -66931,6 +66964,21 @@ pub mod field_replace_modify {
                 .bit((input & 0x00000001) != 0)
                 .wifi_enable()
                 .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[COLD_START_CLEAR_UNKNOWN, WIFI_ENABLE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_rf_baseband_control(registers: &crate::ModemSysconRadio) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .cold_start_clear_unknown()
+                .bit((input & 0x00000001) != 0)
+                .wifi_enable()
+                .bit(((input >> 1) & 0x00000001) != 0)
         });
     }
 

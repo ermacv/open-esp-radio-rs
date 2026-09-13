@@ -104,3 +104,45 @@ fn typed_configuration_preserves_workload_bounds() {
         .is_err()
     );
 }
+
+#[test]
+fn first_boot_may_create_or_replace_the_startup_artifact() {
+    for disposition in [
+        StartupArtifactDisposition::Created,
+        StartupArtifactDisposition::Replaced,
+        StartupArtifactDisposition::Restored,
+    ] {
+        assert!(
+            validate_startup_artifact_replay(
+                1,
+                Some(StartupArtifactStatus {
+                    disposition,
+                    total_length: 252,
+                    initialization_elapsed_micros: 1,
+                }),
+            )
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn later_boots_require_restoration_of_the_persisted_artifact() {
+    let status = |disposition| {
+        Some(StartupArtifactStatus {
+            disposition,
+            total_length: 252,
+            initialization_elapsed_micros: 1,
+        })
+    };
+    assert!(
+        validate_startup_artifact_replay(2, status(StartupArtifactDisposition::Restored)).is_ok()
+    );
+    assert!(
+        validate_startup_artifact_replay(2, status(StartupArtifactDisposition::Created)).is_err()
+    );
+    assert!(
+        validate_startup_artifact_replay(2, status(StartupArtifactDisposition::Replaced)).is_err()
+    );
+    assert!(validate_startup_artifact_replay(2, None).is_err());
+}

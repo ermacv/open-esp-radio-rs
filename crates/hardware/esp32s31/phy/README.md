@@ -39,17 +39,20 @@ flowchart TD
     Track --> Restore[Restore protocol hardware and checked release]
     Restore --> Role
     Init --> Cache[Optional calibration snapshot]
-    Cache -. supplied cache currently selects full calibration .-> Init
+    Cache --> Validate[Validate schema, identity and complete products]
+    Validate --> Init
     Track --> Fault[Failed epoch retained; reset required]
     Restore --> Fault
 ```
 
-All admitted [registration paths](src/calibration/registration.rs) currently
-perform full calibration. The cache has a typed representation and identity
-checks, but complete cold hardware replay is not implemented. Passing a cache
-therefore selects `FullAfterRejectedCache`; a software-valid snapshot cannot
-skip physical initialization. Persistence belongs to the caller. Runtime
-tracking is not a substitute for reset or wakeup replay.
+[Registration](src/calibration/registration.rs) admits a cache only when its
+schema, physical identity, completion guards and RX table shape match. A valid
+snapshot restores semantic calibration products and selects partial cold
+calibration. The ordinary RF/baseband graph regenerates frequency memory and
+republishes RX and TX gain state that cannot be assumed to survive a cold
+epoch. An invalid or incomplete snapshot selects `FullAfterRejectedCache`.
+Persistence belongs to the caller. Runtime tracking is not a substitute for
+reset or retained-sleep wakeup replay.
 
 ## Owners and dependencies
 
@@ -88,6 +91,66 @@ reply, client bit or PTI into this exclusive capability.
 
 The Wi-Fi airtime scheduler selects packet service within a MAC epoch. It does
 not own the shared RF resource and cannot independently admit PHY maintenance.
+
+## Power lifecycle boundary
+
+Client bookkeeping and physical RF power are separate state transitions.
+Releasing a non-final client returns the ordinary registered radio. Releasing
+the final client returns `RegisteredPhyPoweredIdle`: the tracking model is
+disarmed and the client set is empty, while RF, analog state and shared clocks
+remain physically powered. An always-powered policy can explicitly retain that
+owner. Sleep or shutdown must consume it through a hardware transaction.
+
+```mermaid
+stateDiagram-v2
+    [*] --> RegisteredActive: cold registration + first client
+    RegisteredActive --> RegisteredActive: release with clients remaining
+    RegisteredActive --> PoweredIdle: release final client
+    PoweredIdle --> RegisteredActive: retain powered + acquire client
+    PoweredIdle --> RfClosed: sample temperature + close RF
+    RfClosed --> PoweredOff: temperature off + release shared clocks
+    PoweredOff --> [*]: cold owner / re-registration required
+    RfClosed --> PoweredIdle: retained wake (not implemented)
+```
+
+`RegisteredPhyRfClosed` is minted only after the current-vendor pre-close
+temperature observation and the complete finite `phy_close_rf` graph. The
+transaction disables hardware frequency control, forces TX/RX off, disables
+AGC, closes the RF and frontend/baseband domains and publishes both retained
+analog close images. Preparation failure returns the unchanged powered-idle
+owner; failure after close begins returns only a reset-required owner.
+
+`RegisteredPhyRfClosed::release_to_cold` then powers down the temperature
+sensor, releases retained route clocks and returns a cold `Radio<P, Owned>`
+inside `RegisteredPhyColdReleased`. Its previous registration state is retired
+and cannot authorize the next hardware epoch. Consuming the cold-release owner
+with the platform-derived physical identity returns both the radio and a cache
+captured from the final state after runtime tracking and recalibration. The
+caller can power the same radio back up and run cold registration with that
+cache; validation and hardware replay still run normally. This edge does not
+claim that every platform clock/reset image changed by cold power-up has been
+restored.
+
+The Wi-Fi driver composes this boundary through `restart_esp32s31_radio`: the
+cold-release owner is consumed with the identity selected for the next
+registration, and the resulting final-state cache is passed directly to the
+ordinary validated cold-start graph. Early power or client-acquisition failure
+retains that cache with its exact failure frontier. An ambiguous initial
+tracking failure keeps the older snapshot opaque because it may no longer
+describe the hardware state.
+
+A shorter retained wake directly from `RegisteredPhyRfClosed` is not yet
+implemented. That future transaction must reacquire clocks, open
+frontend/baseband and analog-I2C power, restore retained frequency, channel,
+PBus and baseband state, re-enable hardware frequency control and only then
+permit a protocol client to resume. A cold calibration cache does not prove
+that this retained wake transaction has run.
+
+Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
+per-protocol receive-enable owners to the composition. Consequently neither
+`PhyClientState::release`, a zero client mask nor a coex request can call the
+physical close transaction on its own. Failure after close begins cannot
+return `RegisteredPhyPoweredIdle`; it must retain a reset-required epoch.
 
 ## Conditions and cadence
 

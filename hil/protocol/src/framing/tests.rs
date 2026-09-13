@@ -1602,6 +1602,28 @@ fn rfpll_detail_fits_frame_and_preserves_full_numeric_range() {
 }
 
 #[test]
+fn temperature_detail_fits_frame_and_preserves_full_numeric_range() {
+    let expected = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::StationTemperatureObserved(crate::TemperatureEvidence {
+            temperature: i16::MIN,
+            sensor_index: u8::MAX,
+            next_dac: u8::MAX,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |value| {
+        observed = Some(value.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
 fn maximum_rx_gain_detail_fits_separate_frame_and_round_trips() {
     let timing = crate::PhyOperationTiming {
         started: u16::MAX,

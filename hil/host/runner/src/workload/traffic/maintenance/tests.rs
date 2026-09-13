@@ -1,4 +1,4 @@
-use super::validate_pause;
+use super::{has_nonzero_rfpll_correction, validate_pause, validate_temperature};
 use open_esp_radio_hil_protocol::{
     StationPauseEvidence, StationPauseOperation, StationPauseResult, StationPhyTrackingEvidence,
 };
@@ -37,6 +37,36 @@ fn parent_timing(common: bool, wifi: bool) -> open_esp_radio_hil_protocol::PhyTi
         },
         ..Default::default()
     }
+}
+
+#[test]
+fn repeated_rfpll_polling_stops_only_for_a_nonzero_correction() {
+    use open_esp_radio_hil_protocol::{RfpllCorrectionEvidence, RfpllEvidence};
+    let skipped = RfpllEvidence {
+        temperature: 30,
+        sample_age_micros: Some(100),
+        reference_before: 29,
+        reference_after: 29,
+        threshold: 15,
+        channel: 13,
+        correction: None,
+    };
+    let correction = |selected_cap| RfpllEvidence {
+        temperature: 45,
+        reference_after: 45,
+        correction: Some(RfpllCorrectionEvidence {
+            initial_cap: 230,
+            selected_cap,
+            accepted_samples: 1,
+            entries_updated: u8::from(selected_cap != 230).saturating_mul(85),
+            restored_frequency_index: (selected_cap != 230).then_some(62),
+        }),
+        ..skipped
+    };
+    assert!(!has_nonzero_rfpll_correction(None));
+    assert!(!has_nonzero_rfpll_correction(Some(skipped)));
+    assert!(!has_nonzero_rfpll_correction(Some(correction(230))));
+    assert!(has_nonzero_rfpll_correction(Some(correction(229))));
 }
 
 #[test]
@@ -332,15 +362,15 @@ fn rfpll_detail_cannot_be_missing_or_confuse_forced_work_with_thermal_skip() {
     assert!(super::validate_rfpll(StationPauseOperation::Access, None, Some(ran), false).is_err());
     assert!(super::validate_rfpll(StationPauseOperation::Access, None, None, false).is_ok());
     assert!(super::validate_rfpll(StationPauseOperation::Access, None, None, true).is_err());
-    assert!(
-        super::validate_rfpll(
-            StationPauseOperation::RfpllObserved,
-            Some(timing),
-            Some(ran),
-            true,
-        )
-        .is_err()
-    );
+    let error = super::validate_rfpll(
+        StationPauseOperation::RfpllObserved,
+        Some(timing),
+        Some(ran),
+        true,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("temperature=10 reference=10 threshold=0 correction=Some(0)"));
     let nonzero = RfpllEvidence {
         reference_before: 10,
         reference_after: 30,
@@ -473,6 +503,19 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn temperature_detail_is_required_only_for_temperature_operation() {
+    let detail = open_esp_radio_hil_protocol::TemperatureEvidence {
+        temperature: -12,
+        sensor_index: 4,
+        next_dac: 10,
+    };
+    assert!(validate_temperature(StationPauseOperation::Temperature, Some(detail)).is_ok());
+    assert!(validate_temperature(StationPauseOperation::Temperature, None).is_err());
+    assert!(validate_temperature(StationPauseOperation::Access, Some(detail)).is_err());
+    assert!(validate_temperature(StationPauseOperation::Access, None).is_ok());
 }
 
 #[test]

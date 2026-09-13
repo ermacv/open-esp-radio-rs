@@ -70,6 +70,15 @@ pub fn prepare_open_i2c_pre_delay(registers: &mut impl SharedPhyAccess) {
     prepare_open_i2c_pre_delay_sequence(registers);
 }
 
+/// Clear the RF-circuit power image inside complete `phy_xpd_rf_new`.
+///
+/// The surrounding close transaction owns the adjacent baseband, I2C and
+/// clock operations; this leaf performs only the instruction-evidenced PMU
+/// update.
+pub fn power_off_rf_circuits(registers: &mut impl SharedPhyAccess) {
+    SharedPhyAccess::set_rf_circuit_power(registers, false);
+}
+
 /// Power the RF/analog-I2C circuits and release the peripheral-I2C reset.
 ///
 /// SOURCE\[complete `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`]. When

@@ -36,6 +36,27 @@ fn rx_execution_summary_is_single_and_scoped_to_the_active_child() {
 }
 
 #[test]
+fn temperature_outcome_is_single_and_scoped_to_the_active_child() {
+    let outcome = crate::analog::temperature::PhyTemperatureOutcome {
+        temperature: 61,
+        sensor_index: 2,
+        next_dac: 15,
+    };
+    let mut outside = Recorder::default();
+    outside.observe_temperature(outcome);
+    assert!(outside.report().invalid);
+
+    let mut recorder = Recorder::default();
+    recorder.observe(Operation::Temperature, Event::Started, 1);
+    recorder.observe_temperature(outcome);
+    recorder.observe(Operation::Temperature, Event::Completed, 2);
+    assert_eq!(recorder.report().temperature, Some(outcome));
+    assert!(!recorder.report().invalid);
+    recorder.observe_temperature(outcome);
+    assert!(recorder.report().invalid);
+}
+
+#[test]
 fn nested_work_keeps_parent_inclusive_time_and_failed_attempts() {
     let mut recorder = Recorder::default();
     recorder.observe(Operation::Calibration, Event::Started, 100);

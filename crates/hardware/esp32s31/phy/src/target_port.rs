@@ -22,7 +22,10 @@ use crate::{
         i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
         pbus::{PhyForceTxRxExternalBinding, PhyPbusHardwareObservation},
         rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding},
-        temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
+        temperature::{
+            PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureExternalBinding,
+            PhyTemperatureTransition,
+        },
     },
     calibration::{
         baseband::{PhyBbExternalBinding, PhyBbInitCompletion},
@@ -89,7 +92,7 @@ use crate::{
         complete_rxiq_init_i2c, complete_rxiq_init_pbus, complete_temperature_i2c,
         complete_tx_calibration_environment_pbus, complete_tx_dc_pwdet_pbus,
         complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c, complete_txiq_init_i2c,
-        complete_txiq_pbus,
+        complete_txiq_pbus, write_i2c_direct,
     },
     tracking::{
         calibration::{
@@ -132,6 +135,8 @@ use crate::{
         power_detector::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
     },
 };
+
+use crate::lifecycle::{PHY_RF_CLOSE_OPERATIONS, PhyRfCloseOperation};
 
 use oer_esp32s31_hal::{
     ieee802154::Ieee802154Clocked,
@@ -179,6 +184,12 @@ pub trait PhyTargetObserver {
     fn tx_sar_ready(&mut self, _ready: bool) {}
     /// Emitted only after the thermal child restores control and commits state.
     fn rfpll_completed(&mut self, _observation: crate::tracking::rfpll::Observation) {}
+    /// Emitted only after the sensor child commits its observed temperature.
+    fn temperature_completed(
+        &mut self,
+        _outcome: crate::analog::temperature::PhyTemperatureOutcome,
+    ) {
+    }
 
     fn dcode_wait(
         &mut self,
@@ -308,7 +319,7 @@ impl TargetBluetoothPhyRegisterConfig {
         }
     }
 
-    /// Supply a retained cache as validation input to the same full run.
+    /// Supply a retained cache for validated cold partial calibration.
     pub fn with_calibration_cache(mut self, calibration_cache: PhyCalibrationCache) -> Self {
         self.calibration_cache = Some(calibration_cache);
         self
@@ -408,9 +419,9 @@ impl TargetBluetoothPhyRegisterFailure {
 /// Caller-owned persistence inputs for one dedicated IEEE 802.15.4 common-PHY
 /// registration.
 ///
-/// The retained cache is validation input until complete replay is recovered.
-/// The target transition still performs full calibration and publishes only a
-/// fresh cache after terminal success.
+/// A valid retained cache seeds cold partial calibration. The target transition
+/// republishes hardware-resident state and publishes a fresh cache only after
+/// terminal success.
 pub struct TargetIeee802154PhyRegisterConfig {
     calibration_identity: PhyCalibrationIdentity,
     calibration_cache: Option<PhyCalibrationCache>,
@@ -425,7 +436,7 @@ impl TargetIeee802154PhyRegisterConfig {
         }
     }
 
-    /// Supply a caller-owned cache as validation input to the same transition.
+    /// Supply a caller-owned cache for validated cold partial calibration.
     pub fn with_calibration_cache(mut self, calibration_cache: PhyCalibrationCache) -> Self {
         self.calibration_cache = Some(calibration_cache);
         self
@@ -2252,25 +2263,23 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         Err(PhyTargetPortError::RfOperationLimit)
     }
 
-    async fn run_param_temperature<P>(
+    async fn run_param_temperature<P, O: PhyTargetObserver>(
         mut child: PhyParamTrackingTemperatureTransition<'_>,
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
+        observer: &mut O,
     ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
         let started = D::now_micros();
         for _ in 0..RF_OPERATION_LIMIT {
-            let completed = if matches!(
-                child.action(),
-                crate::analog::temperature::PhyTemperatureAction::Complete(_)
-            ) {
-                D::now_micros()
-            } else {
-                None
-            };
-            child = match child.commit_observed(started, completed) {
-                Ok(completion) => return Ok(completion),
-                Err(child) => child,
-            };
+            if let crate::analog::temperature::PhyTemperatureAction::Complete(outcome) =
+                child.action()
+            {
+                let completion = child
+                    .commit_observed(started, D::now_micros())
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                observer.temperature_completed(outcome);
+                return Ok(completion);
+            }
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2541,6 +2550,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyP
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                     self.platform,
                     self.registers,
+                    &mut self.observer,
                 )
                 .await?
             }
@@ -2996,6 +3006,94 @@ where
         outcome,
         counters,
     })
+}
+
+/// Reproduce the default current-vendor temperature observation immediately
+/// before RF close while the radio is still physically available.
+///
+/// Failure precedes every shutdown mutation, so the caller may retain and
+/// retry its powered-idle owner. The observation updates only source-owned
+/// temperature state and acquisition provenance.
+pub(crate) async fn observe_temperature_before_rf_close<P, D: PhyAsyncDelay>(
+    radio: &mut Radio<P, Powered>,
+    state: &mut PhyState,
+) -> Result<(), PhyTargetPortError> {
+    let started = D::now_micros();
+    let (platform, registers) = radio.phy_hal_parts();
+    let mut transition = PhyTemperatureTransition::new();
+    for _ in 0..RF_OPERATION_LIMIT {
+        match transition.action() {
+            PhyTemperatureAction::Complete(outcome) => {
+                state.apply_observed_temperature_outcome(outcome, started, D::now_micros());
+                return Ok(());
+            }
+            PhyTemperatureAction::Failed(_) => {
+                return Err(PhyTargetPortError::HardwareInvariant);
+            }
+            action => {
+                let binding = PhyTemperatureExternalBinding::lower(action)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                let completion =
+                    TargetCompleter::<D>::complete_temperature(binding, platform, registers)
+                        .await?;
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            }
+        }
+    }
+    Err(PhyTargetPortError::RfOperationLimit)
+}
+
+/// Execute the exact finite current-vendor RF-close graph after preflight.
+///
+/// The first operation crosses the point of no recovery. Any returned error
+/// means the powered hardware epoch is ambiguous and must remain poisoned.
+pub(crate) fn execute_rf_close<P, D: PhyAsyncDelay>(
+    radio: &mut Radio<P, Powered>,
+) -> Result<(), PhyTargetPortError> {
+    let registers = radio.phy_hal_mut();
+    for operation in PHY_RF_CLOSE_OPERATIONS {
+        match operation {
+            // The current ESP32-S31 library installs empty critical-section
+            // callbacks. Preserve the boundaries in the graph without
+            // inventing a CPU interrupt lock as an RF ownership proof.
+            PhyRfCloseOperation::EnterCritical | PhyRfCloseOperation::ExitCritical => {}
+            PhyRfCloseOperation::DisableHardwareFrequencyControl => {
+                oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
+            }
+            PhyRfCloseOperation::ForceTxRxOff { phase } => {
+                oer_esp32s31_hal::phy::pbus::configure_force_txrx(registers, true, phase);
+            }
+            PhyRfCloseOperation::SettleOneMicrosecond => {
+                if !D::ShortDelay::settle_micros(1) {
+                    return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                }
+            }
+            PhyRfCloseOperation::DisableAgc => {
+                oer_esp32s31_hal::phy::agc::set_enabled(registers, false);
+            }
+            PhyRfCloseOperation::ClearBasebandControl => {
+                oer_esp32s31_hal::phy::clock::clear_rf_baseband_control(registers);
+            }
+            PhyRfCloseOperation::WriteI2c { address, value } => {
+                write_i2c_direct(registers, address, value)?;
+            }
+            PhyRfCloseOperation::PowerOffRfCircuits => {
+                oer_esp32s31_hal::phy::analog_i2c::power_off_rf_circuits(registers);
+            }
+            PhyRfCloseOperation::ClearImmediateClockPower => {
+                oer_esp32s31_hal::phy::clock::clear_rf_immediate_clock_power(registers);
+            }
+            PhyRfCloseOperation::CloseFrontendBasebandClocks => {
+                oer_esp32s31_hal::phy::clock::close_frontend_baseband(registers);
+            }
+            PhyRfCloseOperation::EnableBbpllCalibration => {
+                oer_esp32s31_hal::phy::i2c::configure_bbpll_calibration(registers, true);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Select a PHY channel with the same finite target contract used by cold

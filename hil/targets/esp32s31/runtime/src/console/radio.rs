@@ -293,8 +293,17 @@ pub async fn complete_station_pause(
     tx_waits: Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
     timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
     service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
+    temperature: Option<open_esp_radio_hil_protocol::TemperatureEvidence>,
     rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
 ) {
+    if let Some(temperature) = temperature {
+        publish_event_reliably(
+            0,
+            request_id,
+            Event::StationTemperatureObserved(temperature),
+        )
+        .await;
+    }
     if let Some(rfpll) = rfpll {
         publish_event_reliably(0, request_id, Event::StationRfpllObserved(rfpll)).await;
     }

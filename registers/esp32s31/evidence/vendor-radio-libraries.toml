@@ -447,3 +447,11 @@ sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
 [[sources]]
 id = "BLOB_LIBPHY_CALIBRATION_20260907"
 description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; Complete phy_txgain_comp_pacfg_new, phy_start_tx_tone_step_new, phy_force_dig_gain, phy_reg_update_new and their caller sequencing in phy_bb_init/phy_rf_init. Gain compensation bytes are 00 fb 03 00. Tone start clears stop before disabling compensation; only disabling both paths sets stop and restores compensation. Post-init AGC preserves FTM. Forced digital gain updates enable bit 16 before bytes 0 and 1 in 0x20100408."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_CLOSE_RF_20260907"
+description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; complete phy_init.o phy_close_rf body, size 0x96. After its retained-state guards it enters the PHY critical section, disables hardware frequency control, forces TX/RX off, calls phy_xpd_rf_new, enables BBPLL calibration, writes 0x77 to PHY-I2C block 0x6a registers zero and one, publishes the retained closed flag, and exits the critical section."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"
+description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; complete phy_init.o phy_xpd_rf_new body, size 0x62. The leaf disables AGC, clears MODEM_SYSCON_RADIO.WIFI_BB_CFG bits zero and one in one fresh-read RMW, delays one microsecond, writes 0x07 to PHY-I2C block 0x67 register two, clears PMU_RADIO.RF_PWC bits 31:16, clears PMU_RADIO.IMM_HP_CK_POWER_0 bits 31:28, and tail-calls phy_close_fe_bb_clk."

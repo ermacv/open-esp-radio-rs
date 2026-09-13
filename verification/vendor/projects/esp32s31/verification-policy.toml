@@ -560,6 +560,26 @@ requirement = "phy-current-gain-restore-profile"
 rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples (kind, width, address, value). It describes only the declared finite input images; suite evidence binds the compiled production probe."
 
 [[surfaces]]
+id = "phy-current-pbus-clear"
+description = "The compiled source-owned RX calibration prefix preserves the current archive PBus-clear transaction for the reviewed readiness and work-mode domain."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "phy-current-pbus-clear-profile"
+description = "Immediate and two-busy-read readiness paths with both work-mode settle branches execute the same ordered PBus transaction and terminal handoff."
+suite = "phy-calibration-leaves"
+source = "rom"
+symbol = "phy_pbus_clear_reg"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "phy-current-pbus-clear-ordered-mmio"
+vendor = { source = "rom", symbol = "phy_pbus_clear_reg", fingerprint = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+disposition = "verified"
+requirement = "phy-current-pbus-clear-profile"
+rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples for the declared finite readiness and work-mode domain."
+
+[[surfaces]]
 id = "phy-current-forced-gain"
 description = "Production forced-gain preserves the finite calibration-leaf profile; full calibration and hardware timing are outside this boundary."
 kind = "selected-functions"

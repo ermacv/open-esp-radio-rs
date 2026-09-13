@@ -20,6 +20,8 @@ pub mod calibration;
 pub mod channel;
 mod hardware;
 mod ieee802154_timing_boundary;
+#[cfg(any(target_arch = "riscv32", test))]
+mod lifecycle;
 pub mod rx;
 pub mod state;
 pub mod tracking;
@@ -28,7 +30,10 @@ pub mod tx;
 mod registered_bluetooth;
 mod registered_radio;
 mod registered_wifi;
-pub use registered_wifi::{RegisteredWifiPhy, WifiPhyMaintenanceRequest};
+pub use registered_wifi::{
+    RegisteredWifiPhy, RegisteredWifiPhyClientRelease, RegisteredWifiPhyClientReleaseFailure,
+    WifiPhyMaintenanceRequest,
+};
 #[cfg(target_arch = "riscv32")]
 pub use registered_wifi::{WifiPhyMaintenanceError, WifiPhyMaintenanceFailure};
 mod size_limits;
@@ -61,9 +66,15 @@ pub use registered_radio::{
     RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
     RegisteredIeee802154TrackPoisoned, RegisteredPhyClientAcquire,
     RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
-    RegisteredPhyClientReleaseFailure, RegisteredPhyPendingTrack, RegisteredPhyPendingTracking,
-    RegisteredPhyRadio, RegisteredPhyTrackEvaluation, RegisteredPhyTrackEvaluationFailure,
-    RegisteredPhyTrackPoisoned,
+    RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
+    RegisteredPhyPendingTrack, RegisteredPhyPendingTracking, RegisteredPhyPoweredIdle,
+    RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyTrackEvaluation,
+    RegisteredPhyTrackEvaluationFailure, RegisteredPhyTrackPoisoned,
+};
+#[cfg(target_arch = "riscv32")]
+pub use registered_radio::{
+    RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased, RegisteredPhyRfCloseFailure,
+    RegisteredPhyRfClosePoisoned, RegisteredPhyRfClosePreparationFailure,
 };
 pub use state::{
     PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,

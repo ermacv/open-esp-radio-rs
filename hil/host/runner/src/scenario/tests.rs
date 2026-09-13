@@ -1314,6 +1314,17 @@ fn station_pause_preconditioning_is_explicit_and_leaves_a_restored_interval() {
         .clone();
     assert!(scenario.validate().is_ok());
 
+    let Workload::Udp {
+        station_pause_attempts,
+        station_pause_interval_millis,
+        ..
+    } = &mut scenario.workload
+    else {
+        panic!("UDP");
+    };
+    assert_eq!(*station_pause_attempts, Some(45));
+    assert_eq!(*station_pause_interval_millis, Some(1_000));
+
     let set_delay = |scenario: &mut Scenario, delay| {
         let Workload::Udp {
             station_pause_after_millis,
@@ -1326,13 +1337,63 @@ fn station_pause_preconditioning_is_explicit_and_leaves_a_restored_interval() {
     };
     set_delay(&mut scenario, Some(0));
     assert!(scenario.validate().is_err());
-    set_delay(&mut scenario, Some(88_001));
+    set_delay(&mut scenario, Some(44_001));
     assert!(scenario.validate().is_err());
-    set_delay(&mut scenario, Some(88_000));
+    set_delay(&mut scenario, Some(44_000));
     assert!(scenario.validate().is_ok());
     let Workload::Udp { station_pause, .. } = &mut scenario.workload else {
         panic!("UDP");
     };
     *station_pause = None;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn repeated_station_pause_is_only_a_bounded_strict_rfpll_observation() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("diagnostic-station-phy-rfpll-thermal-observed")
+        .unwrap()
+        .clone();
+    let set_plan = |scenario: &mut Scenario, attempts, interval| {
+        let Workload::Udp {
+            station_pause_attempts,
+            station_pause_interval_millis,
+            ..
+        } = &mut scenario.workload
+        else {
+            panic!("UDP");
+        };
+        *station_pause_attempts = attempts;
+        *station_pause_interval_millis = interval;
+    };
+
+    set_plan(&mut scenario, Some(0), Some(1_000));
+    assert!(scenario.validate().is_err());
+    set_plan(&mut scenario, Some(61), Some(1_000));
+    assert!(scenario.validate().is_err());
+    set_plan(&mut scenario, Some(2), Some(99));
+    assert!(scenario.validate().is_err());
+    set_plan(&mut scenario, Some(2), Some(5_001));
+    assert!(scenario.validate().is_err());
+    set_plan(&mut scenario, Some(2), Some(1_000));
+    assert!(scenario.validate().is_ok());
+
+    let set_delay = |scenario: &mut Scenario, delay| {
+        let Workload::Udp {
+            station_pause_after_millis,
+            ..
+        } = &mut scenario.workload
+        else {
+            panic!("UDP");
+        };
+        *station_pause_after_millis = delay;
+    };
+    set_delay(&mut scenario, None);
+    assert!(scenario.validate().is_err());
+    set_delay(&mut scenario, Some(10_000));
+
+    scenario.criteria.require_nonzero_rfpll_correction = false;
     assert!(scenario.validate().is_err());
 }

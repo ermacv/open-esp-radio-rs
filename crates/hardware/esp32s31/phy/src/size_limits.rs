@@ -3,8 +3,8 @@
 use core::mem::size_of;
 
 use crate::{
-    PhyCalibrationCache, PhyRegisterTransition, PhyState, RegisteredPhyRadio, RegisteredPhyState,
-    RegisteredWifiPhy,
+    PhyCalibrationCache, PhyRegisterTransition, PhyState, RegisteredPhyPoweredIdle,
+    RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyState, RegisteredWifiPhy,
     calibration::baseband::PhyBbInitTransition,
     rx::{
         gain::{PhyRxGainInitExternalBinding, PhyRxGainInitTransition, PhyRxGainPublishTransition},
@@ -43,6 +43,8 @@ const _: () = {
     // Runtime retains the registration plus the same bounded client scheduler.
     assert!(size_of::<RegisteredWifiPhy>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
     assert!(size_of::<RegisteredPhyRadio<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
+    assert!(size_of::<RegisteredPhyPoweredIdle<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
+    assert!(size_of::<RegisteredPhyRfClosed<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
     assert!(size_of::<PhyCalibrationCache>() <= PHY_CALIBRATION_CACHE_LIMIT);
     assert!(size_of::<PhyRegisterTransition>() <= PHY_REGISTER_TRANSITION_LIMIT);
     assert!(size_of::<PhyBbInitTransition>() <= PHY_BB_INIT_TRANSITION_LIMIT);

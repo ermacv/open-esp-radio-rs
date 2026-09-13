@@ -249,6 +249,7 @@ pub(super) async fn run_station_pause(
     let mut tx_waits = None;
     let mut rx_gain = None;
     let mut rfpll = None;
+    let mut temperature = None;
     let mut service = None;
     let result = if operation == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
     {
@@ -313,6 +314,14 @@ pub(super) async fn run_station_pause(
                 .timings()
                 .and_then(|value| value.rfpll)
                 .map(self::rfpll_evidence);
+            temperature = report
+                .timings()
+                .and_then(|value| value.temperature)
+                .map(|value| open_esp_radio_hil_protocol::TemperatureEvidence {
+                    temperature: value.temperature,
+                    sensor_index: value.sensor_index,
+                    next_dac: value.next_dac,
+                });
             StationPauseEvidence {
                 timings: report.timings().map(phy_timing_evidence),
                 tracking: report.tracking.map(|outcome| {
@@ -365,6 +374,14 @@ pub(super) async fn run_station_pause(
         )
         .await;
     }
-    crate::console::complete_station_pause(request_id, evidence, tx_waits, timer, service, rfpll)
-        .await;
+    crate::console::complete_station_pause(
+        request_id,
+        evidence,
+        tx_waits,
+        timer,
+        service,
+        temperature,
+        rfpll,
+    )
+    .await;
 }

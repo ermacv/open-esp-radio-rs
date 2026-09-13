@@ -182,6 +182,13 @@ pub enum Workload {
         /// in the scenario instead of relying on an unrecorded host sleep.
         #[serde(default)]
         station_pause_after_millis: Option<u32>,
+        /// Maximum number of fresh-temperature/RFPLL transactions used to
+        /// observe the first nonzero thermal correction.
+        #[serde(default)]
+        station_pause_attempts: Option<u8>,
+        /// Host-side delay between bounded RFPLL observation attempts.
+        #[serde(default)]
+        station_pause_interval_millis: Option<u32>,
         duration_seconds: u16,
         rx_rate_bps: Option<u64>,
         tx_rate_bps: Option<u64>,

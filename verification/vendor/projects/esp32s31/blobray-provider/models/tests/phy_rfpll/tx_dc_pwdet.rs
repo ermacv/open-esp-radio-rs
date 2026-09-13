@@ -3,9 +3,7 @@
 use super::*;
 use open_radio_vendor_models_esp32s31::execution_model::MemoryRange;
 
-#[path = "tx_dc_pwdet/samples.rs"]
-mod samples;
-pub(super) use samples::Samples;
+pub(super) use open_radio_vendor_models_esp32s31::phy_calibration::SarSamples as Samples;
 
 const INPUT: u32 = 0x3ffe_1000;
 const OUTPUT: u32 = 0x3ffe_2000;

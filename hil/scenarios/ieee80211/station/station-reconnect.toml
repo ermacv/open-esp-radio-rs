@@ -12,7 +12,7 @@ phy = "he20"
 [workload]
 kind = "station-reconnect"
 cycles = 3
-boots = 1
+boots = 2
 timeout_seconds = 90
 
 [criteria]

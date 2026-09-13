@@ -50,7 +50,8 @@ pub(super) fn evaluate(
         )));
     }
 
-    let coverage_domain = profile.coverage_constraints()?;
+    let vendor_coverage_domain = profile.coverage_constraints_for(true)?;
+    let rust_coverage_domain = profile.coverage_constraints_for(false)?;
     let comparison = compare_execution_scenarios(
         svd,
         ExecutionInput {
@@ -75,7 +76,8 @@ pub(super) fn evaluate(
             .flatten(),
             call_equivalences: &profile.call_equivalences,
             diagnostic_contracts,
-            coverage_domain: &coverage_domain,
+            vendor_coverage_domain: &vendor_coverage_domain,
+            rust_coverage_domain: &rust_coverage_domain,
             vendor_setup: &profile.vendor_setup,
         },
         &profile.scenarios,

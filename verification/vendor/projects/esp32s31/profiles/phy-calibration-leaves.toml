@@ -97,3 +97,37 @@ mmio-initial = [
     { address = 0x20107104, value = 0x5a6987c3 },
     { address = 0x201078c8, value = 0x5a6987c3 },
 ]
+
+[[profiles]]
+name = "phy-pbus-clear-complete-child"
+claim = "reviewed-domain-equivalence"
+precondition = "finite-pbus-readiness-and-work-mode-domain"
+vendor-source = "rom"
+vendor-symbol = "phy_pbus_clear_reg"
+rust-symbol = "open_phy_calibration_trace_pbus_clear"
+compare-return = false
+transaction-comparison = "observables-under-effect-contract"
+
+[[profiles.cases]]
+name = "zero-immediate-no-settle"
+vendor-stack-fill = 0x5a
+rust-stack-fill = 0x5a
+device-models = [
+    { kind = "self-clearing", id = "pbus-command-a", address = 0x20100884, width = 32, initial_value = 0, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-command-b", address = 0x2010088c, width = 32, initial_value = 0, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-work-mode", address = 0x20109c18, width = 32, initial_value = 0, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-work-pulse", address = 0x2010702c, width = 32, initial_value = 0, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "sequence-read", id = "pbus-ready", address = 0x20100890, width = 32, values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+]
+
+[[profiles.cases]]
+name = "a5-two-busy-settle"
+vendor-stack-fill = 0xa5
+rust-stack-fill = 0xa5
+device-models = [
+    { kind = "self-clearing", id = "pbus-command-a", address = 0x20100884, width = 32, initial_value = 0xa5a55a58, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-command-b", address = 0x2010088c, width = 32, initial_value = 0xa5a55a58, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-work-mode", address = 0x20109c18, width = 32, initial_value = 2, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "self-clearing", id = "pbus-work-pulse", address = 0x2010702c, width = 32, initial_value = 0xa5a55a58, store_mask = 0xffffffff, command_mask = 0 },
+    { kind = "sequence-read", id = "pbus-ready", address = 0x20100890, width = 32, values = [0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0, 0x80000000, 0x80000000, 0] },
+]

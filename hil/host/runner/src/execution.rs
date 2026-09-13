@@ -139,6 +139,8 @@ fn execute_workload_inner(
             payload_bytes,
             station_pause,
             station_pause_after_millis,
+            station_pause_attempts,
+            station_pause_interval_millis,
         } => {
             let duration = Duration::from_secs(u64::from(*duration_seconds));
             let payload = usize::from(*payload_bytes);
@@ -155,6 +157,10 @@ fn execute_workload_inner(
                             .require_nonzero_rfpll_correction,
                         station_pause: *station_pause,
                         station_pause_after: station_pause_after_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
+                        station_pause_attempts: station_pause_attempts.unwrap_or(1),
+                        station_pause_interval: station_pause_interval_millis
                             .map(|value| Duration::from_millis(u64::from(value)))
                             .unwrap_or_default(),
                         duration,
@@ -210,6 +216,10 @@ fn execute_workload_inner(
                         station_pause_after: station_pause_after_millis
                             .map(|value| Duration::from_millis(u64::from(value)))
                             .unwrap_or_default(),
+                        station_pause_attempts: station_pause_attempts.unwrap_or(1),
+                        station_pause_interval: station_pause_interval_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
                         duration,
                         payload,
                         bandwidth_mhz,
@@ -248,6 +258,10 @@ fn execute_workload_inner(
                             .require_nonzero_rfpll_correction,
                         station_pause: *station_pause,
                         station_pause_after: station_pause_after_millis
+                            .map(|value| Duration::from_millis(u64::from(value)))
+                            .unwrap_or_default(),
+                        station_pause_attempts: station_pause_attempts.unwrap_or(1),
+                        station_pause_interval: station_pause_interval_millis
                             .map(|value| Duration::from_millis(u64::from(value)))
                             .unwrap_or_default(),
                         duration,

@@ -95,7 +95,8 @@ pub(super) fn compare(
             diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 resolved.target.knowledge_provider.as_deref(),
             )?,
-            coverage_domain: &coverage_domain,
+            vendor_coverage_domain: &coverage_domain,
+            rust_coverage_domain: &coverage_domain,
             vendor_setup: &[],
         },
         &scenarios,

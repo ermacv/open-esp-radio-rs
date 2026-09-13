@@ -38,6 +38,11 @@ fixture. It is ignored by Git; scenarios contain no lab secrets or
 machine-specific paths. The identities are written into every run manifest so
 results from different cells and boards cannot be silently mixed.
 
+Multi-boot station lifecycle scenarios require a configured startup artifact.
+Their first boot may create or replace it; every later boot must report
+`Restored` before the station lifecycle can qualify. This makes cold PHY cache
+replay an asserted transition rather than an informational UART message.
+
 `cargo hil run <scenario>` builds and flashes the required image before the
 scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
 `upstream-smoltcp` or `owned-xarxa` to choose the stack implementation. The same choice

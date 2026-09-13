@@ -3105,6 +3105,7 @@ dependencies = [
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-chip-contracts-esp32s31-rev0",
  "open-radio-vendor-chip-knowledge-esp32s31-rev0",
+ "open-radio-vendor-execution-model",
  "open-radio-vendor-semantics",
 ]
 
@@ -3112,6 +3113,7 @@ dependencies = [
 name = "open-radio-vendor-contracts"
 version = "0.1.0"
 dependencies = [
+ "open-radio-vendor-execution-model",
  "serde",
  "serde_json",
  "sha2",

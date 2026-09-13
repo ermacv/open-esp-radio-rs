@@ -65,7 +65,7 @@ pub fn compare_effects(
     for (vendor_index, vendor_effect) in vendor.iter().enumerate() {
         rust_index = consume_rust_additions(rust, rust_index, policy, &mut used_rules);
         let selector = vendor_effect.selector();
-        let Some(disposition) = policy.disposition(&selector) else {
+        let Some((resolved_selector, disposition)) = policy.resolved_rule(&selector) else {
             return Ok(EquivalenceOutcome::incomplete(
                 EquivalenceMode::Semantic,
                 format!(
@@ -74,7 +74,7 @@ pub fn compare_effects(
                 ),
             ));
         };
-        used_rules.insert(selector.clone());
+        used_rules.insert(resolved_selector.clone());
         match disposition {
             EffectDisposition::Required
             | EffectDisposition::RequiredWhenObserved
@@ -248,13 +248,12 @@ fn consume_rust_additions(
 ) -> usize {
     while let Some(effect) = rust.get(rust_index) {
         let selector = effect.selector();
-        if !matches!(
-            policy.disposition(&selector),
-            Some(EffectDisposition::RustAddition(_))
-        ) {
+        let Some((resolved_selector, EffectDisposition::RustAddition(_))) =
+            policy.resolved_rule(&selector)
+        else {
             break;
-        }
-        used_rules.insert(selector);
+        };
+        used_rules.insert(resolved_selector.clone());
         rust_index += 1;
     }
     rust_index

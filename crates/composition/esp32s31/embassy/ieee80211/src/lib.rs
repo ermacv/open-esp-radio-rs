@@ -319,9 +319,10 @@ impl RadioConfig {
     }
 
     /// Supply a caller-owned retained PHY calibration cache. Cold registration
-    /// currently replaces every supplied cache with full calibration because
-    /// complete hardware replay is not implemented. A fresh cache is returned
-    /// after successful registration; this option does not skip calibration.
+    /// validates its schema, chip identity and calibration products, then uses
+    /// the partial path to republish hardware-resident state. Invalid caches
+    /// fall back to full calibration, and either successful path returns a
+    /// fresh cache for the next cold start.
     pub fn with_calibration_cache(mut self, cache: oer_esp32s31_phy::PhyCalibrationCache) -> Self {
         self.calibration_cache = Some(cache);
         self

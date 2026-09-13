@@ -10,6 +10,23 @@
 use crate::RadioPhyRegisters;
 
 impl RadioPhyRegisters {
+    /// Clear both baseband-control bits changed by complete `phy_xpd_rf_new`.
+    ///
+    /// SOURCE\[BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907]; the vendor leaf performs
+    /// one preserving update of `WIFI_BB_CFG` bits zero and one before its
+    /// one-microsecond settle.
+    pub fn clear_phy_rf_baseband_control(&mut self) {
+        crate::generated::clear_phy_rf_baseband_control(&self.peripherals.modem_syscon_radio);
+    }
+
+    /// Clear the complete upper-nibble immediate-clock image used by RF close.
+    ///
+    /// SOURCE\[BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907]; individual meanings of
+    /// bits 31:29 remain deliberately opaque in the reviewed register model.
+    pub fn clear_phy_rf_immediate_clock_power(&mut self) {
+        crate::generated::clear_phy_rf_immediate_clock_power(&self.peripherals.pmu_radio);
+    }
+
     /// Enable or disable the recovered PHY calibration clock.
     ///
     /// SOURCE\[BLOB_LIBPHY_PHY_BB_INIT]; the complete parent sets this bit

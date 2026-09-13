@@ -22,7 +22,10 @@ fn read() -> ContractEffect {
 fn exact_policy_rejects_an_unclassified_vendor_effect() {
     let policy = EffectPolicy::new(
         EffectComparison::ExactEffectsV2,
-        [(EffectSelector::Delay, EffectDisposition::Required)],
+        [(
+            EffectSelector::Delay { micros: None },
+            EffectDisposition::Required,
+        )],
     )
     .unwrap();
     let outcome = compare_effects(&[read()], &[read()], &policy).unwrap();
@@ -149,7 +152,7 @@ fn blocking_effect_requires_an_explicit_await_ready_replacement() {
     let policy = EffectPolicy::new(
         EffectComparison::ExactEffectsV2,
         [(
-            EffectSelector::Delay,
+            EffectSelector::Delay { micros: None },
             EffectDisposition::ReplacedByAsync {
                 condition: "iq-estimator-ready".to_owned(),
                 timeout: Timeout::Attempts(100),
@@ -170,6 +173,36 @@ fn blocking_effect_requires_an_explicit_await_ready_replacement() {
     }];
     assert_eq!(
         compare_effects(&vendor, &rust, &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+}
+
+#[test]
+fn concrete_delay_rules_distinguish_required_waits_from_rust_settles() {
+    let delay = |micros| ContractEffect::Delay {
+        micros: ContractValue::Concrete(micros),
+    };
+    let policy = EffectPolicy::new(
+        EffectComparison::ExactEffectsV2,
+        [
+            (
+                EffectSelector::Delay { micros: Some(2) },
+                EffectDisposition::Required,
+            ),
+            (
+                EffectSelector::Delay { micros: Some(1) },
+                EffectDisposition::RustAddition(RustAdditionReason::MinimumHardwareSettle),
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        compare_effects(&[delay(2)], &[delay(1), delay(2)], &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    assert_eq!(
+        compare_effects(&[delay(2)], &[delay(2), delay(1)], &policy).unwrap(),
         EquivalenceOutcome::matched(EquivalenceMode::Semantic)
     );
 }

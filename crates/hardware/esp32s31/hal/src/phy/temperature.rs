@@ -18,6 +18,8 @@ pub trait PhyTemperatureSystemControl {
     fn enable_temperature_sensor_phy_conversion(&mut self);
     /// Power the temperature sensor through the official control field.
     fn enable_temperature_sensor_power(&mut self);
+    /// Power down the temperature sensor after the RF domain is closed.
+    fn disable_temperature_sensor_power(&mut self);
     /// Sample the unsigned temperature code exactly once.
     fn read_temperature_sensor_code(&self) -> u8;
 }
@@ -41,6 +43,10 @@ impl<T: crate::owner::SharedPhyAccess> PhyTemperatureSystemControl for T {
 
     fn enable_temperature_sensor_power(&mut self) {
         crate::phy_pac_mut(self).enable_temperature_sensor_power();
+    }
+
+    fn disable_temperature_sensor_power(&mut self) {
+        crate::phy_pac_mut(self).disable_temperature_sensor_power();
     }
 
     fn read_temperature_sensor_code(&self) -> u8 {
@@ -72,6 +78,14 @@ pub fn initialize(platform: &mut impl PhyTemperatureSystemControl) {
 /// caller-driven PHY transition.
 pub fn read_code(platform: &impl PhyTemperatureSystemControl) -> u8 {
     platform.read_temperature_sensor_code()
+}
+
+/// Power down the temperature sensor after the shared RF close transaction.
+///
+/// This is deliberately separate from RF close because Espressif's open
+/// lifecycle wrapper owns this outer system-policy edge.
+pub fn power_down(platform: &mut impl PhyTemperatureSystemControl) {
+    platform.disable_temperature_sensor_power();
 }
 
 #[cfg(test)]

@@ -19,11 +19,11 @@ static KNOWLEDGE_PROVIDERS: &[KnowledgeProviderDescriptor] = &[
     KnowledgeProviderDescriptor {
         id: PROJECT_PROVIDER_ID,
         extends: Some(CHIP_PROVIDER_ID),
-        // Revision 9 authenticates ROM summary bodies and removes an unproven
-        // caller-owned DTM input bound.
+        // Revision 10 adds explicitly selected calibration peripheral models
+        // to declarative production-comparison profiles.
         // The overlay harness is precomposed and its contracts are a checked
         // superset of the rev0 chip provider.
-        analysis_cache_revision: 9,
+        analysis_cache_revision: 10,
         execution_models: Some(&esp32s31_models::PROVIDER),
         contracts: &esp32s31_knowledge::CONTRACTS,
         riscv: Some(&esp32s31_models::RISCV_HARNESS),

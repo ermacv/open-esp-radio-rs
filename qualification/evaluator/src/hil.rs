@@ -631,8 +631,12 @@ fn verify_integrity(run_directory: &Path) -> Result<()> {
             return Err(format!("HIL integrity mismatch: {}", actual.display()).into());
         }
     }
-    let actual = collect_integrity_files(run_directory)?;
-    if declared != actual {
+    let declared_inventory = declared
+        .iter()
+        .map(|file| (file.path.clone(), file.size_bytes))
+        .collect::<Vec<_>>();
+    let actual_inventory = collect_integrity_inventory(run_directory)?;
+    if declared_inventory != actual_inventory {
         return Err(format!(
             "HIL run does not match its sealed inventory: {}",
             run_directory.display()
@@ -642,8 +646,8 @@ fn verify_integrity(run_directory: &Path) -> Result<()> {
     Ok(())
 }
 
-fn collect_integrity_files(directory: &Path) -> Result<Vec<IntegrityFile>> {
-    fn visit(root: &Path, directory: &Path, output: &mut Vec<IntegrityFile>) -> Result<()> {
+fn collect_integrity_inventory(directory: &Path) -> Result<Vec<(PathBuf, u64)>> {
+    fn visit(root: &Path, directory: &Path, output: &mut Vec<(PathBuf, u64)>) -> Result<()> {
         let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
         entries.sort_by_key(std::fs::DirEntry::file_name);
         for entry in entries {
@@ -655,11 +659,7 @@ fn collect_integrity_files(directory: &Path) -> Result<Vec<IntegrityFile>> {
                 if relative == Path::new("integrity.json") {
                     continue;
                 }
-                output.push(IntegrityFile {
-                    path: relative,
-                    size_bytes: entry.metadata()?.len(),
-                    sha256: sha256_file(&entry.path())?,
-                });
+                output.push((relative, entry.metadata()?.len()));
             } else {
                 return Err(format!(
                     "HIL run contains a symlink or special file: {}",

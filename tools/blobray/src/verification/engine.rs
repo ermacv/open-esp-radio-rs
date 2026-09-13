@@ -218,6 +218,7 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
+            let profile = profiles::resolve_provider_device_models(profile, knowledge_provider)?;
             let resolved_disposition =
                 disposition_manifest.map(|manifest| manifest.resolve(source.name, &vendor.name));
             let bounded_feature = resolved_disposition
@@ -225,7 +226,7 @@ pub(crate) fn verify_source(
                 .is_some_and(|resolved| resolved.disposition.is_bounded_feature());
             let evaluation = execution_profile::evaluate(
                 svd,
-                profile,
+                &profile,
                 source,
                 rust_artifact,
                 rust_companion,
@@ -277,7 +278,7 @@ pub(crate) fn verify_source(
                     evidence,
                     source.name,
                     &vendor.name,
-                    profile_evidence(profile, &comparison.diagnostic_contracts),
+                    profile_evidence(&profile, &comparison.diagnostic_contracts),
                 )?;
             } else if accepted_match {
                 summary.implemented_unqualified += 1;
@@ -285,7 +286,7 @@ pub(crate) fn verify_source(
                     evidence,
                     source.name,
                     &vendor.name,
-                    profile_evidence(profile, &comparison.diagnostic_contracts),
+                    profile_evidence(&profile, &comparison.diagnostic_contracts),
                 )?;
             } else {
                 match verdict {

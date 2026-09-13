@@ -37,6 +37,10 @@ pub(super) fn compare_profile(
     }
     let (profile, rust_artifact_role, rust_companion_role) = selected
         .ok_or_else(|| crate::Error::invalid(format!("unknown comparison profile {name:?}")))?;
+    let profile = crate::verification::profiles::resolve_provider_device_models(
+        &profile,
+        resolved.target.knowledge_provider.as_deref(),
+    )?;
     let run = resolved.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid(
             "comparison requires a project run-spec with vendor and Rust artifacts",
@@ -93,7 +97,8 @@ pub(super) fn compare_profile(
         })
         .collect::<Vec<_>>();
     operations::validate_table_instances(resolved, &table_scenarios)?;
-    let coverage_domain = profile.coverage_constraints()?;
+    let vendor_coverage_domain = profile.coverage_constraints_for(true)?;
+    let rust_coverage_domain = profile.coverage_constraints_for(false)?;
     Ok(crate::compare_execution_scenarios(
         &resolved.mmio,
         crate::ExecutionInput {
@@ -115,7 +120,8 @@ pub(super) fn compare_profile(
             diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 resolved.target.knowledge_provider.as_deref(),
             )?,
-            coverage_domain: &coverage_domain,
+            vendor_coverage_domain: &vendor_coverage_domain,
+            rust_coverage_domain: &rust_coverage_domain,
             vendor_setup: &profile.vendor_setup,
         },
         &profile.scenarios,

@@ -33,4 +33,8 @@ pub struct ExecutionModelProviderSpec {
     pub kind: ExecutionModelKind,
     pub applicability: &'static str,
     pub evidence: &'static str,
+    /// Fresh named peripheral models available to declarative execution
+    /// profiles. Exact IDs are selected by the profile; providers do not
+    /// infer hardware behavior from an address or vendor symbol.
+    pub device_models: fn() -> open_radio_vendor_execution_model::DeviceModelRegistry,
 }

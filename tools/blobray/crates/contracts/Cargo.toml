@@ -9,6 +9,7 @@ publish = false
 description = "Architecture-neutral contracts for compiled vendor-binary analysis and verification"
 
 [dependencies]
+open-radio-vendor-execution-model = { path = "../execution-model" }
 serde = { version = "=1.0.229", features = ["derive"] }
 sha2 = "=0.10.9"
 

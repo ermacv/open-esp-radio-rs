@@ -30,6 +30,8 @@ pub(crate) fn run(
     capture: &SerialCapture,
     operation: open_esp_radio_hil_protocol::StationPauseOperation,
     require_nonzero_rfpll_correction: bool,
+    attempts: u8,
+    interval: Duration,
     output: &Path,
     progress: serde_json::Value,
 ) -> Result<()> {
@@ -37,68 +39,171 @@ pub(crate) fn run(
     let features = capture
         .request_capabilities(Duration::from_secs(5))?
         .features;
-    if matches!(operation, Op::Rfpll | Op::RfpllObserved) {
-        // Completion and checked restoration of acquisition are
-        // the prerequisite event, not a host delay or a fabricated
-        // temperature. RFPLL rechecks freshness after its TX drain.
-        let sample = capture.station_pause_round_trip(Op::Temperature, Duration::from_secs(2))?;
-        fs::write(
-            output.join("station-temperature.json"),
-            serde_json::to_vec_pretty(&sample)?,
-        )?;
-        validate_pause(Op::Temperature, sample.evidence)?;
-        validate_rfpll(
-            Op::Temperature,
-            sample.evidence.timings,
-            sample.rfpll,
-            false,
-        )?;
-        validate_tx_waits(sample.evidence.timings, sample.tx_waits)?;
-        validate_rx_gain(sample.evidence.timings, sample.rx_gain)?;
-        if !sample.timer.is_some_and(|timer| timer.is_valid()) {
-            return Err("missing or inconsistent temperature acquisition timer evidence".into());
-        }
+    if attempts == 0 {
+        return Err("station maintenance attempt count must be nonzero".into());
     }
-    let timeout = if operation
-        == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
+    if attempts > 1
+        && (operation != Op::RfpllObserved
+            || !require_nonzero_rfpll_correction
+            || interval.is_zero())
     {
-        Duration::from_micros(open_esp_radio_hil_protocol::STATION_TRACKING_SERVICE_WINDOW_MICROS)
-            + Duration::from_secs(2)
-    } else {
-        Duration::from_secs(2)
-    };
-    let report = capture.station_pause_round_trip(operation, timeout)?;
-    let evidence = report.evidence;
-    let tx_waits = report.tx_waits;
-    let timer = report.timer;
-    let service = report.service;
-    let rfpll = report.rfpll;
-    fs::write(
-        output.join("station-pause.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
+        return Err(
+            "repeated station maintenance requires strict RFPLL observation and a nonzero interval"
+                .into(),
+        );
+    }
+    if attempts > 1 {
+        eprintln!(
+            "station RFPLL polling started: at most {attempts} attempts every {} ms",
+            interval.as_millis()
+        );
+    }
+    for attempt in 1..=attempts {
+        if matches!(operation, Op::Rfpll | Op::RfpllObserved) {
+            // Completion and checked restoration of acquisition are
+            // the prerequisite event, not a host delay or a fabricated
+            // temperature. RFPLL rechecks freshness after its TX drain.
+            let sample =
+                capture.station_pause_round_trip(Op::Temperature, Duration::from_secs(2))?;
+            let sample_bytes = serde_json::to_vec_pretty(&sample)?;
+            fs::write(output.join("station-temperature.json"), &sample_bytes)?;
+            if attempts > 1 {
+                fs::write(
+                    output.join(format!("station-temperature-attempt-{attempt:02}.json")),
+                    &sample_bytes,
+                )?;
+            }
+            validate_pause(Op::Temperature, sample.evidence)?;
+            validate_temperature(Op::Temperature, sample.temperature)?;
+            validate_rfpll(
+                Op::Temperature,
+                sample.evidence.timings,
+                sample.rfpll,
+                false,
+            )?;
+            validate_tx_waits(sample.evidence.timings, sample.tx_waits)?;
+            validate_rx_gain(sample.evidence.timings, sample.rx_gain)?;
+            if !sample.timer.is_some_and(|timer| timer.is_valid()) {
+                return Err(
+                    "missing or inconsistent temperature acquisition timer evidence".into(),
+                );
+            }
+            let temperature = sample
+                .temperature
+                .expect("validated temperature detail is present");
+            if attempts > 1 {
+                eprintln!(
+                    "station RFPLL attempt {attempt}/{attempts}: fresh temperature={} sensor_index={} next_dac={}",
+                    temperature.temperature, temperature.sensor_index, temperature.next_dac
+                );
+            }
+        }
+        let timeout =
+            if operation == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService {
+                Duration::from_micros(
+                    open_esp_radio_hil_protocol::STATION_TRACKING_SERVICE_WINDOW_MICROS,
+                ) + Duration::from_secs(2)
+            } else {
+                Duration::from_secs(2)
+            };
+        let report = capture.station_pause_round_trip(operation, timeout)?;
+        let evidence = report.evidence;
+        let tx_waits = report.tx_waits;
+        let timer = report.timer;
+        let service = report.service;
+        let rfpll = report.rfpll;
+        let report_bytes = serde_json::to_vec_pretty(&serde_json::json!({
             "operation": operation,
-            "progress_before_request": progress,
+            "attempt": attempt,
+            "maximum_attempts": attempts,
+            "progress_before_request": &progress,
             "evidence": evidence,
             "tx_waits": tx_waits,
             "rx_gain": report.rx_gain,
             "phy_rx_hot_sram": features.phy_rx_hot_sram,
             "timer": timer,
             "service": service,
+            "temperature": report.temperature,
             "rfpll": rfpll,
-        }))?,
-    )?;
-    validate_pause(operation, evidence)?;
-    validate_rfpll(
-        operation,
-        evidence.timings,
-        rfpll,
-        require_nonzero_rfpll_correction,
-    )?;
-    validate_service(operation, service)?;
-    validate_tx_waits(evidence.timings, tx_waits)?;
-    validate_rx_gain(evidence.timings, report.rx_gain)?;
-    if !timer.is_some_and(|timer| timer.is_valid()) {
-        return Err("missing or inconsistent platform timer evidence".into());
+        }))?;
+        fs::write(output.join("station-pause.json"), &report_bytes)?;
+        if attempts > 1 {
+            fs::write(
+                output.join(format!("station-pause-attempt-{attempt:02}.json")),
+                &report_bytes,
+            )?;
+        }
+        validate_pause(operation, evidence)?;
+        validate_temperature(operation, report.temperature)?;
+        validate_rfpll(operation, evidence.timings, rfpll, false)?;
+        validate_service(operation, service)?;
+        validate_tx_waits(evidence.timings, tx_waits)?;
+        validate_rx_gain(evidence.timings, report.rx_gain)?;
+        if !timer.is_some_and(|timer| timer.is_valid()) {
+            return Err("missing or inconsistent platform timer evidence".into());
+        }
+        let nonzero = has_nonzero_rfpll_correction(rfpll);
+        if !require_nonzero_rfpll_correction || nonzero {
+            validate_rfpll(
+                operation,
+                evidence.timings,
+                rfpll,
+                require_nonzero_rfpll_correction,
+            )?;
+            if attempts > 1 {
+                let detail = rfpll.expect("validated observed RFPLL detail is present");
+                let correction = detail
+                    .correction
+                    .expect("nonzero RFPLL attempt has correction detail");
+                eprintln!(
+                    "station RFPLL correction observed on attempt {attempt}/{attempts}: temperature={} reference={} delta={} entries_updated={}",
+                    detail.temperature,
+                    detail.reference_before,
+                    correction.delta(),
+                    correction.entries_updated
+                );
+            }
+            return Ok(());
+        }
+        let detail = rfpll.expect("validated observed RFPLL detail is present");
+        eprintln!(
+            "station RFPLL attempt {attempt}/{attempts}: reference={} threshold={} correction={:?}",
+            detail.reference_before,
+            detail.threshold,
+            detail.correction.map(|correction| correction.delta())
+        );
+        if attempt == attempts {
+            return validate_rfpll(
+                operation,
+                evidence.timings,
+                rfpll,
+                require_nonzero_rfpll_correction,
+            );
+        }
+        std::thread::sleep(interval);
+    }
+    unreachable!("nonzero maintenance attempt count always enters the loop")
+}
+
+fn has_nonzero_rfpll_correction(
+    detail: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
+) -> bool {
+    detail
+        .and_then(|detail| detail.correction)
+        .is_some_and(|correction| correction.delta() != 0)
+}
+
+fn validate_temperature(
+    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    temperature: Option<open_esp_radio_hil_protocol::TemperatureEvidence>,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    if operation == Op::Temperature {
+        if temperature.is_none() {
+            return Err("missing committed temperature detail".into());
+        }
+    } else if temperature.is_some() {
+        return Err("unexpected temperature detail for non-temperature operation".into());
     }
     Ok(())
 }
@@ -310,6 +415,23 @@ fn validate_rfpll(
         return Err("nonzero RFPLL correction is valid only for observed RFPLL work".into());
     }
     let count = timings.map_or(0, |timing| timing.rfpll.completed);
+    if count == 1
+        && require_nonzero_correction
+        && let Some(detail) = detail
+        && detail.is_valid()
+        && !detail
+            .correction
+            .is_some_and(|correction| correction.delta() != 0)
+    {
+        return Err(format!(
+            "RFPLL nonzero correction was not observed: temperature={} reference={} threshold={} correction={:?}",
+            detail.temperature,
+            detail.reference_before,
+            detail.threshold,
+            detail.correction.map(|correction| correction.delta()),
+        )
+        .into());
+    }
     match (count, detail) {
         (0, None) if !matches!(operation, Op::Rfpll | Op::RfpllCheck | Op::RfpllObserved) => Ok(()),
         (1, Some(detail))

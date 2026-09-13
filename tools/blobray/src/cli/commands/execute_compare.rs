@@ -73,7 +73,8 @@ pub(super) fn run(
             diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 target.knowledge_provider.as_deref(),
             )?,
-            coverage_domain: &unconstrained_coverage,
+            vendor_coverage_domain: &unconstrained_coverage,
+            rust_coverage_domain: &unconstrained_coverage,
             vendor_setup: &[],
         },
         &scenarios,

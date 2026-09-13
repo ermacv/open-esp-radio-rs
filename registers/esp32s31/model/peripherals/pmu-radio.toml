@@ -80,6 +80,12 @@ description = "Force the baseband analog-I2C power control high."
 bitOffset = 28
 bitWidth = 1
 
+[[peripherals.registers.register.fields]]
+name = "PHY_RF_SHUTDOWN_UNKNOWN_HIGH"
+description = "Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."
+bitOffset = 29
+bitWidth = 3
+
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IMM_SLEEP_SYSCLK"
@@ -215,6 +221,13 @@ completeness = "partial"
 [[review]]
 entity = "PMU_RADIO.IMM_HP_CK_POWER_0.TIE_HIGH_XPD_BB_I2C"
 sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PMU_RADIO.IMM_HP_CK_POWER_0.PHY_RF_SHUTDOWN_UNKNOWN_HIGH"
+sources = ["BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

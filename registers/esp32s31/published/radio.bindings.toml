@@ -44327,6 +44327,13 @@ bit-offset = 28
 bit-width = 1
 access = "read-write"
 
+[[registers.fields]]
+svd-name = "PHY_RF_SHUTDOWN_UNKNOWN_HIGH"
+method = "phy_rf_shutdown_unknown_high"
+bit-offset = 29
+bit-width = 3
+access = "read-write"
+
 [[registers]]
 address = 544227576
 width = 32

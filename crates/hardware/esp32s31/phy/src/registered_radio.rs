@@ -159,6 +159,19 @@ impl<P> RegisteredPhyRadio<P> {
         self.phy.state()
     }
 
+    /// Replace an older cache for this epoch with the currently committed
+    /// semantic calibration state.
+    ///
+    /// Consuming the prior cache preserves the single-owner persistence
+    /// contract. Its platform-derived identity is retained; the next cold
+    /// registration still validates that identity against the physical chip.
+    pub fn refresh_calibration_cache(
+        &self,
+        previous: crate::state::PhyCalibrationCache,
+    ) -> crate::state::PhyCalibrationCache {
+        self.phy.state().calibration_cache(previous.identity())
+    }
+
     /// Inspect the source-owned client set without exposing its raw mask.
     /// Inspect registered-policy conditions without sampling temperature, advancing
     /// deadlines or acquiring RF. Values describe retained state, not a job plan.
@@ -440,6 +453,18 @@ pub struct RegisteredPhyClientRelease<P> {
 }
 
 impl<P> RegisteredPhyClientRelease<P> {
+    pub(crate) fn from_detached_parts(
+        radio: Radio<P, Powered>,
+        phy: RegisteredPhyState,
+        outcome: PhyClientReleaseOutcome,
+    ) -> Self {
+        Self {
+            radio,
+            phy,
+            outcome,
+        }
+    }
+
     pub const fn client(&self) -> PhyModemClient {
         self.outcome.client()
     }
@@ -448,12 +473,297 @@ impl<P> RegisteredPhyClientRelease<P> {
         self.outcome.is_last()
     }
 
-    pub fn into_owner(self) -> RegisteredPhyRadio<P> {
+    /// Resolve the saved-mask last-client decision without erasing it.
+    ///
+    /// The last-client variant still owns a physically powered radio. It is a
+    /// candidate for a later retained-sleep or shutdown transaction, not proof
+    /// that either transaction has run.
+    pub fn into_disposition(self) -> RegisteredPhyClientReleaseDisposition<P> {
+        let Self {
+            radio,
+            phy,
+            outcome,
+        } = self;
+        let is_last = outcome.is_last();
+        let clients = outcome.into_owner();
+        if is_last {
+            debug_assert!(clients.snapshot().is_empty());
+            RegisteredPhyClientReleaseDisposition::Last(RegisteredPhyPoweredIdle {
+                radio,
+                phy,
+                clients,
+            })
+        } else {
+            RegisteredPhyClientReleaseDisposition::Remaining(RegisteredPhyRadio {
+                radio,
+                phy,
+                clients,
+            })
+        }
+    }
+}
+
+/// Physical disposition after one registered PHY client is released.
+///
+/// This enum prevents the last-client fact from being discarded while the
+/// caller chooses the next whole-radio lifecycle transition.
+#[must_use = "client release disposition retains the registered hardware epoch"]
+pub enum RegisteredPhyClientReleaseDisposition<P> {
+    /// At least one protocol client still owns the shared PHY lifetime.
+    Remaining(RegisteredPhyRadio<P>),
+    /// No protocol client remains, but RF and its clocks are still powered.
+    Last(RegisteredPhyPoweredIdle<P>),
+}
+
+/// Registered, physically powered PHY epoch with no active protocol client.
+///
+/// This is deliberately not named `Sleeping` or `Shutdown`: creation changes
+/// only the source-owned client/tracker state. A later physical lifecycle
+/// transaction must consume this owner before claiming RF sleep or power-off.
+#[must_use = "the powered idle owner must be retained or physically transitioned"]
+pub struct RegisteredPhyPoweredIdle<P> {
+    radio: Radio<P, Powered>,
+    phy: RegisteredPhyState,
+    clients: PhyClientState,
+}
+
+impl<P> RegisteredPhyPoweredIdle<P> {
+    /// Inspect calibration state without weakening its hardware association.
+    pub const fn state(&self) -> &PhyState {
+        self.phy.state()
+    }
+
+    /// Inspect the empty client set associated with this powered epoch.
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    /// Explicitly retain the registered radio in its powered state.
+    ///
+    /// This performs no hardware work. It is suitable for an always-powered
+    /// policy or for reacquiring a client before physical shutdown begins.
+    pub fn retain_powered(self) -> RegisteredPhyRadio<P> {
+        debug_assert!(self.clients.snapshot().is_empty());
         RegisteredPhyRadio {
             radio: self.radio,
             phy: self.phy,
-            clients: self.outcome.into_owner(),
+            clients: self.clients,
         }
+    }
+
+    /// Observe temperature and close the physical RF domain using the current
+    /// ESP32-S31 vendor ordering.
+    ///
+    /// Temperature acquisition is a recoverable preflight. Once the close
+    /// graph begins, any hardware error poisons the epoch: callers cannot
+    /// recover a powered owner from a partially closed radio.
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, this future must be driven to a terminal result. Dropping
+    /// it can strand a temperature I2C transaction; after the synchronous
+    /// close graph begins it can also strand a partially closed RF domain.
+    #[cfg(target_arch = "riscv32")]
+    #[must_use = "RF close must be driven to a terminal ownership result"]
+    pub async fn close_rf<D: crate::PhyAsyncDelay>(
+        mut self,
+    ) -> Result<RegisteredPhyRfClosed<P>, RegisteredPhyRfCloseFailure<P>> {
+        if let Err(error) = crate::target_port::observe_temperature_before_rf_close::<P, D>(
+            &mut self.radio,
+            self.phy.target_state_mut(),
+        )
+        .await
+        {
+            return Err(RegisteredPhyRfCloseFailure::Preparation(
+                RegisteredPhyRfClosePreparationFailure { owner: self, error },
+            ));
+        }
+
+        if let Err(error) = crate::target_port::execute_rf_close::<P, D>(&mut self.radio) {
+            return Err(RegisteredPhyRfCloseFailure::Started(
+                RegisteredPhyRfClosePoisoned {
+                    radio: self.radio,
+                    phy: self.phy,
+                    clients: self.clients,
+                    error,
+                },
+            ));
+        }
+
+        Ok(RegisteredPhyRfClosed {
+            radio: self.radio,
+            phy: self.phy,
+            clients: self.clients,
+        })
+    }
+}
+
+/// Registered zero-client epoch after the physical RF close graph completes.
+///
+/// Platform clocks and the temperature sensor are deliberately outside this
+/// state transition. A later retained-wake or full-platform-shutdown owner must make
+/// those outer lifecycle decisions explicitly.
+#[must_use = "the closed RF epoch must be retained, woken, or shut down"]
+pub struct RegisteredPhyRfClosed<P> {
+    radio: Radio<P, Powered>,
+    phy: RegisteredPhyState,
+    clients: PhyClientState,
+}
+
+impl<P> RegisteredPhyRfClosed<P> {
+    pub const fn state(&self) -> &PhyState {
+        self.phy.state()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    pub const fn peripheral(&self) -> &P {
+        self.radio.peripheral()
+    }
+
+    /// Power down the temperature sensor, release retained route clocks and
+    /// return the physical radio to its cold ownership state.
+    ///
+    /// The previous registration proof is retired. A later power-up must run
+    /// target registration again; the caller may supply the calibration cache
+    /// retained from the previous registration result.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains the exact closed radio, registration and client frontier"
+    )]
+    pub fn release_to_cold(
+        mut self,
+    ) -> Result<RegisteredPhyColdReleased<P>, RegisteredPhyColdReleaseFailure<P>> {
+        debug_assert!(self.clients.snapshot().is_empty());
+        oer_esp32s31_hal::phy::temperature::power_down(self.radio.phy_hal_mut());
+        match self.radio.reunite_cold_after_phy_close() {
+            Ok(radio) => Ok(RegisteredPhyColdReleased {
+                radio,
+                final_state: self.phy.into_retired_state(),
+            }),
+            Err(failure) => Err(RegisteredPhyColdReleaseFailure {
+                _failure: failure,
+                phy: self.phy,
+                clients: self.clients,
+            }),
+        }
+    }
+}
+
+/// Completed RF/analog shutdown and cold-route reunion.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "cold release returns the radio owner needed for re-registration"]
+pub struct RegisteredPhyColdReleased<P> {
+    radio: Radio<P, oer_esp32s31_hal::owner::state::Owned>,
+    final_state: PhyState,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> RegisteredPhyColdReleased<P> {
+    /// Inspect the retired state for diagnostics or cache comparison.
+    pub const fn final_state(&self) -> &PhyState {
+        &self.final_state
+    }
+
+    /// Recover the cold radio and capture a cache after all runtime calibration
+    /// updates. `calibration_identity` must be derived by the platform from the
+    /// same physical chip identity used for the next cold registration. The
+    /// retired registration state is consumed and cannot authorize hardware
+    /// access in the next epoch.
+    pub fn into_parts(
+        self,
+        calibration_identity: crate::calibration::registration::PhyCalibrationIdentity,
+    ) -> (
+        Radio<P, oer_esp32s31_hal::owner::state::Owned>,
+        crate::state::PhyCalibrationCache,
+    ) {
+        let calibration_cache = self.final_state.calibration_cache(calibration_identity);
+        (self.radio, calibration_cache)
+    }
+}
+
+/// Fail-stop owner when neutral-root reconstruction rejects a pending restore.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "failed shutdown retains an unrecoverable closed hardware epoch"]
+pub struct RegisteredPhyColdReleaseFailure<P> {
+    _failure: oer_esp32s31_hal::owner::ColdReunionFailure<P>,
+    phy: RegisteredPhyState,
+    clients: PhyClientState,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> RegisteredPhyColdReleaseFailure<P> {
+    pub const fn error(&self) -> oer_esp32s31_hal::owner::ColdReunionError {
+        self._failure.error()
+    }
+
+    pub const fn state(&self) -> &PhyState {
+        self.phy.state()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+}
+
+/// RF-close failure classified by whether physical shutdown had begun.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "RF-close failure retains the exact hardware epoch"]
+pub enum RegisteredPhyRfCloseFailure<P> {
+    /// Temperature preflight failed before any close mutation.
+    Preparation(RegisteredPhyRfClosePreparationFailure<P>),
+    /// Physical close began and the epoch is no longer resumable.
+    Started(RegisteredPhyRfClosePoisoned<P>),
+}
+
+/// Recoverable pre-close failure retaining the unchanged powered-idle owner.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "preparation failure retains the powered-idle owner"]
+pub struct RegisteredPhyRfClosePreparationFailure<P> {
+    owner: RegisteredPhyPoweredIdle<P>,
+    error: crate::PhyTargetPortError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> RegisteredPhyRfClosePreparationFailure<P> {
+    pub const fn error(&self) -> crate::PhyTargetPortError {
+        self.error
+    }
+
+    pub fn into_owner(self) -> RegisteredPhyPoweredIdle<P> {
+        self.owner
+    }
+}
+
+/// Fail-stop epoch after physical RF close started but did not complete.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "partially closed RF hardware requires reset"]
+pub struct RegisteredPhyRfClosePoisoned<P> {
+    radio: Radio<P, Powered>,
+    phy: RegisteredPhyState,
+    clients: PhyClientState,
+    error: crate::PhyTargetPortError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> RegisteredPhyRfClosePoisoned<P> {
+    pub const fn error(&self) -> crate::PhyTargetPortError {
+        self.error
+    }
+
+    pub const fn state(&self) -> &PhyState {
+        self.phy.state()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    pub const fn peripheral(&self) -> &P {
+        self.radio.peripheral()
     }
 }
 

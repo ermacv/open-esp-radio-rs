@@ -239,6 +239,37 @@ fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
 }
 
 #[test]
+fn temperature_detail_is_correlated_before_completion() {
+    let value = open_esp_radio_hil_protocol::TemperatureEvidence {
+        temperature: 61,
+        sensor_index: 2,
+        next_dac: 15,
+    };
+    let event = Envelope::new(7, 1, 0, 42, Event::StationTemperatureObserved(value));
+    let completion = Envelope::new(
+        7,
+        2,
+        0,
+        42,
+        Event::StationPauseCompleted(StationPauseEvidence {
+            timings: None,
+            tracking: None,
+            result: StationPauseResult::Resumed,
+            elapsed_micros: 1,
+        }),
+    );
+    assert_eq!(
+        temperature(&[event.clone(), completion.clone()], &completion).unwrap(),
+        Some(value)
+    );
+    assert_eq!(
+        temperature(&[completion.clone(), event.clone()], &completion).unwrap(),
+        None
+    );
+    assert!(temperature(&[event.clone(), event, completion.clone()], &completion).is_err());
+}
+
+#[test]
 fn rx_gain_requires_matching_request_boot_session_and_preceding_completion() {
     let detail = Envelope::new(
         7,

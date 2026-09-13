@@ -16,13 +16,40 @@ impl PhyPllTrackClock for FixedClock {
 }
 
 fn registered_radio() -> RegisteredPhyRadio<TestPlatform> {
+    registered_radio_with_state(PhyState::new(PhyConfig::production()))
+}
+
+fn registered_radio_with_state(state: PhyState) -> RegisteredPhyRadio<TestPlatform> {
     let radio = Radio::claim_for_validation(TestPlatform);
     let radio = radio.assume_powered_for_validation();
     RegisteredPhyRadio {
         radio,
-        phy: RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+        phy: RegisteredPhyState::from_wrapper_test_model(state),
         clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
     }
+}
+
+#[test]
+fn cache_refresh_consumes_the_prior_snapshot_and_captures_committed_state() {
+    let identity = crate::PhyCalibrationIdentity {
+        rf_cal_version: 101,
+        base_mac_address: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+        mac_extension: 0x7788,
+    };
+    let mut state = PhyState::new(PhyConfig::production());
+    let stale = state.calibration_cache(identity);
+    state.apply_temperature_outcome(crate::analog::temperature::PhyTemperatureOutcome {
+        temperature: 37,
+        sensor_index: 3,
+        next_dac: 15,
+    });
+    let owner = registered_radio_with_state(state);
+
+    let refreshed = owner.refresh_calibration_cache(stale);
+
+    assert_eq!(refreshed.identity(), identity);
+    assert_eq!(refreshed.snapshot().common.temperature, 37);
+    assert_eq!(refreshed.snapshot().common.sensor_index, 3);
 }
 
 fn settle_acquire(
@@ -63,7 +90,27 @@ fn registered_client_acquire_release_never_separates_radio_and_phy_state() {
         Err(_) => panic!("owned client must release"),
     };
     assert!(released.is_last());
-    assert!(released.into_owner().client_snapshot().is_empty());
+    let RegisteredPhyClientReleaseDisposition::Last(idle) = released.into_disposition() else {
+        panic!("last client must produce the powered-idle lifecycle owner");
+    };
+    assert!(idle.client_snapshot().is_empty());
+    assert!(idle.retain_powered().client_snapshot().is_empty());
+}
+
+#[test]
+fn non_last_release_returns_the_ordinary_registered_owner() {
+    let owner = settle_acquire(registered_radio(), PhyModemClient::Wifi, 0);
+    let owner = settle_acquire(owner, PhyModemClient::Bluetooth, 0);
+    let released = owner
+        .release_client(PhyModemClient::Wifi)
+        .unwrap_or_else(|_| panic!("owned client must release"));
+    assert!(!released.is_last());
+    let RegisteredPhyClientReleaseDisposition::Remaining(owner) = released.into_disposition()
+    else {
+        panic!("another active client must retain the ordinary registered owner");
+    };
+    assert!(!owner.client_snapshot().contains(PhyModemClient::Wifi));
+    assert!(owner.client_snapshot().contains(PhyModemClient::Bluetooth));
 }
 
 #[test]
@@ -175,7 +222,10 @@ fn cancelled_tracking_wait_retains_owner_and_empty_client_set_never_arms() {
     let released = owner
         .release_client(PhyModemClient::Wifi)
         .unwrap_or_else(|_| panic!("cancelled wait must retain the owner"));
-    assert!(released.into_owner().client_snapshot().is_empty());
+    let RegisteredPhyClientReleaseDisposition::Last(idle) = released.into_disposition() else {
+        panic!("last client must produce the powered-idle lifecycle owner");
+    };
+    assert!(idle.client_snapshot().is_empty());
     timer.deadlines.clear();
     {
         let owner = registered_radio();

@@ -9,7 +9,8 @@ use std::{
 
 use crate::{Result, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
-    StationAttemptFailureReason, StationEpochEvidence, StationLifecycleEvent,
+    StartupArtifactDisposition, StartupArtifactStatus, StationAttemptFailureReason,
+    StationEpochEvidence, StationLifecycleEvent,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -32,6 +33,12 @@ pub(crate) fn run(
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let options = options.validate()?;
+    if options.boots > 1 && context.lab.device.startup_artifact.is_none() {
+        return Err(
+            "multi-boot station lifecycle qualification requires a configured startup artifact"
+                .into(),
+        );
+    }
     fs::create_dir_all(output)?;
     for boot in 1..=options.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));
@@ -42,6 +49,7 @@ pub(crate) fn run(
             options.timeout,
             options.cycles,
             options.initial_hold,
+            boot,
         );
         let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
         let result = capture.finish_with(result);
@@ -72,6 +80,7 @@ fn qualify(
     timeout: Duration,
     cycles: u8,
     initial_hold: Duration,
+    boot: u8,
 ) -> Result<()> {
     // Arm the unsolicited-event cursor before provisioning can make the
     // station connect. With a correctly clocked target, scan/join may finish
@@ -79,7 +88,9 @@ fn qualify(
     // the cursor afterwards skips that already-published Connected edge and
     // waits forever for a second one.
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let (capabilities, startup_artifact_status) =
+        capture.prepare_station_with_startup_artifact_status(context, timeout)?;
+    validate_startup_artifact_replay(boot, startup_artifact_status)?;
     if !capabilities.features.station_epoch_control {
         return Err("firmware does not advertise station epoch control".into());
     }
@@ -96,6 +107,22 @@ fn qualify(
         eprintln!("station_reconnect_cycle={cycle}/{cycles} status=PASS");
     }
     Ok(())
+}
+
+fn validate_startup_artifact_replay(boot: u8, status: Option<StartupArtifactStatus>) -> Result<()> {
+    if boot == 1 {
+        return Ok(());
+    }
+    let status = status.ok_or_else(|| {
+        format!("station cold boot {boot} did not report startup artifact restoration")
+    })?;
+    match status.disposition {
+        StartupArtifactDisposition::Restored => Ok(()),
+        disposition => Err(format!(
+            "station cold boot {boot} did not restore the artifact persisted by the preceding boot: {disposition:?}"
+        )
+        .into()),
+    }
 }
 
 fn wait_for_connected_generation(

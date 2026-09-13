@@ -79,3 +79,10 @@ fn power_down_uses_the_distinct_lifecycle_edge() {
     power_down(&mut platform);
     assert_eq!(platform.operations, [Operation::PowerDown]);
 }
+
+#[test]
+fn retained_wake_reasserts_only_sensor_power() {
+    let mut platform = FakePlatform::default();
+    power_up(&mut platform);
+    assert_eq!(platform.operations, [Operation::Power]);
+}

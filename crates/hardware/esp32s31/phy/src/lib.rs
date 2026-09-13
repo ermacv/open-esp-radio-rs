@@ -82,6 +82,7 @@ pub use registered_radio::{
 pub use registered_radio::{
     RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased, RegisteredPhyRfCloseFailure,
     RegisteredPhyRfClosePoisoned, RegisteredPhyRfClosePreparationFailure,
+    RegisteredPhyRfWakePoisoned,
 };
 pub use state::{
     PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,

@@ -110,7 +110,7 @@ stateDiagram-v2
     PoweredIdle --> RfClosed: sample temperature + close RF
     RfClosed --> PoweredOff: temperature off + release shared clocks
     PoweredOff --> [*]: cold owner / re-registration required
-    RfClosed --> PoweredIdle: retained wake (not implemented)
+    RfClosed --> PoweredIdle: retained wake
 ```
 
 `RegisteredPhyRfClosed` is minted only after the current-vendor pre-close
@@ -148,12 +148,14 @@ release, and acknowledges restart only after cold registration returns a new
 stopped owner. A role-local `Stop` remains a separate operation and does not
 power-cycle PHY.
 
-A shorter retained wake directly from `RegisteredPhyRfClosed` is not yet
-implemented. That future transaction must reacquire clocks, open
-frontend/baseband and analog-I2C power, restore retained frequency, channel,
-PBus and baseband state, re-enable hardware frequency control and only then
-permit a protocol client to resume. A cold calibration cache does not prove
-that this retained wake transaction has run.
+`RegisteredPhyRfClosed::wake_rf` implements the shorter retained path without
+retiring the registration epoch. It executes the complete current-vendor wake
+parent in recovered order: frontend/baseband and analog-I2C power, retained
+frequency publication, channel and TX-cap state, PBUS boundaries, PHY and AGC
+register updates, CKGEN reset, then restoration of hardware frequency control,
+BBPLL, force-TX/RX and baseband mode. Only terminal success returns
+`RegisteredPhyPoweredIdle`; every started failure remains reset-required.
+Protocol composition and HIL recovery across this path remain separate gates.
 
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither

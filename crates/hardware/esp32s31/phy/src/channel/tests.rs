@@ -335,3 +335,14 @@ fn external_lowering_covers_each_channel_operation_class() {
         Err(PhyChipChannelExternalBindingError::UnsupportedAction)
     ));
 }
+
+#[test]
+fn retained_wake_tx_cap_selects_both_channel_group_nibbles() {
+    let capacitance = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    assert_eq!(retained_tx_cap_value(1, capacitance), 0x21);
+    assert_eq!(retained_tx_cap_value(3, capacitance), 0x21);
+    assert_eq!(retained_tx_cap_value(4, capacitance), 0x43);
+    assert_eq!(retained_tx_cap_value(8, capacitance), 0x43);
+    assert_eq!(retained_tx_cap_value(9, capacitance), 0x65);
+    assert_eq!(retained_tx_cap_value(13, capacitance), 0x65);
+}

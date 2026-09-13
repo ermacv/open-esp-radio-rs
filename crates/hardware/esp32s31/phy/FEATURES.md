@@ -118,8 +118,8 @@ refcount ownership, IRQ routing, DMA ownership and operational MAC service.
 | Client acquire/release bookkeeping | IMPLEMENTED | Client state rejects duplicate acquisition/invalid release and retains pending tracking. Releasing a non-final client returns the ordinary registered owner; final release returns a distinct `RegisteredPhyPoweredIdle` owner so its physical disposition cannot be silently erased. This state is still powered. |
 | Target-bound registration/client proof | IMPLEMENTED | Registered wrappers couple state/proof to the hardware epoch; target runners produce the completion authority. A model-only result is insufficient. |
 | Cold RF activation | PARTIAL | Registration and the Wi-Fi cold-power path compose initialization; protocol-wide reusable wake semantics are not supplied by that cold path. |
-| RF wake from retained sleep | ABSENT | `RegisteredPhyRfClosed` retains semantic state, but no direct wake transaction restores its physical RF/PHY/baseband state. |
-| RF sleep/power-down | PARTIAL | The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor invokes cold release, including captured route-owned clock/reset restoration, for an explicit idle cold restart. Direct retained sleep/wake remains absent. |
+| RF wake from retained sleep | IMPLEMENTED | `RegisteredPhyRfClosed::wake_rf` executes the finite current-vendor wake parent against retained semantic calibration state and returns `RegisteredPhyPoweredIdle` only after terminal restoration. Protocol composition and HIL qualification are pending. |
+| RF sleep/power-down | PARTIAL | The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor invokes cold release, including captured route-owned clock/reset restoration, for an explicit idle cold restart. Direct retained wake exists at the shared-PHY boundary but is not yet composed by a protocol runtime. |
 | Stop tracking / release last client | IMPLEMENTED | Model release disarms tracking state and produces a distinct powered-idle hardware owner on the last client. Non-final release cannot enter RF close. Runtime timer cancellation remains a composition responsibility before stopped-owner reunion. |
 | RF and analog shutdown | IMPLEMENTED | `RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor, restores the captured Wi-Fi clock/reset baseline and returns the cold radio owner. This is source coverage rather than broad silicon qualification. |
 | Re-registration after owned shutdown | IMPLEMENTED | Consuming cold release with the platform-derived physical identity returns `Radio<P, Owned>` together with a cache captured from the final post-tracking state; the ordinary power-up and target-registration entry validate that cache and replay hardware-resident frequency/RX/TX state. |
@@ -137,7 +137,8 @@ PLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,
 and calibration stability across sleep/wake require their own hardware evidence.
 A completed source transition or protocol cold start cannot substitute for those
 measurements. Cache-backed cold partial calibration and RF-close-to-cold-registration
-ownership are implemented and composed by the Wi-Fi supervisor. Direct
-retained sleep/wake remains unsupported. Repeated connection and data-path HIL
-cover the Wi-Fi cold-restart boundary; broad RF qualification remains a
-separate readiness requirement.
+ownership are implemented and composed by the Wi-Fi supervisor. The direct
+retained wake source transition is implemented but does not yet have a
+protocol-runtime or HIL claim. Repeated connection and data-path HIL cover the
+Wi-Fi cold-restart boundary; broad RF qualification remains a separate
+readiness requirement.

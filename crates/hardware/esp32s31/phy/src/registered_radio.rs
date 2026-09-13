@@ -635,6 +635,42 @@ impl<P> RegisteredPhyRfClosed<P> {
         self.radio.peripheral()
     }
 
+    /// Restore the physically closed RF domain while retaining the exact
+    /// registered calibration epoch.
+    ///
+    /// No protocol client is acquired by this transition. Success returns a
+    /// powered-idle owner from which Wi-Fi, Bluetooth or IEEE 802.15.4 may be
+    /// acquired normally. Once polled, every failure is fail-stop because the
+    /// first wake edge mutates the closed hardware domain.
+    ///
+    /// # Cancellation
+    ///
+    /// This future must be driven to a terminal result after its first poll.
+    /// Dropping it may strand an in-flight I2C command or a partially restored
+    /// RF domain.
+    #[cfg(target_arch = "riscv32")]
+    #[must_use = "retained RF wake must be driven to a terminal ownership result"]
+    pub async fn wake_rf<D: crate::PhyAsyncDelay>(
+        mut self,
+    ) -> Result<RegisteredPhyPoweredIdle<P>, RegisteredPhyRfWakePoisoned<P>> {
+        debug_assert!(self.clients.snapshot().is_empty());
+        if let Err(error) =
+            crate::target_port::execute_rf_wake::<P, D>(&mut self.radio, self.phy.state()).await
+        {
+            return Err(RegisteredPhyRfWakePoisoned {
+                radio: self.radio,
+                phy: self.phy,
+                clients: self.clients,
+                error,
+            });
+        }
+        Ok(RegisteredPhyPoweredIdle {
+            radio: self.radio,
+            phy: self.phy,
+            clients: self.clients,
+        })
+    }
+
     /// Power down the temperature sensor, release retained route clocks and
     /// return the physical radio to its cold ownership state.
     ///
@@ -662,6 +698,35 @@ impl<P> RegisteredPhyRfClosed<P> {
                 clients: self.clients,
             }),
         }
+    }
+}
+
+/// Fail-stop epoch after retained RF wake started but did not complete.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "partially restored RF hardware requires reset"]
+pub struct RegisteredPhyRfWakePoisoned<P> {
+    radio: Radio<P, Powered>,
+    phy: RegisteredPhyState,
+    clients: PhyClientState,
+    error: crate::PhyTargetPortError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> RegisteredPhyRfWakePoisoned<P> {
+    pub const fn error(&self) -> crate::PhyTargetPortError {
+        self.error
+    }
+
+    pub const fn state(&self) -> &PhyState {
+        self.phy.state()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    pub const fn peripheral(&self) -> &P {
+        self.radio.peripheral()
     }
 }
 

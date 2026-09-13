@@ -420,6 +420,23 @@ const fn tx_cap_value(channel: u16, capacitance: [u8; 6]) -> u8 {
     selected | 0xc0
 }
 
+/// Recreate the two-nibble TX-cap image restored by retained wake.
+///
+/// Complete ROM `phy_set_txcap_reset` selects the low/high pair for the
+/// current channel group. This deliberately differs from [`tx_cap_value`],
+/// whose upper two bits select the ordinary channel-programming command.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) const fn retained_tx_cap_value(channel: u16, capacitance: [u8; 6]) -> u8 {
+    let index = if channel <= 3 {
+        0
+    } else if channel <= 8 {
+        2
+    } else {
+        4
+    };
+    capacitance[index] | capacitance[index + 1].wrapping_shl(4)
+}
+
 impl PhyChipChannelRequest {
     pub const fn validate(self) -> Result<(), PhyChipChannelFailure> {
         let channel = normalized_channel(self.channel_or_frequency);

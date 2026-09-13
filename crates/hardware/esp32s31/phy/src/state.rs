@@ -1305,6 +1305,11 @@ impl PhyState {
         self.wifi.current_channel
     }
 
+    /// Channel-width image last committed by the typed channel transition.
+    pub const fn current_wifi_channel_bandwidth(&self) -> u8 {
+        self.wifi.channel_bandwidth
+    }
+
     /// Regenerate the Wi-Fi gain bank from live calibration state.
     ///
     /// `None` preserves the vendor's explicit skip-publication configuration;

@@ -80,6 +80,15 @@ pub fn read_code(platform: &impl PhyTemperatureSystemControl) -> u8 {
     platform.read_temperature_sensor_code()
 }
 
+/// Restore temperature-sensor power during retained PHY wake.
+///
+/// Unlike [`initialize`], current-vendor `phy_wakeup_init` only reasserts the
+/// power field. The register-bank, clock, readout and conversion setup remain
+/// retained across the matching RF-close transition.
+pub fn power_up(platform: &mut impl PhyTemperatureSystemControl) {
+    platform.enable_temperature_sensor_power();
+}
+
 /// Power down the temperature sensor after the shared RF close transaction.
 ///
 /// This is deliberately separate from RF close because Espressif's open

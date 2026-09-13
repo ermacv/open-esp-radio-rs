@@ -52,7 +52,8 @@ pub use executor::{
 };
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
-    RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
+    RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,
+    RegisteredBluetoothPhyClientReleaseFailure, RegisteredBluetoothPhyPendingTrack,
     RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackEvaluation,
     RegisteredBluetoothPhyTrackEvaluationFailure, RegisteredBluetoothPhyTrackPoisoned,
 };

@@ -17,7 +17,8 @@ use crate::{
     PhyState, RegisteredPhyState,
     state::client::{
         PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
-        PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
+        PhyClientAcquireOutcome, PhyClientReleaseError, PhyClientReleaseFailure,
+        PhyClientReleaseOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
@@ -178,6 +179,36 @@ impl RegisteredBluetoothPhyClient {
         self.clients.snapshot()
     }
 
+    /// Release the Bluetooth client while retaining the registered common-PHY
+    /// state and the source-owned last-client fact.
+    ///
+    /// This is a software ownership transition only. The outer Controller must
+    /// still quiesce BTBB, timers and interrupts and reunite its physical radio
+    /// owners before any RF close or cold release may begin.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free registered Bluetooth owner"
+    )]
+    pub fn release_phy_client(
+        self,
+    ) -> Result<RegisteredBluetoothPhyClientRelease, RegisteredBluetoothPhyClientReleaseFailure>
+    {
+        let Self {
+            registered,
+            clients,
+        } = self;
+        match clients.release(PhyModemClient::Bluetooth) {
+            Ok(outcome) => Ok(RegisteredBluetoothPhyClientRelease {
+                registered,
+                outcome,
+            }),
+            Err(failure) => Err(RegisteredBluetoothPhyClientReleaseFailure {
+                registered,
+                failure,
+            }),
+        }
+    }
+
     /// Inspect registered-policy conditions without sampling temperature,
     /// advancing deadlines or acquiring the shared RF hardware.
     pub fn inspect_tracking(
@@ -266,6 +297,78 @@ impl RegisteredBluetoothPhyClient {
                 Schedule::Due(demand) => return Ok(Some(demand)),
                 Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
             }
+        }
+    }
+}
+
+/// Successful Bluetooth-client release retaining its registered PHY epoch.
+///
+/// The result is detached from the Controller's physical owners. It proves
+/// only the source-owned client transition and cannot close RF by itself.
+#[must_use = "Bluetooth release must be retained through Controller teardown"]
+pub struct RegisteredBluetoothPhyClientRelease {
+    registered: RegisteredPhyState,
+    outcome: PhyClientReleaseOutcome,
+}
+
+impl RegisteredBluetoothPhyClientRelease {
+    /// Client removed by this transition.
+    pub const fn client(&self) -> PhyModemClient {
+        self.outcome.client()
+    }
+
+    /// Whether the saved pre-release mask contained no other PHY client.
+    pub const fn is_last(&self) -> bool {
+        self.outcome.is_last()
+    }
+
+    /// Inspect the post-release client set without discarding the saved
+    /// last-client fact.
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.outcome.owner().snapshot()
+    }
+
+    /// Recover the registered pre-acquisition owner only when this release
+    /// removed the last client.
+    ///
+    /// A future shared-radio composition may retain another protocol client;
+    /// that case returns this exact release unchanged instead of erasing the
+    /// saved-mask disposition.
+    pub fn into_registered_phy(self) -> Result<RegisteredBluetoothPhy, Self> {
+        if !self.outcome.is_last() {
+            return Err(self);
+        }
+        let Self {
+            registered,
+            outcome,
+        } = self;
+        let clients = outcome.into_owner();
+        debug_assert!(clients.snapshot().is_empty());
+        Ok(RegisteredBluetoothPhy {
+            registered,
+            clients,
+        })
+    }
+}
+
+/// Rejected Bluetooth-client release retaining the unchanged registered owner.
+#[must_use = "failed release retains the registered Bluetooth PHY owner"]
+pub struct RegisteredBluetoothPhyClientReleaseFailure {
+    registered: RegisteredPhyState,
+    failure: PhyClientReleaseFailure,
+}
+
+impl RegisteredBluetoothPhyClientReleaseFailure {
+    /// Inspect the exact source-owned release rejection.
+    pub const fn error(&self) -> PhyClientReleaseError {
+        self.failure.error()
+    }
+
+    /// Recover the owner left unchanged by the rejected release.
+    pub fn into_owner(self) -> RegisteredBluetoothPhyClient {
+        RegisteredBluetoothPhyClient {
+            registered: self.registered,
+            clients: self.failure.into_owner(),
         }
     }
 }

@@ -92,7 +92,7 @@ remains outside the LE program.
 | LE Receiver Test / Transmitter Test | PARTIAL | [DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending. |
 | Enhanced DTM PHY selection | IMPLEMENTED | HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions. |
 | DTM test patterns | IMPLEMENTED | [TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants. |
-| Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist, and the retained Bluetooth client owns read-only demand plus consuming due/periodic evaluation. Controller admission, target execution, timer integration and final PHY release remain incomplete. RF/HIL readiness belongs to qualification. |
+| Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist. The retained Bluetooth client owns read-only demand, consuming due/periodic evaluation and a release that preserves the last-client fact. Controller admission, target execution, timer integration, BTBB/IRQ/timer quiescence and physical RF close remain incomplete. RF/HIL readiness belongs to qualification. |
 
 ## Legacy advertising and scanning
 

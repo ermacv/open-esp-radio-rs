@@ -1,4 +1,4 @@
-use super::RegisteredBluetoothPhy;
+use super::{RegisteredBluetoothPhy, RegisteredBluetoothPhyClient};
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     state::client::{
@@ -214,4 +214,38 @@ fn cancelled_bluetooth_tracking_wait_does_not_transfer_or_advance_the_owner() {
     }
     assert_eq!(timer.deadlines, [DEFAULT_PLL_TRACK_PERIOD_MICROS + 1]);
     assert_eq!(owner.client_snapshot(), before);
+}
+
+#[test]
+fn bluetooth_release_preserves_last_client_disposition_until_explicit_recovery() {
+    let released = settled_bluetooth(0)
+        .release_phy_client()
+        .unwrap_or_else(|_| panic!("acquired Bluetooth client must release"));
+    assert_eq!(released.client(), PhyModemClient::Bluetooth);
+    assert!(released.is_last());
+    assert!(released.client_snapshot().is_empty());
+
+    let registered = released
+        .into_registered_phy()
+        .unwrap_or_else(|_| panic!("last-client release must recover registered ownership"));
+    assert!(registered.client_snapshot().is_empty());
+}
+
+#[test]
+fn missing_bluetooth_release_returns_the_unchanged_owner() {
+    let owner = RegisteredBluetoothPhyClient {
+        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
+            PhyConfig::production(),
+        )),
+        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+    };
+    let failure = owner
+        .release_phy_client()
+        .err()
+        .expect("missing Bluetooth client must fail");
+    assert_eq!(
+        failure.error(),
+        crate::state::client::PhyClientReleaseError::NotAcquired(PhyModemClient::Bluetooth)
+    );
+    assert!(failure.into_owner().client_snapshot().is_empty());
 }

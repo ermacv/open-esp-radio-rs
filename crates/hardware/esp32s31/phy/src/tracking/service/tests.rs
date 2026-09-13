@@ -37,7 +37,7 @@ fn config() -> Config {
 }
 
 #[test]
-fn unsupported_due_rfpll_suspends_other_work_until_the_policy_is_integrated() {
+fn due_rfpll_precedes_power_and_below_threshold_leaves_power_selectable() {
     let mut input = snapshot();
     input.wifi.as_mut().unwrap().power.update_required = true;
     input.rfpll = Some(crate::tracking::rfpll::thermal::Request {
@@ -48,7 +48,7 @@ fn unsupported_due_rfpll_suspends_other_work_until_the_policy_is_integrated() {
     });
     assert_eq!(
         config().inspect(input, 200, false),
-        Demand::Suspended(Suspension::RfpllUnsupported)
+        Demand::Run(Operation::Rfpll)
     );
     // Below the RFPLL threshold, unrelated due work remains selectable.
     input.rfpll.as_mut().unwrap().current_temperature = 34;

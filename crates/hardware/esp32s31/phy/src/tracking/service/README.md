@@ -19,8 +19,8 @@ the same monotonic microsecond clock as the scheduler. Age includes acquisition
 waits. Channel restoration and other undated replacements invalidate the old
 sample date. An inspection timestamp never substitutes for a sensor sample.
 
-Given a fresh sample, selection checks analog-I2C publication, Wi-Fi gain
-publication, common calibration and TX calibration in that order. After each
+Given a fresh sample, selection checks RFPLL, analog-I2C publication, Wi-Fi
+gain publication, common calibration and TX calibration in that order. After each
 operation the composition restores the protocol and inspects the actual state
 again. Common channel restoration can replace temperature, requiring a new
 dated observation before the subsequent TX decision. A selected operation
@@ -30,11 +30,11 @@ the sample stale, no child executes, no calibration reference or periodic
 clock advances, and the restored service selects a new observation. Deferred
 attempts remain distinct from completed operations in the report.
 
-The RFPLL-cap child remains disabled by registered policy. The service suspends
-if enabled RFPLL demand appears: it cannot silently acknowledge an unsupported
-operation. Reversed clocks, shared clients and an observation whose own duration
-exceeds the configured period also suspend service. This prevents an impossible
-sampling cadence from generating an endless immediate pause loop.
+RFPLL uses its registered threshold and the same exclusive maintenance boundary
+as every other selected operation. Reversed clocks, shared clients and an
+observation whose own duration exceeds the configured period suspend service.
+This prevents an impossible sampling cadence from generating an endless
+immediate pause loop.
 
 ```mermaid
 flowchart TD
@@ -118,10 +118,8 @@ The runtime calibration transition uses the current vendor's shared TX
 reference, with Wi-Fi then BT/154 inside one TX envelope. This does not admit
 joint execution: the observation service still rejects shared-radio use.
 Current RFPLL tracking uses a threshold of 15 sensor units and physical
-admission. Automatic RFPLL enable remains unavailable pending hardware
-qualification and service integration. Current child-effect and RFPLL-enabled
-whole-parent comparisons exist; their modeled peripherals do not qualify the
-whole runtime service. A due RFPLL request currently suspends the service before
-power/I2C/calibration selection. Enabling the registered policy therefore also
-requires RFPLL selection, post-admission freshness checks, terminal restoration
-and hardware validation; changing only the policy flag is insufficient.
+admission. The registered policy exposes its predicate to inspection; the
+automatic service selects a due request before power/I2C/calibration work and
+rechecks sample freshness after physical admission. Current child-effect and
+RFPLL-enabled whole-parent comparisons exist; their modeled peripherals do not
+qualify the whole runtime service or radiated RF behavior.

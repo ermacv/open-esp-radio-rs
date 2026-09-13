@@ -475,7 +475,7 @@ fn registered_policy_projects_cold_facts_and_live_tracking_state() {
 
     let cold = PhyParamTrackingPolicy::for_registered_state(&state);
     assert!(!cold.tracking_inhibited);
-    assert!(!cold.rfpll_cap_tracking_enabled);
+    assert!(cold.rfpll_cap_tracking_enabled);
     assert_eq!(cold.rfpll_cap_tracking_threshold, None);
     assert_eq!(cold.calibration_tracking_threshold, None);
     assert_eq!(cold.diagnostics, PhyTrackingDiagnostics::Disabled);

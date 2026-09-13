@@ -307,9 +307,9 @@ gaps = [
 id = "runtime-rfpll-tracking"
 title = "Connected runtime RFPLL tracking"
 scope = "Fresh temperature demand selects a finite nonzero RFPLL correction, updates frequency memory, restores the current channel and resumes the same station epoch"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
-async = "incomplete"
+async = "bounded"
 depends-on = ["runtime-phy-calibration", "channel-selection-switch"]
 vendor-roots = [
   { source = "archive", symbol = "phy_param_track_tot" },
@@ -319,10 +319,8 @@ hil-requirements = [
   { scenario = "diagnostic-station-phy-rfpll-thermal-observed", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "implementation", id = "automatic-rfpll-service-selection-disabled" },
   { axis = "vendor", id = "current-compiled-rfpll-parent-comparison-not-release-evidence" },
   { axis = "hil", id = "opposite-thermal-correction-and-radiated-rf-quality-missing" },
-  { axis = "async", id = "automatic-rfpll-service-suspends-as-unsupported" },
 ]
 
 [[capabilities]]

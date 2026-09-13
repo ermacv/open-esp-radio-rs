@@ -206,10 +206,10 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
     };
     let before = owner.client_snapshot();
     let policy = owner.registered.tracking_policy();
-    assert!(!policy.rfpll_cap_tracking_enabled);
+    assert!(policy.rfpll_cap_tracking_enabled);
     let selected = request.policy(&owner.registered);
     assert_eq!(selected.rfpll_cap_tracking_threshold, Some(0));
-    assert!(!selected.rfpll_cap_tracking_enabled);
+    assert!(selected.rfpll_cap_tracking_enabled);
     assert_eq!(owner.registered.tracking_policy(), policy);
     let Evaluation::Pending {
         registered: _,
@@ -273,7 +273,7 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
                     maximum_age_micros: 1000,
                 }
             };
-            assert!(!request.policy(&owner.registered).rfpll_cap_tracking_enabled);
+            assert!(request.policy(&owner.registered).rfpll_cap_tracking_enabled);
             assert_eq!(
                 request
                     .policy(&owner.registered)

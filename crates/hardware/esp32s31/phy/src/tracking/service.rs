@@ -23,7 +23,6 @@ pub enum Suspension {
     SharedRadio,
     Clock,
     SampleOverrun,
-    RfpllUnsupported,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,7 +82,7 @@ impl Config {
             return Demand::Run(Operation::Temperature);
         }
         if snapshot.rfpll.is_some_and(|parameters| parameters.is_due()) {
-            return Demand::Suspended(Suspension::RfpllUnsupported);
+            return Demand::Run(Operation::Rfpll);
         }
         if snapshot
             .wifi_i2c

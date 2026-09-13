@@ -112,9 +112,9 @@ the previous reference. Errors before restoration cannot publish a successful
 outer completion. The vendor busy flag is represented by physical admission
 and exclusive ownership, not a second mutable lock inside this algorithm.
 
-Registered OER policy keeps the RFPLL branch disabled pending physical
-qualification. Compiled comparisons include the RFPLL-enabled parent with
-zero, positive and negative corrections.
+Registered OER policy enables the recovered RFPLL predicate. Compiled
+comparisons include the RFPLL-enabled parent with zero, positive and negative
+corrections. Physical qualification remains a separate readiness axis.
 The ROM status-based correction is a distinct reference primitive with its
 own default threshold and fixed ±2 correction; the outer RFPLL action no
 longer selects it.
@@ -149,7 +149,7 @@ the maintenance graph before power/calibration/temperature children; failure
 retains the poisoned epoch and physical access. The request does not grant joint
 radio access and must not be cancelled after hardware work begins. Conditional
 `Operation::Rfpll` retains its normal thermal predicate. The automatic service
-currently does not select either RFPLL request.
+selects this conditional request from a fresh observation.
 
 `ObservedOperation { operation: Operation::Rfpll, maximum_age_micros }` uses the
 same child and thermal threshold, but rejects a stale, undated or invalid-clock

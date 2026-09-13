@@ -13,7 +13,7 @@ or copy of calibration reference state is introduced.
 | --- | --- |
 | `schedule` | Inactive, the next evaluation deadline, or outstanding evaluation demand. Due does not mean every calibration branch is due. |
 | `inhibited` | The registered outer policy suppresses its hardware children. The source schedule is still reported. |
-| `rfpll` | Enabled active RFPLL-cap inputs; `is_due()` is the same predicate used by the transition. `None` means disabled, inactive or inhibited. The current registered policy disables this child. |
+| `rfpll` | Enabled active RFPLL-cap inputs; `is_due()` is the same predicate used by the transition. `None` means inactive or inhibited under the current registered policy. |
 | `wifi`, `bluetooth_ieee802154` | Conditions for active tracking classes. BT and 154 share one class without merging their protocol owners. |
 | `power` | Existing power decision, including the difference between recalculating a candidate gain and needing a hardware publication. |
 | `calibration` | Existing common/TX thermal decision; absent if policy disables calibration. Common demand appearing in two active classes is the same shared state, not two queued jobs. |

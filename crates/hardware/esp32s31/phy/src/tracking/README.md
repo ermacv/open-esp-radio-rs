@@ -126,7 +126,7 @@ the outer owner's exclusive access.
 | [Wi-Fi I2C tracking](i2c.rs) | A temperature-band change executes two bounded masked analog-I2C writes. | The new band is committed only after both writes. No band change means no writes. The analog bus must have one transaction owner. Safe overlap with active TX/RX is not established. |
 | [Temperature sampling](../analog/temperature.rs) | Reads PHY-I2C range and sensor code; may also write a new range. This is not an unconditional read-only operation. | The sensor transition carries matching completions. Concurrent sensor/range access is not qualified. |
 | [RFPLL capacitor tracking](../analog/rfpll.rs) | ROM reference `RfpllCapTrackingTransition`: disables hardware frequency control, applies selected capacitor correction through analog I2C/memory, then enables hardware frequency control. This primitive is distinct from full `RfpllFrequencyTransition` and is not selected by the outer tracking action. | The capacitor child and control tail precede completion. This does not certify RF lock, uninterrupted reception or a bounded exclusive radio interval. Continuous-radio execution is not qualified. |
-| [Current measured RFPLL correction](rfpll/README.md) | Bounded capacitor search, signed correction of the installed frequency-memory table, and current baseband-mode entry/restoration through `target_port::rfpll::maintain`. | Compiled comparisons cover command/memory effects and vendor-policy boundaries. The registered parent still keeps RFPLL disabled; whole-parent software comparisons include this branch, while timing and physical range limits remain unqualified. |
+| [Current measured RFPLL correction](rfpll/README.md) | Bounded capacitor search, signed correction of the installed frequency-memory table, and current baseband-mode entry/restoration through `target_port::rfpll::maintain`. | Registered tracking and the opt-in observation service select the thermal predicate. Compiled comparisons cover command/memory effects and vendor-policy boundaries; timing and physical range limits remain unqualified. |
 | [Common calibration](calibration.rs) | A temperature threshold selects DCODE, RX-gain calibration and channel restoration. | The branch restores MAC baseband and TX gain compensation before committing the common reference or entering class calibration. |
 | [Shared TX calibration](calibration.rs) | A shared TX threshold selects software frequency control, forced gain/TX-RX state, TXDC/PWDET and class gain publication. | The graph restores its baseband/control and gain-compensation state. This is not proof that every protocol's MAC, key, TSF or DMA context is unchanged. No selected branch means no hardware actions in this child. |
 
@@ -239,8 +239,9 @@ accuracy, physical exclusion or elapsed timing.
 
 The complete `phy_param_track_tot` comparison uses the same peripherals and
 projection, executing BT power, Wi-Fi I2C/power, combined RXCAL/TXCAL and final
-temperature acquisition. It uses registered production policy: RFPLL is disabled,
-calibration enabled and diagnostics disabled. Both power thresholds, signed
+temperature acquisition. Its baseline profile disables RFPLL to isolate the
+remaining parent; the RFPLL-enabled profile uses registered production policy.
+Calibration is enabled and diagnostics are disabled. Both power thresholds, signed
 temperature range boundaries and nonzero retained Wi-Fi adjustments are covered.
 Final shared power-cache values, per-class gain bases, I2C band, calibration
 references and banks must match. BT runs before Wi-Fi and both share the power

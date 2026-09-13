@@ -52,20 +52,20 @@ pub fn calibration_tracking(
     .expect("calibration action selects the combined child")
 }
 
-/// Select the complete parent with the same policy projection as registration.
-/// The returned model owns no physical radio capability.
+/// Select the complete parent with RFPLL disabled for the isolated baseline
+/// comparison. The compiled production entry and every remaining registered
+/// policy field are unchanged; the returned model owns no physical capability.
 pub fn parameter_tracking(
     state: &crate::PhyState,
     clients: crate::tracking::parameters::PhyParamTrackRequest,
 ) -> crate::state::client::PhyPendingTracking {
-    crate::state::client::PhyPendingTracking::for_validation(
-        clients,
-        crate::tracking::parameters::PhyParamTrackingPolicy::for_registered_state(state),
-    )
+    let mut policy =
+        crate::tracking::parameters::PhyParamTrackingPolicy::for_registered_state(state);
+    policy.rfpll_cap_tracking_enabled = false;
+    crate::state::client::PhyPendingTracking::for_validation(clients, policy)
 }
 
-/// Exercise the existing RFPLL branch inside the real parent. This override
-/// exists only in validation builds and does not enable registered operation.
+/// Exercise the registered RFPLL policy inside the real production parent.
 pub fn parameter_tracking_with_rfpll(
     state: &crate::PhyState,
     clients: crate::tracking::parameters::PhyParamTrackRequest,

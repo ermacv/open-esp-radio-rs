@@ -234,23 +234,24 @@ the claim to software behavior. Projections reuse the documented child I2C,
 PBus, estimator-poll and unused-SAR-read exclusions; they never remove control
 writes or gain publication.
 
-The full `phy_param_track_tot` comparison also executes the real BT power,
-Wi-Fi I2C/power and final temperature children using the registered production
-policy (RFPLL disabled, calibration enabled, diagnostics disabled). It compares
+The full `phy_param_track_tot` baseline comparison also executes the real BT
+power, Wi-Fi I2C/power and final temperature children with RFPLL explicitly
+disabled to isolate those effects; calibration is enabled and diagnostics are
+disabled. It compares
 shared power-cache state, per-class gain bases, retained additive adjustment and
 I2C band in addition to calibration state and ordered effects. Signed thermal
 boundaries, both power thresholds and nonzero retained adjustment inputs are
 covered. The parent failure profile rejects normal-owner recovery after TXCAL
 failure, retains completed power children and rejects partial calibration
 publication. It does not manufacture successful child completions or a registered
-PHY owner. A validation-only RFPLL-enabled profile additionally executes thermal
+PHY owner. A separate RFPLL-enabled registered-policy profile executes thermal
 gates and zero/positive/negative frequency-memory corrections inside this same
 parent, comparing the RFPLL reference commit. Its projection omits the single
 installed-layout query already documented for isolated frequency-memory
 comparison, retaining all memory/control transactions. The TXCAL failure profile
 also checks retention of an earlier completed RFPLL reference. Registered
-production RFPLL remains disabled pending physical qualification. External COEX
-grant hooks, elapsed timing and RF performance remain separate gates.
+production RFPLL uses the recovered thermal predicate. External COEX grant
+hooks, elapsed timing and RF performance remain separate gates.
 
 The optional RF-test power producer is characterized by `phy_rfpll/gain_producer.rs`.
 It authenticates `OER_PHY_RFTEST` (`librftest.a`, SHA-256

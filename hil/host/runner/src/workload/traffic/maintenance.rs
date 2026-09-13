@@ -320,8 +320,9 @@ fn validate_pause(
     Ok(())
 }
 
-/// One standalone Wi-Fi parent, with registered RFPLL disabled. Counts prove
-/// completed coverage, not execution order or independent hardware readback.
+/// One standalone Wi-Fi parent in a thermally stable cell where RFPLL is not
+/// due. Counts prove completed coverage, not execution order or independent
+/// hardware readback.
 fn validate_tracking_parent(
     evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
 ) -> Result<()> {

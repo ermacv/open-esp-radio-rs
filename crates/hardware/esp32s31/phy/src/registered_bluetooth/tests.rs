@@ -84,8 +84,7 @@ fn due_initial_tracking_uses_registered_epoch_policy() {
         .unwrap();
     assert_eq!(
         tracking.action(),
-        crate::tracking::parameters::PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-            enabled: true,
+        crate::tracking::parameters::PhyParamTrackingAction::RfpllCapTrack {
             diagnostics: crate::tracking::parameters::PhyTrackingDiagnostics::Disabled,
         }
     );

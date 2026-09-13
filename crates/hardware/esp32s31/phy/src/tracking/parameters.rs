@@ -75,22 +75,17 @@ impl PhyParamTrackingPolicy {
     /// Project the pinned ESP32-S31 policy for one active registered epoch.
     ///
     /// Both lifecycle guards are clear, diagnostic printing is disabled, and
-    /// calibration tracking is enabled. RFPLL-cap tracking is deliberately
-    /// disabled in registered operation pending physical qualification and
-    /// service integration. Compiled comparisons cover current child effects
-    /// and the RFPLL-enabled parent. The selected
+    /// calibration and RFPLL-cap tracking are enabled. Compiled comparisons
+    /// cover current child effects and the RFPLL-enabled parent. The selected
     /// RFPLL action already uses `tracking::rfpll::thermal`, including the
-    /// current measured search and frequency-control envelope. Disabling it
-    /// here is an OER coverage restriction, not the current vendor default.
+    /// current measured search and frequency-control envelope. Runtime service
+    /// selection separately requires a fresh dated temperature observation.
     /// Runtime setters publish the remaining choices into `PhyState`.
     pub(crate) const fn for_registered_state(state: &crate::state::PhyState) -> Self {
         let debug = state.temperature_tracking_debug();
         Self {
             tracking_inhibited: false,
-            // Enabling requires service admission/freshness and hardware
-            // qualification together: service::Config currently suspends all
-            // maintenance on a due RFPLL request (RfpllUnsupported).
-            rfpll_cap_tracking_enabled: false,
+            rfpll_cap_tracking_enabled: true,
             rfpll_cap_tracking_threshold: debug.rfpll_threshold_override(),
             calibration_tracking_threshold: debug.calibration_threshold_override(),
             diagnostics: PhyTrackingDiagnostics::Disabled,

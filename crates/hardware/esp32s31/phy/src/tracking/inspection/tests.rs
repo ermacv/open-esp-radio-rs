@@ -51,7 +51,10 @@ fn due_evaluation_does_not_imply_due_calibration_or_commit_references() {
         registered.state().calibration_tracking_parameters(None),
         before
     );
-    assert!(first.rfpll.is_none()); // Actual registered policy disables this child.
+    assert!(
+        !first.rfpll.expect("registered RFPLL predicate").is_due(),
+        "a due scheduler evaluation must not invent thermal RFPLL demand"
+    );
 }
 #[test]
 fn thermal_conditions_and_scheduler_deadline_are_independent() {

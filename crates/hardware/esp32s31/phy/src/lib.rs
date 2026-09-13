@@ -53,7 +53,8 @@ pub use executor::{
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
-    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
+    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackEvaluation,
+    RegisteredBluetoothPhyTrackEvaluationFailure, RegisteredBluetoothPhyTrackPoisoned,
 };
 pub use registered_radio::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,

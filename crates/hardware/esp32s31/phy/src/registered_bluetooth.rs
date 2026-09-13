@@ -18,7 +18,8 @@ use crate::{
     state::client::{
         PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
         PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
-        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
+        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
+        PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
     tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
 };
@@ -175,6 +176,158 @@ impl RegisteredBluetoothPhyClient {
     /// Inspect the settled source-owned client set.
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
         self.clients.snapshot()
+    }
+
+    /// Inspect registered-policy conditions without sampling temperature,
+    /// advancing deadlines or acquiring the shared RF hardware.
+    pub fn inspect_tracking(
+        &self,
+        now_micros: u64,
+    ) -> Result<crate::tracking::inspection::Inspection, PhyTrackTimeError> {
+        crate::tracking::inspection::Inspection::registered(
+            &self.registered,
+            self.client_snapshot(),
+            now_micros,
+        )
+    }
+
+    /// Evaluate one source-compatible periodic callback for this Bluetooth
+    /// client without acquiring physical RF access.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free registered Bluetooth owner"
+    )]
+    pub fn evaluate_periodic_tracking(
+        self,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
+    {
+        let Self {
+            registered,
+            clients,
+        } = self;
+        match clients.evaluate_periodic_tracking(clock) {
+            Ok(evaluation) => Ok(RegisteredBluetoothPhyTrackEvaluation {
+                registered,
+                evaluation,
+            }),
+            Err(failure) => Err(RegisteredBluetoothPhyTrackEvaluationFailure {
+                registered,
+                failure,
+            }),
+        }
+    }
+
+    /// Recheck an absolute deadline after a timer or another Controller event
+    /// wakes the owner. An early wake returns the unchanged settled owner.
+    /// A due request still requires Controller quiescence and physical shared-
+    /// PHY admission before target execution begins.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free registered Bluetooth owner"
+    )]
+    pub fn evaluate_due_tracking(
+        self,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
+    {
+        let Self {
+            registered,
+            clients,
+        } = self;
+        match clients.evaluate_immediate_tracking(clock) {
+            Ok(evaluation) => Ok(RegisteredBluetoothPhyTrackEvaluation {
+                registered,
+                evaluation,
+            }),
+            Err(failure) => Err(RegisteredBluetoothPhyTrackEvaluationFailure {
+                registered,
+                failure,
+            }),
+        }
+    }
+
+    /// Wait for scheduling demand while borrowing, rather than transferring,
+    /// the registered Bluetooth owner to the timer.
+    ///
+    /// The result is an observation only. It neither refreshes timestamps nor
+    /// grants access to Controller, BTBB or common-PHY hardware.
+    pub async fn wait_for_tracking_demand(
+        &self,
+        timer: &mut impl crate::state::client::PhyTrackingTimer,
+    ) -> Result<Option<crate::tracking::schedule::Demand>, PhyTrackTimeError> {
+        use crate::tracking::schedule::Schedule;
+        loop {
+            match self
+                .client_snapshot()
+                .tracking_schedule_at(timer.now_micros())?
+            {
+                Schedule::Inactive => return Ok(None),
+                Schedule::Due(demand) => return Ok(Some(demand)),
+                Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
+            }
+        }
+    }
+}
+
+/// Scheduler evaluation retaining the exact registered Bluetooth epoch.
+#[must_use = "tracking evaluation retains the registered Bluetooth owner"]
+pub struct RegisteredBluetoothPhyTrackEvaluation {
+    registered: RegisteredPhyState,
+    evaluation: PhyTrackEvaluation,
+}
+
+impl RegisteredBluetoothPhyTrackEvaluation {
+    /// Borrow the request emitted by this evaluation, when one is due.
+    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
+        self.evaluation.request()
+    }
+
+    /// Recover the settled owner or retain the due request in its affine
+    /// pending state.
+    #[allow(
+        clippy::result_large_err,
+        reason = "pending work retains the allocation-free registered Bluetooth owner"
+    )]
+    pub fn into_owner(
+        self,
+    ) -> Result<RegisteredBluetoothPhyClient, RegisteredBluetoothPhyPendingTrack> {
+        let Self {
+            registered,
+            evaluation,
+        } = self;
+        match evaluation.into_owner() {
+            Ok(clients) => Ok(RegisteredBluetoothPhyClient {
+                registered,
+                clients,
+            }),
+            Err(pending) => Err(RegisteredBluetoothPhyPendingTrack {
+                registered,
+                pending,
+            }),
+        }
+    }
+}
+
+/// Invalid clock evaluation retaining the unchanged Bluetooth PHY owner.
+#[must_use = "failed tracking evaluation retains the registered Bluetooth owner"]
+pub struct RegisteredBluetoothPhyTrackEvaluationFailure {
+    registered: RegisteredPhyState,
+    failure: PhyTrackEvaluationFailure,
+}
+
+impl RegisteredBluetoothPhyTrackEvaluationFailure {
+    /// Inspect the monotonic-time failure without recovering mutable state.
+    pub const fn error(&self) -> PhyTrackTimeError {
+        self.failure.error()
+    }
+
+    /// Recover the owner left unchanged by the rejected clock evaluation.
+    pub fn into_owner(self) -> RegisteredBluetoothPhyClient {
+        RegisteredBluetoothPhyClient {
+            registered: self.registered,
+            clients: self.failure.into_owner(),
+        }
     }
 }
 

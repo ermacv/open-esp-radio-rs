@@ -52,7 +52,7 @@ an implemented source operation incomplete.
 
 | Feature scope | Qualification capability / source contract | Boundary |
 | --- | --- | --- |
-| Initial PHY registration, acquisition and tracking | `common-phy-baseband` / `bluetooth-initial-phy-handoff` | Common-PHY power/clock prerequisites and borrowed handoff are implemented; periodic tracking and physical release remain incomplete. |
+| Initial PHY registration, acquisition and tracking | `common-phy-baseband` / `bluetooth-initial-phy-handoff` | Common-PHY power/clock prerequisites and borrowed handoff are implemented. The retained client can inspect and evaluate periodic demand; Controller quiescence, target execution and physical release remain incomplete. |
 | Bounded DTM sessions | `packet-dataplane` / `bounded-dtm-session`; `dtm-*` roots | DTM source composition exists; the broad dataplane still lacks unrelated-list dispatch and the full Controller lifetime. |
 | HCI bootstrap and command/event handoff | `hci-bootstrap`, `hci-handoff-storage`, `hci-controller-endpoints` | Complete bounded interfaces do not establish `typed-hci-controller`, which also requires LL and ACL routing. |
 | Portable advertising / peripheral admission | `portable-legacy-advertising`, `portable-connectable-advertising`, `portable-peripheral-connection` | Portable readiness has no RF/HIL obligation and does not qualify a hardware advertising or ACL role. |
@@ -92,7 +92,7 @@ remains outside the LE program.
 | LE Receiver Test / Transmitter Test | PARTIAL | [DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending. |
 | Enhanced DTM PHY selection | IMPLEMENTED | HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions. |
 | DTM test patterns | IMPLEMENTED | [TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants. |
-| Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist. Periodic tracking, timer-expiration handling and final PHY release remain incomplete. RF/HIL readiness belongs to qualification. |
+| Long-running RF/PHY maintenance, including DTM | PARTIAL | Initial common-PHY/client and baseband acquisition exist, and the retained Bluetooth client owns read-only demand plus consuming due/periodic evaluation. Controller admission, target execution, timer integration and final PHY release remain incomplete. RF/HIL readiness belongs to qualification. |
 
 ## Legacy advertising and scanning
 

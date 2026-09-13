@@ -7,7 +7,7 @@ pub use oer_esp32s31_pac::{
     PhyI2cAddress, PhyI2cBlock, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction,
     PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
     PhyI2cConfigurationTransaction, PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs,
-    analog_registers,
+    PhyI2cInitializationStageTwoError, analog_registers,
 };
 
 use crate::{owner::SharedPhyAccess, phy_pac, phy_pac_mut};
@@ -141,4 +141,13 @@ pub fn configure_command_memory(
     inputs: PhyI2cCommandMemoryInputs,
 ) {
     phy_pac_mut(registers).configure_phy_i2c_command_memory(inputs);
+}
+
+/// Run the complete 22-pair current-vendor retained-wake analog-I²C stage.
+pub fn configure_initialization_stage_two(
+    registers: &mut impl SharedPhyAccess,
+    inputs: PhyI2cCommandMemoryInputs,
+    maximum_observations: u32,
+) -> Result<(), PhyI2cInitializationStageTwoError> {
+    phy_pac_mut(registers).configure_phy_i2c_initialization_stage_two(inputs, maximum_observations)
 }

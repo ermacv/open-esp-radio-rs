@@ -5725,6 +5725,12 @@ pub(crate) fn configure_phy_i2c_host_map(registers: &crate::svd::I2cAnaMst) {
     crate::svd::field_replace_modify::configure_phy_i2c_host_map(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_i2c_parallel_host_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_parallel_host_map(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_parallel_host_map(registers);
+}
+
 /// Typed bridge for the reviewed `configure_phy_i2c_host0_sda_guard` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_i2c_host0_sda_guard(registers: &crate::svd::I2cAnaMst) {

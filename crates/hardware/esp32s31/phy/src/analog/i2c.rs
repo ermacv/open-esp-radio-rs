@@ -100,18 +100,21 @@ pub fn configure_i2c_master_command_memory(
     registers: &mut impl SharedPhyAccess,
     parameter: PhyRfInitParameterSnapshot,
 ) {
-    let filter = parameter.filter_dcap();
-    hal_phy_i2c::configure_command_memory(
+    hal_phy_i2c::configure_command_memory(registers, parameter.pac_command_memory_inputs());
+}
+
+/// Execute the current-vendor 22-pair retained-wake analog initialization.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_i2c_initialization_stage_two(
+    registers: &mut impl SharedPhyAccess,
+    parameter: PhyRfInitParameterSnapshot,
+    maximum_observations: u32,
+) -> Result<(), hal_phy_i2c::PhyI2cInitializationStageTwoError> {
+    hal_phy_i2c::configure_initialization_stage_two(
         registers,
-        hal_phy_i2c::PhyI2cCommandMemoryInputs::new(
-            parameter.parameter_18e(),
-            filter.parameter_e9,
-            filter.parameter_ea,
-            filter.parameter_ed,
-            filter.parameter_ee,
-            filter.parameter_f0,
-        ),
-    );
+        parameter.pac_command_memory_inputs(),
+        maximum_observations,
+    )
 }
 
 /// Publish one complete-register PHY-I2C read without waiting for completion.
@@ -743,6 +746,18 @@ impl PhyRfInitParameterSnapshot {
         oer_esp32s31_hal::phy::i2c::PhyI2cInitializationStageOneInputs::new(
             self.parameter_18e,
             self.filter_dcap.parameter_ee,
+        )
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    const fn pac_command_memory_inputs(self) -> hal_phy_i2c::PhyI2cCommandMemoryInputs {
+        hal_phy_i2c::PhyI2cCommandMemoryInputs::new(
+            self.parameter_18e,
+            self.filter_dcap.parameter_e9,
+            self.filter_dcap.parameter_ea,
+            self.filter_dcap.parameter_ed,
+            self.filter_dcap.parameter_ee,
+            self.filter_dcap.parameter_f0,
         )
     }
 }

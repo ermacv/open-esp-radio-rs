@@ -1,15 +1,134 @@
-use std::{cell::RefCell, collections::VecDeque, vec::Vec};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    vec::Vec,
+};
 
 use super::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlI2cAccess, BluetoothTxPowerControlObservation,
     BluetoothTxPowerControlOperation, BluetoothTxPowerControlPrepareError,
     BluetoothTxPowerControlRegister, BluetoothTxPowerControlRestoreError,
-    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cConfigurationAccess,
-    PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
-    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
-    PhyI2cInitializationStageOneInputs,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
+    PhyI2cConfigurationAccess, PhyI2cConfigurationAction, PhyI2cConfigurationError,
+    PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
+    PhyI2cHost, PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError,
+    PhyI2cParallelAccess, configure_initialization_stage_two_with,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParallelEvent {
+    SelectParallelMap,
+    Start(PhyI2cHost),
+    RestoreRadioMap,
+}
+
+#[derive(Default)]
+struct FakeParallelI2c {
+    events: Vec<ParallelEvent>,
+    initially_busy_host: Option<PhyI2cHost>,
+    busy_after_start_host: Option<PhyI2cHost>,
+    started: Cell<bool>,
+}
+
+impl PhyI2cParallelAccess for FakeParallelI2c {
+    fn select_parallel_host_map(&mut self) {
+        self.events.push(ParallelEvent::SelectParallelMap);
+    }
+
+    fn restore_radio_host_map(&mut self) {
+        self.events.push(ParallelEvent::RestoreRadioMap);
+    }
+
+    fn is_busy(&self, host: PhyI2cHost) -> bool {
+        if self.started.get() {
+            self.busy_after_start_host == Some(host)
+        } else {
+            self.initially_busy_host == Some(host)
+        }
+    }
+
+    fn start_write(&mut self, host: PhyI2cHost, _block: u8, _register: u8, _value: u8) {
+        self.started.set(true);
+        self.events.push(ParallelEvent::Start(host));
+    }
+}
+
+#[test]
+fn retained_wake_i2c_stage_two_pairs_both_hosts_and_restores_the_radio_map() {
+    let mut access = FakeParallelI2c::default();
+    configure_initialization_stage_two_with(
+        &mut access,
+        PhyI2cCommandMemoryInputs::new(1, 2, 3, 4, 5, 6),
+        10,
+    )
+    .unwrap();
+
+    assert_eq!(
+        access.events.first(),
+        Some(&ParallelEvent::SelectParallelMap)
+    );
+    assert_eq!(access.events.last(), Some(&ParallelEvent::RestoreRadioMap));
+    let starts: Vec<_> = access
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            ParallelEvent::Start(host) => Some(*host),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(starts.len(), 44);
+    assert!(
+        starts
+            .chunks_exact(2)
+            .all(|pair| { pair == [PhyI2cHost::Host0, PhyI2cHost::Host1] })
+    );
+}
+
+#[test]
+fn retained_wake_i2c_stage_two_restores_the_radio_map_on_busy_entry() {
+    let mut access = FakeParallelI2c {
+        initially_busy_host: Some(PhyI2cHost::Host1),
+        ..FakeParallelI2c::default()
+    };
+    assert_eq!(
+        configure_initialization_stage_two_with(
+            &mut access,
+            PhyI2cCommandMemoryInputs::new(1, 2, 3, 4, 5, 6),
+            10,
+        ),
+        Err(PhyI2cInitializationStageTwoError::BusyAtStart {
+            host: PhyI2cHost::Host1,
+        })
+    );
+    assert_eq!(
+        access.events,
+        [
+            ParallelEvent::SelectParallelMap,
+            ParallelEvent::RestoreRadioMap,
+        ]
+    );
+}
+
+#[test]
+fn retained_wake_i2c_stage_two_bounds_completion_and_restores_the_radio_map() {
+    let mut access = FakeParallelI2c {
+        busy_after_start_host: Some(PhyI2cHost::Host0),
+        ..FakeParallelI2c::default()
+    };
+    assert_eq!(
+        configure_initialization_stage_two_with(
+            &mut access,
+            PhyI2cCommandMemoryInputs::new(1, 2, 3, 4, 5, 6),
+            2,
+        ),
+        Err(PhyI2cInitializationStageTwoError::CompletionTimeout {
+            host: PhyI2cHost::Host0,
+            pair: 0,
+        })
+    );
+    assert_eq!(access.events.last(), Some(&ParallelEvent::RestoreRadioMap));
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {

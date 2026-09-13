@@ -242,6 +242,60 @@ impl PhyI2cCommandMemoryInputs {
             self.parameter_f0,
         ]
     }
+
+    const fn initialization_stage_two_pair(self, index: usize) -> Option<PhyI2cParallelWrite> {
+        if index >= PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT {
+            return None;
+        }
+
+        const FIRST_BLOCKS: [u8; PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT] = [
+            0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b, 0x6b,
+            0x6b, 0x62, 0x62, 0x62, 0x62, 0x62, 0x62, 0x66,
+        ];
+        const FIRST_REGISTERS: [u8; PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT] = [
+            0x02, 0x03, 0x04, 0x0e, 0x09, 0x07, 0x08, 0x05, 0x06, 0x0c, 0x0d, 0x0a, 0x0b, 0x0f,
+            0x01, 0x00, 0x04, 0x0f, 0x0b, 0x0d, 0x15, 0x02,
+        ];
+        const FIRST_FIXED_VALUES: [u8; PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT] = [
+            0x73, 0xba, 0x88, 0xf4, 0x02, 0xfd, 0xbf, 0x01, 0x11, 0xa7, 0x77, 0x08, 0x04, 0x81,
+            0x01, 0x68, 0xa8, 0, 0x44, 0x0a, 0x08, 0x70,
+        ];
+        const SECOND_BLOCKS: [u8; PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT] = [
+            0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67, 0x67,
+            0x67, 0x67, 0x67, 0x67, 0x67, 0x63, 0x63, 0x63,
+        ];
+        const SECOND_REGISTERS: [u8; PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT] = [
+            0x02, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1c, 0x1d, 0x1e, 0x1f, 0x04, 0x05, 0x06,
+            0x07, 0x0c, 0x0d, 0x0e, 0x0f, 0x06, 0x06, 0x06,
+        ];
+
+        let high_filter = saturate_phy_i2c_value(self.parameter_ed as i32 + 6, 0x3c, 2);
+        let low_filter = saturate_phy_i2c_value(self.parameter_ed as i32 - 2, 0x3c, 2);
+        let auxiliary = self.parameter_ee.wrapping_add(2);
+        let second_value = match index {
+            0 => 0x27,
+            1 | 2 => high_filter,
+            3 => low_filter,
+            4 => self.parameter_ed,
+            5 | 6 => auxiliary,
+            7 | 8 | 10 => self.parameter_f0,
+            9 => analog_registers::FILTER_DCAP_HIGH_ENABLE_UNKNOWN.replace(self.parameter_f0, 1),
+            11 | 12 | 15 | 16 => self.parameter_e9,
+            13 | 14 | 17 | 18 => self.parameter_ea,
+            19..=21 => 0,
+            _ => unreachable!(),
+        };
+        let first_value = if index == 17 {
+            self.parameter_18e
+        } else {
+            FIRST_FIXED_VALUES[index]
+        };
+
+        Some(PhyI2cParallelWrite {
+            first: (FIRST_BLOCKS[index], FIRST_REGISTERS[index], first_value),
+            second: (SECOND_BLOCKS[index], SECOND_REGISTERS[index], second_value),
+        })
+    }
 }
 
 const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
@@ -254,8 +308,75 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PhyI2cParallelWrite {
+    first: (u8, u8, u8),
+    second: (u8, u8, u8),
+}
+
+/// One finite failure while publishing current-vendor retained-wake analog
+/// initialization through both PHY-I²C hosts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cInitializationStageTwoError {
+    BusyAtStart { host: PhyI2cHost },
+    CompletionTimeout { host: PhyI2cHost, pair: u8 },
+}
+
+trait PhyI2cParallelAccess {
+    fn select_parallel_host_map(&mut self);
+    fn restore_radio_host_map(&mut self);
+    fn is_busy(&self, host: PhyI2cHost) -> bool;
+    fn start_write(&mut self, host: PhyI2cHost, block: u8, register: u8, value: u8);
+}
+
+fn configure_initialization_stage_two_with(
+    access: &mut impl PhyI2cParallelAccess,
+    inputs: PhyI2cCommandMemoryInputs,
+    maximum_observations: u32,
+) -> Result<(), PhyI2cInitializationStageTwoError> {
+    access.select_parallel_host_map();
+
+    let result = (|| {
+        for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
+            if access.is_busy(host) {
+                return Err(PhyI2cInitializationStageTwoError::BusyAtStart { host });
+            }
+        }
+
+        let mut pair_index = 0;
+        while let Some(pair) = inputs.initialization_stage_two_pair(pair_index) {
+            let (block, register, value) = pair.first;
+            access.start_write(PhyI2cHost::Host0, block, register, value);
+            let (block, register, value) = pair.second;
+            access.start_write(PhyI2cHost::Host1, block, register, value);
+
+            for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
+                let mut observations = 0;
+                while access.is_busy(host) {
+                    if observations == maximum_observations {
+                        return Err(PhyI2cInitializationStageTwoError::CompletionTimeout {
+                            host,
+                            pair: pair_index as u8,
+                        });
+                    }
+                    observations += 1;
+                }
+            }
+            pair_index += 1;
+        }
+        Ok(())
+    })();
+
+    // The vendor leaf restores the normal 0x3fa0 host field after the
+    // parallel sequence. OER also restores it on finite failure so diagnostic
+    // access remains well-defined; the outer RF-wake epoch still fails closed.
+    access.restore_radio_host_map();
+    result
+}
+
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
 const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
+const PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT: usize = 22;
 const PHY_BIAS_REGISTER_COMMAND_COUNT: u8 = 2;
 const PHY_BBPLL_CALIBRATION_COMMAND_COUNT: u8 = 2;
 const PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT: u8 = 3;
@@ -1114,6 +1235,20 @@ impl RadioPhyRegisters {
         crate::generated::configure_phy_i2c_host_map(&self.peripherals.i2c_ana_mst);
     }
 
+    /// Run the complete current-vendor 22-pair retained-wake PHY-I²C stage.
+    ///
+    /// The PAC owns the recovered parallel host map, analog identities and
+    /// fixed values. Dynamic values are projected from the same six retained
+    /// calibration facts used by command-memory publication. Both hardware
+    /// waits are finite, and the normal host map is restored on every return.
+    pub fn configure_phy_i2c_initialization_stage_two(
+        &mut self,
+        inputs: PhyI2cCommandMemoryInputs,
+        maximum_observations: u32,
+    ) -> Result<(), PhyI2cInitializationStageTwoError> {
+        configure_initialization_stage_two_with(self, inputs, maximum_observations)
+    }
+
     /// Publish the finite reset command for one analog-I²C host.
     pub fn pulse_phy_i2c_master_reset(&mut self, host: PhyI2cHost) {
         match host {
@@ -1246,6 +1381,24 @@ impl RadioPhyRegisters {
             );
             index += 1;
         }
+    }
+}
+
+impl PhyI2cParallelAccess for RadioPhyRegisters {
+    fn select_parallel_host_map(&mut self) {
+        crate::generated::configure_phy_i2c_parallel_host_map(&self.peripherals.i2c_ana_mst);
+    }
+
+    fn restore_radio_host_map(&mut self) {
+        self.configure_phy_i2c_host_map();
+    }
+
+    fn is_busy(&self, host: PhyI2cHost) -> bool {
+        self.phy_i2c_master_is_busy(host)
+    }
+
+    fn start_write(&mut self, host: PhyI2cHost, block: u8, register: u8, value: u8) {
+        self.publish_phy_i2c_command(host, block, register, value, true);
     }
 }
 

@@ -67423,6 +67423,17 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace I2C_ANA_MST.ANA_CONF2 fields `[PHY_HOST_MAP]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_parallel_host_map(registers: &crate::I2cAnaMst) {
+        registers.ana_conf2().modify(|_, writer| {
+            let input = 0x0000000a_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.phy_host_map().bits((input & 0x00003fff) as u16) }
+        });
+    }
+
     /// Replace I2C_ANA_MST.I2C0_CTRL1 fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_i2c_host0_sda_guard(registers: &crate::I2cAnaMst) {

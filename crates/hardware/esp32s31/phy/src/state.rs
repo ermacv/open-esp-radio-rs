@@ -9,7 +9,7 @@ use crate::{
     analog::crystal_duty::XtalDutyCalibrationParameters,
     analog::dcode::{PhyDcodeOutcome, PhyDcodeParameters},
     analog::frequency::PhyChannelFrequencyInitControl,
-    analog::i2c::{FilterDcapParameters, PhyRfInitPrefixOutcome},
+    analog::i2c::{FilterDcapParameters, PhyRfInitParameterSnapshot, PhyRfInitPrefixOutcome},
     analog::pbus::memory::PhyPbusMemoryParameters,
     analog::temperature::PhyTemperatureOutcome,
     calibration::baseband::{
@@ -1655,6 +1655,15 @@ impl PhyState {
             self.common.filter_dcap[2],
             self.common.filter_dcap[3],
             self.common.filter_dcap[4],
+        )
+    }
+
+    /// Return the retained parameter snapshot consumed by the wake I²C and
+    /// frequency-publication children.
+    pub const fn rf_init_parameter_snapshot(&self) -> PhyRfInitParameterSnapshot {
+        PhyRfInitParameterSnapshot::new(
+            self.filter_dcap_parameters(),
+            self.common.i2c_frequency_parameter,
         )
     }
 

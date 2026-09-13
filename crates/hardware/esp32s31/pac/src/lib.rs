@@ -187,7 +187,7 @@ pub use phy::{
         PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
         PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
         PhyI2cConfigurationTransaction, PhyI2cField, PhyI2cHost,
-        PhyI2cInitializationStageOneInputs, analog_registers,
+        PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError, analog_registers,
     },
 };
 

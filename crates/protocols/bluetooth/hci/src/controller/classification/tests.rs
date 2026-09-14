@@ -3,8 +3,8 @@ use bt_hci::{
         Cmd, Opcode, OpcodeGroup,
         controller_baseband::{Reset, SetEventMask},
         le::{
-            LeReadRemoteFeatures, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr,
-            LeSetScanResponseData,
+            LeLongTermKeyRequestNegativeReply, LeLongTermKeyRequestReply, LeReadRemoteFeatures,
+            LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr, LeSetScanResponseData,
         },
         link_control::{Disconnect, ReadRemoteVersionInformation},
     },
@@ -89,6 +89,43 @@ fn read_remote_version_is_classified_before_the_closed_bootstrap_table() {
         malformed
     else {
         panic!("malformed remote-version request escaped its command family");
+    };
+    assert_eq!(
+        response.status(),
+        HciError::INVALID_HCI_PARAMETERS.to_status()
+    );
+}
+
+#[test]
+fn long_term_key_replies_are_owned_before_the_closed_bootstrap_table() {
+    let mut parameters = [0; 18];
+    parameters[..2].copy_from_slice(&1_u16.to_le_bytes());
+    parameters[2..].copy_from_slice(&[0x5a; 16]);
+    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+        LeLongTermKeyRequestReply::OPCODE,
+        &parameters,
+    ));
+    let LeControllerCommandClassification::LongTermKeyReply(command) = classified else {
+        panic!("valid positive LTK reply escaped its command family");
+    };
+    assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
+    assert_eq!(command.into_long_term_key(), [0x5a; 16]);
+
+    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+        LeLongTermKeyRequestNegativeReply::OPCODE,
+        &[1, 0],
+    ));
+    let LeControllerCommandClassification::LongTermKeyNegativeReply(command) = classified else {
+        panic!("valid negative LTK reply escaped its command family");
+    };
+    assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
+
+    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+        LeLongTermKeyRequestReply::OPCODE,
+        &[1, 0],
+    ));
+    let LeControllerCommandClassification::MalformedLongTermKeyReply(response) = malformed else {
+        panic!("malformed LTK reply escaped its command family");
     };
     assert_eq!(
         response.status(),

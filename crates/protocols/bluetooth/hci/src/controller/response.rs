@@ -9,8 +9,8 @@ use bt_hci::{
 use crate::{
     BootstrapCommandCompleteEvent, LeDisconnectCommandStatusEvent, LeDtmCommandCompleteEvent,
     LeHostCompletedPacketsErrorEvent, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyScanningCommandCompleteEvent, LeReadRemoteFeaturesCommandStatusEvent,
-    LeReadRemoteVersionInformationCommandStatusEvent,
+    LeLegacyScanningCommandCompleteEvent, LeLongTermKeyCommandCompleteEvent,
+    LeReadRemoteFeaturesCommandStatusEvent, LeReadRemoteVersionInformationCommandStatusEvent,
 };
 
 const UNKNOWN_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
@@ -110,6 +110,8 @@ pub enum LeControllerCommandComplete {
     ReadRemoteFeaturesStatus(LeReadRemoteFeaturesCommandStatusEvent),
     /// Immediate status for an admitted or rejected remote-version request.
     ReadRemoteVersionInformationStatus(LeReadRemoteVersionInformationCommandStatusEvent),
+    /// Completion for a positive, negative, rejected, or malformed LTK reply.
+    LongTermKeyReply(LeLongTermKeyCommandCompleteEvent),
     /// Pure software bootstrap command completion.
     Bootstrap(BootstrapCommandCompleteEvent),
     /// Exceptional invalid-parameters response for Host completed-packet credits.
@@ -134,6 +136,7 @@ impl HciControllerResponse for LeControllerCommandComplete {
             Self::DisconnectStatus(response) => response.as_bytes(),
             Self::ReadRemoteFeaturesStatus(response) => response.as_bytes(),
             Self::ReadRemoteVersionInformationStatus(response) => response.as_bytes(),
+            Self::LongTermKeyReply(response) => response.as_bytes(),
             Self::Bootstrap(response) => response.as_bytes(),
             Self::HostCompletedPacketsError(response) => response.as_bytes(),
             Self::Dtm(response) => response.as_bytes(),
@@ -165,6 +168,12 @@ impl From<LeReadRemoteFeaturesCommandStatusEvent> for LeControllerCommandComplet
 impl From<LeReadRemoteVersionInformationCommandStatusEvent> for LeControllerCommandComplete {
     fn from(response: LeReadRemoteVersionInformationCommandStatusEvent) -> Self {
         Self::ReadRemoteVersionInformationStatus(response)
+    }
+}
+
+impl From<LeLongTermKeyCommandCompleteEvent> for LeControllerCommandComplete {
+    fn from(response: LeLongTermKeyCommandCompleteEvent) -> Self {
+        Self::LongTermKeyReply(response)
     }
 }
 

@@ -465,6 +465,12 @@ fn channel_map_update_applies_at_the_exact_csa1_instant() {
     assert_eq!(instant.event_counter(), 6);
     assert_eq!(instant.request().channel_map(), new_map);
     assert_eq!(instant.channel().get(), 1);
+    assert!(
+        instant
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .channel_map_updated()
+    );
 }
 
 #[test]

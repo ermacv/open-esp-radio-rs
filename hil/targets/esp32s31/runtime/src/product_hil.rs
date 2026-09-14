@@ -79,10 +79,10 @@ use open_esp_radio_hil_protocol::{
     WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
     WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
-    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
-    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence,
-    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiStationAccessPointStopEvidence,
+    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRadioCalibrationPath,
+    WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence, WifiRole, WifiRoleFailureEvidence,
+    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
@@ -91,11 +91,10 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_radio_restart,
-    complete_wifi_radio_retained_cycle, complete_wifi_role_failure, complete_wifi_role_transition,
-    complete_wifi_scan, publish_event_reliably,
-    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
-    receive_wifi_control_request, runtime_log, set_wifi_role,
+    complete_station_epoch_cycle, complete_wifi_radio_restart, complete_wifi_radio_retained_cycle,
+    complete_wifi_role_failure, complete_wifi_role_transition, complete_wifi_scan,
+    publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
+    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 use oer_esp32s31_soc::L1CachePerformanceCounters;

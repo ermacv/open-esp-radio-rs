@@ -16,6 +16,8 @@ use crate::{
     LeLegacyAdvertisingEnableCommand, LeLegacyScanningCommand,
     LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
     LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand,
+    LeLongTermKeyCommandCompleteEvent, LeLongTermKeyCommandDecodeError,
+    LeLongTermKeyRequestNegativeReplyCommand, LeLongTermKeyRequestReplyCommand,
     LeReadRemoteFeaturesCommand, LeReadRemoteFeaturesCommandStatusEvent,
     LeReadRemoteVersionInformationCommand, LeReadRemoteVersionInformationCommandStatusEvent,
     LeTestEndCommand, OwnedBootstrapCommand, UnknownCommandCompleteEvent,
@@ -28,7 +30,7 @@ use crate::{
 /// may be retained across Controller-to-Host backpressure. An opcode outside
 /// the closed table becomes an owned Unknown Command response, so no
 /// classification result borrows receive storage.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 #[must_use = "a classified HCI command must be routed or answered exactly once"]
 pub enum LeControllerCommandClassification {
     /// A validated Disconnect command awaits the active connection lifecycle.
@@ -43,6 +45,12 @@ pub enum LeControllerCommandClassification {
     ReadRemoteVersionInformation(LeReadRemoteVersionInformationCommand),
     /// Read Remote Version Information had an invalid parameter body.
     MalformedReadRemoteVersionInformation(LeReadRemoteVersionInformationCommandStatusEvent),
+    /// A validated LE Long Term Key Request Reply awaits the live encryption procedure.
+    LongTermKeyReply(LeLongTermKeyRequestReplyCommand),
+    /// A validated LE Long Term Key Request Negative Reply awaits the live procedure.
+    LongTermKeyNegativeReply(LeLongTermKeyRequestNegativeReplyCommand),
+    /// A claimed LTK reply opcode had malformed parameters.
+    MalformedLongTermKeyReply(LeLongTermKeyCommandCompleteEvent),
     /// A decoded bootstrap command awaits session-aware software dispatch.
     Bootstrap(OwnedBootstrapCommand),
     /// A known bootstrap opcode had malformed parameters and produced this response.
@@ -79,6 +87,9 @@ impl LeControllerCommandClassification {
             | Self::MalformedReadRemoteVersionInformation(_) => {
                 LeReadRemoteVersionInformationCommand::OPCODE
             }
+            Self::LongTermKeyReply(_) => LeLongTermKeyRequestReplyCommand::OPCODE,
+            Self::LongTermKeyNegativeReply(_) => LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
+            Self::MalformedLongTermKeyReply(response) => response.opcode(),
             Self::Bootstrap(command) => command.opcode(),
             Self::MalformedBootstrap(response) => response.opcode(),
             Self::Dtm(command) => command.kind().opcode(),
@@ -157,6 +168,32 @@ pub fn classify_le_controller_command(
             );
         }
         Err(LeReadRemoteVersionInformationDecodeError::Unsupported) => {}
+    }
+
+    match LeLongTermKeyRequestReplyCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::LongTermKeyReply(command),
+        Err(LeLongTermKeyCommandDecodeError::Malformed) => {
+            return LeControllerCommandClassification::MalformedLongTermKeyReply(
+                LeLongTermKeyCommandCompleteEvent::invalid_parameters(
+                    LeLongTermKeyRequestReplyCommand::OPCODE,
+                ),
+            );
+        }
+        Err(LeLongTermKeyCommandDecodeError::Unsupported) => {}
+    }
+
+    match LeLongTermKeyRequestNegativeReplyCommand::decode(command) {
+        Ok(command) => {
+            return LeControllerCommandClassification::LongTermKeyNegativeReply(command);
+        }
+        Err(LeLongTermKeyCommandDecodeError::Malformed) => {
+            return LeControllerCommandClassification::MalformedLongTermKeyReply(
+                LeLongTermKeyCommandCompleteEvent::invalid_parameters(
+                    LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
+                ),
+            );
+        }
+        Err(LeLongTermKeyCommandDecodeError::Unsupported) => {}
     }
 
     if LeLegacyAdvertisingCommandKind::from_opcode(command.opcode()).is_some() {

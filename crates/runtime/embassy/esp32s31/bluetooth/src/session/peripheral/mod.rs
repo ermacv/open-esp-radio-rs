@@ -1,4 +1,6 @@
-//! Peripheral-connection first-event and stopping adaptation.
+//! Peripheral-connection active, first-event, and stopping adaptation.
+
+pub(crate) mod active;
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod first;

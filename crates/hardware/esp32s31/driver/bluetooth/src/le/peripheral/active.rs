@@ -5,8 +5,9 @@
 //! bounded control-response queue. Active HCI commands share the radio wait;
 //! Disconnect retains Command Status order through acknowledged LL termination,
 //! and Reset retires the exact graph before bootstrap mutation. Host ACL packets
-//! are retained as one credit, fragmented into legacy 27-byte LL Data PDUs and
-//! completed only after final peer acknowledgement. Accepted peer LL Data PDUs
+//! are retained as one credit, fragmented into 27-byte plaintext or 23-byte
+//! encrypted legacy LL payloads, and completed only after final peer
+//! acknowledgement. Accepted peer LL Data PDUs
 //! enter a bounded Controller-to-Host ACL queue after Connection Complete.
 //! Host Buffer Size and Host Number Of Completed Packets bound delivery for the
 //! sole live handle. The special credit command remains serialized behind an
@@ -16,6 +17,9 @@
 //! Peer termination retires the unlinked graph and restores ordered idle HCI intake.
 //! An unanswered initial transmit window recurs with its full WinSize; six
 //! events without establishment retire the connection with reason `0x3e`.
+//! A running event which exceeds its absolute completion budget enters the
+//! common hardware stop sequence, then unlinks and recycles as an aborted
+//! event; stop and post-unlink waits are independently finite.
 //! Established supervision uses the independent hardware valid-RX time and
 //! retires expired unlinked connections with reason `0x08`.
 //! A guarded recurring window missed before RUN is cancelled and rebuilt at a
@@ -25,6 +29,8 @@
 //! before the first PDU enters the TX graph and retires on acknowledgement or
 //! expiry after the connection supervision timeout.
 //! Version exchange requires a caller-supplied Controller implementation identity.
+//! A disconnected handle is not reusable until every Host-owned Controller ACL
+//! buffer from that connection has returned its flow-control credit.
 //! Any radio fault or unsupported mandatory-control transition seals its owners.
 
 #![forbid(unsafe_code)]
@@ -58,6 +64,8 @@ pub enum PeripheralConnectionHostEventPublication<Session> {
     None(Session),
     Published(Session),
     Masked(Session),
+    /// An older ordered command response still owns Controller output order.
+    OrderedResponsePending(Session),
     Pending(Session),
     FlowControlled(Session),
     EndpointMismatch(Session),
@@ -72,9 +80,11 @@ pub enum PeripheralConnectionHostEventPublication<Session> {
 pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     order: Order<'a, radio::Radio<'a, S, N>>,
     control: oer_bluetooth_ll::control::LePeripheralControl,
+    encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
     supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
     termination: Option<super::termination::PeripheralTerminationDeadline>,
     procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
     host_events: host_events::PeripheralConnectionHostEvents,
     acl: acl::PeripheralConnectionAcl,
     disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
@@ -85,9 +95,11 @@ pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage
 struct PeripheralConnectionState<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     radio: radio::Radio<'a, S, N>,
     control: oer_bluetooth_ll::control::LePeripheralControl,
+    encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
     supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
     termination: Option<super::termination::PeripheralTerminationDeadline>,
     procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
     host_events: host_events::PeripheralConnectionHostEvents,
     acl: acl::PeripheralConnectionAcl,
     disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
@@ -115,9 +127,11 @@ pub struct PeripheralConnectionResetFault<'a, S: SchedulerRunInterruptStorage, c
     radio: radio::Fault<'a, S, N>,
     _barrier: LeControllerResetBarrier<'a, ()>,
     _control: oer_bluetooth_ll::control::LePeripheralControl,
+    _encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
     _supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
     _termination: Option<super::termination::PeripheralTerminationDeadline>,
     _procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    _progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
     _host_events: host_events::PeripheralConnectionHostEvents,
     _acl: acl::PeripheralConnectionAcl,
     _disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
@@ -213,6 +227,17 @@ pub enum PeripheralConnectionActiveStep<'a, S: SchedulerRunInterruptStorage, con
 pub struct PeripheralConnectionActiveFault<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     radio: radio::Fault<'a, S, N>,
     _order: Order<'a, ()>,
+    _control: oer_bluetooth_ll::control::LePeripheralControl,
+    _encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
+    _supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
+    _termination: Option<super::termination::PeripheralTerminationDeadline>,
+    _procedure: Option<super::procedure::PeripheralProcedureDeadline>,
+    _progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
+    _host_events: host_events::PeripheralConnectionHostEvents,
+    _acl: acl::PeripheralConnectionAcl,
+    _disconnect: Option<oer_bluetooth_hci::LeDisconnectCommand>,
+    _read_remote_features_after_status: bool,
+    _read_remote_version_after_status: bool,
 }
 
 impl<S: SchedulerRunInterruptStorage, const N: usize> PeripheralConnectionActiveFault<'_, S, N> {
@@ -235,9 +260,13 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             order: order.map_owner(|()| radio::Radio::Running(running)),
             control: oer_bluetooth_ll::control::LePeripheralControl::new()
                 .with_local_version(local_version),
+            encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure::new(),
             supervision: None,
             termination: None,
             procedure: None,
+            progress_deadline: super::progress::PeripheralConnectionProgressDeadline::new(
+                S::monotonic_micros(),
+            ),
             host_events: host_events::PeripheralConnectionHostEvents::new(),
             acl: acl::PeripheralConnectionAcl::new(),
             disconnect: None,
@@ -284,9 +313,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         let Self {
             order,
             control,
+            encryption,
             supervision,
             termination,
             procedure,
+            progress_deadline,
             host_events,
             acl,
             disconnect,
@@ -297,14 +328,18 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             unreachable!("a response-pending connection cannot route a command")
         };
         let live_handle = host_events.live_handle();
-        let local_procedure_busy = control.local_procedure_pending();
+        let local_procedure_busy =
+            control.local_procedure_pending() || encryption.blocks_unrelated_transmission();
         let local_version_available = control.remote_version_request_available();
+        let long_term_key_request_pending = encryption.long_term_key_request().is_some();
         let ready = ready.map_owner(|radio| PeripheralConnectionState {
             radio,
             control,
+            encryption,
             supervision,
             termination,
             procedure,
+            progress_deadline,
             host_events,
             acl,
             disconnect,
@@ -328,6 +363,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                     live_handle,
                     local_procedure_busy,
                     local_version_available,
+                    long_term_key_request_pending,
                 ) {
                     HciCommandRoute::ResponsePending(pending) => {
                         PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
@@ -374,6 +410,36 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                             pending,
                         ))
                     }
+                    HciCommandRoute::LongTermKeyReply(reply) => {
+                        let pending = reply.into_accepted_complete().map_owner(|accepted| {
+                            let (mut state, long_term_key) = accepted.into_parts();
+                            state
+                                .encryption
+                                .provide_long_term_key(
+                                    oer_bluetooth_ll::security::LeLongTermKey::new(long_term_key),
+                                )
+                                .unwrap_or_else(|_| {
+                                    unreachable!(
+                                        "the HCI router admitted only a pending LTK request"
+                                    )
+                                });
+                            state
+                        });
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
+                    HciCommandRoute::LongTermKeyNegativeReply(reply) => {
+                        let pending = reply.into_accepted_complete().map_owner(|mut state| {
+                            state.encryption.reject_long_term_key().unwrap_or_else(|_| {
+                                unreachable!("the HCI router admitted only a pending LTK request")
+                            });
+                            state
+                        });
+                        PeripheralConnectionCommandRoute::ResponsePending(Self::from_pending(
+                            pending,
+                        ))
+                    }
                     HciCommandRoute::ResetBarrier(barrier) => {
                         PeripheralConnectionCommandRoute::ResetBarrier(
                             PeripheralConnectionResetBarrier { barrier },
@@ -398,9 +464,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             } => {
                 let (mut state, ready) = ready.into_parts();
                 let result = command.and_then(|command| {
+                    let credit_handle = state.acl.credit_handle(live_handle);
                     state
                         .acl
-                        .accept_host_completed_packets(command, live_handle)
+                        .accept_host_completed_packets(command, credit_handle)
                 });
                 match result {
                     Ok(()) => PeripheralConnectionCommandIntake::HostCompletedPackets {
@@ -467,14 +534,6 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
 
     /// Borrow readiness from the retained phase. `None` requires an immediate step.
     pub fn radio_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
-        if self
-            .order
-            .owner()
-            .completed_receive_batch_len()
-            .is_some_and(|len| !self.acl.can_accept_controller_batch(len))
-        {
-            return Some(PeripheralConnectionActiveWait::HostEventCapacity);
-        }
         self.order.owner().wait()
     }
 
@@ -539,6 +598,33 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         if !self.order.accepts_endpoint(controller) {
             return PeripheralConnectionHostEventPublication::EndpointMismatch(self);
         }
+        if !matches!(&self.order, Order::CommandReady(_)) {
+            return PeripheralConnectionHostEventPublication::OrderedResponsePending(self);
+        }
+        observe_encryption_host_events(&mut self.encryption, &mut self.host_events);
+        match self.host_events.try_publish(controller) {
+            Publication::Published => {
+                return PeripheralConnectionHostEventPublication::Published(self);
+            }
+            Publication::Masked => {
+                if self.host_events.take_long_term_key_request_masked() {
+                    self.encryption.reject_long_term_key().unwrap_or_else(|_| {
+                        unreachable!("only the retained LTK request can be masked")
+                    });
+                }
+                return PeripheralConnectionHostEventPublication::Masked(self);
+            }
+            Publication::Pending => {
+                return PeripheralConnectionHostEventPublication::Pending(self);
+            }
+            Publication::Fault(error) => {
+                return PeripheralConnectionHostEventPublication::Fault {
+                    session: self,
+                    error,
+                };
+            }
+            Publication::None => {}
+        }
         if self.host_events.connection_result_published() {
             let profile = controller.controller_to_host_acl_profile();
             match self.acl.try_publish_controller_packet(
@@ -565,28 +651,24 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                 acl::ControllerAclPublication::None => {}
             }
         }
-        match self.host_events.try_publish(controller) {
-            Publication::None => PeripheralConnectionHostEventPublication::None(self),
-            Publication::Published => PeripheralConnectionHostEventPublication::Published(self),
-            Publication::Masked => PeripheralConnectionHostEventPublication::Masked(self),
-            Publication::Pending => PeripheralConnectionHostEventPublication::Pending(self),
-            Publication::Fault(error) => PeripheralConnectionHostEventPublication::Fault {
-                session: self,
-                error,
-            },
-        }
+        PeripheralConnectionHostEventPublication::None(self)
     }
 
     // Do not merge the affine radio transition's temporaries into the much
     // larger controller dispatch future's stack frame.
     #[inline(never)]
-    pub fn step_radio(self) -> PeripheralConnectionActiveStep<'a, S, N> {
+    pub fn step_radio(
+        self,
+        random: &mut impl super::PeripheralEncryptionRandomSource,
+    ) -> PeripheralConnectionActiveStep<'a, S, N> {
         let Self {
             order,
             mut control,
+            mut encryption,
             mut supervision,
             mut termination,
             mut procedure,
+            mut progress_deadline,
             mut host_events,
             mut acl,
             disconnect,
@@ -594,15 +676,97 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             read_remote_version_after_status,
         } = self;
         let (radio, order) = order.into_parts();
+        if let Some(deadline_phase) = radio.deadline_phase()
+            && progress_deadline.expired(S::monotonic_micros())
+        {
+            if matches!(deadline_phase, radio::DeadlinePhase::SchedulerCompletion) {
+                match radio.begin_completion_abort() {
+                    Ok(radio) => {
+                        return PeripheralConnectionActiveStep::Continue(Self {
+                            order: order.map_owner(|()| radio),
+                            control,
+                            encryption,
+                            supervision,
+                            termination,
+                            procedure,
+                            progress_deadline:
+                                super::progress::PeripheralConnectionProgressDeadline::for_stop(
+                                    S::monotonic_micros(),
+                                ),
+                            host_events,
+                            acl,
+                            disconnect,
+                            read_remote_features_after_status,
+                            read_remote_version_after_status,
+                        });
+                    }
+                    Err(radio) => {
+                        return PeripheralConnectionActiveStep::Fault(
+                            PeripheralConnectionActiveFault {
+                                radio,
+                                _order: order,
+                                _control: control,
+                                _encryption: encryption,
+                                _supervision: supervision,
+                                _termination: termination,
+                                _procedure: procedure,
+                                _progress_deadline: progress_deadline,
+                                _host_events: host_events,
+                                _acl: acl,
+                                _disconnect: disconnect,
+                                _read_remote_features_after_status:
+                                    read_remote_features_after_status,
+                                _read_remote_version_after_status: read_remote_version_after_status,
+                            },
+                        );
+                    }
+                }
+            }
+            let cause = match deadline_phase {
+                radio::DeadlinePhase::SchedulerStop => {
+                    PeripheralConnectionActiveFaultCause::CompletionAbortDeadlineExpired
+                }
+                radio::DeadlinePhase::PostUnlink => {
+                    PeripheralConnectionActiveFaultCause::UnlinkDeadlineExpired
+                }
+                radio::DeadlinePhase::ControllerTime => {
+                    PeripheralConnectionActiveFaultCause::ControllerTimeDeadlineExpired
+                }
+                radio::DeadlinePhase::SchedulerCompletion => unreachable!(),
+            };
+            return PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
+                radio: radio.expire_deadline(cause),
+                _order: order,
+                _control: control,
+                _encryption: encryption,
+                _supervision: supervision,
+                _termination: termination,
+                _procedure: procedure,
+                _progress_deadline: progress_deadline,
+                _host_events: host_events,
+                _acl: acl,
+                _disconnect: disconnect,
+                _read_remote_features_after_status: read_remote_features_after_status,
+                _read_remote_version_after_status: read_remote_version_after_status,
+            });
+        }
         if matches!(&radio, radio::Radio::Stopped { .. }) {
             control.close_remote_feature_request();
             control.close_remote_version_request();
         }
         observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
         observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
+        observe_encryption_host_events(&mut encryption, &mut host_events);
+        if encryption.termination_reason() == Some(0x06) {
+            control.request_local_termination(0x06);
+        }
         let (radio, order) = match (radio, order) {
             (radio::Radio::Stopped { task, reason }, Order::CommandReady(ready))
-                if host_events.ready_to_restore_idle() && !acl.has_controller_packet() =>
+                if super::progress::retirement_barrier_is_ready(
+                    host_events.ready_to_restore_idle(),
+                    !acl.has_controller_packet(),
+                    acl.controller_credits_settled(),
+                ) =>
             {
                 return PeripheralConnectionActiveStep::Stopped {
                     task: crate::controller::ControllerIdleCommandTask::from_parts(task, ready),
@@ -613,43 +777,68 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         };
         let step = radio.step(
             &mut control,
+            &mut encryption,
             &mut acl,
-            &mut supervision,
-            &mut termination,
-            &mut procedure,
+            radio::Deadlines {
+                supervision: &mut supervision,
+                termination: &mut termination,
+                procedure: &mut procedure,
+            },
             &mut host_events,
+            random,
         );
         observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
         observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
+        observe_encryption_host_events(&mut encryption, &mut host_events);
         match step {
             radio::Step::Continue(radio) => PeripheralConnectionActiveStep::Continue(Self {
                 order: order.map_owner(|()| radio),
                 control,
+                encryption,
                 supervision,
                 termination,
                 procedure,
+                progress_deadline,
                 host_events,
                 acl,
                 disconnect,
                 read_remote_features_after_status,
                 read_remote_version_after_status,
             }),
-            radio::Step::Published(radio) => PeripheralConnectionActiveStep::Published(Self {
-                order: order.map_owner(|()| radio),
-                control,
-                supervision,
-                termination,
-                procedure,
-                host_events,
-                acl,
-                disconnect,
-                read_remote_features_after_status,
-                read_remote_version_after_status,
-            }),
+            radio::Step::Published(radio) => {
+                progress_deadline = super::progress::PeripheralConnectionProgressDeadline::new(
+                    S::monotonic_micros(),
+                );
+                PeripheralConnectionActiveStep::Published(Self {
+                    order: order.map_owner(|()| radio),
+                    control,
+                    encryption,
+                    supervision,
+                    termination,
+                    procedure,
+                    progress_deadline,
+                    host_events,
+                    acl,
+                    disconnect,
+                    read_remote_features_after_status,
+                    read_remote_version_after_status,
+                })
+            }
             radio::Step::Fault(radio) => {
                 PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
                     radio,
                     _order: order,
+                    _control: control,
+                    _encryption: encryption,
+                    _supervision: supervision,
+                    _termination: termination,
+                    _procedure: procedure,
+                    _progress_deadline: progress_deadline,
+                    _host_events: host_events,
+                    _acl: acl,
+                    _disconnect: disconnect,
+                    _read_remote_features_after_status: read_remote_features_after_status,
+                    _read_remote_version_after_status: read_remote_version_after_status,
                 })
             }
         }
@@ -680,9 +869,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         let Self {
             order,
             mut control,
+            encryption,
             supervision,
             termination,
             mut procedure,
+            progress_deadline,
             mut host_events,
             acl,
             disconnect,
@@ -693,9 +884,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             OrderPublication::CommandReady(order) => Publication::CommandReady(Self {
                 order,
                 control,
+                encryption,
                 supervision,
                 termination,
                 procedure,
+                progress_deadline,
                 host_events,
                 acl,
                 disconnect,
@@ -704,7 +897,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             }),
             OrderPublication::Published(order) => {
                 if let Some(command) = disconnect {
-                    control.request_local_termination(command.reason());
+                    control.request_host_termination(command.reason());
                 }
                 if read_remote_features_after_status {
                     if matches!(order.owner(), radio::Radio::Stopped { .. }) {
@@ -729,9 +922,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                 Publication::Published(Self {
                     order,
                     control,
+                    encryption,
                     supervision,
                     termination,
                     procedure,
+                    progress_deadline,
                     host_events,
                     acl,
                     disconnect: None,
@@ -742,9 +937,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             OrderPublication::Pending(order) => Publication::Pending(Self {
                 order,
                 control,
+                encryption,
                 supervision,
                 termination,
                 procedure,
+                progress_deadline,
                 host_events,
                 acl,
                 disconnect,
@@ -754,9 +951,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             OrderPublication::EndpointMismatch(order) => Publication::EndpointMismatch(Self {
                 order,
                 control,
+                encryption,
                 supervision,
                 termination,
                 procedure,
+                progress_deadline,
                 host_events,
                 acl,
                 disconnect,
@@ -767,9 +966,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                 state: Self {
                     order,
                     control,
+                    encryption,
                     supervision,
                     termination,
                     procedure,
+                    progress_deadline,
                     host_events,
                     acl,
                     disconnect,
@@ -793,6 +994,21 @@ fn observe_remote_feature_result(
     }
 }
 
+fn observe_encryption_host_events(
+    encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
+    host_events: &mut host_events::PeripheralConnectionHostEvents,
+) {
+    if let Some(request) = encryption.take_long_term_key_request() {
+        host_events.observe_long_term_key_request(request);
+    }
+    if encryption.take_encryption_enabled() {
+        host_events.observe_encryption_enabled();
+    }
+    if encryption.take_encryption_refreshed() {
+        host_events.observe_encryption_refreshed();
+    }
+}
+
 fn observe_remote_version_result(
     control: &mut oer_bluetooth_ll::control::LePeripheralControl,
     procedure: &mut Option<super::procedure::PeripheralProcedureDeadline>,
@@ -809,9 +1025,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> PeripheralConnectionSt
         PeripheralConnectionActiveSession {
             order: order.map_owner(|()| self.radio),
             control: self.control,
+            encryption: self.encryption,
             supervision: self.supervision,
             termination: self.termination,
             procedure: self.procedure,
+            progress_deadline: self.progress_deadline,
             host_events: self.host_events,
             acl: self.acl,
             disconnect: self.disconnect,
@@ -826,19 +1044,116 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
 {
     /// Borrow the current radio wait while retaining Reset ownership.
     pub fn radio_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
-        self.barrier.owner().radio.wait()
+        self.barrier.owner().radio.reset_wait()
     }
 
     /// Retire the connection graph before exposing the idle Reset barrier.
-    pub fn step(self) -> PeripheralConnectionResetStep<'a, S, N> {
+    pub fn step(
+        self,
+        random: &mut impl super::PeripheralEncryptionRandomSource,
+    ) -> PeripheralConnectionResetStep<'a, S, N> {
         let (mut state, barrier) = self.barrier.into_parts();
+        if let Some(deadline_phase) = state.radio.deadline_phase()
+            && state.progress_deadline.expired(S::monotonic_micros())
+        {
+            let PeripheralConnectionState {
+                radio,
+                control,
+                encryption,
+                supervision,
+                termination,
+                procedure,
+                progress_deadline,
+                host_events,
+                acl,
+                disconnect,
+                read_remote_features_after_status,
+                read_remote_version_after_status,
+            } = state;
+            if matches!(deadline_phase, radio::DeadlinePhase::SchedulerCompletion) {
+                match radio.begin_completion_abort() {
+                    Ok(radio) => {
+                        return PeripheralConnectionResetStep::Continue(Self {
+                            barrier: barrier.map_owner(|()| PeripheralConnectionState {
+                                radio,
+                                control,
+                                encryption,
+                                supervision,
+                                termination,
+                                procedure,
+                                progress_deadline:
+                                    super::progress::PeripheralConnectionProgressDeadline::for_stop(
+                                        S::monotonic_micros(),
+                                    ),
+                                host_events,
+                                acl,
+                                disconnect,
+                                read_remote_features_after_status,
+                                read_remote_version_after_status,
+                            }),
+                        });
+                    }
+                    Err(radio) => {
+                        return PeripheralConnectionResetStep::Fault(
+                            PeripheralConnectionResetFault {
+                                radio,
+                                _barrier: barrier,
+                                _control: control,
+                                _encryption: encryption,
+                                _supervision: supervision,
+                                _termination: termination,
+                                _procedure: procedure,
+                                _progress_deadline: progress_deadline,
+                                _host_events: host_events,
+                                _acl: acl,
+                                _disconnect: disconnect,
+                                _read_remote_features_after_status:
+                                    read_remote_features_after_status,
+                                _read_remote_version_after_status: read_remote_version_after_status,
+                            },
+                        );
+                    }
+                }
+            }
+            let cause = match deadline_phase {
+                radio::DeadlinePhase::SchedulerStop => {
+                    PeripheralConnectionActiveFaultCause::CompletionAbortDeadlineExpired
+                }
+                radio::DeadlinePhase::PostUnlink => {
+                    PeripheralConnectionActiveFaultCause::UnlinkDeadlineExpired
+                }
+                radio::DeadlinePhase::ControllerTime => {
+                    PeripheralConnectionActiveFaultCause::ControllerTimeDeadlineExpired
+                }
+                radio::DeadlinePhase::SchedulerCompletion => unreachable!(),
+            };
+            return PeripheralConnectionResetStep::Fault(PeripheralConnectionResetFault {
+                radio: radio.expire_deadline(cause),
+                _barrier: barrier,
+                _control: control,
+                _encryption: encryption,
+                _supervision: supervision,
+                _termination: termination,
+                _procedure: procedure,
+                _progress_deadline: progress_deadline,
+                _host_events: host_events,
+                _acl: acl,
+                _disconnect: disconnect,
+                _read_remote_features_after_status: read_remote_features_after_status,
+                _read_remote_version_after_status: read_remote_version_after_status,
+            });
+        }
         match state.radio.step_reset(
             &mut state.control,
+            &mut state.encryption,
             &mut state.acl,
-            &mut state.supervision,
-            &mut state.termination,
-            &mut state.procedure,
+            radio::Deadlines {
+                supervision: &mut state.supervision,
+                termination: &mut state.termination,
+                procedure: &mut state.procedure,
+            },
             &mut state.host_events,
+            random,
         ) {
             radio::ResetStep::Continue(radio) => {
                 state.radio = radio;
@@ -854,9 +1169,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                     radio,
                     _barrier: barrier,
                     _control: state.control,
+                    _encryption: state.encryption,
                     _supervision: state.supervision,
                     _termination: state.termination,
                     _procedure: state.procedure,
+                    _progress_deadline: state.progress_deadline,
                     _host_events: state.host_events,
                     _acl: state.acl,
                     _disconnect: state.disconnect,

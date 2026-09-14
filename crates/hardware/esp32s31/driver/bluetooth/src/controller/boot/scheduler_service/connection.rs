@@ -113,4 +113,18 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ) -> PeripheralConnectionRecycleOutcome {
         self.runtime.recycle_peripheral_connection_completed(ready)
     }
+
+    /// Advance one bounded common-stop transition for the exact running
+    /// peripheral event.
+    pub(crate) fn step_peripheral_connection_stop(
+        &mut self,
+        running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> crate::scheduler::core::PeripheralConnectionSchedulerStopStep
+    where
+        S: SchedulerRunInterruptStorage,
+    {
+        self.runtime
+            .step_peripheral_connection_stop(self.storage, running, stop)
+    }
 }

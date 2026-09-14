@@ -209,6 +209,21 @@ where
         }
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_scheduler_wait_running(self) -> Result<Role::Running, Self> {
+        match self.phase {
+            SingleItemCompletionPhase::RunningAwaitingWake(running) => Ok(running),
+            phase => Err(Self { phase }),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn from_hardware_head_empty(observed: Role::HardwareHeadEmpty) -> Self {
+        Self {
+            phase: SingleItemCompletionPhase::HardwareHeadEmpty(observed),
+        }
+    }
+
     pub(crate) const fn wait_kind(&self) -> Option<SingleItemCompletionWaitKind> {
         match &self.phase {
             SingleItemCompletionPhase::RunningAwaitingWake(_) => {

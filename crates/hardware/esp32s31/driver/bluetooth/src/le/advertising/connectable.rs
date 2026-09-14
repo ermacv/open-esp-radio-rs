@@ -38,11 +38,11 @@ use oer_bluetooth_ll::{
     },
     advertising_lifecycle::LegacyAdvertisingEventIdentity,
     connectable_advertising::{
-        LegacyConnectableAdvertiserConfigured, LegacyConnectableAdvertisingEvent,
-        LegacyConnectableAdvertisingEventComplete, LegacyConnectableAdvertisingEventInFlight,
-        LegacyConnectableAdvertisingSet, LegacyConnectableConnectionRequestAccepted,
-        LegacyConnectableConnectionRequestAdmission, LegacyConnectableConnectionRequestRejection,
-        LegacyPreparedConnectableAdvertisingEvent,
+        LeChannelSelectionAlgorithmTwoSupport, LegacyConnectableAdvertiserConfigured,
+        LegacyConnectableAdvertisingEvent, LegacyConnectableAdvertisingEventComplete,
+        LegacyConnectableAdvertisingEventInFlight, LegacyConnectableAdvertisingSet,
+        LegacyConnectableConnectionRequestAccepted, LegacyConnectableConnectionRequestAdmission,
+        LegacyConnectableConnectionRequestRejection, LegacyPreparedConnectableAdvertisingEvent,
     },
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -72,10 +72,7 @@ use oer_bluetooth_hci::{
 use oer_bluetooth_ll::{
     LeDeviceAddress,
     advertising::{AdvertisingInterval, LegacyAdvertisingData},
-    connectable_advertising::{
-        LeChannelSelectionAlgorithmTwoSupport, LegacyConnectableAdvertisement,
-        LegacyScanResponseData,
-    },
+    connectable_advertising::{LegacyConnectableAdvertisement, LegacyScanResponseData},
 };
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth_memory::{
@@ -107,6 +104,10 @@ use crate::{
     },
     scheduler::{SchedulerRawWindow, SchedulerSoftwareConfig},
 };
+
+#[cfg(any(target_arch = "riscv32", test))]
+const LOCAL_CHANNEL_SELECTION_TWO_SUPPORT: LeChannelSelectionAlgorithmTwoSupport =
+    LeChannelSelectionAlgorithmTwoSupport::Supported;
 
 /// Why one typed HCI snapshot cannot become the restricted portable role.
 ///
@@ -220,7 +221,7 @@ pub(crate) fn prepare_legacy_connectable_advertising_set(
         advertiser,
         LegacyAdvertisingData::new_owned(request.data().as_bytes())
             .map_err(LegacyConnectableAdvertisingSetError::AdvertisingData)?,
-        LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+        LOCAL_CHANNEL_SELECTION_TWO_SUPPORT,
     );
     let scan_response = LegacyScanResponseData::new_owned(request.scan_response_data().as_bytes())
         .map_err(LegacyConnectableAdvertisingSetError::ScanResponseData)?;

@@ -10,8 +10,11 @@ mod framing;
 #[cfg(feature = "async-io")]
 mod io;
 pub use bluetooth::{
-    BluetoothDtmEvidence, BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
-    BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralResult,
+    BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES,
+    BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS, BluetoothDtmEvidence, BluetoothDtmOperation,
+    BluetoothDtmResult, BluetoothDtmRxDiagnostics, BluetoothPeripheralEvidence,
+    BluetoothPeripheralOperation, BluetoothPeripheralResult, BluetoothPeripheralTermination,
+    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;

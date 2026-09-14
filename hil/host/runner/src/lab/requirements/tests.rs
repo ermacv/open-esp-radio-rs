@@ -107,6 +107,7 @@ fn bluetooth_requires_its_adapter_without_a_network() {
             boots: 1,
             connections: 2,
             hold_millis: 100,
+            termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
         },
     ] {
         let required = Requirements::for_scenario(&scenario(workload));

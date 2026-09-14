@@ -80,10 +80,12 @@ fn execute_workload_inner(
             boots,
             connections,
             hold_millis,
+            termination,
         } => crate::workload::bluetooth::run_peripheral(
             *boots,
             *connections,
             *hold_millis,
+            *termination,
             output,
             context,
         ),

@@ -4,7 +4,9 @@ use core::{cell::RefCell, convert::Infallible, fmt, future::poll_fn, task::Poll}
 
 use bt_hci::{
     FromHciBytes, FromHciBytesError, PacketKind, ReadHciError,
+    cmd::controller_baseband::HostNumberOfCompletedPackets,
     data::{AclPacket, IsoPacket, SyncPacket},
+    param::ConnHandleCompletedPackets,
     transport::{PacketToController, PacketToHost, Transport},
 };
 
@@ -414,6 +416,67 @@ pub struct InProcessHciHostTransport<
 {
     host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
     controller_to_host: &'channel AsyncPacketQueue<M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
+}
+
+/// Write-only Host authority for returning Controller-to-Host ACL credits.
+///
+/// `Host Number Of Completed Packets` has no success event, so it cannot use
+/// the command/response slots in `bt_hci::ExternalController`. This restricted
+/// sender retains only the authority needed for that response-less command and
+/// shares the same bounded Host-to-Controller queue as the standard facade.
+pub struct LeHostAclCreditSender<
+    'channel,
+    M,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
+}
+
+impl<
+    'channel,
+    M,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    InProcessHciHostTransport<
+        'channel,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Derive the restricted response-less ACL credit authority for this epoch.
+    pub fn acl_credit_sender(
+        &self,
+    ) -> LeHostAclCreditSender<'channel, M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY> {
+        LeHostAclCreditSender {
+            host_to_controller: self.host_to_controller,
+        }
+    }
+}
+
+impl<M, const HOST_TO_CONTROLLER_DEPTH: usize, const PACKET_CAPACITY: usize>
+    LeHostAclCreditSender<'_, M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>
+where
+    M: RawMutex,
+{
+    /// Return credits for exact connection handles without awaiting an event.
+    pub async fn return_completed_packets(
+        &self,
+        completed: &[ConnHandleCompletedPackets],
+    ) -> Result<(), HciChannelError> {
+        let command = HostNumberOfCompletedPackets::new(completed);
+        let slot = encode_host_packet::<_, PACKET_CAPACITY>(&command)?;
+        self.host_to_controller.send(slot).await;
+        Ok(())
+    }
 }
 
 impl<

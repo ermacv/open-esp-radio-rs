@@ -4,9 +4,10 @@ use bt_hci::{
         Cmd, Opcode, OpcodeGroup,
         controller_baseband::{Reset, SetEventMask},
         le::{
-            LeReadRemoteFeatures, LeReceiverTest, LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable,
-            LeSetAdvParams, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
-            LeSetScanResponseData, LeTestEnd, LeTransmitterTestV2,
+            LeLongTermKeyRequestNegativeReply, LeLongTermKeyRequestReply, LeReadRemoteFeatures,
+            LeReceiverTest, LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams,
+            LeSetRandomAddr, LeSetScanEnable, LeSetScanParams, LeSetScanResponseData, LeTestEnd,
+            LeTransmitterTestV2,
         },
         link_control::{Disconnect, ReadRemoteVersionInformation},
     },
@@ -1767,6 +1768,94 @@ fn classified_router_cross_epoch_rejection_retains_both_exact_owners() {
 }
 
 #[test]
+fn active_peripheral_ltk_reply_requires_the_exact_pending_request() {
+    let mut resources = controller_resources();
+    let mut endpoints = resources.split();
+    let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(80));
+    let mut parameters = [0; 18];
+    parameters[..2].copy_from_slice(&1_u16.to_le_bytes());
+    parameters[2..].copy_from_slice(&[0x5a; 16]);
+    block_on(endpoints.host.write(&RawCommand::new(
+        LeLongTermKeyRequestReply::OPCODE,
+        &parameters,
+    )))
+    .unwrap();
+    let mut command_buffer = [0; 80];
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::LongTermKeyReply(reply) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+            true,
+        )
+    else {
+        panic!("the exact pending request must retain the secret-bearing reply");
+    };
+    let pending = reply.into_accepted_complete();
+    assert_eq!(pending.owner().owner(), &RadioOwner(80));
+    let LeControllerResponsePublication::Published(ready) =
+        pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept the LTK completion");
+    };
+    let (accepted, ready) = ready.into_parts();
+    let (owner, key) = accepted.into_parts();
+    assert_eq!(owner, RadioOwner(80));
+    assert_eq!(key, [0x5a; 16]);
+
+    let mut response_buffer = [0; 80];
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("LTK reply completion changed packet kind");
+    };
+    let complete = CommandComplete::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(complete.cmd_opcode, LeLongTermKeyRequestReply::OPCODE);
+    assert_eq!(&*complete.bytes, &[0, 1, 0]);
+
+    let ready = ready.map_owner(|()| owner);
+    block_on(endpoints.host.write(&RawCommand::new(
+        LeLongTermKeyRequestNegativeReply::OPCODE,
+        &[1, 0],
+    )))
+    .unwrap();
+    let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+    let LeControllerActivePeripheralCommandRoute::ResponsePending(pending) = endpoints
+        .controller
+        .route_active_peripheral_classified_command(
+            classified,
+            Some(ConnHandle::new(1)),
+            false,
+            true,
+            false,
+        )
+    else {
+        panic!("a reply without a pending request must be rejected in order");
+    };
+    let LeControllerResponsePublication::Published(_) = pending.try_publish(&endpoints.controller)
+    else {
+        panic!("the empty queue must accept the disallowed completion");
+    };
+    let ControllerToHostPacket::Event(event) =
+        block_on(endpoints.host.read(&mut response_buffer)).unwrap()
+    else {
+        panic!("negative LTK completion changed packet kind");
+    };
+    let complete = CommandComplete::from_hci_bytes_complete(event.data).unwrap();
+    assert_eq!(
+        complete.cmd_opcode,
+        LeLongTermKeyRequestNegativeReply::OPCODE
+    );
+    assert_eq!(
+        complete.bytes[0],
+        HciError::CMD_DISALLOWED.to_status().into_inner()
+    );
+}
+
+#[test]
 fn active_peripheral_disconnect_publishes_status_without_losing_procedure_owner() {
     let mut resources = controller_resources();
     let mut endpoints = resources.split();
@@ -1786,6 +1875,7 @@ fn active_peripheral_disconnect_publishes_status_without_losing_procedure_owner(
             Some(ConnHandle::new(1)),
             false,
             true,
+            false,
         )
     else {
         panic!("the live handle must retain Disconnect for Link Layer execution");
@@ -1837,6 +1927,7 @@ fn active_peripheral_rejects_a_foreign_disconnect_handle_in_order() {
             Some(ConnHandle::new(1)),
             false,
             true,
+            false,
         )
     else {
         panic!("an unknown handle must complete without changing the live connection");
@@ -1880,6 +1971,7 @@ fn active_peripheral_remote_features_admits_one_live_procedure() {
             Some(ConnHandle::new(1)),
             false,
             true,
+            false,
         )
     else {
         panic!("the sole live handle must retain the LL feature procedure");
@@ -1917,6 +2009,7 @@ fn active_peripheral_remote_features_admits_one_live_procedure() {
             Some(ConnHandle::new(1)),
             true,
             true,
+            false,
         )
     else {
         panic!("a concurrent remote-feature request must complete in order");
@@ -1954,6 +2047,7 @@ fn active_peripheral_remote_version_requires_identity_and_serializes_procedures(
             Some(ConnHandle::new(1)),
             false,
             true,
+            false,
         )
     else {
         panic!("the live configured connection must retain version exchange");
@@ -1987,6 +2081,7 @@ fn active_peripheral_remote_version_requires_identity_and_serializes_procedures(
             Some(ConnHandle::new(1)),
             true,
             true,
+            false,
         )
     else {
         panic!("a second local procedure must complete with a busy status");
@@ -2015,6 +2110,7 @@ fn active_peripheral_remote_version_requires_identity_and_serializes_procedures(
         .route_active_peripheral_classified_command(
             classified,
             Some(ConnHandle::new(1)),
+            false,
             false,
             false,
         )

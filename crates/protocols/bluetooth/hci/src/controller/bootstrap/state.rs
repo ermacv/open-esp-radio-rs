@@ -153,9 +153,12 @@ impl LeControllerBootstrap {
                 command_success(opcode, &response)
             }
             OwnedBootstrapCommand::LeReadLocalSupportedFeatures => {
-                // Bit 3 is the composed Peripheral-initiated Feature Exchange
-                // procedure. Every other optional feature remains clear.
-                command_success(opcode, &[1 << 3, 0, 0, 0, 0, 0, 0, 0])
+                // Bit 0 is LE Encryption, bit 3 is Peripheral-initiated Feature
+                // Exchange, bit 4 is LE Ping, and bit 14 is CSA #2.
+                command_success(
+                    opcode,
+                    &[(1 << 0) | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
+                )
             }
             OwnedBootstrapCommand::LeSetRandomAddress(address) => {
                 self.requested_random_address = Some(address);

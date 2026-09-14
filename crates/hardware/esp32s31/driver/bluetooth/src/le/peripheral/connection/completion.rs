@@ -429,66 +429,219 @@ impl PeripheralConnectionCompletedEvent {
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut super::super::active::acl::PeripheralConnectionAcl,
         version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
+        random: &mut dyn super::super::PeripheralEncryptionRandomSource,
     ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
         let acknowledged = self.graph.reclaim_transmission();
         control.observe_transmission_completion(acknowledged);
+        encryption.observe_transmission_completion(acknowledged);
         acl.observe_transmission_completion(acknowledged);
         #[cfg(feature = "dtm-diagnostics")]
-        super::super::diagnostics::record_received(&self.batch, acknowledged);
+        super::super::diagnostics::record_received(
+            &self.batch,
+            acknowledged,
+            self.event.channel_map_updated(),
+        );
         #[cfg(not(feature = "dtm-diagnostics"))]
         let _ = acknowledged;
         for index in 0..self.batch.len() {
-            let received = control.receive(
-                self.batch
-                    .packet(index)
-                    .expect("bounded RX batch")
-                    .as_bytes(),
-                version,
-            )?;
-            match received {
-                oer_bluetooth_ll::control::LePeripheralReceive::Data(fragment) => {
-                    acl.accept_controller_fragment(fragment);
+            let packet = *self.batch.packet(index).expect("bounded RX batch");
+            let pdu = packet.as_bytes();
+            let header = pdu[0];
+            let payload = &pdu[2..];
+            use oer_bluetooth_ll::security::{
+                LePeripheralEncryptedReceive as EncryptedReceive,
+                LePeripheralEncryptionReceiveMode as ReceiveMode,
+            };
+            match encryption.receive_mode() {
+                ReceiveMode::Plaintext => {
+                    if header & 0x03 == 0x03 && payload.first() == Some(&0x03) {
+                        if payload.len() != 23
+                            || encryption
+                                .begin(payload, random.next_encryption_random())
+                                .is_err()
+                        {
+                            encryption.fail_unexpected_physical_channel_pdu();
+                        }
+                    } else {
+                        self.dispatch_plaintext(control, acl, pdu, version)?;
+                    }
                 }
-                oer_bluetooth_ll::control::LePeripheralReceive::ChannelMapUpdate(update) => {
-                    self.event
-                        .schedule_channel_map_update(update.channel_map(), update.instant())
-                        .map_err(
-                            oer_bluetooth_ll::control::LePeripheralControlError::ChannelMapUpdate,
-                        )?;
+                ReceiveMode::EncryptedStartResponse => {
+                    let mut encrypted = [0; u8::MAX as usize];
+                    encrypted[..payload.len()].copy_from_slice(payload);
+                    if encryption
+                        .receive_encrypted_start_response(header, &mut encrypted[..payload.len()])
+                        .is_err()
+                    {
+                        encryption.fail_unexpected_physical_channel_pdu();
+                    }
                 }
-                oer_bluetooth_ll::control::LePeripheralReceive::ConnectionUpdate(update) => {
-                    self.event
-                        .schedule_connection_update(update.timing(), update.instant())
-                        .map_err(
-                            oer_bluetooth_ll::control::LePeripheralControlError::ConnectionUpdate,
-                        )?;
+                ReceiveMode::Encrypted => {
+                    let mut plaintext = [0; u8::MAX as usize];
+                    plaintext[..payload.len()].copy_from_slice(payload);
+                    match encryption.receive_active_packet(header, &mut plaintext[..payload.len()])
+                    {
+                        Ok(EncryptedReceive::PauseRequest) => {}
+                        Ok(EncryptedReceive::Plaintext { length }) => {
+                            let mut decoded = [0; u8::MAX as usize + 2];
+                            decoded[0] = header;
+                            decoded[1] = length as u8;
+                            decoded[2..2 + length].copy_from_slice(&plaintext[..length]);
+                            self.dispatch_plaintext(control, acl, &decoded[..2 + length], version)?;
+                        }
+                        Err(_) => encryption.fail_unexpected_physical_channel_pdu(),
+                    }
                 }
-                oer_bluetooth_ll::control::LePeripheralReceive::Control => {}
+                ReceiveMode::UnencryptedPauseResponse => {
+                    if header & 0x03 != 0x03
+                        || encryption
+                            .receive_unencrypted_pause_response(payload)
+                            .is_err()
+                    {
+                        encryption.fail_unexpected_physical_channel_pdu();
+                    }
+                }
+                ReceiveMode::RestartEncryptionRequest => {
+                    let valid = header & 0x03 == 0x03
+                        && payload.len() == 23
+                        && payload.first() == Some(&0x03);
+                    if !valid
+                        || encryption
+                            .begin(payload, random.next_encryption_random())
+                            .is_err()
+                    {
+                        encryption.fail_unexpected_physical_channel_pdu();
+                    }
+                }
+                ReceiveMode::Blocked => encryption.fail_unexpected_physical_channel_pdu(),
             }
         }
-        if let Some(response) = control.pending_response()
+        Ok(self.enqueue_transmission(control, encryption, acl))
+    }
+
+    fn dispatch_plaintext(
+        &mut self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        acl: &mut super::super::active::acl::PeripheralConnectionAcl,
+        pdu: &[u8],
+        version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
+    ) -> Result<(), oer_bluetooth_ll::control::LePeripheralControlError> {
+        match control.receive(pdu, version)? {
+            oer_bluetooth_ll::control::LePeripheralReceive::Data(fragment) => {
+                acl.accept_controller_fragment(fragment);
+            }
+            oer_bluetooth_ll::control::LePeripheralReceive::ChannelMapUpdate(update) => {
+                self.event
+                    .schedule_channel_map_update(update.channel_map(), update.instant())
+                    .map_err(
+                        oer_bluetooth_ll::control::LePeripheralControlError::ChannelMapUpdate,
+                    )?;
+            }
+            oer_bluetooth_ll::control::LePeripheralReceive::ConnectionUpdate(update) => {
+                self.event
+                    .schedule_connection_update(update.timing(), update.instant())
+                    .map_err(
+                        oer_bluetooth_ll::control::LePeripheralControlError::ConnectionUpdate,
+                    )?;
+            }
+            oer_bluetooth_ll::control::LePeripheralReceive::Control => {}
+        }
+        Ok(())
+    }
+
+    /// Fill the reclaimed TX allocation from the current control/ACL priority.
+    ///
+    /// This is separate from RX dispatch so a command accepted while the next
+    /// RUN is held behind its receive reservation can still enter the exact
+    /// CPU-owned graph once, under a freshly sampled procedure deadline.
+    pub(crate) fn enqueue_transmission(
+        &mut self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
+        acl: &mut super::super::active::acl::PeripheralConnectionAcl,
+    ) -> bool {
+        if !self.graph.can_enqueue_transmission() {
+            return false;
+        }
+        if let Some(response) = encryption.pending_response()
             && self
                 .graph
                 .enqueue_control_transmission(response.as_bytes())
-                .expect("portable control response fits the connection TX allocation")
+                .expect("an encryption control response fits the connection TX allocation")
         {
-            control.response_enqueued();
-            #[cfg(feature = "dtm-diagnostics")]
-            super::super::diagnostics::record_enqueued();
-            return Ok(true);
-        } else if let Some(fragment) = acl.next_fragment() {
-            let length = fragment.payload().len();
+            encryption
+                .response_enqueued()
+                .expect("the retained response matches the encryption procedure state");
+            return true;
+        }
+        if encryption.blocks_unrelated_transmission() {
+            return false;
+        }
+        if let Some(response) = control.pending_response() {
+            let mut encrypted = [0; 27];
+            let payload = if let Some(cipher) = encryption.active_encryption() {
+                let plaintext_len = response.as_bytes().len();
+                encrypted[..plaintext_len].copy_from_slice(response.as_bytes());
+                let encrypted_len = cipher
+                    .encrypt_new_packet(0x03, &mut encrypted, plaintext_len)
+                    .expect("legacy control responses fit encrypted packet storage");
+                &encrypted[..encrypted_len]
+            } else {
+                response.as_bytes()
+            };
             if self
                 .graph
-                .enqueue_acl_transmission(fragment.is_continuing(), fragment.payload())
-                .expect("a legacy ACL fragment fits the connection TX allocation")
+                .enqueue_control_transmission(payload)
+                .expect("portable control response fits the connection TX allocation")
             {
-                acl.fragment_enqueued(length);
+                control.response_enqueued();
+                #[cfg(feature = "dtm-diagnostics")]
+                super::super::diagnostics::record_enqueued();
+                return true;
+            }
+        } else {
+            let maximum = if encryption.is_active() {
+                oer_bluetooth_ll::security::LE_LEGACY_ENCRYPTED_PLAINTEXT_BYTES
+            } else {
+                super::super::active::acl::LEGACY_LE_DATA_PAYLOAD_CAPACITY
+            };
+            if let Some(fragment) = acl.next_fragment(maximum) {
+                let length = fragment.payload().len();
+                let continuing = fragment.is_continuing();
+                let mut encrypted = [0; 27];
+                let payload = if let Some(cipher) = encryption.active_encryption() {
+                    encrypted[..length].copy_from_slice(fragment.payload());
+                    let header = if continuing { 0x01 } else { 0x02 };
+                    let encrypted_len = cipher
+                        .encrypt_new_packet(header, &mut encrypted, length)
+                        .expect("a legacy ACL fragment fits encrypted packet storage");
+                    &encrypted[..encrypted_len]
+                } else {
+                    fragment.payload()
+                };
+                if self
+                    .graph
+                    .enqueue_acl_transmission(continuing, payload)
+                    .expect("a legacy ACL fragment fits the connection TX allocation")
+                {
+                    acl.fragment_enqueued(length);
+                    return true;
+                }
+            } else if let Some(cipher) = encryption.active_encryption() {
+                let mut encrypted = [0; oer_bluetooth_ll::security::LE_ACL_MIC_BYTES];
+                let encrypted_len = cipher
+                    .encrypt_new_packet(0x01, &mut encrypted, 0)
+                    .expect("an encrypted empty Data PDU is exactly one MIC");
+                return self
+                    .graph
+                    .enqueue_acl_transmission(true, &encrypted[..encrypted_len])
+                    .expect("an encrypted empty Data PDU fits the connection TX allocation");
             }
         }
-        Ok(false)
+        false
     }
 
     pub(crate) const fn link_layer_completion(&self) -> &LePeripheralConnectionEventCompleted {
@@ -501,6 +654,22 @@ impl PeripheralConnectionCompletedEvent {
 
     pub(crate) const fn received(&self) -> &LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
         &self.batch
+    }
+
+    /// Host ACL slots required before this completed batch can be consumed.
+    /// LL control, malformed input, and empty acknowledgements require no slot
+    /// and must remain processable while Controller ACL output is backpressured.
+    pub(crate) fn required_controller_acl_slots(&self) -> usize {
+        (0..self.batch.len())
+            .filter(|&index| {
+                self.batch.packet(index).is_some_and(|packet| {
+                    oer_bluetooth_ll::control::LePeripheralControl::receive_requires_acl_slot(
+                        packet.as_bytes(),
+                    )
+                    .unwrap_or(false)
+                })
+            })
+            .count()
     }
 
     pub(crate) const fn packet_start(&self) -> Option<&PeripheralConnectionPacketStartTiming> {

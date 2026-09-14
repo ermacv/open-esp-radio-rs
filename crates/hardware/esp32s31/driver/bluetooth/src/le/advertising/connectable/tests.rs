@@ -50,12 +50,53 @@ fn definition(
         LegacyConnectableAdvertisement::new(
             advertiser,
             LegacyAdvertisingData::new_owned(&[2, 1, 6]).unwrap(),
-            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+            super::LOCAL_CHANNEL_SELECTION_TWO_SUPPORT,
         ),
         LegacyScanResponseData::new_owned(&[3, 3, 0xaa, 0xfe]).unwrap(),
         channels,
         AdvertisingInterval::new(32).unwrap(),
     ))
+}
+
+#[test]
+fn production_definition_advertises_channel_selection_algorithm_two() {
+    let definition =
+        definition(PrimaryAdvertisingChannelMap::new(true, false, false).unwrap()).unwrap();
+    assert_eq!(
+        definition.set().advertisement().channel_selection_two(),
+        LeChannelSelectionAlgorithmTwoSupport::Supported
+    );
+    let prepared = LegacyConnectableAdvertiserStandby::new()
+        .configure(definition.set())
+        .enable()
+        .unwrap_or_else(|_| panic!("the fresh validation generation must be available"))
+        .prepare();
+    assert_ne!(prepared.adv_ind_pdu().as_bytes()[0] & (1 << 5), 0);
+}
+
+#[test]
+fn production_definition_negotiates_channel_selection_algorithm_two() {
+    let definition =
+        definition(PrimaryAdvertisingChannelMap::new(true, false, false).unwrap()).unwrap();
+    let advertiser = definition.set().advertisement().advertiser().wire_bytes();
+    let mut request = connection_request(advertiser);
+    request[0] |= 1 << 5;
+    let outcome = classify_received_pdus(
+        portable_in_flight(definition),
+        [Some(TestReceivedPdu(&request)), None],
+        0,
+        Default::default(),
+    );
+    let LegacyConnectableAdvertisingPortableRxOutcome::ConnectionAccepted { accepted, .. } =
+        outcome
+    else {
+        panic!("the addressed CSA#2 request must be admitted")
+    };
+    let (_, _, connection) = accepted.into_parts();
+    assert_eq!(
+        connection.channel_selection(),
+        oer_bluetooth_ll::connection::LeChannelSelectionAlgorithm::AlgorithmTwo
+    );
 }
 
 #[derive(Clone, Copy)]

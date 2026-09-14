@@ -18,6 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+const PEER_RF_LOSS_MILLIS: u16 = 2_500;
+
 struct Rfkill {
     index: u32,
     path: PathBuf,
@@ -156,6 +158,9 @@ impl Owner {
             }
             drop(user);
         }
+        if let Err(error) = self.rfkill.set(false) {
+            errors.push(format!("temporary rfkill release: {error}"));
+        }
         let info = self.manage_retry(4, &[]);
         let mut same_adapter = true;
         match info {
@@ -209,6 +214,28 @@ impl Owner {
                 result => return result,
             }
         }
+    }
+
+    fn rfkill_for_loss(
+        &mut self,
+        hold_ms: u16,
+        connected: Instant,
+        report: &mut super::model::ConnectionReset,
+    ) -> Result<()> {
+        oer_process::sleep(Duration::from_millis(u64::from(hold_ms)))?;
+        let user = self.user.take().ok_or("missing exclusive HCI channel")?;
+        drop(user);
+        self.rfkill.set(true)?;
+        report.termination_after_connection_micros = Some(connected.elapsed().as_micros() as u64);
+        report.peer_rfkill_blocked = true;
+        let blocked = Instant::now();
+        oer_process::sleep(Duration::from_millis(u64::from(PEER_RF_LOSS_MILLIS)))?;
+        if fs::read_to_string(self.rfkill.path.join("soft"))?.trim() != "1" {
+            return Err("Bluetooth peer rfkill cleared during the RF-loss hold".into());
+        }
+        report.peer_rfkill_micros =
+            Some(blocked.elapsed().as_micros().try_into().unwrap_or(u64::MAX));
+        Ok(())
     }
 }
 
@@ -291,6 +318,7 @@ pub(super) fn connect_reset(
     adapter: Adapter,
     peer: super::model::PeerAddress,
     hold_ms: u16,
+    termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination,
     report: &mut super::model::ConnectionReset,
 ) -> Result<()> {
     if hold_ms > 5_000 {
@@ -303,7 +331,13 @@ pub(super) fn connect_reset(
         owner.acquire()?;
         let user = owner.user.as_ref().ok_or("missing exclusive HCI channel")?;
         user.command(Reset::new())?;
-        super::connection_reset::run(user, peer, hold_ms, report)
+        let outcome = super::connection_reset::run(user, peer, hold_ms, termination, report)?;
+        match outcome {
+            super::connection_reset::ConnectionRunOutcome::Complete => Ok(()),
+            super::connection_reset::ConnectionRunOutcome::PeerRfkill { connected } => {
+                owner.rfkill_for_loss(hold_ms, connected, report)
+            }
+        }
     })();
     if let Err(error) = result {
         report.errors.push(error.to_string());

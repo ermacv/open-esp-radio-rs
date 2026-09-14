@@ -284,7 +284,11 @@ async fn bluetooth_controller_task(
     }
 
     #[cfg(not(feature = "trouble-gatt"))]
-    let BluetoothSystem { hci, runners } = output.system;
+    let BluetoothSystem {
+        hci,
+        host_acl_credits: _,
+        runners,
+    } = output.system;
     #[cfg(not(feature = "trouble-gatt"))]
     let hardware_runner = runners.hardware;
     #[cfg(not(feature = "trouble-gatt"))]

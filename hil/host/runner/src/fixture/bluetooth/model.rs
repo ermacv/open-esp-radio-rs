@@ -1,6 +1,10 @@
 //! Shared, versioned boundary between the unprivileged runner and finite helper.
 
+use open_esp_radio_hil_protocol::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
+
+pub(crate) const HELPER_CAPABILITIES: &str =
+    "schema=9 termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Adapter(pub(crate) u16);
@@ -114,7 +118,7 @@ impl std::fmt::Display for PeerAddress {
     }
 }
 
-/// Central-side connection, ACL echo and Reset evidence for one bounded operation.
+/// Central-side connection, ACL echo and selected termination evidence.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConnectionReset {
@@ -122,58 +126,193 @@ pub(crate) struct ConnectionReset {
     pub(crate) adapter: String,
     pub(crate) peer: String,
     pub(crate) hold_ms: u16,
+    pub(crate) termination: BluetoothPeripheralTermination,
     pub(crate) initial_powered: Option<bool>,
     pub(crate) initial_soft_blocked: Option<bool>,
     pub(crate) connection_complete: bool,
+    #[serde(default)]
+    pub(crate) remote_features_command_status: bool,
+    #[serde(default)]
+    pub(crate) remote_features_complete: bool,
+    #[serde(default)]
+    pub(crate) remote_features: Option<[u8; 8]>,
+    #[serde(default)]
+    pub(crate) remote_features_after_micros: Option<u64>,
+    #[serde(default)]
+    pub(crate) remote_version_command_status: bool,
+    #[serde(default)]
+    pub(crate) remote_version_complete: bool,
+    #[serde(default)]
+    pub(crate) remote_version: Option<u8>,
+    #[serde(default)]
+    pub(crate) remote_version_company: Option<u16>,
+    #[serde(default)]
+    pub(crate) remote_version_subversion: Option<u16>,
+    #[serde(default)]
+    pub(crate) remote_version_after_micros: Option<u64>,
     pub(crate) acl_sent: bool,
     pub(crate) acl_echo_received: bool,
     pub(crate) acl_payload_bytes: Option<u16>,
+    pub(crate) acl_echo_hci_packets: Option<u16>,
     pub(crate) acl_echo_after_micros: Option<u64>,
+    pub(crate) connection_update_complete: bool,
+    pub(crate) updated_interval_millis: Option<u16>,
+    pub(crate) connection_update_after_micros: Option<u64>,
+    #[serde(default)]
+    pub(crate) channel_map_updated: bool,
+    #[serde(default)]
+    pub(crate) channel_map_update_after_micros: Option<u64>,
+    #[serde(default)]
+    pub(crate) post_update_acl_sent: bool,
+    #[serde(default)]
+    pub(crate) post_update_acl_echo_received: bool,
+    #[serde(default)]
+    pub(crate) post_update_acl_echo_hci_packets: Option<u16>,
+    #[serde(default)]
+    pub(crate) post_update_acl_echo_after_micros: Option<u64>,
     pub(crate) reset_completed: bool,
+    pub(crate) peer_rfkill_blocked: bool,
+    pub(crate) peer_rfkill_micros: Option<u64>,
+    pub(crate) peer_disconnection_complete: bool,
+    pub(crate) peer_disconnect_reason: Option<u8>,
     pub(crate) connection_after_micros: Option<u64>,
-    pub(crate) reset_after_connection_micros: Option<u64>,
+    pub(crate) termination_after_connection_micros: Option<u64>,
     pub(crate) restored: bool,
     pub(crate) errors: Vec<String>,
 }
 
 impl ConnectionReset {
-    pub(crate) fn new(adapter: Adapter, peer: PeerAddress, hold_ms: u16) -> Self {
+    pub(crate) fn new(
+        adapter: Adapter,
+        peer: PeerAddress,
+        hold_ms: u16,
+        termination: BluetoothPeripheralTermination,
+    ) -> Self {
         Self {
-            schema: 2,
+            schema: 9,
             adapter: adapter.to_string(),
             peer: peer.to_string(),
             hold_ms,
+            termination,
             initial_powered: None,
             initial_soft_blocked: None,
             connection_complete: false,
+            remote_features_command_status: false,
+            remote_features_complete: false,
+            remote_features: None,
+            remote_features_after_micros: None,
+            remote_version_command_status: false,
+            remote_version_complete: false,
+            remote_version: None,
+            remote_version_company: None,
+            remote_version_subversion: None,
+            remote_version_after_micros: None,
             acl_sent: false,
             acl_echo_received: false,
             acl_payload_bytes: None,
+            acl_echo_hci_packets: None,
             acl_echo_after_micros: None,
+            connection_update_complete: false,
+            updated_interval_millis: None,
+            connection_update_after_micros: None,
+            channel_map_updated: false,
+            channel_map_update_after_micros: None,
+            post_update_acl_sent: false,
+            post_update_acl_echo_received: false,
+            post_update_acl_echo_hci_packets: None,
+            post_update_acl_echo_after_micros: None,
             reset_completed: false,
+            peer_rfkill_blocked: false,
+            peer_rfkill_micros: None,
+            peer_disconnection_complete: false,
+            peer_disconnect_reason: None,
             connection_after_micros: None,
-            reset_after_connection_micros: None,
+            termination_after_connection_micros: None,
             restored: false,
             errors: Vec::new(),
         }
     }
 
-    pub(crate) fn passed(&self, adapter: Adapter, peer: PeerAddress, hold_ms: u16) -> bool {
-        self.schema == 2
+    pub(crate) fn passed(
+        &self,
+        adapter: Adapter,
+        peer: PeerAddress,
+        hold_ms: u16,
+        termination: BluetoothPeripheralTermination,
+    ) -> bool {
+        let termination_complete = match termination {
+            BluetoothPeripheralTermination::PeerReset => {
+                self.reset_completed
+                    && !self.peer_rfkill_blocked
+                    && self.peer_rfkill_micros.is_none()
+                    && !self.peer_disconnection_complete
+                    && self.peer_disconnect_reason.is_none()
+            }
+            BluetoothPeripheralTermination::PeerRfkill => {
+                !self.reset_completed
+                    && self.peer_rfkill_blocked
+                    && self
+                        .peer_rfkill_micros
+                        .is_some_and(|micros| micros >= 2_500_000)
+                    && !self.peer_disconnection_complete
+                    && self.peer_disconnect_reason.is_none()
+            }
+            BluetoothPeripheralTermination::TargetDisconnect => {
+                !self.reset_completed
+                    && !self.peer_rfkill_blocked
+                    && self.peer_rfkill_micros.is_none()
+                    && self.peer_disconnection_complete
+                    && self.peer_disconnect_reason == Some(0x13)
+            }
+            BluetoothPeripheralTermination::TargetReset => {
+                !self.reset_completed
+                    && !self.peer_rfkill_blocked
+                    && self.peer_rfkill_micros.is_none()
+                    && self.peer_disconnection_complete
+                    && self.peer_disconnect_reason == Some(0x08)
+            }
+            BluetoothPeripheralTermination::LegacyPeerPowerOff => false,
+        };
+        self.schema == 9
             && self.adapter == adapter.to_string()
             && self.peer == peer.to_string()
             && self.hold_ms == hold_ms
+            && self.termination == termination
             && hold_ms <= 5_000
             && self.initial_powered.is_some()
             && self.initial_soft_blocked.is_some()
             && self.connection_complete
+            && self.remote_features_command_status
+            && self.remote_features_complete
+            && self.remote_features == Some([0x18, 0x40, 0, 0, 0, 0, 0, 0])
+            && self.remote_features_after_micros.is_some()
+            && self.remote_version_command_status
+            && self.remote_version_complete
+            && self.remote_version == Some(0x0d)
+            && self.remote_version_company == Some(0xffff)
+            && self.remote_version_subversion == Some(1)
+            && self.remote_version_after_micros.is_some()
             && self.acl_sent
             && self.acl_echo_received
-            && self.acl_payload_bytes == Some(12)
+            && self.acl_payload_bytes
+                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
+            && self.acl_echo_hci_packets
+                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
             && self.acl_echo_after_micros.is_some()
-            && self.reset_completed
+            && self.connection_update_complete
+            && self.updated_interval_millis
+                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS)
+            && self.connection_update_after_micros.is_some()
+            && self.channel_map_updated
+            && self.channel_map_update_after_micros.is_some()
+            && self.post_update_acl_sent
+            && self.post_update_acl_echo_received
+            && self.post_update_acl_echo_hci_packets
+                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
+            && self.post_update_acl_echo_after_micros.is_some()
+            && termination_complete
             && self.connection_after_micros.is_some()
-            && self.reset_after_connection_micros.is_some()
+            && self.termination_after_connection_micros.is_some()
             && self.restored
             && self.errors.is_empty()
     }
@@ -220,33 +359,156 @@ mod tests {
 #[cfg(test)]
 mod connection_reset_tests {
     use super::*;
+
+    fn complete_remote_information(report: &mut ConnectionReset) {
+        report.remote_features_command_status = true;
+        report.remote_features_complete = true;
+        report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features_after_micros = Some(1);
+        report.remote_version_command_status = true;
+        report.remote_version_complete = true;
+        report.remote_version = Some(0x0d);
+        report.remote_version_company = Some(0xffff);
+        report.remote_version_subversion = Some(1);
+        report.remote_version_after_micros = Some(1);
+    }
+
     #[test]
     fn reset_report_requires_the_exact_request_and_complete_restoration() {
         let adapter = Adapter(0);
         let peer: PeerAddress = "30:ed:a0:f3:f6:d1".parse().unwrap();
         assert_eq!(peer.to_string(), "30:ED:A0:F3:F6:D1");
-        let mut report = ConnectionReset::new(adapter, peer, 0);
-        assert!(!report.passed(adapter, peer, 0));
+        let mut report =
+            ConnectionReset::new(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.initial_powered = Some(false);
         report.initial_soft_blocked = Some(true);
         report.connection_complete = true;
+        complete_remote_information(&mut report);
         report.acl_sent = true;
         report.acl_echo_received = true;
-        report.acl_payload_bytes = Some(12);
+        report.acl_payload_bytes =
+            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16);
+        report.acl_echo_hci_packets = Some(10);
         report.acl_echo_after_micros = Some(200);
+        report.connection_update_complete = true;
+        report.updated_interval_millis =
+            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS);
+        report.connection_update_after_micros = Some(300);
+        report.channel_map_updated = true;
+        report.channel_map_update_after_micros = Some(400);
+        report.post_update_acl_sent = true;
+        report.post_update_acl_echo_received = true;
+        report.post_update_acl_echo_hci_packets = Some(10);
+        report.post_update_acl_echo_after_micros = Some(500);
         report.connection_after_micros = Some(100);
-        report.reset_after_connection_micros = Some(1);
+        report.termination_after_connection_micros = Some(1);
         report.reset_completed = true;
-        assert!(!report.passed(adapter, peer, 0));
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.restored = true;
-        assert!(report.passed(adapter, peer, 0));
-        report.schema = 1;
-        assert!(!report.passed(adapter, peer, 0));
-        report.schema = 2;
-        assert!(!report.passed(adapter, peer, 1));
-        assert!(!report.passed(Adapter(1), peer, 0));
-        assert!(!report.passed(adapter, "30:ED:A0:F3:F6:D2".parse().unwrap(), 0));
+        assert!(report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.remote_features = Some([0x18, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_version_subversion = Some(2);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.remote_version_subversion = Some(1);
+        report.acl_echo_hci_packets = Some(1);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.acl_echo_hci_packets = Some(10);
+        report.schema = 4;
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.schema = 9;
+        assert!(!report.passed(adapter, peer, 1, BluetoothPeripheralTermination::PeerReset));
+        assert!(!report.passed(
+            Adapter(1),
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset
+        ));
+        assert!(!report.passed(
+            adapter,
+            "30:ED:A0:F3:F6:D2".parse().unwrap(),
+            0,
+            BluetoothPeripheralTermination::PeerReset
+        ));
         report.errors.push("Reset failed".into());
-        assert!(!report.passed(adapter, peer, 0));
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+    }
+
+    #[test]
+    fn target_termination_requires_the_exact_peer_reason() {
+        let adapter = Adapter(0);
+        let peer: PeerAddress = "30:ed:a0:f3:f6:d1".parse().unwrap();
+        for (termination, reason) in [
+            (BluetoothPeripheralTermination::TargetDisconnect, 0x13),
+            (BluetoothPeripheralTermination::TargetReset, 0x08),
+        ] {
+            let mut report = ConnectionReset::new(adapter, peer, 0, termination);
+            report.initial_powered = Some(false);
+            report.initial_soft_blocked = Some(false);
+            report.connection_complete = true;
+            complete_remote_information(&mut report);
+            report.acl_sent = true;
+            report.acl_echo_received = true;
+            report.acl_payload_bytes =
+                Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16);
+            report.acl_echo_hci_packets = Some(10);
+            report.acl_echo_after_micros = Some(1);
+            report.connection_update_complete = true;
+            report.updated_interval_millis =
+                Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS);
+            report.connection_update_after_micros = Some(1);
+            report.channel_map_updated = true;
+            report.channel_map_update_after_micros = Some(1);
+            report.post_update_acl_sent = true;
+            report.post_update_acl_echo_received = true;
+            report.post_update_acl_echo_hci_packets = Some(10);
+            report.post_update_acl_echo_after_micros = Some(1);
+            report.connection_after_micros = Some(1);
+            report.termination_after_connection_micros = Some(1);
+            report.peer_disconnection_complete = true;
+            report.peer_disconnect_reason = Some(reason);
+            report.restored = true;
+            assert!(report.passed(adapter, peer, 0, termination));
+            report.peer_disconnect_reason = Some(reason ^ 1);
+            assert!(!report.passed(adapter, peer, 0, termination));
+        }
+    }
+
+    #[test]
+    fn peer_rfkill_requires_the_exact_outage_evidence() {
+        let adapter = Adapter(0);
+        let peer: PeerAddress = "30:ed:a0:f3:f6:d1".parse().unwrap();
+        let mut report =
+            ConnectionReset::new(adapter, peer, 0, BluetoothPeripheralTermination::PeerRfkill);
+        report.initial_powered = Some(false);
+        report.initial_soft_blocked = Some(false);
+        report.connection_complete = true;
+        complete_remote_information(&mut report);
+        report.acl_sent = true;
+        report.acl_echo_received = true;
+        report.acl_payload_bytes =
+            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16);
+        report.acl_echo_hci_packets = Some(10);
+        report.acl_echo_after_micros = Some(1);
+        report.connection_update_complete = true;
+        report.updated_interval_millis =
+            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS);
+        report.connection_update_after_micros = Some(1);
+        report.channel_map_updated = true;
+        report.channel_map_update_after_micros = Some(1);
+        report.post_update_acl_sent = true;
+        report.post_update_acl_echo_received = true;
+        report.post_update_acl_echo_hci_packets = Some(10);
+        report.post_update_acl_echo_after_micros = Some(1);
+        report.connection_after_micros = Some(1);
+        report.termination_after_connection_micros = Some(1);
+        report.peer_rfkill_blocked = true;
+        report.peer_rfkill_micros = Some(2_500_000);
+        report.restored = true;
+        assert!(report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerRfkill));
+        report.peer_rfkill_micros = Some(2_499_999);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerRfkill));
     }
 }

@@ -20,6 +20,7 @@ use bt_hci::controller::ExternalController;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_bluetooth_hci::InProcessHciHostTransport;
+use oer_bluetooth_hci::LeHostAclCreditSender;
 
 use oer_esp32s31_bluetooth_embassy::{
     controller::{ControllerCommandBoundary, ModemTimerDriveStep},
@@ -61,6 +62,17 @@ pub type BluetoothHostController<
     1,
 >;
 
+/// Restricted Host authority for the response-less ACL credit command.
+pub type BluetoothHostAclCredits<
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> = LeHostAclCreditSender<
+    'static,
+    CriticalSectionRawMutex,
+    HOST_TO_CONTROLLER_DEPTH,
+    PACKET_CAPACITY,
+>;
+
 /// Product-level Bluetooth composition with a standard Host facade and one
 /// affine hardware runner.
 #[must_use = "the Host facade and hardware runner belong to one Controller epoch"]
@@ -77,6 +89,8 @@ pub struct BluetoothSystem<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
+    /// Host authority for returning Controller-to-Host ACL packet credits.
+    pub host_acl_credits: BluetoothHostAclCredits<HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
     /// All executor-side owners for this exact Controller epoch.
     pub runners: BluetoothRunners<
         MODEM_TIMER_CAPACITY,
@@ -160,6 +174,7 @@ impl<
     > {
         let BluetoothSystem {
             hci,
+            host_acl_credits: _,
             runners: BluetoothRunners { hardware },
         } = self;
         compose_trouble_bluetooth_system(hci, hardware, resources)

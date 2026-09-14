@@ -25,7 +25,8 @@ use crate::{
     BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LeConnectionUpdateCompleteEvent,
     LeControllerBootstrapConfig, LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
-    LeControllerResponsePublication, LeDisconnectionCompleteEvent, LeLegacyAdvertisingReportEvent,
+    LeControllerResponsePublication, LeDisconnectionCompleteEvent, LeEncryptionChangeEvent,
+    LeEncryptionKeyRefreshCompleteEvent, LeLegacyAdvertisingReportEvent, LeLongTermKeyRequestEvent,
     LePeripheralConnectionCompleteEvent, LeReadRemoteVersionInformationCompleteEvent,
     OwnedBootstrapCommand,
 };
@@ -215,6 +216,10 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         0xffff,
         1,
     );
+    let long_term_key = LeLongTermKeyRequestEvent::new(ConnHandle::new(1), [0x5a; 8], 0x1234);
+    let encryption_change = LeEncryptionChangeEvent::new(Status::SUCCESS, ConnHandle::new(1), true);
+    let encryption_refresh =
+        LeEncryptionKeyRefreshCompleteEvent::new(Status::SUCCESS, ConnHandle::new(1));
 
     let endpoints = resources.split();
     assert_eq!(
@@ -329,6 +334,96 @@ fn peripheral_connection_events_honor_their_standard_masks() {
     };
     ReadRemoteVersionInformationComplete::from_hci_bytes_complete(received.data)
         .expect("the event remains standard");
+
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_long_term_key_request(&long_term_key),
+        Ok(LePeripheralConnectionEventPublication::Masked)
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
+                LeEventMask::new().enable_le_long_term_key_request(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_long_term_key_request(&long_term_key),
+        Ok(LePeripheralConnectionEventPublication::Published)
+    );
+    let ControllerToHostPacket::Event(received) =
+        block_on(endpoints.host.read(&mut packet)).expect("the Host drains the LTK request")
+    else {
+        panic!("LTK request changed packet class");
+    };
+    assert!(matches!(
+        LeEvent::from_hci_bytes_complete(received.data).expect("the event remains standard"),
+        LeEvent::LeLongTermKeyRequest(_)
+    ));
+
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_encryption_change(&encryption_change),
+        Ok(LePeripheralConnectionEventPublication::Masked)
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                EventMask::new().enable_encryption_change_v1(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_encryption_change(&encryption_change),
+        Ok(LePeripheralConnectionEventPublication::Published)
+    );
+    let ControllerToHostPacket::Event(received) =
+        block_on(endpoints.host.read(&mut packet)).expect("the Host drains Encryption Change")
+    else {
+        panic!("Encryption Change changed packet class");
+    };
+    assert_eq!(received.kind, EventKind::EncryptionChangeV1);
+
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_encryption_key_refresh_complete(&encryption_refresh),
+        Ok(LePeripheralConnectionEventPublication::Masked)
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .bootstrap
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                EventMask::new().enable_encryption_key_refresh_complete(true),
+            ))
+            .status(),
+        Status::SUCCESS
+    );
+    assert_eq!(
+        endpoints
+            .controller
+            .try_publish_encryption_key_refresh_complete(&encryption_refresh),
+        Ok(LePeripheralConnectionEventPublication::Published)
+    );
+    let ControllerToHostPacket::Event(received) = block_on(endpoints.host.read(&mut packet))
+        .expect("the Host drains Encryption Key Refresh Complete")
+    else {
+        panic!("Encryption Key Refresh Complete changed packet class");
+    };
+    assert_eq!(received.kind, EventKind::EncryptionKeyRefreshComplete);
 
     assert_eq!(
         endpoints

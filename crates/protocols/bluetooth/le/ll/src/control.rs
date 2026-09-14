@@ -1,4 +1,4 @@
-//! Bounded peripheral responder for feature and version exchange.
+//! Bounded peripheral responder for feature, version and LE Ping exchange.
 //!
 //! Input must already have passed the controller's CRC and duplicate filters.
 //! This module does not own SN/NESN, encryption, ACL delivery or LL teardown.
@@ -183,12 +183,36 @@ pub enum LePeripheralReceive<'a> {
     ConnectionUpdate(LeConnectionUpdate),
 }
 
+enum LePeripheralPdu<'a> {
+    Data(LePeripheralDataFragment<'a>),
+    Control(&'a [u8]),
+}
+
+fn decode_peripheral_pdu(pdu: &[u8]) -> Result<LePeripheralPdu<'_>, LePeripheralControlError> {
+    use LePeripheralControlError as Error;
+    if pdu.len() < 2 || pdu.len() != usize::from(pdu[1]) + 2 {
+        return Err(Error::MalformedPdu);
+    }
+    // CTE is outside this profile. RFU bits are ignored as required by LL.
+    if pdu[0] & 0x20 != 0 {
+        return Err(Error::UnsupportedHeader);
+    }
+    match pdu[0] & 3 {
+        llid @ (1 | 2) => Ok(LePeripheralPdu::Data(LePeripheralDataFragment {
+            payload: &pdu[2..],
+            continuing: llid == 1,
+        })),
+        3 if pdu.len() >= 3 => Ok(LePeripheralPdu::Control(&pdu[2..])),
+        _ => Err(Error::MalformedPdu),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LocalTermination {
     None,
-    Queued { reason: u8 },
-    Transmitted { reason: u8 },
-    Acknowledged { reason: u8 },
+    Queued { reason: u8, host: bool },
+    Transmitted { reason: u8, host: bool },
+    Acknowledged { reason: u8, host: bool },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -209,9 +233,10 @@ enum LocalVersionRequest {
 
 /// LE feature page zero supported by this bounded Peripheral controller.
 ///
-/// Bit 3 advertises the implemented Peripheral-initiated Feature Exchange.
+/// Bits 3 and 4 advertise Peripheral-initiated Feature Exchange and LE Ping;
+/// bit 14 advertises Channel Selection Algorithm #2.
 pub const fn le_peripheral_supported_features() -> [u8; 8] {
-    [1 << 3, 0, 0, 0, 0, 0, 0, 0]
+    [1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
 }
 
 /// Two waiting responses plus the independently retained controller TX packet.
@@ -253,6 +278,18 @@ impl LePeripheralControl {
         self
     }
 
+    /// Whether accepting this exact PDU requires one Controller ACL queue slot.
+    ///
+    /// Empty data-channel PDUs acknowledge Link Layer traffic but carry no Host
+    /// ACL packet. Control PDUs remain independently processable when every ACL
+    /// slot is occupied.
+    pub fn receive_requires_acl_slot(pdu: &[u8]) -> Result<bool, LePeripheralControlError> {
+        match decode_peripheral_pdu(pdu)? {
+            LePeripheralPdu::Data(fragment) => Ok(!fragment.payload().is_empty()),
+            LePeripheralPdu::Control(_) => Ok(false),
+        }
+    }
+
     /// Dispatch one accepted unencrypted LE1M PDU in receive-list order.
     pub fn receive<'pdu>(
         &mut self,
@@ -260,24 +297,10 @@ impl LePeripheralControl {
         local_version: Option<LeVersionInformation>,
     ) -> Result<LePeripheralReceive<'pdu>, LePeripheralControlError> {
         use LePeripheralControlError as Error;
-        if pdu.len() < 2 || pdu.len() != usize::from(pdu[1]) + 2 {
-            return Err(Error::MalformedPdu);
-        }
-        // CTE is outside this profile. RFU bits are ignored as required by LL.
-        if pdu[0] & 0x20 != 0 {
-            return Err(Error::UnsupportedHeader);
-        }
-        match pdu[0] & 3 {
-            llid @ (1 | 2) => {
-                return Ok(LePeripheralReceive::Data(LePeripheralDataFragment {
-                    payload: &pdu[2..],
-                    continuing: llid == 1,
-                }));
-            }
-            3 if pdu.len() >= 3 => {}
-            _ => return Err(Error::MalformedPdu),
-        }
-        let payload = &pdu[2..];
+        let payload = match decode_peripheral_pdu(pdu)? {
+            LePeripheralPdu::Data(fragment) => return Ok(LePeripheralReceive::Data(fragment)),
+            LePeripheralPdu::Control(payload) => payload,
+        };
         let opcode = payload[0];
         let mut response = LeControlResponse {
             bytes: [0; 9],
@@ -292,11 +315,10 @@ impl LePeripheralControl {
                 peer.copy_from_slice(&payload[1..]);
                 self.peer_features = Some(peer);
                 let local = le_peripheral_supported_features();
-                // FeatureSet_USED occupies octet zero. Upper octets retain
-                // the Peripheral's supported page-zero features.
                 response.bytes[0] = 0x09;
-                response.bytes[1] = peer[0] & local[0];
-                response.bytes[2..9].copy_from_slice(&local[1..]);
+                for index in 0..local.len() {
+                    response.bytes[index + 1] = peer[index] & local[index];
+                }
                 response.len = 9;
             }
             0x0c => {
@@ -402,6 +424,20 @@ impl LePeripheralControl {
                     self.peer_features = Some(peer);
                     self.local_feature_request = LocalFeatureRequest::None;
                     self.remote_features_result = Some(LeRemoteFeaturesResult::Success(peer));
+                }
+                return Ok(LePeripheralReceive::Control);
+            }
+            0x12 => {
+                if payload.len() != 1 {
+                    return Err(Error::MalformedPdu);
+                }
+                response.bytes[0] = 0x13;
+                response.len = 1;
+            }
+            // A response never starts another Ping exchange.
+            0x13 => {
+                if payload.len() != 1 {
+                    return Err(Error::MalformedPdu);
                 }
                 return Ok(LePeripheralReceive::Control);
             }
@@ -586,7 +622,7 @@ impl LePeripheralControl {
                 Some(response) => Some(response),
                 None if matches!(self.local_feature_request, LocalFeatureRequest::Queued) => {
                     const REQUEST: LeControlResponse = LeControlResponse {
-                        bytes: [0x0e, 1 << 3, 0, 0, 0, 0, 0, 0, 0],
+                        bytes: [0x0e, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
                         len: 9,
                     };
                     Some(&REQUEST)
@@ -604,6 +640,15 @@ impl LePeripheralControl {
     /// Repeated calls for the same connection are idempotent. The caller must
     /// retain the connection until [`Self::local_termination_acknowledged`].
     pub fn request_local_termination(&mut self, reason: u8) {
+        self.request_termination(reason, false);
+    }
+
+    /// Queue termination requested by the Host Disconnect command.
+    pub fn request_host_termination(&mut self, reason: u8) {
+        self.request_termination(reason, true);
+    }
+
+    fn request_termination(&mut self, reason: u8, host: bool) {
         if !matches!(self.local_termination, LocalTermination::None) {
             return;
         }
@@ -614,13 +659,15 @@ impl LePeripheralControl {
         response.bytes[0] = 0x02;
         response.bytes[1] = reason;
         self.termination = Some(response);
-        self.local_termination = LocalTermination::Queued { reason };
+        self.local_termination = LocalTermination::Queued { reason, host };
     }
 
     /// Record whether the retained hardware TX packet was acknowledged.
     pub fn observe_transmission_completion(&mut self, acknowledged: bool) {
-        if acknowledged && let LocalTermination::Transmitted { reason } = self.local_termination {
-            self.local_termination = LocalTermination::Acknowledged { reason };
+        if acknowledged
+            && let LocalTermination::Transmitted { reason, host } = self.local_termination
+        {
+            self.local_termination = LocalTermination::Acknowledged { reason, host };
         }
     }
 
@@ -635,7 +682,7 @@ impl LePeripheralControl {
     /// Reason carried by an acknowledged locally initiated termination PDU.
     pub const fn local_termination_acknowledged_reason(&self) -> Option<u8> {
         match self.local_termination {
-            LocalTermination::Acknowledged { reason } => Some(reason),
+            LocalTermination::Acknowledged { reason, .. } => Some(reason),
             _ => None,
         }
     }
@@ -649,19 +696,34 @@ impl LePeripheralControl {
     pub const fn local_termination_reason(&self) -> Option<u8> {
         match self.local_termination {
             LocalTermination::None => None,
-            LocalTermination::Queued { reason }
-            | LocalTermination::Transmitted { reason }
-            | LocalTermination::Acknowledged { reason } => Some(reason),
+            LocalTermination::Queued { reason, .. }
+            | LocalTermination::Transmitted { reason, .. }
+            | LocalTermination::Acknowledged { reason, .. } => Some(reason),
+        }
+    }
+
+    /// Reason published after locally initiated termination completes.
+    ///
+    /// HCI reports `0x16` when Disconnect came from the local Host while the
+    /// requested reason remains the value carried in `LL_TERMINATE_IND`.
+    pub const fn local_termination_completion_reason(&self) -> Option<u8> {
+        match self.local_termination {
+            LocalTermination::None => None,
+            LocalTermination::Queued { reason, host }
+            | LocalTermination::Transmitted { reason, host }
+            | LocalTermination::Acknowledged { reason, host } => {
+                Some(if host { 0x16 } else { reason })
+            }
         }
     }
 
     /// Commit only after a CPU-owned TX graph accepted this exact response.
     pub fn response_enqueued(&mut self) {
-        if let LocalTermination::Queued { reason } = self.local_termination
+        if let LocalTermination::Queued { reason, host } = self.local_termination
             && self.termination.is_some()
         {
             self.termination = None;
-            self.local_termination = LocalTermination::Transmitted { reason };
+            self.local_termination = LocalTermination::Transmitted { reason, host };
         } else if self.responses[0].is_some() {
             self.responses[0] = self.responses[1].take();
         } else if matches!(self.local_feature_request, LocalFeatureRequest::Queued) {
@@ -691,12 +753,55 @@ mod tests {
         ll.receive(&FEATURE_REQ, None).unwrap();
         assert_eq!(
             ll.pending_response().unwrap().as_bytes(),
-            [9, 1 << 3, 0, 0, 0, 0, 0, 0, 0]
+            [9, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
         );
         // Pending survives arbitrary reads while the controller queue is busy.
         assert_eq!(ll.pending_response().unwrap().as_bytes()[0], 9);
         ll.response_enqueued();
         assert!(ll.pending_response().is_none());
+    }
+
+    #[test]
+    fn feature_response_intersects_every_octet_with_the_peer_mask() {
+        let mut ll = LePeripheralControl::new();
+        let request = [3, 9, 0x08, 1 << 4, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        ll.receive(&request, None).unwrap();
+        assert_eq!(
+            ll.pending_response().unwrap().as_bytes(),
+            [0x09, 1 << 4, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn ping_request_queues_one_response_and_ping_response_does_not_loop() {
+        let mut ll = LePeripheralControl::new();
+
+        assert_eq!(
+            ll.receive(&[3, 1, 0x12], None),
+            Ok(LePeripheralReceive::Control)
+        );
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x13]);
+        ll.response_enqueued();
+        assert!(ll.pending_response().is_none());
+
+        assert_eq!(
+            ll.receive(&[3, 1, 0x13], None),
+            Ok(LePeripheralReceive::Control)
+        );
+        assert!(ll.pending_response().is_none());
+    }
+
+    #[test]
+    fn ping_pdus_require_empty_payloads() {
+        let mut ll = LePeripheralControl::new();
+        assert_eq!(
+            ll.receive(&[3, 2, 0x12, 0], None),
+            Err(LePeripheralControlError::MalformedPdu)
+        );
+        assert_eq!(
+            ll.receive(&[3, 2, 0x13, 0], None),
+            Err(LePeripheralControlError::MalformedPdu)
+        );
     }
 
     #[test]
@@ -715,7 +820,7 @@ mod tests {
         assert_eq!(ll.activate_remote_feature_request(), None);
         assert_eq!(
             ll.pending_response().unwrap().as_bytes(),
-            [0x0e, 1 << 3, 0, 0, 0, 0, 0, 0, 0]
+            [0x0e, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
         );
         ll.response_enqueued();
         assert!(ll.local_feature_request_transmitted());
@@ -908,9 +1013,23 @@ mod tests {
         ll.observe_transmission_completion(true);
         assert!(ll.local_termination_acknowledged());
         assert_eq!(ll.local_termination_reason(), Some(0x13));
+        assert_eq!(ll.local_termination_completion_reason(), Some(0x13));
 
         ll.response_enqueued();
         assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x07, 0xf1]);
+    }
+
+    #[test]
+    fn host_disconnect_keeps_the_air_reason_and_reports_local_host_completion() {
+        let mut ll = LePeripheralControl::new();
+        ll.request_host_termination(0x13);
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x02, 0x13]);
+        assert_eq!(ll.local_termination_reason(), Some(0x13));
+        assert_eq!(ll.local_termination_completion_reason(), Some(0x16));
+        ll.response_enqueued();
+        ll.observe_transmission_completion(true);
+        assert_eq!(ll.local_termination_acknowledged_reason(), Some(0x13));
+        assert_eq!(ll.local_termination_completion_reason(), Some(0x16));
     }
 
     #[test]
@@ -938,6 +1057,26 @@ mod tests {
             ll.receive(pdu, None).unwrap();
         }
         assert!(ll.pending_response().is_none());
+    }
+
+    #[test]
+    fn only_nonempty_data_requires_controller_acl_storage() {
+        assert_eq!(
+            LePeripheralControl::receive_requires_acl_slot(&[2, 3, 1, 2, 3]),
+            Ok(true)
+        );
+        assert_eq!(
+            LePeripheralControl::receive_requires_acl_slot(&[1, 0]),
+            Ok(false)
+        );
+        assert_eq!(
+            LePeripheralControl::receive_requires_acl_slot(&FEATURE_REQ),
+            Ok(false)
+        );
+        assert_eq!(
+            LePeripheralControl::receive_requires_acl_slot(&[2, 2, 1]),
+            Err(LePeripheralControlError::MalformedPdu)
+        );
     }
 
     #[test]

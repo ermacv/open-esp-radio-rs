@@ -30,6 +30,7 @@ pub(crate) struct PeripheralConnectionAcl {
     controller_rx: [Option<ControllerAclQueueEntry>; CONTROLLER_ACL_QUEUE_DEPTH],
     controller_rx_len: usize,
     controller_packets_outstanding: u32,
+    controller_event_reserved: bool,
 }
 
 impl PeripheralConnectionAcl {
@@ -40,6 +41,9 @@ impl PeripheralConnectionAcl {
             controller_rx: [None, None],
             controller_rx_len: 0,
             controller_packets_outstanding: 0,
+            // The active session is constructed only after the first event's
+            // RUN has already consumed its empty-queue admission.
+            controller_event_reserved: true,
         }
     }
 
@@ -59,10 +63,8 @@ impl PeripheralConnectionAcl {
         }
     }
 
-    pub(crate) fn next_fragment(&self) -> Option<LeHostAclFragment<'_>> {
-        self.host_tx
-            .as_ref()?
-            .next_fragment(LEGACY_LE_DATA_PAYLOAD_CAPACITY)
+    pub(crate) fn next_fragment(&self, maximum_payload: usize) -> Option<LeHostAclFragment<'_>> {
+        self.host_tx.as_ref()?.next_fragment(maximum_payload)
     }
 
     pub(crate) fn fragment_enqueued(&mut self, length: usize) {
@@ -98,6 +100,41 @@ impl PeripheralConnectionAcl {
         batch_len <= CONTROLLER_ACL_QUEUE_DEPTH - self.controller_rx_len
     }
 
+    /// Whether the complete next hardware RX graph can be admitted losslessly.
+    ///
+    /// Reserving the worst-case two copied PDUs before RUN means a later
+    /// completion never has to leave a control PDU behind an already-full Host
+    /// queue after hardware may have acknowledged the peer packet.
+    pub(crate) const fn can_reserve_controller_event(&self) -> bool {
+        !self.controller_event_reserved
+            && self.can_accept_controller_batch(
+                oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT,
+            )
+    }
+
+    /// Bind the worst-case queue capacity to one successor before its RUN.
+    pub(crate) fn reserve_controller_event(&mut self) -> bool {
+        if !self.can_reserve_controller_event() {
+            return false;
+        }
+        self.controller_event_reserved = true;
+        true
+    }
+
+    /// Whether this completed event owns the reservation made before its RUN.
+    pub(crate) const fn controller_event_is_reserved(&self) -> bool {
+        self.controller_event_reserved
+    }
+
+    /// Consume the exact reservation after dispatching the completed RX batch.
+    pub(crate) fn complete_controller_event(&mut self) {
+        assert!(
+            self.controller_event_reserved,
+            "a hardware completion must consume its exact RX reservation once"
+        );
+        self.controller_event_reserved = false;
+    }
+
     pub(crate) fn accept_controller_fragment(
         &mut self,
         fragment: oer_bluetooth_ll::control::LePeripheralDataFragment<'_>,
@@ -123,6 +160,18 @@ impl PeripheralConnectionAcl {
 
     pub(crate) const fn has_controller_packet(&self) -> bool {
         self.controller_rx_len != 0
+    }
+
+    /// A connection handle cannot be reused while the Host still owns ACL
+    /// buffers published for the retiring connection generation.
+    pub(crate) const fn controller_credits_settled(&self) -> bool {
+        self.controller_packets_outstanding == 0
+    }
+
+    pub(crate) fn credit_handle(&self, live_handle: Option<ConnHandle>) -> Option<ConnHandle> {
+        live_handle.or_else(|| {
+            (!self.controller_credits_settled()).then(|| ConnHandle::new(CONNECTION_HANDLE))
+        })
     }
 
     pub(crate) const fn controller_packet_is_flow_controlled(
@@ -232,7 +281,7 @@ mod tests {
         assert!(!acl.can_accept_host_packet());
 
         for length in [27, 27, 6] {
-            let fragment = acl.next_fragment().unwrap();
+            let fragment = acl.next_fragment(LEGACY_LE_DATA_PAYLOAD_CAPACITY).unwrap();
             assert_eq!(fragment.payload().len(), length);
             acl.fragment_enqueued(length);
             acl.observe_transmission_completion(false);
@@ -243,6 +292,22 @@ mod tests {
         assert!(acl.can_accept_host_packet());
         assert_eq!(acl.take_completed_host_packets(), 1);
         assert_eq!(acl.take_completed_host_packets(), 0);
+    }
+
+    #[test]
+    fn encrypted_legacy_fragments_leave_room_for_the_four_octet_mic() {
+        let mut acl = PeripheralConnectionAcl::new();
+        acl.accept_host_packet(Ok(owned(47)));
+
+        for length in [23, 23, 1] {
+            let fragment = acl.next_fragment(23).unwrap();
+            assert_eq!(fragment.payload().len(), length);
+            acl.fragment_enqueued(length);
+            acl.observe_transmission_completion(true);
+        }
+
+        assert!(acl.can_accept_host_packet());
+        assert_eq!(acl.take_completed_host_packets(), 1);
     }
 
     #[test]
@@ -357,12 +422,43 @@ mod tests {
     }
 
     #[test]
+    fn successor_run_requires_space_for_the_complete_hardware_receive_batch() {
+        use oer_bluetooth_ll::control::{LePeripheralControl, LePeripheralReceive};
+
+        let mut control = LePeripheralControl::new();
+        let mut acl = PeripheralConnectionAcl::new();
+        assert!(acl.controller_event_is_reserved());
+
+        let LePeripheralReceive::Data(fragment) = control.receive(&[2, 1, 0x5a], None).unwrap()
+        else {
+            panic!("nonempty data PDU must cross the ACL boundary")
+        };
+        acl.accept_controller_fragment(fragment);
+        acl.complete_controller_event();
+
+        assert!(acl.can_accept_controller_batch(1));
+        assert!(!acl.can_reserve_controller_event());
+    }
+
+    #[test]
+    fn event_reservation_is_consumed_and_reissued_exactly_once() {
+        let mut acl = PeripheralConnectionAcl::new();
+        assert!(acl.controller_event_is_reserved());
+        assert!(!acl.reserve_controller_event());
+
+        acl.complete_controller_event();
+        assert!(!acl.controller_event_is_reserved());
+        assert!(acl.reserve_controller_event());
+        assert!(acl.controller_event_is_reserved());
+        assert!(!acl.reserve_controller_event());
+    }
+
+    #[test]
     fn host_completed_command_releases_exactly_one_controller_credit() {
         use embassy_futures::block_on;
         use embassy_sync::blocking_mutex::raw::NoopRawMutex;
         use oer_bluetooth_hci::bt_hci::{
-            ControllerToHostPacket, cmd::controller_baseband::HostNumberOfCompletedPackets,
-            param::ConnHandleCompletedPackets, transport::Transport,
+            ControllerToHostPacket, param::ConnHandleCompletedPackets, transport::Transport,
         };
         use oer_bluetooth_hci::{
             BluetoothPublicDeviceAddress, LeControllerActivePeripheralIntake,
@@ -405,12 +501,8 @@ mod tests {
         ));
 
         let completed = [ConnHandleCompletedPackets::new(ConnHandle::new(1), 1)];
-        block_on(
-            endpoints
-                .host
-                .write(&HostNumberOfCompletedPackets::new(&completed)),
-        )
-        .unwrap();
+        let credits = endpoints.host.acl_credit_sender();
+        block_on(credits.return_completed_packets(&completed)).unwrap();
         let LeControllerCommandReadyClaim::Ready(ready) =
             endpoints.controller.claim_initial_command_ready(())
         else {
@@ -437,5 +529,13 @@ mod tests {
             acl.try_publish_controller_packet(&endpoints.controller, 27, true, Some(1)),
             ControllerAclPublication::Published
         ));
+        assert!(!acl.controller_credits_settled());
+        assert_eq!(
+            acl.credit_handle(None),
+            Some(ConnHandle::new(CONNECTION_HANDLE))
+        );
+        acl.controller_packets_outstanding = 0;
+        assert!(acl.controller_credits_settled());
+        assert_eq!(acl.credit_handle(None), None);
     }
 }

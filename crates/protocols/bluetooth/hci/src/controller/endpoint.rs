@@ -1,6 +1,9 @@
 //! Combined command endpoint: transport, bootstrap and session configuration authority.
 
 use super::*;
+use crate::{
+    LeEncryptionChangeEvent, LeEncryptionKeyRefreshCompleteEvent, LeLongTermKeyRequestEvent,
+};
 
 /// Result of attempting one unsolicited legacy advertising report publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -310,6 +313,58 @@ where
             .bootstrap
             .event_mask()
             .is_read_remote_version_information_complete_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish one retained LE Long Term Key Request if both standard masks allow it.
+    pub fn try_publish_long_term_key_request(
+        &self,
+        event: &LeLongTermKeyRequestEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self
+                .bootstrap
+                .le_event_mask()
+                .is_le_long_term_key_request_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish one retained Encryption Change v1 event if the standard mask allows it.
+    pub fn try_publish_encryption_change(
+        &self,
+        event: &LeEncryptionChangeEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self
+            .bootstrap
+            .event_mask()
+            .is_encryption_change_v1_enabled()
+        {
+            return Ok(LePeripheralConnectionEventPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LePeripheralConnectionEventPublication::Published)
+    }
+
+    /// Publish a completed encryption key refresh under the standard event mask.
+    pub fn try_publish_encryption_key_refresh_complete(
+        &self,
+        event: &LeEncryptionKeyRefreshCompleteEvent,
+    ) -> Result<LePeripheralConnectionEventPublication, crate::HciChannelError> {
+        if !self
+            .bootstrap
+            .event_mask()
+            .is_encryption_key_refresh_complete_enabled()
         {
             return Ok(LePeripheralConnectionEventPublication::Masked);
         }

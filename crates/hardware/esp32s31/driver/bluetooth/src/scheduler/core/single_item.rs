@@ -83,6 +83,16 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerRunning<Role> {
     pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.run.index()
     }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Role::RunningItem,
+        BluetoothSchedulerHardwareRunCommandPublished,
+        Role::Retained,
+    ) {
+        (self.item, self.run, self.retained)
+    }
 }
 
 pub(crate) struct SingleItemSchedulerCompletionObserved<Role: SingleItemSchedulerRole> {
@@ -127,6 +137,18 @@ pub(crate) struct SingleItemSchedulerHardwareHeadEmptyObserved<Role: SingleItemS
 }
 
 impl<Role: SingleItemSchedulerRole> SingleItemSchedulerHardwareHeadEmptyObserved<Role> {
+    pub(crate) const fn new(
+        item: Role::CompletionObservedItem,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+        retained: Role::Retained,
+    ) -> Self {
+        Self {
+            item,
+            head,
+            retained,
+        }
+    }
+
     pub(crate) fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         Role::completed_item_address(&self.item)
     }

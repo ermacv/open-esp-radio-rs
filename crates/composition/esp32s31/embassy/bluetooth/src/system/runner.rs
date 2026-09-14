@@ -55,6 +55,25 @@ impl LegacyAdvertisingDelaySource for BluetoothAdvertisingDelaySource {
     }
 }
 
+impl oer_esp32s31_bluetooth::le::peripheral::PeripheralEncryptionRandomSource
+    for BluetoothAdvertisingDelaySource
+{
+    fn next_encryption_random(
+        &mut self,
+    ) -> oer_bluetooth_ll::security::LePeripheralEncryptionRandom {
+        let first = Rng::new().random().to_le_bytes();
+        let second = Rng::new().random().to_le_bytes();
+        let initialization_vector = Rng::new().random().to_le_bytes();
+        let mut diversifier = [0; 8];
+        diversifier[..4].copy_from_slice(&first);
+        diversifier[4..].copy_from_slice(&second);
+        oer_bluetooth_ll::security::LePeripheralEncryptionRandom::new(
+            diversifier,
+            initialization_vector,
+        )
+    }
+}
+
 /// Sole hardware-side owner after the final Controller split.
 ///
 /// `run` services the command actor and source-127 task fairly under strict IRQ

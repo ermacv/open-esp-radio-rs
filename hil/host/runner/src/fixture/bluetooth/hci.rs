@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) struct Socket(OwnedFd);
+pub(super) struct Socket(pub(super) OwnedFd);
 
 #[derive(Debug)]
 pub(super) struct ManagementError {
@@ -256,7 +256,7 @@ mod tests {
             .unwrap();
         let peer = super::super::model::PeerAddress([0xd1, 0xf6, 0xf3, 0xa0, 0xed, 0x30]);
         let worker = std::thread::spawn(move || {
-            let mut bytes = [0; 64];
+            let mut bytes = [0; 300];
             for opcode in [0x0c01_u16, 0x2001] {
                 assert!(server.recv(&mut bytes).unwrap() >= 4);
                 assert_eq!(&bytes[..3], &[1, opcode as u8, (opcode >> 8) as u8]);
@@ -271,25 +271,137 @@ mod tests {
             event.extend(peer.0);
             event.extend([80, 0, 0, 0, 200, 0, 0]);
             server.send(&event).unwrap();
-            assert_eq!(server.recv(&mut bytes).unwrap(), 17);
-            let mut acl = vec![2, 1, 0, 12, 0];
-            acl.extend(super::super::connection_reset::ACL_ECHO_PAYLOAD);
-            assert_eq!(&bytes[..17], acl.as_slice());
-            acl[2] = 0x20;
-            server.send(&acl).unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 6);
+            assert_eq!(&bytes[..6], &[1, 0x16, 0x20, 2, 1, 0]);
+            server.send(&[4, 0x0f, 4, 0, 1, 0x16, 0x20]).unwrap();
+            server
+                .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x18, 0x40, 0, 0, 0, 0, 0, 0])
+                .unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 6);
+            assert_eq!(&bytes[..6], &[1, 0x1d, 0x04, 2, 1, 0]);
+            server.send(&[4, 0x0f, 4, 0, 1, 0x1d, 0x04]).unwrap();
+            server
+                .send(&[4, 0x0c, 8, 0, 1, 0, 0x0d, 0xff, 0xff, 1, 0])
+                .unwrap();
+            let count = server.recv(&mut bytes).unwrap();
+            let payload = super::super::connection_reset::ACL_ECHO_PAYLOAD;
+            assert_eq!(count, 1 + 4 + payload.len());
+            assert_eq!(bytes[0], bt_hci::PacketKind::AclData as u8);
+            let (acl, rest) = bt_hci::data::AclPacket::from_hci_bytes(&bytes[1..count]).unwrap();
+            assert!(rest.is_empty());
+            assert_eq!(acl.handle(), bt_hci::param::ConnHandle::new(1));
+            assert_eq!(
+                acl.boundary_flag(),
+                bt_hci::data::AclPacketBoundary::FirstNonFlushable
+            );
+            assert_eq!(acl.data(), payload);
+            for (index, fragment) in payload.chunks(27).enumerate() {
+                let echo = bt_hci::data::AclPacket::new(
+                    bt_hci::param::ConnHandle::new(1),
+                    if index == 0 {
+                        bt_hci::data::AclPacketBoundary::FirstFlushable
+                    } else {
+                        bt_hci::data::AclPacketBoundary::Continuing
+                    },
+                    bt_hci::data::AclBroadcastFlag::PointToPoint,
+                    fragment,
+                );
+                let mut encoded = vec![0; 1 + bt_hci::WriteHci::size(&echo)];
+                encoded[0] = bt_hci::PacketKind::AclData as u8;
+                bt_hci::WriteHci::write_hci(&echo, &mut encoded[1..]).unwrap();
+                server.send(&encoded).unwrap();
+            }
+            assert_eq!(server.recv(&mut bytes).unwrap(), 18);
+            assert_eq!(
+                &bytes[..18],
+                &[
+                    1, 0x13, 0x20, 14, 1, 0, 96, 0, 96, 0, 0, 0, 200, 0, 0, 0, 0, 0
+                ]
+            );
+            server.send(&[4, 15, 4, 0, 1, 0x13, 0x20]).unwrap();
+            server
+                .send(&[4, 0x3e, 10, 3, 0, 1, 0, 96, 0, 0, 0, 200, 0])
+                .unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 9);
+            assert_eq!(&bytes[..9], &[1, 0x14, 0x20, 5, 3, 0, 0, 0, 0]);
+            server.send(&[4, 14, 4, 1, 0x14, 0x20, 0]).unwrap();
+            assert_eq!(server.recv(&mut bytes).unwrap(), 6);
+            assert_eq!(&bytes[..6], &[1, 0x15, 0x20, 2, 1, 0]);
+            server
+                .send(&[4, 14, 11, 1, 0x15, 0x20, 0, 1, 0, 3, 0, 0, 0, 0])
+                .unwrap();
+            let payload = super::super::connection_reset::POST_UPDATE_ACL_ECHO_PAYLOAD;
+            let count = server.recv(&mut bytes).unwrap();
+            assert_eq!(count, 1 + 4 + payload.len());
+            assert_eq!(bytes[0], bt_hci::PacketKind::AclData as u8);
+            let (acl, rest) = bt_hci::data::AclPacket::from_hci_bytes(&bytes[1..count]).unwrap();
+            assert!(rest.is_empty());
+            assert_eq!(acl.handle(), bt_hci::param::ConnHandle::new(1));
+            assert_eq!(acl.data(), payload);
+            for (index, fragment) in payload.chunks(27).enumerate() {
+                let echo = bt_hci::data::AclPacket::new(
+                    bt_hci::param::ConnHandle::new(1),
+                    if index == 0 {
+                        bt_hci::data::AclPacketBoundary::FirstFlushable
+                    } else {
+                        bt_hci::data::AclPacketBoundary::Continuing
+                    },
+                    bt_hci::data::AclBroadcastFlag::PointToPoint,
+                    fragment,
+                );
+                let mut encoded = vec![0; 1 + bt_hci::WriteHci::size(&echo)];
+                encoded[0] = bt_hci::PacketKind::AclData as u8;
+                bt_hci::WriteHci::write_hci(&echo, &mut encoded[1..]).unwrap();
+                server.send(&encoded).unwrap();
+            }
             assert_eq!(server.recv(&mut bytes).unwrap(), 4);
             assert_eq!(&bytes[..4], &[1, 3, 12, 0]);
             server.send(&[4, 14, 4, 1, 3, 12, 0]).unwrap();
         });
-        let mut report =
-            super::super::model::ConnectionReset::new(super::super::model::Adapter(0), peer, 0);
-        super::super::connection_reset::run(&Socket(client.into()), peer, 0, &mut report).unwrap();
+        let mut report = super::super::model::ConnectionReset::new(
+            super::super::model::Adapter(0),
+            peer,
+            0,
+            open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+        );
+        let outcome = super::super::connection_reset::run(
+            &Socket(client.into()),
+            peer,
+            0,
+            open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+            &mut report,
+        )
+        .unwrap();
+        assert!(matches!(
+            outcome,
+            super::super::connection_reset::ConnectionRunOutcome::Complete
+        ));
         worker.join().unwrap();
         assert!(report.connection_complete && report.reset_completed);
+        assert!(report.remote_features_command_status && report.remote_features_complete);
+        assert_eq!(report.remote_features, Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]));
+        assert!(report.remote_features_after_micros.is_some());
+        assert!(report.remote_version_command_status && report.remote_version_complete);
+        assert_eq!(report.remote_version, Some(0x0d));
+        assert_eq!(report.remote_version_company, Some(0xffff));
+        assert_eq!(report.remote_version_subversion, Some(1));
+        assert!(report.remote_version_after_micros.is_some());
         assert!(report.acl_sent && report.acl_echo_received);
-        assert_eq!(report.acl_payload_bytes, Some(12));
+        assert_eq!(
+            report.acl_payload_bytes,
+            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
+        );
+        assert_eq!(report.acl_echo_hci_packets, Some(10));
         assert!(report.acl_echo_after_micros.is_some());
-        assert!(report.reset_after_connection_micros.is_some());
+        assert!(report.connection_update_complete);
+        assert_eq!(report.updated_interval_millis, Some(120));
+        assert!(report.connection_update_after_micros.is_some());
+        assert!(report.channel_map_updated);
+        assert!(report.channel_map_update_after_micros.is_some());
+        assert!(report.post_update_acl_sent && report.post_update_acl_echo_received);
+        assert_eq!(report.post_update_acl_echo_hci_packets, Some(10));
+        assert!(report.post_update_acl_echo_after_micros.is_some());
+        assert!(report.termination_after_connection_micros.is_some());
         assert!(!report.restored);
     }
     #[test]

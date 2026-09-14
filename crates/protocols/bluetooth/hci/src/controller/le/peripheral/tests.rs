@@ -9,7 +9,10 @@ use bt_hci::{
 
 use super::{
     LeConnectionUpdateCompleteEvent, LeDisconnectCommand, LeDisconnectCommandStatusEvent,
-    LeDisconnectDecodeError, LeDisconnectionCompleteEvent, LePeripheralConnectionCompleteEvent,
+    LeDisconnectDecodeError, LeDisconnectionCompleteEvent, LeEncryptionChangeEvent,
+    LeEncryptionKeyRefreshCompleteEvent, LeLongTermKeyCommandDecodeError,
+    LeLongTermKeyRequestEvent, LeLongTermKeyRequestNegativeReplyCommand,
+    LeLongTermKeyRequestReplyCommand, LePeripheralConnectionCompleteEvent,
     LePeripheralConnectionCompleteEventError, LeReadRemoteFeaturesCommand,
     LeReadRemoteFeaturesCommandStatusEvent, LeReadRemoteFeaturesCompleteEvent,
     LeReadRemoteFeaturesDecodeError, LeReadRemoteVersionInformationCommand,
@@ -17,6 +20,7 @@ use super::{
     LeReadRemoteVersionInformationDecodeError,
 };
 use crate::HciCommandPacket;
+use std::format;
 
 #[test]
 fn disconnect_decode_owns_validated_handle_and_reason() {
@@ -140,6 +144,94 @@ fn read_remote_version_command_and_events_use_standard_wire_shapes() {
     assert_eq!(decoded.company_id, 0x1234);
     assert_eq!(decoded.subversion, 0x5678);
     assert_eq!(&complete.as_bytes()[5..], &[0x0d, 0x34, 0x12, 0x78, 0x56]);
+}
+
+#[test]
+fn long_term_key_commands_transfer_a_redacted_secret_and_use_standard_completions() {
+    let key = [0x5a; 16];
+    let mut parameters = [0; 18];
+    parameters[..2].copy_from_slice(&0x0abcu16.to_le_bytes());
+    parameters[2..].copy_from_slice(&key);
+    let reply = LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::for_test(
+        LeLongTermKeyRequestReplyCommand::OPCODE,
+        &parameters,
+    ))
+    .unwrap();
+    assert_eq!(reply.handle(), ConnHandle::new(0x0abc));
+    assert!(!format!("{reply:?}").contains("5a"));
+    assert_eq!(reply.into_long_term_key(), key);
+
+    let negative = LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::for_test(
+        LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
+        &[0xbc, 0x0a],
+    ))
+    .unwrap();
+    let complete = negative.into_accepted_complete();
+    let Event::CommandComplete(decoded) =
+        Event::from_hci_bytes_complete(complete.as_bytes()).unwrap()
+    else {
+        panic!("LTK response changed event kind");
+    };
+    assert_eq!(decoded.num_hci_cmd_pkts, 1);
+    assert_eq!(
+        decoded.cmd_opcode,
+        LeLongTermKeyRequestNegativeReplyCommand::OPCODE
+    );
+    assert_eq!(&*decoded.bytes, &[0, 0xbc, 0x0a]);
+
+    for parameters in [&[][..], &[1, 0][..], &[0; 17][..], &[0; 19][..]] {
+        assert!(matches!(
+            LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::for_test(
+                LeLongTermKeyRequestReplyCommand::OPCODE,
+                parameters,
+            )),
+            Err(LeLongTermKeyCommandDecodeError::Malformed)
+        ));
+    }
+    assert_eq!(
+        LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::for_test(
+            LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
+            &[0, 0x10],
+        )),
+        Err(LeLongTermKeyCommandDecodeError::Malformed)
+    );
+}
+
+#[test]
+fn encryption_events_roundtrip_through_bt_hci() {
+    let request =
+        LeLongTermKeyRequestEvent::new(ConnHandle::new(0x0abc), [1, 2, 3, 4, 5, 6, 7, 8], 0x1234);
+    let Event::Le(LeEvent::LeLongTermKeyRequest(decoded)) =
+        Event::from_hci_bytes_complete(request.as_bytes()).unwrap()
+    else {
+        panic!("LTK request changed event kind");
+    };
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
+    assert_eq!(decoded.random_number, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(decoded.encrypted_diversifier, 0x1234);
+
+    let changed = LeEncryptionChangeEvent::new(Status::SUCCESS, ConnHandle::new(0x0abc), true);
+    let Event::EncryptionChangeV1(decoded) =
+        Event::from_hci_bytes_complete(changed.as_bytes()).unwrap()
+    else {
+        panic!("encryption change changed event kind");
+    };
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
+    assert_eq!(
+        decoded.enabled,
+        bt_hci::param::EncryptionEnabledLevel::OnE0OrAesCcm
+    );
+
+    let refreshed =
+        LeEncryptionKeyRefreshCompleteEvent::new(Status::SUCCESS, ConnHandle::new(0x0abc));
+    let Event::EncryptionKeyRefreshComplete(decoded) =
+        Event::from_hci_bytes_complete(refreshed.as_bytes()).unwrap()
+    else {
+        panic!("key refresh changed event kind");
+    };
+    assert_eq!(decoded.status, Status::SUCCESS);
+    assert_eq!(decoded.handle, ConnHandle::new(0x0abc));
 }
 
 #[test]

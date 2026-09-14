@@ -232,7 +232,8 @@ where
         const CONTROLLER_TO_HOST_DEPTH: usize,
         const PACKET_CAPACITY: usize,
         Recheck: DtmControllerTimeRecheck,
-        DelaySource: LegacyAdvertisingDelaySource,
+        DelaySource: LegacyAdvertisingDelaySource
+            + oer_esp32s31_bluetooth::le::peripheral::PeripheralEncryptionRandomSource,
     >(
         &mut self,
         wakers: &RuntimeNotifications<WakeMutex>,
@@ -1365,7 +1366,11 @@ where
                     {
                         match stopping.radio_wait() {
                             Some(PeripheralConnectionActiveWait::Scheduler(wake)) => {
-                                wakers.wait_scheduler_ready(wake).await
+                                let _ = select(
+                                    wakers.wait_scheduler_ready(wake),
+                                    recheck.wait_until_absolute_recheck(),
+                                )
+                                .await;
                             }
                             Some(PeripheralConnectionActiveWait::PostUnlink(wake)) => {
                                 wakers
@@ -1378,9 +1383,9 @@ where
                             Some(PeripheralConnectionActiveWait::ControllerTime) => {
                                 recheck.wait_until_absolute_recheck().await
                             }
-                            Some(PeripheralConnectionActiveWait::HostEventCapacity) => {
-                                controller.wait_peripheral_connection_event_capacity().await;
-                            }
+                            Some(
+                                PeripheralConnectionActiveWait::HostEventCapacityOrControllerTime,
+                            ) => recheck.wait_until_absolute_recheck().await,
                             None => {}
                         }
                         let ControllerCommandState::PeripheralConnectionResetStopping(stopping) =
@@ -1388,7 +1393,7 @@ where
                         else {
                             unreachable!("the awaited peripheral Reset owner did not change")
                         };
-                        match stopping.step() {
+                        match stopping.step(advertising_delay) {
                             PeripheralConnectionResetStep::Continue(stopping) => {
                                 self.store_retained_state(
                                     ControllerCommandPhase::PeripheralConnectionActive,
@@ -1439,7 +1444,10 @@ where
                                 );
                                 continue;
                             }
-                            PeripheralConnectionHostEventPublication::Pending(running)
+                            PeripheralConnectionHostEventPublication::OrderedResponsePending(
+                                running,
+                            )
+                            | PeripheralConnectionHostEventPublication::Pending(running)
                             | PeripheralConnectionHostEventPublication::FlowControlled(running) => {
                                 self.store_retained_state(
                                     ControllerCommandPhase::PeripheralConnectionActive,
@@ -1469,11 +1477,27 @@ where
                     else {
                         unreachable!("the selected peripheral active owner did not change")
                     };
-                    let radio = async {
-                        match running.radio_wait() {
+                    let radio_wait = running.radio_wait();
+                    let response_pending = running.hci_axis()
+                        == LegacyConnectablePeripheralFirstHciAxis::ResponsePending;
+                    let host_event_pending = running.has_pending_host_event();
+                    let host_event_flow_controlled =
+                        running.host_event_is_flow_controlled(controller);
+                    let work_plan =
+                        crate::session::peripheral::active::plan_peripheral_connection_work(
+                            response_pending,
+                            host_event_pending,
+                            host_event_flow_controlled,
+                        );
+                    let radio = work_plan.poll_radio().then_some(async {
+                        match radio_wait {
                             None => {}
                             Some(PeripheralConnectionActiveWait::Scheduler(wake)) => {
-                                wakers.wait_scheduler_ready(wake).await
+                                let _ = select(
+                                    wakers.wait_scheduler_ready(wake),
+                                    recheck.wait_until_absolute_recheck(),
+                                )
+                                .await;
                             }
                             Some(PeripheralConnectionActiveWait::PostUnlink(wake)) => {
                                 wakers
@@ -1486,47 +1510,43 @@ where
                             Some(PeripheralConnectionActiveWait::ControllerTime) => {
                                 recheck.wait_until_absolute_recheck().await
                             }
-                            Some(PeripheralConnectionActiveWait::HostEventCapacity) => {
-                                let _ = running.wait_host_event_capacity(controller).await;
+                            Some(
+                                PeripheralConnectionActiveWait::HostEventCapacityOrControllerTime,
+                            ) => {
+                                let _ = crate::session::peripheral::active::wait_peripheral_connection_backpressure(
+                                    running.wait_host_event_capacity(controller),
+                                    recheck.wait_until_absolute_recheck(),
+                                )
+                                .await;
+                            }
+                        }
+                    });
+                    let hci_work = work_plan.hci();
+                    let response = async {
+                        match hci_work {
+                            crate::session::peripheral::active::PeripheralConnectionHciWork::OrderedResponse => {
+                                Either::First(running.wait_response_capacity(controller).await)
+                            }
+                            crate::session::peripheral::active::PeripheralConnectionHciWork::HostEvent => Either::Second(
+                                running.wait_host_event_capacity(controller).await,
+                            ),
+                            crate::session::peripheral::active::PeripheralConnectionHciWork::Command => {
+                                Either::Second(running.wait_command_available(controller).await)
                             }
                         }
                     };
-                    let response_pending = running.hci_axis()
-                        == LegacyConnectablePeripheralFirstHciAxis::ResponsePending;
-                    let host_event_pending = running.has_pending_host_event();
-                    let host_event_flow_controlled =
-                        running.host_event_is_flow_controlled(controller);
-                    let hci_work = super::peripheral_work::select_active_hci_work(
-                        response_pending,
-                        host_event_pending,
-                        host_event_flow_controlled,
-                        running.can_accept_host_packet(),
-                    );
-                    let response =
-                        (hci_work != super::peripheral_work::HciWork::None).then_some(async {
-                            match hci_work {
-                                super::peripheral_work::HciWork::OrderedResponse => {
-                                    Either::First(running.wait_response_capacity(controller).await)
-                                }
-                                super::peripheral_work::HciWork::HostEvent => Either::Second(
-                                    running.wait_host_event_capacity(controller).await,
-                                ),
-                                super::peripheral_work::HciWork::Command => {
-                                    Either::Second(running.wait_command_available(controller).await)
-                                }
-                                super::peripheral_work::HciWork::None => {
-                                    unreachable!("absent HCI work does not construct this future")
-                                }
-                            }
-                        });
-                    match super::peripheral_work::wait(radio, response).await {
-                        super::peripheral_work::Work::Radio => {
+                    match crate::session::peripheral::active::wait_peripheral_connection_work(
+                        radio, response,
+                    )
+                    .await
+                    {
+                        crate::session::peripheral::active::PeripheralConnectionWork::Radio => {
                             let ControllerCommandState::PeripheralConnectionActive(running) =
                                 self.owner.take()
                             else {
                                 unreachable!("the awaited peripheral radio owner did not change")
                             };
-                            match running.step_radio() {
+                            match running.step_radio(advertising_delay) {
                                 PeripheralConnectionActiveStep::Stopped { task, reason } => {
                                     self.store_retained_state(
                                         ControllerCommandPhase::Idle,
@@ -1562,16 +1582,16 @@ where
                             }
                             continue;
                         }
-                        super::peripheral_work::Work::Response(Either::First(Err(_))) => {
+                        crate::session::peripheral::active::PeripheralConnectionWork::Hci(Either::First(Err(_))) => {
                             return self
                                 .retain_boundary(ControllerCommandBoundary::EndpointMismatch);
                         }
-                        super::peripheral_work::Work::Response(Either::Second(Err(_))) => {
+                        crate::session::peripheral::active::PeripheralConnectionWork::Hci(Either::Second(Err(_))) => {
                             return self
                                 .retain_boundary(ControllerCommandBoundary::EndpointMismatch);
                         }
-                        super::peripheral_work::Work::Response(Either::Second(Ok(())))
-                            if hci_work == super::peripheral_work::HciWork::HostEvent =>
+                        crate::session::peripheral::active::PeripheralConnectionWork::Hci(Either::Second(Ok(())))
+                            if hci_work == crate::session::peripheral::active::PeripheralConnectionHciWork::HostEvent =>
                         {
                             let ControllerCommandState::PeripheralConnectionActive(running) =
                                 self.owner.take()
@@ -1582,6 +1602,9 @@ where
                                 PeripheralConnectionHostEventPublication::None(running)
                                 | PeripheralConnectionHostEventPublication::Published(running)
                                 | PeripheralConnectionHostEventPublication::Masked(running)
+                                | PeripheralConnectionHostEventPublication::OrderedResponsePending(
+                                    running,
+                                )
                                 | PeripheralConnectionHostEventPublication::Pending(running)
                                 | PeripheralConnectionHostEventPublication::FlowControlled(
                                     running,
@@ -1617,7 +1640,7 @@ where
                             }
                             continue;
                         }
-                        super::peripheral_work::Work::Response(Either::Second(Ok(()))) => {
+                        crate::session::peripheral::active::PeripheralConnectionWork::Hci(Either::Second(Ok(()))) => {
                             let ControllerCommandState::PeripheralConnectionActive(running) =
                                 self.owner.take()
                             else {
@@ -1718,7 +1741,7 @@ where
                             }
                             continue;
                         }
-                        super::peripheral_work::Work::Response(Either::First(Ok(_))) => {}
+                        crate::session::peripheral::active::PeripheralConnectionWork::Hci(Either::First(Ok(_))) => {}
                     }
                     let ControllerCommandState::PeripheralConnectionActive(running) =
                         self.owner.take()

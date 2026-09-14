@@ -49,9 +49,9 @@ pub use interrupt_runtime::{
 pub use phy_time::{EmbassyPhyTime, EmbassyPhyTimeError};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    BluetoothHardwareRunner, BluetoothHostController, BluetoothInterruptCompositionFailure,
-    BluetoothRunners, BluetoothSystem, BluetoothSystemBuildError,
-    compose_esp32s31_bluetooth_system,
+    BluetoothHardwareRunner, BluetoothHostAclCredits, BluetoothHostController,
+    BluetoothInterruptCompositionFailure, BluetoothRunners, BluetoothSystem,
+    BluetoothSystemBuildError, compose_esp32s31_bluetooth_system,
 };
 #[cfg(target_arch = "riscv32")]
 pub use system_storage::{

@@ -4,20 +4,26 @@ use bt_hci::{
     ControllerToHostPacket,
     cmd::{
         SyncCmd,
-        controller_baseband::Reset,
+        controller_baseband::{
+            HostBufferSize, Reset, SetControllerToHostFlowControl, SetEventMask,
+        },
         info::ReadBdAddr,
         le::{
-            LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeTestEnd,
-            LeTransmitterTestV2,
+            LeReceiverTestV2, LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetEventMask,
+            LeTestEnd, LeTransmitterTestV2,
         },
+        link_control::Disconnect,
     },
     controller::Controller,
     data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
     event::{Event as HciEvent, le::LeEvent},
-    param::{LeConnRole, Status},
+    param::{
+        ConnHandle, ConnHandleCompletedPackets, ControllerToHostFlowControl, DisconnectReason,
+        EventMask, LeConnRole, LeEventMask, Status,
+    },
 };
-use core::sync::atomic::{AtomicU32, Ordering};
-use embassy_time::{Duration, Instant, with_timeout};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use embassy_time::{Duration, Instant, Timer, with_timeout};
 use embedded_io_async::Read as _;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
 use oer_esp32s31_bluetooth::{
@@ -30,8 +36,8 @@ use oer_esp32s31_bluetooth::{
 };
 use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
 use oer_esp32s31_bluetooth_integration::{
-    BluetoothColdStartConfig, BluetoothHostController, BluetoothSystem, BluetoothSystemStorage,
-    start_esp32s31_bluetooth,
+    BluetoothColdStartConfig, BluetoothHostAclCredits, BluetoothHostController, BluetoothSystem,
+    BluetoothSystemStorage, start_esp32s31_bluetooth,
 };
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
@@ -39,27 +45,48 @@ use oer_esp32s31_bluetooth_memory::{
 };
 use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 use open_esp_radio_hil_protocol::{
+    BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
     BluetoothDtmEvidence as Evidence, BluetoothDtmOperation as Operation,
     BluetoothDtmResult as Outcome, BluetoothPeripheralOperation as PeripheralOperation,
-    BluetoothPeripheralResult as PeripheralResult, Capabilities, Command, Envelope, Event,
-    FeatureCapabilities, FrameDecoder, FrameEncoder, LinkHealth, RejectReason,
+    BluetoothPeripheralResult as PeripheralResult,
+    BluetoothPeripheralTermination as PeripheralTermination, Capabilities, Command, Envelope,
+    Event, FeatureCapabilities, FrameDecoder, FrameEncoder, LinkHealth, RejectReason,
+    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 use static_cell::StaticCell;
 
 type Host = BluetoothHostController<4, 4, 258>;
+type HostAclCredits = BluetoothHostAclCredits<4, 258>;
 static STORAGE: BluetoothSystemStorage<EspHalBluetoothPlatform<'static>, 4, 1, 4, 4, 258> =
     BluetoothSystemStorage::new();
 static PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
 static PERIPHERAL_HOST_EVENTS: PeripheralHostEvents = PeripheralHostEvents::new();
+static PERIPHERAL_TERMINATION: AtomicU32 = AtomicU32::new(0);
+static PERIPHERAL_TERMINATION_HOLD_MILLIS: AtomicU32 = AtomicU32::new(0);
 
 const NO_DISCONNECT_REASON: u32 = u8::MAX as u32 + 1;
+const HOST_ACL_BACKPRESSURE_HOLD_MILLIS: u64 = 300;
+const HOST_ACL_PACKET_BYTES: u16 = 27;
+const HOST_ACL_PACKET_CREDITS: u16 = 1;
+const PERIPHERAL_ACL_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] =
+    bluetooth_peripheral_acl_payload();
+const PERIPHERAL_POST_UPDATE_ACL_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] =
+    bluetooth_peripheral_acl_payload_for_sequence(1);
 
 struct PeripheralHostEvents {
+    connection_live: AtomicBool,
+    connection_updated: AtomicBool,
     connections: AtomicU32,
     disconnections: AtomicU32,
+    connection_updates: AtomicU32,
+    target_disconnect_commands: AtomicU32,
+    target_reset_commands: AtomicU32,
     faults: AtomicU32,
     acl_received: AtomicU32,
     acl_queued: AtomicU32,
+    acl_transmitted: AtomicU32,
+    acl_completed: AtomicU32,
+    acl_backpressure_holds: AtomicU32,
     acl_faults: AtomicU32,
     last_disconnect_reason: AtomicU32,
 }
@@ -68,9 +95,15 @@ struct PeripheralHostEvents {
 struct PeripheralHostEventSnapshot {
     connections: u32,
     disconnections: u32,
+    connection_updates: u32,
+    target_disconnect_commands: u32,
+    target_reset_commands: u32,
     faults: u32,
     acl_received: u32,
     acl_queued: u32,
+    acl_transmitted: u32,
+    acl_completed: u32,
+    acl_backpressure_holds: u32,
     acl_faults: u32,
     last_disconnect_reason: Option<u8>,
 }
@@ -78,11 +111,19 @@ struct PeripheralHostEventSnapshot {
 impl PeripheralHostEvents {
     const fn new() -> Self {
         Self {
+            connection_live: AtomicBool::new(false),
+            connection_updated: AtomicBool::new(false),
             connections: AtomicU32::new(0),
             disconnections: AtomicU32::new(0),
+            connection_updates: AtomicU32::new(0),
+            target_disconnect_commands: AtomicU32::new(0),
+            target_reset_commands: AtomicU32::new(0),
             faults: AtomicU32::new(0),
             acl_received: AtomicU32::new(0),
             acl_queued: AtomicU32::new(0),
+            acl_transmitted: AtomicU32::new(0),
+            acl_completed: AtomicU32::new(0),
+            acl_backpressure_holds: AtomicU32::new(0),
             acl_faults: AtomicU32::new(0),
             last_disconnect_reason: AtomicU32::new(NO_DISCONNECT_REASON),
         }
@@ -94,47 +135,116 @@ impl PeripheralHostEvents {
         });
     }
 
-    fn observe(&self, packet: ControllerToHostPacket<'_>) {
+    fn add(counter: &AtomicU32, delta: u16) {
+        let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(u32::from(delta))
+        });
+    }
+
+    fn observe(&self, packet: ControllerToHostPacket<'_>) -> PeripheralHostObservation {
         let ControllerToHostPacket::Event(packet) = packet else {
-            return;
+            return PeripheralHostObservation::None;
         };
         let event = match HciEvent::try_from(packet) {
             Ok(event) => event,
             Err(_) => {
                 Self::increment(&self.faults);
-                return;
+                return PeripheralHostObservation::None;
             }
         };
         match event {
             HciEvent::Le(LeEvent::LeConnectionComplete(event)) => {
-                let ordered = self.connections.load(Ordering::Relaxed)
-                    == self.disconnections.load(Ordering::Relaxed);
                 if event.status == Status::SUCCESS
                     && event.handle.raw() == 1
                     && event.role == LeConnRole::Peripheral
-                    && ordered
+                    && self
+                        .connection_live
+                        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                        .is_ok()
                 {
+                    self.connection_updated.store(false, Ordering::Relaxed);
                     Self::increment(&self.connections);
+                    PeripheralHostObservation::Connection
                 } else {
                     Self::increment(&self.faults);
+                    PeripheralHostObservation::None
                 }
             }
             HciEvent::DisconnectionComplete(event) => {
-                let ordered = self.connections.load(Ordering::Relaxed)
-                    == self
-                        .disconnections
-                        .load(Ordering::Relaxed)
-                        .saturating_add(1);
-                if event.status == Status::SUCCESS && event.handle.raw() == 1 && ordered {
+                if event.status == Status::SUCCESS
+                    && event.handle.raw() == 1
+                    && self.connection_live.swap(false, Ordering::Relaxed)
+                {
+                    self.connection_updated.store(false, Ordering::Relaxed);
                     self.last_disconnect_reason
                         .store(u32::from(event.reason.into_inner()), Ordering::Relaxed);
                     Self::increment(&self.disconnections);
                 } else {
                     Self::increment(&self.faults);
                 }
+                PeripheralHostObservation::None
             }
-            _ => {}
+            HciEvent::Le(LeEvent::LeConnectionUpdateComplete(event)) => {
+                if event.status == Status::SUCCESS
+                    && event.handle.raw() == 1
+                    && event.conn_interval
+                        == bt_hci::param::Duration::from_millis(u32::from(
+                            BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
+                        ))
+                    && event.peripheral_latency == 0
+                    && event.supervision_timeout == bt_hci::param::Duration::from_millis(2_000)
+                    && self.connection_live.load(Ordering::Relaxed)
+                    && self
+                        .connection_updated
+                        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                        .is_ok()
+                {
+                    Self::increment(&self.connection_updates);
+                    PeripheralHostObservation::ConnectionUpdate
+                } else {
+                    Self::increment(&self.faults);
+                    PeripheralHostObservation::None
+                }
+            }
+            HciEvent::NumberOfCompletedPackets(event) => {
+                let mut completed = 0_u16;
+                for entry in event.completed_packets {
+                    let Ok(handle) = entry.handle() else {
+                        Self::increment(&self.faults);
+                        return PeripheralHostObservation::None;
+                    };
+                    let Ok(packets) = entry.num_completed_packets() else {
+                        Self::increment(&self.faults);
+                        return PeripheralHostObservation::None;
+                    };
+                    if handle.raw() != 1 || packets == 0 {
+                        Self::increment(&self.faults);
+                        return PeripheralHostObservation::None;
+                    }
+                    let Some(updated) = completed.checked_add(packets) else {
+                        Self::increment(&self.faults);
+                        return PeripheralHostObservation::None;
+                    };
+                    completed = updated;
+                }
+                if completed == 0 {
+                    Self::increment(&self.faults);
+                    PeripheralHostObservation::None
+                } else {
+                    Self::add(&self.acl_transmitted, completed);
+                    PeripheralHostObservation::AclCompleted(completed)
+                }
+            }
+            _ => PeripheralHostObservation::None,
         }
+    }
+
+    fn observe_target_reset(&self) {
+        if !self.connection_live.swap(false, Ordering::Relaxed) {
+            Self::increment(&self.faults);
+        }
+        self.connection_updated.store(false, Ordering::Relaxed);
+        Self::increment(&self.target_reset_commands);
     }
 
     fn snapshot(&self) -> PeripheralHostEventSnapshot {
@@ -142,12 +252,73 @@ impl PeripheralHostEvents {
         PeripheralHostEventSnapshot {
             connections: self.connections.load(Ordering::Relaxed),
             disconnections: self.disconnections.load(Ordering::Relaxed),
+            connection_updates: self.connection_updates.load(Ordering::Relaxed),
+            target_disconnect_commands: self.target_disconnect_commands.load(Ordering::Relaxed),
+            target_reset_commands: self.target_reset_commands.load(Ordering::Relaxed),
             faults: self.faults.load(Ordering::Relaxed),
             acl_received: self.acl_received.load(Ordering::Relaxed),
             acl_queued: self.acl_queued.load(Ordering::Relaxed),
+            acl_transmitted: self.acl_transmitted.load(Ordering::Relaxed),
+            acl_completed: self.acl_completed.load(Ordering::Relaxed),
+            acl_backpressure_holds: self.acl_backpressure_holds.load(Ordering::Relaxed),
             acl_faults: self.acl_faults.load(Ordering::Relaxed),
             last_disconnect_reason: u8::try_from(last_disconnect_reason).ok(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PeripheralHostObservation {
+    None,
+    Connection,
+    ConnectionUpdate,
+    AclCompleted(u16),
+}
+
+struct PeripheralAclEcho {
+    bytes: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES],
+    len: usize,
+}
+
+impl PeripheralAclEcho {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES],
+            len: 0,
+        }
+    }
+
+    fn receive(
+        &mut self,
+        packet: AclPacket<'_>,
+        expected: &[u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES],
+    ) -> Result<bool, ()> {
+        if packet.handle().raw() != 1
+            || packet.broadcast_flag() != AclBroadcastFlag::PointToPoint
+            || packet.data().is_empty()
+        {
+            return Err(());
+        }
+        match packet.boundary_flag() {
+            AclPacketBoundary::FirstFlushable if self.len == 0 => {}
+            AclPacketBoundary::Continuing if self.len != 0 => {}
+            _ => return Err(()),
+        }
+        let end = self
+            .len
+            .checked_add(packet.data().len())
+            .filter(|end| *end <= self.bytes.len())
+            .ok_or(())?;
+        if packet.data() != &expected[self.len..end] {
+            return Err(());
+        }
+        self.bytes[self.len..end].copy_from_slice(packet.data());
+        self.len = end;
+        Ok(self.len == self.bytes.len())
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
     }
 }
 
@@ -210,7 +381,11 @@ async fn task(
         Ok(output) => output,
         Err(_error) => super::fail(c"OPEN_RADIO_HIL Bluetooth cold start failed\r\n"),
     };
-    let BluetoothSystem { hci, runners } = output.system;
+    let BluetoothSystem {
+        hci,
+        host_acl_credits,
+        runners,
+    } = output.system;
     let mut hardware = core::pin::pin!(runners.hardware.run());
     let mut console = Console {
         usb: UsbSerialJtag::new(usb).into_async(),
@@ -220,22 +395,27 @@ async fn task(
         encoder: FrameEncoder::new(),
         peripheral_probe: false,
         peripheral_closed_at_start: 0,
+        peripheral_reset_at_start: 0,
     };
     // Keep the radio actor's large ownership transitions out of the joined
     // console poll frame, including when diagnostic formatting changes inlining.
     let (_, _, never) = embassy_futures::join::join3(
         console.run(&hci),
-        pump(&hci),
+        pump(&hci, &host_acl_credits),
         poll_with_stack_boundary(hardware.as_mut()),
     )
     .await;
     match never {}
 }
 
-async fn pump(hci: &Host) {
+async fn pump(hci: &Host, host_acl_credits: &HostAclCredits) {
     let mut buffer = hci
         .alloc_buf()
         .unwrap_or_else(|_| panic!("HCI receive buffer"));
+    let mut assembly = PeripheralAclEcho::new();
+    let mut hold_next_acl_credit = false;
+    let mut echoes_in_connection = 0_u8;
+    let mut acl_completions_in_connection = 0_u16;
     loop {
         let packet = hci
             .read(&mut buffer)
@@ -243,36 +423,113 @@ async fn pump(hci: &Host) {
             .unwrap_or_else(|_| panic!("HCI transport failed"));
         match packet {
             ControllerToHostPacket::Acl(packet) => {
-                let boundary = match packet.boundary_flag() {
-                    AclPacketBoundary::FirstFlushable => AclPacketBoundary::FirstNonFlushable,
-                    AclPacketBoundary::Continuing => AclPacketBoundary::Continuing,
+                let credit_handle = packet.handle();
+                let expected = match echoes_in_connection {
+                    0 => &PERIPHERAL_ACL_PAYLOAD,
+                    1 => &PERIPHERAL_POST_UPDATE_ACL_PAYLOAD,
                     _ => {
                         PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
                         continue;
                     }
                 };
-                if packet.handle().raw() != 1
-                    || packet.broadcast_flag() != AclBroadcastFlag::PointToPoint
-                    || packet.data().is_empty()
+                let complete = match assembly.receive(packet, expected) {
+                    Ok(complete) => complete,
+                    Err(()) => {
+                        assembly.clear();
+                        PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+                        let completed = [ConnHandleCompletedPackets::new(credit_handle, 1)];
+                        let _ = host_acl_credits.return_completed_packets(&completed).await;
+                        continue;
+                    }
+                };
+                PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_received);
+                if hold_next_acl_credit {
+                    hold_next_acl_credit = false;
+                    Timer::after(Duration::from_millis(HOST_ACL_BACKPRESSURE_HOLD_MILLIS)).await;
+                    PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_backpressure_holds);
+                }
+                let completed = [ConnHandleCompletedPackets::new(credit_handle, 1)];
+                if host_acl_credits
+                    .return_completed_packets(&completed)
+                    .await
+                    .is_err()
                 {
                     PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+                    assembly.clear();
                     continue;
                 }
-                PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_received);
+                PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_completed);
+                if !complete {
+                    continue;
+                }
                 let echo = AclPacket::new(
-                    packet.handle(),
-                    boundary,
+                    ConnHandle::new(1),
+                    AclPacketBoundary::FirstNonFlushable,
                     AclBroadcastFlag::PointToPoint,
-                    packet.data(),
+                    &assembly.bytes,
                 );
                 if hci.write_acl_data(&echo).await.is_ok() {
                     PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_queued);
+                    echoes_in_connection = echoes_in_connection.saturating_add(1);
                 } else {
                     PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
                 }
+                assembly.clear();
             }
-            packet => PERIPHERAL_HOST_EVENTS.observe(packet),
+            packet => match PERIPHERAL_HOST_EVENTS.observe(packet) {
+                PeripheralHostObservation::None => {}
+                PeripheralHostObservation::Connection => {
+                    hold_next_acl_credit = true;
+                    echoes_in_connection = 0;
+                    acl_completions_in_connection = 0;
+                }
+                PeripheralHostObservation::ConnectionUpdate => {}
+                PeripheralHostObservation::AclCompleted(completed) => {
+                    let Some(updated) = acl_completions_in_connection.checked_add(completed) else {
+                        PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.faults);
+                        continue;
+                    };
+                    acl_completions_in_connection = updated;
+                    if acl_completions_in_connection == 2 && echoes_in_connection == 2 {
+                        execute_peripheral_termination(hci).await;
+                    } else if acl_completions_in_connection > 2 {
+                        PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.faults);
+                    }
+                }
+            },
         }
+    }
+}
+
+async fn execute_peripheral_termination(hci: &Host) {
+    let termination = PERIPHERAL_TERMINATION.swap(0, Ordering::AcqRel);
+    if termination == 0 {
+        return;
+    }
+    let hold_millis = PERIPHERAL_TERMINATION_HOLD_MILLIS.swap(0, Ordering::AcqRel);
+    if hold_millis != 0 {
+        Timer::after(Duration::from_millis(u64::from(hold_millis))).await;
+    }
+    let accepted = match termination {
+        1 => Disconnect::new(
+            ConnHandle::new(1),
+            DisconnectReason::RemoteUserTerminatedConn,
+        )
+        .exec(hci)
+        .await
+        .map(|()| {
+            PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.target_disconnect_commands)
+        })
+        .is_ok(),
+        2 => Reset::new()
+            .exec(hci)
+            .await
+            .map(|()| PERIPHERAL_HOST_EVENTS.observe_target_reset())
+            .is_ok(),
+        _ => false,
+    };
+    if !accepted {
+        PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.faults);
     }
 }
 
@@ -284,6 +541,7 @@ struct Console {
     encoder: FrameEncoder,
     peripheral_probe: bool,
     peripheral_closed_at_start: u32,
+    peripheral_reset_at_start: u32,
 }
 
 impl Console {
@@ -435,21 +693,40 @@ impl Console {
                 }
                 Command::BluetoothPeripheral(operation) => {
                     let execution = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
-                    if operation == PeripheralOperation::StartAdvertising
+                    let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
+                    let start = match operation {
+                        PeripheralOperation::StartAdvertising {
+                            termination,
+                            hold_millis,
+                        } => Some((termination, hold_millis)),
+                        PeripheralOperation::Snapshot => None,
+                    };
+                    if start.is_some()
                         && (active
                             || execution.terminal
                             || execution.saturated
                             || (self.peripheral_probe
                                 && execution.peripheral_disconnections
-                                    == self.peripheral_closed_at_start))
+                                    == self.peripheral_closed_at_start
+                                && host_events.target_reset_commands
+                                    == self.peripheral_reset_at_start))
                     {
                         Event::Rejected(RejectReason::InvalidState)
+                    } else if start.is_some_and(|(_, hold_millis)| hold_millis > 5_000) {
+                        Event::Rejected(RejectReason::InvalidConfiguration)
+                    } else if start.is_some_and(|(termination, _)| {
+                        termination == PeripheralTermination::LegacyPeerPowerOff
+                    }) {
+                        Event::Rejected(RejectReason::InvalidConfiguration)
                     } else {
                         let result = if operation == PeripheralOperation::Snapshot {
                             PeripheralResult::Snapshot
                         } else {
-                            let initialize = !self.peripheral_probe;
+                            let initialize = !self.peripheral_probe
+                                || host_events.target_reset_commands
+                                    != self.peripheral_reset_at_start;
                             self.peripheral_closed_at_start = execution.peripheral_disconnections;
+                            self.peripheral_reset_at_start = host_events.target_reset_commands;
                             self.peripheral_probe = true;
                             lease = Some(Instant::now() + Duration::from_secs(30));
                             match with_timeout(
@@ -458,7 +735,21 @@ impl Console {
                             )
                             .await
                             {
-                                Ok(Ok(address)) => PeripheralResult::Started { address },
+                                Ok(Ok(address)) => {
+                                    let (termination, hold_millis) = start
+                                        .expect("non-snapshot operation retains its start mode");
+                                    let termination = match termination {
+                                        PeripheralTermination::PeerReset
+                                        | PeripheralTermination::PeerRfkill => 0,
+                                        PeripheralTermination::TargetDisconnect => 1,
+                                        PeripheralTermination::TargetReset => 2,
+                                        PeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+                                    };
+                                    PERIPHERAL_TERMINATION_HOLD_MILLIS
+                                        .store(u32::from(hold_millis), Ordering::Release);
+                                    PERIPHERAL_TERMINATION.store(termination, Ordering::Release);
+                                    PeripheralResult::Started { address }
+                                }
                                 Ok(Err(result)) => result,
                                 Err(_) => PeripheralResult::Timeout,
                             }
@@ -559,12 +850,13 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         let ll = oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot();
         write!(
             detail,
-            "ll rx={} drop={} ctrl={} queued={} done={} op={:?} closed={} reason={:?}",
+            "ll rx={} drop={} ctrl={} queued={} done={} maps={} op={:?} closed={} reason={:?}",
             ll.received,
             ll.discarded,
             ll.control,
             ll.queued,
             ll.completed,
+            ll.channel_map_updates,
             ll.last_opcode,
             snapshot.peripheral_disconnections,
             snapshot.last_disconnect_reason
@@ -597,9 +889,17 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         peripheral_disconnections: snapshot.peripheral_disconnections,
         connection_complete_events: host_events.connections,
         disconnection_complete_events: host_events.disconnections,
+        connection_update_complete_events: host_events.connection_updates,
+        channel_map_update_events: oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot()
+            .channel_map_updates,
+        target_disconnect_commands: host_events.target_disconnect_commands,
+        target_reset_commands: host_events.target_reset_commands,
         host_event_faults: host_events.faults,
         host_acl_received_packets: host_events.acl_received,
         host_acl_queued_packets: host_events.acl_queued,
+        host_acl_transmitted_packets: host_events.acl_transmitted,
+        host_acl_completed_packets: host_events.acl_completed,
+        host_acl_backpressure_holds: host_events.acl_backpressure_holds,
         host_acl_faults: host_events.acl_faults,
         last_disconnect_reason: host_events.last_disconnect_reason,
         retries: snapshot.retries,
@@ -637,8 +937,33 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
     }
     if initialize {
         command!(Reset::new(), 0);
+        command!(
+            SetEventMask::new(
+                EventMask::new()
+                    .enable_le_meta(true)
+                    .enable_hardware_error(true)
+                    .enable_disconnection_complete(true),
+            ),
+            1
+        );
+        command!(
+            LeSetEventMask::new(
+                LeEventMask::new()
+                    .enable_le_conn_complete(true)
+                    .enable_le_conn_update_complete(true),
+            ),
+            2
+        );
+        command!(
+            HostBufferSize::new(HOST_ACL_PACKET_BYTES, 0, HOST_ACL_PACKET_CREDITS, 0,),
+            3
+        );
+        command!(
+            SetControllerToHostFlowControl::new(ControllerToHostFlowControl::AclOnSyncOff),
+            4
+        );
     }
-    let address = command!(ReadBdAddr::new(), 1);
+    let address = command!(ReadBdAddr::new(), 5);
     command!(
         LeSetAdvParams::new(
             bt_hci::param::Duration::from_millis(100),
@@ -650,12 +975,12 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
             AdvChannelMap::CHANNEL_37,
             AdvFilterPolicy::Unfiltered,
         ),
-        2
+        6
     );
     let payload = b"\x02\x01\x06\x08\x09OER-HIL";
     let mut data = [0; 31];
     data[..payload.len()].copy_from_slice(payload);
-    command!(LeSetAdvData::new(payload.len() as u8, data), 3);
-    command!(LeSetAdvEnable::new(true), 4);
+    command!(LeSetAdvData::new(payload.len() as u8, data), 7);
+    command!(LeSetAdvEnable::new(true), 8);
     Ok(address.into_inner())
 }

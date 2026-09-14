@@ -85,7 +85,10 @@ organization does not extend hardware qualification.
 The recurring peripheral lifecycle dispatches accepted connection RX packets
 through the portable bounded control responder. Central `LL_FEATURE_REQ` receives
 `LL_FEATURE_RSP`; the used-feature octet intersects the peer mask with the
-implemented Peripheral-initiated Feature Exchange bit. Host LE Read Remote
+implemented LE Encryption, Peripheral-initiated Feature Exchange and LE Ping bits. Exact
+`LL_PING_REQ` input queues one `LL_PING_RSP`; an incoming response cannot create
+another exchange. Connectable `ADV_IND` also sets local ChSel support, and the
+accepted connection uses CSA#2 only when the initiator sets ChSel as well. Host LE Read Remote
 Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, caches a
 successful page-zero result for the connection, reports `LL_UNKNOWN_RSP` as
 Unsupported Remote Feature and bounds the procedure with `connProcedureTimeout`.
@@ -105,13 +108,24 @@ The shared 40-second procedure deadline restarts whenever another LL Control
 PDU enters the connection TX graph while either local procedure remains active.
 The HIL image uses development company value `0xffff`, Core 5.4, subversion 1;
 it does not report the vendor Controller identity.
+The source-backed peripheral HIL workload asks the Linux central to issue both
+Host commands and requires each successful Command Status before an exact
+correlated completion. It checks feature mask `18:40:00:00:00:00:00:00` and
+the development version identity above; no hardware run has recorded this
+interoperability yet.
 Peer termination retires the connection after event completion and scheduler
 unlink. It cancels pending TX payloads, restores the exact graph and RX pool,
 and returns to idle command intake after any earlier HCI response and the
 Host-enabled Disconnection Complete event are published. The first event which
 observes peer activity produces LE Connection Complete for the single supported
 handle. Both events retain their exact packet across HCI queue backpressure;
-radio completion and recurrence continue independently while they wait.
+radio completion continues independently while they wait. A successor RUN is
+admitted only after the Controller-to-Host FIFO reserves space for the complete
+two-node hardware RX batch. The CPU-owned completion boundary races real Host
+capacity with periodic Controller-time checks, so supervision and active LL
+procedure deadlines remain live while Host credits are exhausted. This also
+ensures every packet which hardware can acknowledge has software storage before
+RUN; mixed data/control batches are never parked behind an older full FIFO.
 Before establishment, each missed event retains the entire initial transmit
 window plus clock widening. After six events without a peer packet, the closed
 connection publishes failed LE Connection Complete with status `0x3e` and no
@@ -129,25 +143,72 @@ reason `0x28`. The treatment of an initial establishment window never submitted
 to radio remains an explicit policy gap. Abrupt RF-loss and CRC-error behavior
 remain unqualified on hardware.
 
+Every published peripheral event owns an absolute 40-second progress budget
+covering completion, unlink and any following Controller-time acquisition. A
+lost scheduler completion wake is covered by periodic absolute-time rechecks.
+If RUN remains live at expiry, the owner executes the common hardware stop
+sequence, validates and retires the exact head, then uses the normal software
+unlink and recycle path. The stop itself has a 100-millisecond budget; a stalled
+Controller-time request, stop/unlink expiry or identity mismatch remains a
+sealed fail-stop.
+
 Central Connection Update and Channel Map Update are validated, retained and
 applied at their exact wrapping connection instants. Connection Update shapes
 the instant event from the old interval, new offset and new window, resets the
 supervision basis, and publishes LE Connection Update Complete when Host-visible
 parameters change. A passed instant or incompatible instant procedure enters
 acknowledged protocol termination; peer protocol errors do not enter hardware
-fail-stop ownership. Host Disconnect and bidirectional ACL are composed.
-Host-to-Controller packets use legacy LL
-fragmentation and return their credit after acknowledgement. Accepted peer LL
+fail-stop ownership. The source-backed peripheral recovery HIL scenario requests
+an exact 120-ms interval and an exact two-channel map, requires matching
+successful update completion at both Host boundaries, and completes a second
+fragmented ACL round trip after the map applies; hardware evidence has not yet
+been recorded. Host Disconnect and bidirectional ACL are composed.
+The local-disconnect HIL source keeps the requested `0x13` reason on air and
+requires local Host reason `0x16`; the local-reset source requires peer
+supervision timeout and a fresh bounded HCI bootstrap before reconnect. Neither
+has qualifying hardware evidence and HCI Reset is not powered teardown.
+The RF-loss HIL source verifies that the Linux central is rfkill-blocked for at
+least 2500 ms, then requires target supervision timeout and reconnect. It has
+no recorded hardware evidence yet.
+Host-to-Controller packets use legacy LL fragmentation and return their credit
+after acknowledgement. Unencrypted packets carry at most 27 payload octets;
+encrypted packets carry at most 23 plaintext octets plus the four-octet MIC.
+Accepted peer LL
 Data fragments enter a two-packet Controller-to-Host FIFO after Connection
 Complete, fragment to the Host-declared ACL buffer length and retain HCI
 transport backpressure. Host Number Of Completed Packets restores credits for
-the sole live handle; its intake remains serialized behind an older pending
-normal response or retained Host ACL packet. Only contiguous connection events
-are scheduled. Local termination uses a fresh Controller sample immediately
+the sole live handle; command intake remains live while a Host ACL packet is
+retained. Reset retires directly from the CPU-owned backpressure boundary;
+Disconnect and locally initiated procedures may fill the retained TX graph
+under a fresh Controller-time sample while recurrence awaits safe RX capacity.
+After disconnection, idle restoration and handle reuse wait until all
+Host-owned Controller ACL buffers return their credits. Only contiguous
+connection events are scheduled. Local termination uses a fresh Controller sample immediately
 before the first `LL_TERMINATE_IND` enters the TX graph and stops after its
 acknowledgment or one connection supervision timeout. Generic LL procedure
 response timers remain absent. Data Length Extension remains unavailable. Full
 LLCP and ACL qualification remain open.
+
+The portable LL security owner implements the Peripheral encryption
+start/pause/restart sequences and software AES-CCM with independently owned
+39-bit direction counters. The production composition supplies fresh SKDp and
+IVp from the ESP32-S31 hardware RNG. A peer encryption request publishes the
+standard masked LE Long Term Key Request event; the closed active classifier
+accepts the positive or negative HCI reply only for that live request and
+handle. An accepted new packet advances its counter once, while a radio
+retransmission reuses the retained ciphertext. RX authentication and decryption
+precede ordinary LL dispatch; TX control, ACL and empty acknowledgement packets
+are encrypted while the session is active. Restart replaces session material
+and resets both counters only after the encrypted pause response and the peer's
+unencrypted response, then publishes Encryption Key Refresh Complete. Initial
+start publishes Encryption Change. MIC or physical-channel sequence failure
+retires the link with `0x3d`; a missing restart LTK sends reliable termination
+reason `0x06`. Reset, disconnection and fault owners retain and destroy the
+session keys with the connection. LE Encryption is advertised, and the two LTK
+reply commands are present in Read Local Supported Commands. Pairing, SMP and
+key persistence remain Host responsibilities. The software path does not use
+the reviewed BLE encryption accelerator. Vendor comparison and on-air
+interoperability/fault evidence remain absent.
 
 The bootstrap `Read Local Supported Commands` response publishes the exact
 closed command inventory used by production classification. State-dependent

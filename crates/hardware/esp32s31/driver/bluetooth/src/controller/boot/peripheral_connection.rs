@@ -515,15 +515,29 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
+        random: &mut dyn crate::le::peripheral::PeripheralEncryptionRandomSource,
     ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
         completed.process_control(
             control,
+            encryption,
             acl,
             self.peripheral_connection_resources
                 .config()
                 .version_information(),
+            random,
         )
+    }
+
+    pub(crate) fn enqueue_peripheral_transmission(
+        &mut self,
+        completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
+        acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
+    ) -> bool {
+        completed.enqueue_transmission(control, encryption, acl)
     }
 
     /// Build one provisional recurrence from the real completed connection owner.

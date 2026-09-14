@@ -7,14 +7,37 @@ commands; radio execution remains in production crates. The same image exposes
 the bounded [peripheral diagnostic commands](../../protocol/README.md) for
 starting a single-channel connectable advertisement and observing execution.
 They require a fresh boot. After an observed disconnect or failed establishment,
-advertising may restart without a board or HCI Reset; the host resets the board when the probe
-ends. The commands alone do not qualify a connection or ACL traffic. The
-`bluetooth-peripheral-recovery` scenario coordinates a real Linux central with
-two connection/ACL-echo/supervision-timeout cycles. It requires one exact
-bidirectional packet through the target Host facade and ordered Host-visible
-completion events before each advertising restart. The source-backed scenario
+advertising may restart without a board or HCI Reset; the host resets the board
+when the probe ends. The commands alone do not qualify a connection or ACL
+traffic. The `bluetooth-peripheral-recovery` scenario coordinates a real Linux
+central with two connection, ACL echo, Connection Update, Channel Map Update
+and supervision-timeout cycles. The target Host
+declares one 27-byte Controller-to-Host ACL credit, holds the first consumed
+fragment's credit for 300 ms, returns every credit explicitly, requires all ten
+fragments of an exact 251-byte ACL packet, reassembles and echoes it through the
+target Host facade, requires the central to complete LE Read Remote Features
+with `18:40:00:00:00:00:00:00` and Read Remote Version Information with Core
+5.4, company value `0xffff` and subversion 1 after their successful Command
+Status events, requests an exact 120-ms interval and a two-channel map from the
+central,
+then sends a distinct second 251-byte exchange after the map applies. Each target
+echo must also produce Number Of Completed Packets after Link Layer acknowledgement. It
+checks the matching Host-visible Connection Update Complete between connection
+and disconnection before each advertising restart. The source-backed scenario
 has no recorded hardware evidence by itself. See the
 [Bluetooth fixture and RF scenario](../../host/linux-bluetooth/README.md).
+The separate `bluetooth-peripheral-soak` catalog entry repeats the same exact
+cycle 100 times in one boot; it has the same evidence limitation until run on
+hardware.
+The `bluetooth-peripheral-local-disconnect` and
+`bluetooth-peripheral-local-reset` entries apply the same ACL/update/map/second-ACL gates, then
+trigger the selected command from the target Host. Disconnect requires local
+reason `0x16` and peer reason `0x13`; Reset requires peer supervision timeout
+and reruns the bounded Host bootstrap before advertising is restarted. These
+scenarios do not exercise powered teardown.
+The `bluetooth-peripheral-rf-loss` entry instead closes the Linux central's HCI
+channel and keeps its radio rfkill-blocked for at least 2500 ms after the second ACL exchange. It requires target supervision
+timeout reason `0x08` and advertising recovery before the next connection.
 
 The peripheral diagnostic explicitly configures software window widening with
 a 500-ppm local-clock bound through `BluetoothColdStartConfig::with_peripheral_connection`.

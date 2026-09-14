@@ -50,9 +50,14 @@ same actor. Deadline expiry retires the connection directly with `0x22`,
 without transmitting a voluntary termination PDU. Read Remote Version Information
 uses the same ordered admission, deadline and completion path when the connection
 configuration supplies an explicit local identity. The deadline restarts after
-each later LL Control PDU enters the TX graph. Other classified commands use
+each later LL Control PDU enters the TX graph. A pending LE Long Term Key
+Request keeps command intake live and accepts one matching positive or negative
+reply for the current handle. The same active actor retains the encryption
+handshake, procedure deadline, packet counters and masked Encryption Change or
+Encryption Key Refresh Complete publication across every wait. Other classified commands use
 the radio-active response policy. A matching Host ACL packet is copied out of transport storage,
-fragmented into legacy 27-byte LL Data PDUs, retained across retransmission and
+fragmented into legacy 27-byte plaintext or 23-byte encrypted LL payloads,
+retained across retransmission and
 returns one Number Of Completed Packets credit after its final acknowledged
 fragment. Accepted peer LL Data fragments are copied into a two-packet
 Controller-to-Host FIFO after Connection Complete, split to the Host-declared

@@ -292,6 +292,13 @@ impl PeripheralConnectionSchedulerCompletionObservation {
     pub(super) const fn status(self) -> PeripheralConnectionSchedulerItemCompletionStatus {
         self.status
     }
+
+    pub(super) const fn aborted() -> Self {
+        Self {
+            status: PeripheralConnectionSchedulerItemCompletionStatus::Aborted,
+            capture_available: false,
+        }
+    }
 }
 
 impl PeripheralConnectionSchedulerItemStorage {
@@ -482,7 +489,8 @@ impl PeripheralConnectionSchedulerItemStorage {
             (
                 PeripheralConnectionSchedulerItemCompletionStatus::Zero,
                 PeripheralConnectionCapturedAnchorAvailability::Available(_),
-            ) => return false,
+            )
+            | (PeripheralConnectionSchedulerItemCompletionStatus::Aborted, _) => return false,
         };
         self.words[SCHEDULER_ITEM_STATUS].set(status);
         true
@@ -743,6 +751,10 @@ impl PeripheralConnectionMemoryGraphStorage {
         graph.link_state.words[LINK_STATE_TX_TAIL].set(next_address.controller_address().address());
         graph.tx_pending.set(true);
         Ok(true)
+    }
+
+    pub(super) fn can_enqueue_tx(&self) -> bool {
+        !self.tx_pending.get()
     }
 
     #[cfg(test)]

@@ -10,6 +10,7 @@ pub struct PeripheralControlDiagnostics {
     pub control: u32,
     pub queued: u32,
     pub completed: u32,
+    pub channel_map_updates: u32,
     pub last_opcode: Option<u8>,
 }
 static STATE: Mutex<Cell<PeripheralControlDiagnostics>> =
@@ -19,6 +20,7 @@ static STATE: Mutex<Cell<PeripheralControlDiagnostics>> =
         control: 0,
         queued: 0,
         completed: 0,
+        channel_map_updates: 0,
         last_opcode: None,
     }));
 pub fn snapshot() -> PeripheralControlDiagnostics {
@@ -28,6 +30,7 @@ pub fn snapshot() -> PeripheralControlDiagnostics {
 pub(crate) fn record_received<const N: usize>(
     batch: &oer_esp32s31_bluetooth_memory::LeReceivedBatch<N>,
     completed: bool,
+    channel_map_updated: bool,
 ) {
     critical_section::with(|cs| {
         let mut state = STATE.borrow(cs).get();
@@ -36,6 +39,9 @@ pub(crate) fn record_received<const N: usize>(
             .discarded
             .saturating_add(batch.discarded_count() as u32);
         state.completed = state.completed.saturating_add(u32::from(completed));
+        state.channel_map_updates = state
+            .channel_map_updates
+            .saturating_add(u32::from(channel_map_updated));
         for index in 0..batch.len() {
             let pdu = batch.packet(index).expect("bounded RX batch").as_bytes();
             if pdu[0] & 3 == 3 {

@@ -2367,6 +2367,9 @@ dependencies = [
 [[package]]
 name = "oer-bluetooth-ll"
 version = "0.1.0"
+dependencies = [
+ "aes",
+]
 
 [[package]]
 name = "oer-embassy-net"

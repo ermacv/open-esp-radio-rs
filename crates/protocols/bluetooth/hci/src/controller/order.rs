@@ -23,7 +23,9 @@ use crate::{
     LeHostAclPacketRejection, LeHostCompletedPacketsCommand, LeHostCompletedPacketsErrorEvent,
     LeLegacyAdvertisingEnableCommand, LeLegacyAdvertisingIdleEnableDisposition,
     LeLegacyConnectableAdvertisingEnableRequest, LeLegacyNonconnectableAdvertisingEnableRequest,
-    LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest, LeReadRemoteFeaturesCommand,
+    LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
+    LeLongTermKeyCommandCompleteEvent, LeLongTermKeyRequestNegativeReplyCommand,
+    LeLongTermKeyRequestReplyCommand, LeReadRemoteFeaturesCommand,
     LeReadRemoteVersionInformationCommand, LeReceiverTestCommand, LeTestEndCommand,
     LeTransmitterTestCommand, OwnedBootstrapCommand,
 };
@@ -617,10 +619,70 @@ pub enum LeControllerActivePeripheralCommandRoute<'epoch, 'command, Owner> {
     ReadRemoteFeatures(LeControllerDeferredReadRemoteFeatures<'epoch, Owner>),
     /// A matching remote-version request awaits ordered Command Status.
     ReadRemoteVersionInformation(LeControllerDeferredReadRemoteVersionInformation<'epoch, Owner>),
+    /// A matching positive LTK reply transfers its secret to the live procedure.
+    LongTermKeyReply(LeControllerDeferredLongTermKeyReply<'epoch, Owner>),
+    /// A matching negative LTK reply transfers rejection to the live procedure.
+    LongTermKeyNegativeReply(LeControllerDeferredLongTermKeyNegativeReply<'epoch, Owner>),
     /// Reset remains ordered and undispatched until the connection graph is quiescent.
     ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
     /// The aggregate belongs to another endpoint and remains inseparable.
     EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
+}
+
+/// Live connection owner paired with a Host-provided secret.
+#[must_use = "transfer the LTK into the exact pending Link Layer procedure"]
+pub struct LeControllerAcceptedLongTermKeyReply<Owner> {
+    owner: Owner,
+    long_term_key: [u8; 16],
+}
+
+impl<Owner> LeControllerAcceptedLongTermKeyReply<Owner> {
+    pub const fn owner(&self) -> &Owner {
+        &self.owner
+    }
+
+    pub fn into_parts(self) -> (Owner, [u8; 16]) {
+        (self.owner, self.long_term_key)
+    }
+}
+
+/// Endpoint-validated positive LTK reply retaining command-order authority.
+#[must_use = "publish Command Complete and transfer the LTK owner"]
+pub struct LeControllerDeferredLongTermKeyReply<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeLongTermKeyRequestReplyCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredLongTermKeyReply<'epoch, Owner> {
+    pub fn into_accepted_complete(
+        self,
+    ) -> LeControllerResponsePending<'epoch, LeControllerAcceptedLongTermKeyReply<Owner>> {
+        let handle = self.command.handle();
+        let long_term_key = self.command.into_long_term_key();
+        self.ready
+            .map_owner(|owner| LeControllerAcceptedLongTermKeyReply {
+                owner,
+                long_term_key,
+            })
+            .begin_next_response(LeLongTermKeyCommandCompleteEvent::accepted(
+                LeLongTermKeyRequestReplyCommand::OPCODE,
+                handle,
+            ))
+    }
+}
+
+/// Endpoint-validated negative LTK reply retaining command-order authority.
+#[must_use = "publish Command Complete and reject the exact pending request"]
+pub struct LeControllerDeferredLongTermKeyNegativeReply<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeLongTermKeyRequestNegativeReplyCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredLongTermKeyNegativeReply<'epoch, Owner> {
+    pub fn into_accepted_complete(self) -> LeControllerResponsePending<'epoch, Owner> {
+        let response = self.command.into_accepted_complete();
+        self.ready.begin_next_response(response)
+    }
 }
 
 /// Endpoint-validated remote-feature request retaining command-order authority.
@@ -1195,6 +1257,21 @@ where
                     ready.begin_next_response(response),
                 )
             }
+            LeControllerCommandClassification::LongTermKeyReply(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::MalformedLongTermKeyReply(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Dtm(command) => {
                 match command.into_idle_session_disposition() {
                     LeDtmIdleSessionDisposition::StartReceiver(command) => {
@@ -1360,6 +1437,21 @@ where
                 ) => LeControllerClassifiedCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 ),
+                LeControllerCommandClassification::LongTermKeyReply(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(command.into_unknown_connection_complete()),
+                    )
+                }
+                LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(command.into_unknown_connection_complete()),
+                    )
+                }
+                LeControllerCommandClassification::MalformedLongTermKeyReply(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
                 LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
                     LeControllerClassifiedCommandRoute::ResetBarrier(LeControllerResetBarrier {
                         ready,
@@ -1445,6 +1537,7 @@ where
         live_handle: Option<ConnHandle>,
         local_procedure_busy: bool,
         local_version_available: bool,
+        long_term_key_request_pending: bool,
     ) -> LeControllerActivePeripheralCommandRoute<'epoch, 'command, Owner> {
         if !command.ready.accepts_endpoint(self)
             || !command.command.originates_from(self.transport())
@@ -1507,6 +1600,39 @@ where
                 pending(ready.begin_next_response(command.into_unknown_connection_status()))
             }
             LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                pending(ready.begin_next_response(response))
+            }
+            LeControllerCommandClassification::LongTermKeyReply(command)
+                if Some(command.handle()) == live_handle && long_term_key_request_pending =>
+            {
+                LeControllerActivePeripheralCommandRoute::LongTermKeyReply(
+                    LeControllerDeferredLongTermKeyReply { ready, command },
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyReply(command)
+                if Some(command.handle()) == live_handle =>
+            {
+                pending(ready.begin_next_response(command.into_command_disallowed_complete()))
+            }
+            LeControllerCommandClassification::LongTermKeyReply(command) => {
+                pending(ready.begin_next_response(command.into_unknown_connection_complete()))
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command)
+                if Some(command.handle()) == live_handle && long_term_key_request_pending =>
+            {
+                LeControllerActivePeripheralCommandRoute::LongTermKeyNegativeReply(
+                    LeControllerDeferredLongTermKeyNegativeReply { ready, command },
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command)
+                if Some(command.handle()) == live_handle =>
+            {
+                pending(ready.begin_next_response(command.into_command_disallowed_complete()))
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
+                pending(ready.begin_next_response(command.into_unknown_connection_complete()))
+            }
+            LeControllerCommandClassification::MalformedLongTermKeyReply(response) => {
                 pending(ready.begin_next_response(response))
             }
             LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
@@ -1613,6 +1739,21 @@ where
                 )
             }
             LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyReply(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::MalformedLongTermKeyReply(response) => {
                 LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 )
@@ -1748,6 +1889,21 @@ where
                 )
             }
             LeControllerCommandClassification::MalformedReadRemoteVersionInformation(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyReply(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_unknown_connection_complete()),
+                )
+            }
+            LeControllerCommandClassification::MalformedLongTermKeyReply(response) => {
                 LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 )

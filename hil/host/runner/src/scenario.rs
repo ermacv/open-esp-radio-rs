@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::{fs, path::Path};
 
 use open_esp_radio_hil_protocol::{
-    WifiAccessPointSecurity, WifiDataPlanePlacement, WifiRxChecksumPolicy,
-    WifiRxContinuationPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
+    BluetoothPeripheralTermination, WifiAccessPointSecurity, WifiDataPlanePlacement,
+    WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +39,22 @@ pub enum Direction {
     Rx,
     Tx,
     Bidirectional,
+}
+
+/// Removed RX-admission experiment retained only to decode sealed run inputs.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HistoricalRxAdmissionPolicy {
+    SynchronousShared,
+    DeferredReadyDiagnostic,
+}
+
+/// Removed RX-dispatch experiment retained only to decode sealed run inputs.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HistoricalRxDispatchPolicy {
+    Asynchronous,
+    DirectImmediateDiagnostic,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -158,6 +174,8 @@ pub enum Workload {
         boots: u8,
         connections: u8,
         hold_millis: u16,
+        #[serde(default)]
+        termination: BluetoothPeripheralTermination,
     },
     BootSmoke,
     MemoryBenchmark {
@@ -375,6 +393,18 @@ pub struct Scenario {
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
     #[serde(default)]
     pub tx_buffer: WifiTxBufferPolicy,
+    #[serde(
+        default,
+        rename = "rx_admission",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub historical_rx_admission: Option<HistoricalRxAdmissionPolicy>,
+    #[serde(
+        default,
+        rename = "rx_dispatch",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub historical_rx_dispatch: Option<HistoricalRxDispatchPolicy>,
     #[serde(default)]
     pub rx_continuation: WifiRxContinuationPolicy,
     #[serde(default)]

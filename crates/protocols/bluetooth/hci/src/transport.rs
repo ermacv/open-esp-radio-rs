@@ -8,7 +8,10 @@ pub(crate) use in_process::{
     HciActivePeripheralIntake, HciClassifiedCommandIntake, InProcessHciChannel,
     InProcessHciControllerEndpoint,
 };
-pub use in_process::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
+pub use in_process::{
+    HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport,
+    LeHostAclCreditSender,
+};
 pub use queue::{ControllerToHostQueue, ControllerToHostQueueError};
 
 /// Maximum packet body accepted by the in-process HCI Host contract.

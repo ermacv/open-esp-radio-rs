@@ -54,7 +54,10 @@ use crate::le::peripheral::{
 
 use crate::runtime_resources::ControllerPoweredTaskRuntime;
 #[cfg(target_arch = "riscv32")]
-use crate::scheduler::core::SingleItemSchedulerSoftwareListRemovalReady;
+use crate::scheduler::core::{
+    SingleItemSchedulerHardwareHeadEmptyObserved, SingleItemSchedulerRunning,
+    SingleItemSchedulerSoftwareListRemovalReady,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
     ControllerTimeSample,
@@ -72,12 +75,45 @@ use oer_esp32s31_bluetooth_memory::{
 };
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerStop,
+    BluetoothSchedulerStopStep, BluetoothSchedulerStopped, BluetoothSchedulerStoppedItem,
 };
 
 use oer_esp32s31_hal::{
     bluetooth::BluetoothSchedulerHardwareListIndex, types::BluetoothControllerSramAddress,
 };
+
+/// Owned result of one finite common-stop transition for a peripheral event.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the pending stop, retired graph, or sealed invariant failure"]
+pub(crate) enum PeripheralConnectionSchedulerStopStep {
+    Pending {
+        running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        stop: BluetoothSchedulerStop,
+    },
+    IdentityMismatch {
+        _running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        _stop: BluetoothSchedulerStop,
+    },
+    UnexpectedFinishedList {
+        _running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        _stopped: BluetoothSchedulerStopped,
+        _observed: BluetoothSchedulerFinishedListPop,
+    },
+    HeadRejected {
+        _running_item: crate::le::peripheral::connection::PeripheralConnectionFirstEventRunning,
+        _retained: SchedulerWindowReservation<SchedulerSequenceReady>,
+        _observed:
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation,
+    },
+    MemoryRejected {
+        _running_item: crate::le::peripheral::connection::PeripheralConnectionFirstEventRunning,
+        _retained: SchedulerWindowReservation<SchedulerSequenceReady>,
+        _stopped: BluetoothSchedulerStoppedItem,
+    },
+    Retired(SingleItemSchedulerHardwareHeadEmptyObserved<PeripheralConnectionCompletionRole>),
+}
 
 /// Fresh initial-admission sample sealed by the controller-time worker.
 #[cfg(any(target_arch = "riscv32", test))]
@@ -376,10 +412,22 @@ impl PeripheralConnectionSchedulerCompleted {
     pub(crate) fn process_control(
         &mut self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
         version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
+        random: &mut dyn crate::le::peripheral::PeripheralEncryptionRandomSource,
     ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
-        self.event.process_control(control, acl, version)
+        self.event
+            .process_control(control, encryption, acl, version, random)
+    }
+
+    pub(crate) fn enqueue_transmission(
+        &mut self,
+        control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
+        acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
+    ) -> bool {
+        self.event.enqueue_transmission(control, encryption, acl)
     }
 
     /// Portable completion record with the exactly-once advanced successor.
@@ -404,6 +452,10 @@ impl PeripheralConnectionSchedulerCompleted {
         { oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT },
     > {
         self.event.received()
+    }
+
+    pub(crate) fn required_controller_acl_slots(&self) -> usize {
+        self.event.required_controller_acl_slots()
     }
 
     /// Normalized packet start when peer activity was captured.
@@ -652,6 +704,85 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             publication,
             reservation,
         })
+    }
+
+    /// Stop and retire the exact running peripheral item without accepting a
+    /// synthetic completion. The aborted graph continues through the ordinary
+    /// software unlink and recycle tail.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn step_peripheral_connection_stop(
+        &mut self,
+        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        stop: BluetoothSchedulerStop,
+    ) -> PeripheralConnectionSchedulerStopStep {
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+        {
+            return PeripheralConnectionSchedulerStopStep::IdentityMismatch {
+                _running: running,
+                _stop: stop,
+            };
+        }
+        let stopped = match self.task.step_scheduler_stop(storage, stop) {
+            Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => stopped,
+            Ok(BluetoothSchedulerStopStep::Pending(stop)) | Err(stop) => {
+                return PeripheralConnectionSchedulerStopStep::Pending { running, stop };
+            }
+        };
+        let captured = self
+            .task
+            .transfer_stopped_scheduler_finished_lists(&stopped);
+        let rest = match captured.pop_lowest() {
+            BluetoothSchedulerFinishedListPop::List {
+                observed,
+                remaining,
+            } if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO => {
+                remaining.pop_lowest()
+            }
+            other => other,
+        };
+        if !matches!(rest, BluetoothSchedulerFinishedListPop::Complete) {
+            return PeripheralConnectionSchedulerStopStep::UnexpectedFinishedList {
+                _running: running,
+                _stopped: stopped,
+                _observed: rest,
+            };
+        }
+        let (item, run, retained) = running.into_parts();
+        let stopped = match self.task.retire_stopped_scheduler_head(stopped, run) {
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Retired(
+                stopped,
+            ) => stopped,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Rejected(
+                observed,
+            ) => {
+                return PeripheralConnectionSchedulerStopStep::HeadRejected {
+                    _running_item: item,
+                    _retained: retained,
+                    _observed: observed,
+                };
+            }
+        };
+        let (item, head) = match item.observe_stopped(stopped) {
+            Ok(observed) => observed,
+            Err((item, stopped)) => {
+                return PeripheralConnectionSchedulerStopStep::MemoryRejected {
+                    _running_item: item,
+                    _retained: retained,
+                    _stopped: stopped,
+                };
+            }
+        };
+        self._scheduler_list
+            .retain_completion_observed_first_item(address);
+        self._scheduler_list
+            .retain_hardware_head_empty_first_item(address);
+        PeripheralConnectionSchedulerStopStep::Retired(
+            SingleItemSchedulerHardwareHeadEmptyObserved::new(item, head, retained),
+        )
     }
 
     /// Copy RX results and release the connection event's three lower owners.

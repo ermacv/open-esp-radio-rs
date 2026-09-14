@@ -16,6 +16,8 @@ pub(crate) mod first_hci;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod procedure;
 #[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod progress;
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod recovery;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod start;
@@ -35,6 +37,14 @@ pub use connection::{
     PeripheralConnectionRuntimeClaimError, PeripheralConnectionRuntimeConfig,
     PeripheralConnectionRuntimeResources,
 };
+
+/// Hardware entropy consumed only by an admitted encryption start or restart.
+#[cfg(target_arch = "riscv32")]
+pub trait PeripheralEncryptionRandomSource {
+    fn next_encryption_random(
+        &mut self,
+    ) -> oer_bluetooth_ll::security::LePeripheralEncryptionRandom;
+}
 #[cfg(target_arch = "riscv32")]
 pub use first_hci::{
     LegacyConnectablePeripheralFirstHciAxis, LegacyConnectablePeripheralFirstHciFailStop,

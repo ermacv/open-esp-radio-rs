@@ -45,6 +45,23 @@ impl Scenario {
             )
             .into());
         }
+        if self.image.historical_only()
+            || self.historical_rx_admission.is_some()
+            || self.historical_rx_dispatch.is_some()
+            || matches!(
+                self.workload,
+                Workload::BluetoothPeripheral {
+                    termination: BluetoothPeripheralTermination::LegacyPeerPowerOff,
+                    ..
+                }
+            )
+        {
+            return Err(format!(
+                "{}: historical image or workload identities cannot be selected for a new run",
+                self.source.display()
+            )
+            .into());
+        }
         if self.id.is_empty()
             || !self
                 .id
@@ -455,9 +472,10 @@ impl Scenario {
                 boots,
                 connections,
                 hold_millis,
+                termination: _,
             } => {
                 bounded(*boots, 1, 10, self, "boots")?;
-                bounded(*connections, 1, 5, self, "connections")?;
+                bounded(*connections, 1, 100, self, "connections")?;
                 bounded(*hold_millis, 0, 5_000, self, "hold_millis")?;
                 if self.link.is_some()
                     || self.criteria != Criteria::default()

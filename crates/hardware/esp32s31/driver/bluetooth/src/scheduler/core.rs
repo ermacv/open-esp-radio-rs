@@ -57,6 +57,7 @@ pub use peripheral_connection::{
 #[cfg(target_arch = "riscv32")]
 pub(crate) use peripheral_connection::{
     PeripheralConnectionFirstPreSequence, PeripheralConnectionSchedulerCompletionClassification,
+    PeripheralConnectionSchedulerStopStep,
 };
 #[cfg(target_arch = "riscv32")]
 pub use peripheral_connection::{

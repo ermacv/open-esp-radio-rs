@@ -514,17 +514,17 @@ vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md",
 ]
 gaps = [
-  { axis = "implementation", id = "initial-establishment-window-policy-other-procedure-timers-and-encryption-missing" },
+  { axis = "implementation", id = "initial-establishment-window-policy-and-other-procedure-timers-missing" },
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
-  { axis = "async", id = "connection-recycle-and-recurrence-runtime-missing" },
+  { axis = "async", id = "initial-establishment-lateness-powered-shutdown-and-unrelated-role-dispatch-missing" },
 ]
 
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features and Read Remote Version Information transitions bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
+scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features Read Remote Version Information and Long Term Key reply transitions masked encryption events bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -534,7 +534,7 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "remaining-connected-llcp-and-powered-lifecycle-missing" },
-  { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
+  { axis = "host", id = "hardware-radio-axis-and-full-controller-task-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
   { axis = "async", id = "unrelated-finished-list-dispatch-missing" },
@@ -757,17 +757,15 @@ gaps = [
 id = "link-layer-encryption"
 title = "LE Link Layer encryption"
 scope = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
-implementation = "incomplete"
+implementation = "complete"
 host = "incomplete"
-async = "incomplete"
+async = "bounded"
 depends-on = ["ll-control-procedures", "connected-phy-and-data-length"]
 vendor-anchors = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
 gaps = [
-  { axis = "implementation", id = "link-layer-encryption-production-composition-missing" },
-  { axis = "host", id = "link-layer-encryption-behavioral-regressions-missing" },
+  { axis = "host", id = "link-layer-encryption-production-boundary-regressions-missing" },
   { axis = "vendor", id = "link-layer-encryption-production-contract-evidence-missing" },
   { axis = "hil", id = "link-layer-encryption-interoperability-and-fault-cells-missing" },
-  { axis = "async", id = "link-layer-encryption-runtime-lifetime-missing" },
 ]
 
 [[capabilities]]

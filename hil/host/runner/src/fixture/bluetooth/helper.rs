@@ -10,6 +10,25 @@ mod owner;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TerminationArg {
+    PeerReset,
+    PeerRfkill,
+    TargetDisconnect,
+    TargetReset,
+}
+
+impl From<TerminationArg> for open_esp_radio_hil_protocol::BluetoothPeripheralTermination {
+    fn from(value: TerminationArg) -> Self {
+        match value {
+            TerminationArg::PeerReset => Self::PeerReset,
+            TerminationArg::PeerRfkill => Self::PeerRfkill,
+            TerminationArg::TargetDisconnect => Self::TargetDisconnect,
+            TerminationArg::TargetReset => Self::TargetReset,
+        }
+    }
+}
+
 #[derive(clap::Parser)]
 struct Cli {
     #[command(subcommand)]
@@ -18,12 +37,14 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
+    /// Print the exact finite interface understood by this helper.
+    Capabilities,
     /// Check DTM v2 on LE 1M, channel 0, PRBS9, with 100 ms RX/TX windows.
     Check {
         #[arg(long)]
         adapter: model::Adapter,
     },
-    /// Connect to one public LE peer, hold 0..5000 ms, then Reset the adapter.
+    /// Connect to one public LE peer and execute one finite termination mode.
     ConnectReset {
         #[arg(long)]
         adapter: model::Adapter,
@@ -31,24 +52,32 @@ enum Command {
         peer: model::PeerAddress,
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
         hold_ms: u16,
+        #[arg(long, value_enum, default_value = "peer-reset")]
+        termination: TerminationArg,
     },
 }
 
 fn main() {
     use clap::Parser as _;
     let command = Cli::parse().command;
+    if matches!(&command, Command::Capabilities) {
+        println!("{}", model::HELPER_CAPABILITIES);
+        return;
+    }
     if let Command::ConnectReset {
         adapter,
         peer,
         hold_ms,
+        termination,
     } = command
     {
-        let mut report = model::ConnectionReset::new(adapter, peer, hold_ms);
+        let termination = termination.into();
+        let mut report = model::ConnectionReset::new(adapter, peer, hold_ms, termination);
         let result = (|| -> Result<()> {
             let _signals = oer_process::install_signal_handlers()?;
             #[cfg(target_os = "linux")]
             {
-                owner::connect_reset(adapter, peer, hold_ms, &mut report)
+                owner::connect_reset(adapter, peer, hold_ms, termination, &mut report)
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -62,7 +91,7 @@ fn main() {
             eprintln!("cannot write Bluetooth result: {error}");
             std::process::exit(1);
         }
-        if !report.passed(adapter, peer, hold_ms) {
+        if !report.passed(adapter, peer, hold_ms, termination) {
             std::process::exit(1);
         }
         return;
@@ -138,5 +167,26 @@ mod cli_tests {
             );
         }
         assert!(Cli::try_parse_from(valid.into_iter().chain(["--hold-ms", "5000"])).is_ok());
+        for termination in [
+            "peer-reset",
+            "peer-rfkill",
+            "target-disconnect",
+            "target-reset",
+        ] {
+            assert!(
+                Cli::try_parse_from(valid.into_iter().chain(["--termination", termination]))
+                    .is_ok()
+            );
+        }
+        assert!(
+            Cli::try_parse_from(valid.into_iter().chain(["--termination", "disconnect-now"]))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn capabilities_is_a_parameterless_finite_command() {
+        assert!(Cli::try_parse_from(["helper", "capabilities"]).is_ok());
+        assert!(Cli::try_parse_from(["helper", "capabilities", "--adapter", "hci0"]).is_err());
     }
 }

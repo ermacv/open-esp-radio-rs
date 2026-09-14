@@ -1255,6 +1255,57 @@ impl PeripheralConnectionFirstEventRunning {
         self.graph.scheduler_item_address()
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "a rejected stop join must return both complete no-alloc owners unchanged"
+    )]
+    pub(crate) fn observe_stopped(
+        self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+    ) -> Result<
+        (
+            PeripheralConnectionFirstEventCompletionObserved,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+        ),
+        (
+            Self,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+        ),
+    > {
+        let Self {
+            graph,
+            event,
+            _first_window,
+            _requested_window,
+            _resolved_window,
+            recurring_phase,
+        } = self;
+        match graph.observe_stopped(stopped) {
+            Ok((graph, head)) => Ok((
+                PeripheralConnectionFirstEventCompletionObserved::new(
+                    graph,
+                    event,
+                    _first_window,
+                    _requested_window,
+                    _resolved_window,
+                    recurring_phase,
+                ),
+                head,
+            )),
+            Err((graph, stopped)) => Err((
+                Self {
+                    graph,
+                    event,
+                    _first_window,
+                    _requested_window,
+                    _resolved_window,
+                    recurring_phase,
+                },
+                stopped,
+            )),
+        }
+    }
+
     pub(crate) fn observe_completion(
         self,
         observed: BluetoothSchedulerFinishedHardwareListObserved,

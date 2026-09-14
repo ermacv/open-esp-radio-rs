@@ -27,4 +27,4 @@ echo "$operator ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth con
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -o root -g root -m 0755 "$helper" /usr/local/libexec/open-radio-bluetooth
 install -o root -g root -m 0440 "$candidate" /etc/sudoers.d/open-radio-bluetooth
-echo "installed finite Bluetooth DTM check and connect-reset for $operator"
+echo "installed finite Bluetooth DTM check and connection termination modes for $operator"

@@ -1,0 +1,14 @@
+schema = 4
+id = "bluetooth-peripheral-rf-loss"
+description = "Two real LE peripheral connections with exact Feature and Version Exchange, ACL backpressure, Connection and Channel Map Updates, a second ACL exchange, verified Linux peer rfkill, supervision timeout and advertising recovery"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "connection", "feature-exchange", "version-exchange", "connection-update", "channel-map-update", "rf-loss", "acl", "recovery"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 2
+hold_millis = 100
+termination = "peer-rfkill"

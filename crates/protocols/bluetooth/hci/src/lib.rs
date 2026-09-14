@@ -40,6 +40,8 @@
 //! error responses, and every other opcode becomes an owned Unknown Command
 //! completion. Disconnect, remote feature discovery and remote version discovery
 //! use standard Command Status before their chip-owned Link Layer lifecycles begin.
+//! Standard LTK reply/negative-reply and encryption-event codecs join the
+//! production classifier and retain secrets through the live peripheral owner.
 //! Classification never advances bootstrap state, leaves no result borrowing
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
@@ -60,8 +62,11 @@
 //! Of Completed Packets event without depending on a radio implementation.
 //! Controller ACL owners preserve start/continuation boundaries, fragment to
 //! the Host buffer profile, and decode the response-less Host Number Of
-//! Completed Packets credit command. This crate contains no Link Layer, radio,
-//! MMIO, interrupt, executor, allocator, or readiness substitute.
+//! Completed Packets credit command. [`LeHostAclCreditSender`] gives an
+//! `ExternalController` integration the corresponding restricted write-only
+//! authority because that standard command has no successful response. This
+//! crate contains no Link Layer, radio, MMIO, interrupt, executor, allocator,
+//! or readiness substitute.
 
 #[cfg(test)]
 extern crate std;
@@ -109,12 +114,18 @@ pub use controller::le::dtm::{
 };
 pub use controller::le::peripheral::{
     LE_CONNECTION_UPDATE_COMPLETE_EVENT_CAPACITY, LE_DISCONNECT_COMMAND_STATUS_EVENT_CAPACITY,
-    LE_DISCONNECTION_COMPLETE_EVENT_CAPACITY, LE_PERIPHERAL_CONNECTION_COMPLETE_EVENT_CAPACITY,
+    LE_DISCONNECTION_COMPLETE_EVENT_CAPACITY, LE_ENCRYPTION_CHANGE_EVENT_CAPACITY,
+    LE_ENCRYPTION_KEY_REFRESH_COMPLETE_EVENT_CAPACITY,
+    LE_LONG_TERM_KEY_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LONG_TERM_KEY_REQUEST_EVENT_CAPACITY,
+    LE_PERIPHERAL_CONNECTION_COMPLETE_EVENT_CAPACITY,
     LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY,
     LE_READ_REMOTE_FEATURES_COMPLETE_EVENT_CAPACITY,
     LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY,
     LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY, LeConnectionUpdateCompleteEvent,
     LeDisconnectCommand, LeDisconnectCommandStatusEvent, LeDisconnectionCompleteEvent,
+    LeEncryptionChangeEvent, LeEncryptionKeyRefreshCompleteEvent,
+    LeLongTermKeyCommandCompleteEvent, LeLongTermKeyCommandDecodeError, LeLongTermKeyRequestEvent,
+    LeLongTermKeyRequestNegativeReplyCommand, LeLongTermKeyRequestReplyCommand,
     LePeripheralConnectionCompleteEvent, LePeripheralConnectionCompleteEventError,
     LeReadRemoteFeaturesCommand, LeReadRemoteFeaturesCommandStatusEvent,
     LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCommand,
@@ -129,15 +140,17 @@ pub use controller::le::scanning::{
     LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use controller::order::{
-    LeControllerAcceptedDisconnect, LeControllerActiveDtmCommandRoute,
-    LeControllerActiveLegacyAdvertisingCommandRoute, LeControllerActiveLegacyScanningCommandRoute,
-    LeControllerActivePeripheralCommandRoute, LeControllerActivePeripheralIntake,
-    LeControllerClassifiedCommand, LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
-    LeControllerCommandReady, LeControllerDeferredDisconnect, LeControllerDeferredDtmCommand,
+    LeControllerAcceptedDisconnect, LeControllerAcceptedLongTermKeyReply,
+    LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
+    LeControllerActiveLegacyScanningCommandRoute, LeControllerActivePeripheralCommandRoute,
+    LeControllerActivePeripheralIntake, LeControllerClassifiedCommand,
+    LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
+    LeControllerDeferredDisconnect, LeControllerDeferredDtmCommand,
     LeControllerDeferredLegacyAdvertisingDisable,
     LeControllerDeferredLegacyConnectableAdvertisingStart,
     LeControllerDeferredLegacyNonconnectableAdvertisingStart,
     LeControllerDeferredLegacyScanningDisable, LeControllerDeferredLegacyScanningStart,
+    LeControllerDeferredLongTermKeyNegativeReply, LeControllerDeferredLongTermKeyReply,
     LeControllerDeferredReadRemoteFeatures, LeControllerDeferredReadRemoteVersionInformation,
     LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
     LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
@@ -156,7 +169,10 @@ pub(crate) use transport::{
     HciActivePeripheralIntake, HciClassifiedCommandIntake, InProcessHciChannel,
     InProcessHciControllerEndpoint,
 };
-pub use transport::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
+pub use transport::{
+    HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport,
+    LeHostAclCreditSender,
+};
 
 pub use transport::{
     ControllerToHostQueue, ControllerToHostQueueError, INITIAL_CONTROLLER_TO_HOST_PACKET_CAPACITY,

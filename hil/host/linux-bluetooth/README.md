@@ -10,7 +10,8 @@ cargo hil fixture bluetooth-check --adapter hci0
 
 Installation grants the invoking operator passwordless access only to the
 helper's finite `check --adapter hciN` and `connect-reset --adapter hciN`
-operations. It does not grant root access
+operations. The unprivileged `capabilities` command lets `cargo hil doctor`
+reject a stale helper before it accesses hardware. It does not grant root access
 to the general HIL runner. Reinstall after changing the helper. The adapter
 must be dedicated to the test: existing connections and a hardware rfkill
 block cause rejection before changing its state.
@@ -49,20 +50,43 @@ Rebuild and reinstall the helper after updating its command set. The fixture
 owns the adapter's exclusive HCI user channel, uses legacy LE initiation with
 a 100-ms connection interval, zero latency and a 2-second supervision timeout,
 and waits at most 10 seconds for the exact peer's connection completion. It
-then sends one exact 12-byte L2CAP-shaped HCI ACL packet and requires the peer
-to echo its handle, packet boundary and payload within 5 seconds. After the
-echo it sends HCI Reset, without issuing HCI Disconnect. `--hold-ms` is bounded
+then sends an exact 251-byte L2CAP-shaped HCI ACL packet. The no-DLE target
+declares one 27-byte Host buffer and enables Controller-to-Host flow control.
+It receives the packet as ten Link Layer fragments, holds the first consumed
+fragment's sole Host credit for 300 ms, returns each credit explicitly,
+reassembles the exact payload and returns it as one Host ACL packet. The helper
+requires exactly ten returned HCI fragments plus their exact handle, boundary
+and reassembled payload within 5 seconds. After the echo, the central requests
+an exact 120-ms connection interval with zero latency and the same 2-second
+supervision timeout. It requires the matching successful LE Connection Update
+Complete within 5 seconds. The helper next marks data channels 2 through 36
+bad, polls LE Read Channel Map until the active connection reports the exact
+two-channel map, and sends a distinct second 251-byte payload through the full
+ten-fragment echo. In
+peer-reset mode it then sends HCI Reset without
+issuing HCI Disconnect. In peer-rfkill mode it closes the exclusive HCI
+channel, soft-blocks the exact adapter through `/dev/rfkill`, verifies the
+blocked state before and after 2500 ms, exceeding the requested
+2-second supervision timeout. In target-disconnect mode it requires the exact handle
+and reason `0x13` from the target's termination PDU. In target-reset mode it
+requires supervision-timeout reason `0x08` after the target resets its
+Controller. The two target modes never issue peer-side Disconnect or Reset
+before observing that result.
+`--hold-ms` is bounded
 to 0..5000; the default sends Reset as soon as the echo is received.
 Both success and failure restore the adapter's original power and rfkill state.
 
 The runner archives the helper report and errors under
 `target/hil/fixture-checks/bluetooth-connect-reset-*`. The report separates
-connection completion, exact ACL send/echo, Reset completion, local elapsed
-times and restoration. The ACL report proves what the central observed over
+connection completion, both exact ACL send/echo exchanges, Connection Update
+completion, Channel Map Update application, Reset completion, local elapsed
+times and restoration. The ACL and update
+fields prove what the central observed over
 the selected link. Target-side evidence correlates that exchange with the
 production HCI and radio path and determines whether failed establishment or
-established-link supervision was exercised. Reset is not a measured RF power
-cut. This fixture does not start, flash or reset the ESP.
+established-link supervision was exercised. Only peer-rfkill mode sets
+`rf_loss_verified`; HCI Reset remains a logical command. This fixture does not
+start, flash or reset the ESP.
 
 ## ESP and adapter RF scenario
 
@@ -80,6 +104,14 @@ cargo hil doctor bluetooth-dtm-bidirectional
 cargo hil run bluetooth-dtm-bidirectional
 cargo hil doctor bluetooth-peripheral-recovery
 cargo hil run bluetooth-peripheral-recovery
+cargo hil doctor bluetooth-peripheral-soak
+cargo hil run bluetooth-peripheral-soak
+cargo hil doctor bluetooth-peripheral-local-disconnect
+cargo hil run bluetooth-peripheral-local-disconnect
+cargo hil doctor bluetooth-peripheral-local-reset
+cargo hil run bluetooth-peripheral-local-reset
+cargo hil doctor bluetooth-peripheral-rf-loss
+cargo hil run bluetooth-peripheral-rf-loss
 ```
 
 The runner reserves the board and adapter, builds and audits the separate
@@ -96,15 +128,35 @@ The peripheral recovery scenario starts the target's public `ADV_IND`, asks
 the same finite helper to connect as a central, send the exact ACL packet,
 validate its echo and reset its local Controller. It then waits for the target's
 2-second supervision timeout. Each cycle requires the external central's
-Connection Complete, ACL echo and restoration report, exactly one target Host
-ACL receive and echo queue, one target-side peripheral retirement, and ordered
-standard LE Connection Complete and Disconnection Complete events. The
+Connection Complete, successful LE Read Remote Features and Read Remote Version
+Information Command Status events followed by their correlated completions,
+the exact feature mask `18:40:00:00:00:00:00:00`, Core version 5.4, company
+value `0xffff` and subversion 1, two distinct exact 251-byte ACL echoes separated
+by an exact 120-ms Connection Update and applied two-channel map, and a
+restoration report. It also requires exactly twenty target Host ACL fragments,
+twenty explicit Host credit returns, one deliberate first-credit hold, two
+reassembled echo queues and two Host-to-Controller completion credits, one
+target-side peripheral
+retirement, and ordered standard LE Connection Complete, Connection Update
+Complete and Disconnection Complete events. The
 disconnect status must be successful, the sole profile handle must be `0x0001`,
 and the reason must be `0x08`. The catalog runs two cycles per boot and three
 fresh repetitions, proving that advertising can restart after the first idle
-restoration. A passing physical run establishes the tested one-packet
-bidirectional ACL path; broader traffic, fragmentation and GATT remain outside
-this scenario.
+restoration. A passing physical run establishes the tested bounded RX
+backpressure and bidirectional legacy fragmentation path. Concurrent logical
+ACL packets, sustained throughput, DLE and GATT remain outside this scenario.
+The separate `bluetooth-peripheral-soak` scenario applies the same exact gates
+to 100 sequential connections in one boot and one catalog repetition. It is a
+bounded recurrence test, not a throughput or duration qualification.
+The local-disconnect scenario requires a successful target Disconnect Command
+Status, local Disconnection Complete reason `0x16`, peer reason `0x13` and a
+second advertising/connection cycle. The local-reset scenario requires target
+Reset Command Complete, peer supervision timeout and complete Host bootstrap
+reconfiguration before the second advertising cycle. These are logical HCI
+lifecycles; neither claims powered RF teardown or cold reconstruction.
+The RF-loss scenario applies the same ACL/update gates, then verifies that the
+Linux peer remains rfkill-blocked for at least 2500 ms. The target must report supervision
+timeout reason `0x08`, restore advertising and complete a second connection.
 
 Test End and logical Reset share bounded production scheduler stop and exact
 descriptor retirement. A deadline or ownership fault retains the graph and

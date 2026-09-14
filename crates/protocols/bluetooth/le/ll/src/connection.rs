@@ -1100,6 +1100,11 @@ impl LePeripheralConnectionEventCompleted {
         self.connection_timing_transition
     }
 
+    /// Whether the Channel Map Update instant was applied by this event.
+    pub const fn channel_map_updated(&self) -> bool {
+        self.channel_map_updated
+    }
+
     /// Whether six initial connection events have closed without a peer packet.
     ///
     /// Core Vol 6, Part B, 4.5.2 requires failed establishment after six events.

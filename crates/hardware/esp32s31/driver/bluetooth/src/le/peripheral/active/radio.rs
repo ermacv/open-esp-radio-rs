@@ -16,13 +16,42 @@ use ctrl::SchedulerRunInterruptStorage;
 
 type Task<'a, S, const N: usize> = ctrl::ControllerPublishedTaskService<'a, S, N>;
 
+pub(super) struct Deadlines<'a> {
+    pub(super) supervision:
+        &'a mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
+    pub(super) termination:
+        &'a mut Option<super::super::termination::PeripheralTerminationDeadline>,
+    pub(super) procedure: &'a mut Option<super::super::procedure::PeripheralProcedureDeadline>,
+}
+
 struct LinkState<'a> {
     control: &'a mut oer_bluetooth_ll::control::LePeripheralControl,
+    encryption: &'a mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
     acl: &'a mut super::acl::PeripheralConnectionAcl,
     supervision: &'a mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
     termination: &'a mut Option<super::super::termination::PeripheralTerminationDeadline>,
     procedure: &'a mut Option<super::super::procedure::PeripheralProcedureDeadline>,
     host_events: &'a mut super::host_events::PeripheralConnectionHostEvents,
+    random: &'a mut dyn super::super::PeripheralEncryptionRandomSource,
+}
+
+fn update_procedure_deadline(
+    link: &mut LinkState<'_>,
+    reference: Option<crate::SchedulerInstant>,
+    packet_enqueued: bool,
+) {
+    let local_control_transmitted = link.control.local_feature_request_transmitted()
+        || link.control.local_version_request_transmitted();
+    if (link.encryption.is_active() || link.encryption.is_idle()) && !local_control_transmitted {
+        *link.procedure = None;
+        return;
+    }
+    *link.procedure = super::super::procedure::PeripheralProcedureDeadline::after_graph_update(
+        *link.procedure,
+        reference,
+        link.encryption.blocks_unrelated_transmission() || local_control_transmitted,
+        packet_enqueued,
+    );
 }
 
 /// Wake source borrowed from the exact retained connection transaction.
@@ -30,14 +59,19 @@ pub enum PeripheralConnectionActiveWait<'a> {
     Scheduler(&'a crate::interrupt::SchedulerWakeCell),
     PostUnlink(&'a crate::le::dtm::DtmPostUnlinkWakeCell),
     ControllerTime,
-    HostEventCapacity,
+    HostEventCapacityOrControllerTime,
 }
 
 /// Failure closes this active lifecycle without reclaiming its affine owners.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionActiveFaultCause {
+    CompletionAbortDeadlineExpired,
+    CompletionAbortInvariant,
+    ControllerTimeDeadlineExpired,
+    UnlinkDeadlineExpired,
     Completion(super::super::LegacyConnectablePeripheralFirstCompletionFailStopCause),
     Control(oer_bluetooth_ll::control::LePeripheralControlError),
+    ControllerRxReservationInvariant,
     RetirementIdentityMismatch,
     Recycle(super::super::LegacyConnectablePeripheralFirstRecycleFailStopCause),
     UnrelatedFinishedList,
@@ -60,7 +94,19 @@ pub(super) enum Radio<'a, S: SchedulerRunInterruptStorage, const N: usize> {
         reason: u8,
     },
     Running(Running<'a, S, N>),
+    Stopping(Running<'a, S, N>),
     Completed(Completed<'a, S, N>),
+    ControllerRxBackpressured {
+        task: Task<'a, S, N>,
+        completed: sched::PeripheralConnectionSchedulerCompleted,
+        evidence: Evidence,
+    },
+    ControllerRxCurrent {
+        wait_for_recheck: bool,
+        pending: ctrl::ControllerSchedulerCurrentPending<'a, S, N>,
+        completed: sched::PeripheralConnectionSchedulerCompleted,
+        evidence: Evidence,
+    },
     Candidate {
         task: Task<'a, S, N>,
         candidate: sched::PeripheralConnectionRecurringEventCandidate,
@@ -83,6 +129,14 @@ pub(super) enum Radio<'a, S: SchedulerRunInterruptStorage, const N: usize> {
         merged: sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         evidence: Evidence,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DeadlinePhase {
+    SchedulerCompletion,
+    SchedulerStop,
+    PostUnlink,
+    ControllerTime,
 }
 
 pub(super) enum Step<'a, S: SchedulerRunInterruptStorage, const N: usize> {
@@ -109,6 +163,7 @@ pub(super) struct Fault<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     reason = "sealed affine failure owners are retained, never inspected or replayed"
 )]
 enum FaultOwner<'a, S: SchedulerRunInterruptStorage, const N: usize> {
+    Deadline(Radio<'a, S, N>),
     Completion(CompletionFault<'a, S, N>),
     Control(
         Task<'a, S, N>,
@@ -166,6 +221,21 @@ enum FaultOwner<'a, S: SchedulerRunInterruptStorage, const N: usize> {
         sched::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
+    ControllerRxEpoch(
+        ctrl::ControllerSchedulerEpochUnavailable<'a, S, N>,
+        sched::PeripheralConnectionSchedulerCompleted,
+        Evidence,
+    ),
+    ControllerRxCurrentBegin(
+        ctrl::ControllerSchedulerCurrentBeginFailure<'a, S, N>,
+        sched::PeripheralConnectionSchedulerCompleted,
+        Evidence,
+    ),
+    ControllerRxCurrent(
+        ctrl::ControllerSchedulerCurrentFailure<'a, S, N>,
+        sched::PeripheralConnectionSchedulerCompleted,
+        Evidence,
+    ),
     EmptyList(
         Task<'a, S, N>,
         sched::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
@@ -200,10 +270,51 @@ fn fault<'a, S: SchedulerRunInterruptStorage, const N: usize>(
 }
 
 impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
-    pub(super) fn completed_receive_batch_len(&self) -> Option<usize> {
+    pub(super) fn deadline_phase(&self) -> Option<DeadlinePhase> {
         match self {
-            Self::Completed(completed) => Some(completed.connection().received().len()),
+            Self::Running(running) => match running.radio_wait() {
+                Some(RunningWait::Scheduler(_)) => Some(DeadlinePhase::SchedulerCompletion),
+                Some(RunningWait::PostUnlink(_)) => Some(DeadlinePhase::PostUnlink),
+                Some(RunningWait::SchedulerStop) => {
+                    unreachable!("an ordinary running owner cannot retain scheduler stop")
+                }
+                None => None,
+            },
+            Self::Stopping(_) => Some(DeadlinePhase::SchedulerStop),
+            Self::Current { .. }
+            | Self::TerminationCurrent { .. }
+            | Self::ControllerRxCurrent { .. } => Some(DeadlinePhase::ControllerTime),
             _ => None,
+        }
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "a rejected no-alloc abort must retain the complete affine radio owner"
+    )]
+    pub(super) fn begin_completion_abort(self) -> Result<Self, Fault<'a, S, N>> {
+        let Self::Running(running) = self else {
+            return Err(Fault {
+                cause: PeripheralConnectionActiveFaultCause::CompletionAbortInvariant,
+                _owner: FaultOwner::Deadline(self),
+            });
+        };
+        match running.begin_scheduler_stop() {
+            Ok(running) => Ok(Self::Stopping(running)),
+            Err(running) => Err(Fault {
+                cause: PeripheralConnectionActiveFaultCause::CompletionAbortInvariant,
+                _owner: FaultOwner::Deadline(Self::Running(running)),
+            }),
+        }
+    }
+
+    pub(super) fn expire_deadline(
+        self,
+        cause: PeripheralConnectionActiveFaultCause,
+    ) -> Fault<'a, S, N> {
+        Fault {
+            cause,
+            _owner: FaultOwner::Deadline(self),
         }
     }
 
@@ -213,7 +324,22 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             Self::Running(running) => running.radio_wait().map(|wait| match wait {
                 RunningWait::Scheduler(wake) => PeripheralConnectionActiveWait::Scheduler(wake),
                 RunningWait::PostUnlink(wake) => PeripheralConnectionActiveWait::PostUnlink(wake),
+                RunningWait::SchedulerStop => {
+                    unreachable!("ordinary running owner cannot expose scheduler stop")
+                }
             }),
+            Self::Stopping(_) => Some(PeripheralConnectionActiveWait::ControllerTime),
+            Self::ControllerRxBackpressured { .. } => {
+                Some(PeripheralConnectionActiveWait::HostEventCapacityOrControllerTime)
+            }
+            Self::ControllerRxCurrent {
+                wait_for_recheck: true,
+                ..
+            } => Some(PeripheralConnectionActiveWait::ControllerTime),
+            Self::ControllerRxCurrent {
+                wait_for_recheck: false,
+                ..
+            } => None,
             Self::Current {
                 wait_for_recheck: true,
                 ..
@@ -234,28 +360,46 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         }
     }
 
+    pub(super) fn reset_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
+        match self {
+            Self::ControllerRxBackpressured { .. } => None,
+            Self::ControllerRxCurrent { .. } => {
+                Some(PeripheralConnectionActiveWait::ControllerTime)
+            }
+            _ => self.wait(),
+        }
+    }
+
     pub(super) fn step(
         self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut super::acl::PeripheralConnectionAcl,
-        supervision: &mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
-        termination: &mut Option<super::super::termination::PeripheralTerminationDeadline>,
-        procedure: &mut Option<super::super::procedure::PeripheralProcedureDeadline>,
+        deadlines: Deadlines<'_>,
         host_events: &mut super::host_events::PeripheralConnectionHostEvents,
+        random: &mut impl super::super::PeripheralEncryptionRandomSource,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
         let mut link = LinkState {
             control,
+            encryption,
             acl,
-            supervision,
-            termination,
-            procedure,
+            supervision: deadlines.supervision,
+            termination: deadlines.termination,
+            procedure: deadlines.procedure,
             host_events,
+            random,
         };
         match self {
             stopped @ Self::Stopped { .. } => Step::Continue(stopped),
-            Self::Running(running) => Self::poll_running(running),
+            Self::Running(running) => Self::poll_running(running, false),
+            Self::Stopping(running) => Self::poll_running(running, true),
             Self::Completed(completed) => Self::complete(completed, &mut link),
+            Self::ControllerRxBackpressured {
+                task,
+                completed,
+                evidence,
+            } => Self::begin_controller_rx_current(task, completed, evidence, true),
             Self::Candidate {
                 mut task,
                 candidate,
@@ -315,6 +459,28 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     Self::complete_ready(task, completed, evidence, Some(reference), &mut link)
                 }
             },
+            Self::ControllerRxCurrent {
+                pending,
+                completed,
+                evidence,
+                ..
+            } => match pending.recheck() {
+                Err(failure) => fault(
+                    Cause::ControllerTime(failure.error()),
+                    FaultOwner::ControllerRxCurrent(failure, completed, evidence),
+                ),
+                Ok(ctrl::ControllerSchedulerCurrentStep::Waiting(pending)) => {
+                    Step::Continue(Self::ControllerRxCurrent {
+                        wait_for_recheck: true,
+                        pending,
+                        completed,
+                        evidence,
+                    })
+                }
+                Ok(ctrl::ControllerSchedulerCurrentStep::Ready(now)) => {
+                    Self::finish_controller_rx_current(now, completed, evidence, &mut link)
+                }
+            },
             Self::Merged {
                 task,
                 merged,
@@ -331,11 +497,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     pub(super) fn step_reset(
         self,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
+        encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut super::acl::PeripheralConnectionAcl,
-        supervision: &mut Option<super::super::supervision::PeripheralSupervisionDeadline>,
-        termination: &mut Option<super::super::termination::PeripheralTerminationDeadline>,
-        procedure: &mut Option<super::super::procedure::PeripheralProcedureDeadline>,
+        deadlines: Deadlines<'_>,
         host_events: &mut super::host_events::PeripheralConnectionHostEvents,
+        random: &mut impl super::super::PeripheralEncryptionRandomSource,
     ) -> ResetStep<'a, S, N> {
         match self {
             Self::Stopped { task, .. } => ResetStep::Quiesced(task),
@@ -349,6 +515,17 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     }),
                 }
             }
+            Self::ControllerRxBackpressured {
+                mut task,
+                completed,
+                evidence,
+            } => match task.retire_peripheral_connection(completed) {
+                ControlFlow::Continue(()) => ResetStep::Quiesced(task),
+                ControlFlow::Break(completed) => ResetStep::Fault(Fault {
+                    cause: PeripheralConnectionActiveFaultCause::RetirementIdentityMismatch,
+                    _owner: FaultOwner::Control(task, completed, evidence),
+                }),
+            },
             Self::TerminationCurrent {
                 pending,
                 completed,
@@ -378,14 +555,36 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     }
                 }
             },
-            radio => match radio.step(
-                control,
-                acl,
-                supervision,
-                termination,
-                procedure,
-                host_events,
-            ) {
+            Self::ControllerRxCurrent {
+                pending,
+                completed,
+                evidence,
+                ..
+            } => match pending.recheck() {
+                Err(failure) => ResetStep::Fault(Fault {
+                    cause: PeripheralConnectionActiveFaultCause::ControllerTime(failure.error()),
+                    _owner: FaultOwner::ControllerRxCurrent(failure, completed, evidence),
+                }),
+                Ok(ctrl::ControllerSchedulerCurrentStep::Waiting(pending)) => {
+                    ResetStep::Continue(Self::ControllerRxCurrent {
+                        wait_for_recheck: true,
+                        pending,
+                        completed,
+                        evidence,
+                    })
+                }
+                Ok(ctrl::ControllerSchedulerCurrentStep::Ready(now)) => {
+                    let mut task = now.into_retained_epoch().into_task_service();
+                    match task.retire_peripheral_connection(completed) {
+                        ControlFlow::Continue(()) => ResetStep::Quiesced(task),
+                        ControlFlow::Break(completed) => ResetStep::Fault(Fault {
+                            cause: PeripheralConnectionActiveFaultCause::RetirementIdentityMismatch,
+                            _owner: FaultOwner::Control(task, completed, evidence),
+                        }),
+                    }
+                }
+            },
+            radio => match radio.step(control, encryption, acl, deadlines, host_events, random) {
                 Step::Continue(radio) | Step::Published(radio) => ResetStep::Continue(radio),
                 Step::Fault(fault) => ResetStep::Fault(fault),
             },
@@ -426,33 +625,45 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     }
 
     #[inline(never)]
-    fn poll_running(running: Running<'a, S, N>) -> Step<'a, S, N> {
+    fn poll_running(running: Running<'a, S, N>, stopping: bool) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
         running.step_radio_with(
-            (),
+            stopping,
             Continuations::new(
-                |(), running| Step::Continue(Self::Running(running)),
-                |(), running| Step::Continue(Self::Running(running)),
-                |(), running, observed| {
+                |stopping, running| {
+                    Step::Continue(if stopping {
+                        Self::Stopping(running)
+                    } else {
+                        Self::Running(running)
+                    })
+                },
+                |stopping, running| {
+                    Step::Continue(if stopping {
+                        Self::Stopping(running)
+                    } else {
+                        Self::Running(running)
+                    })
+                },
+                |_, running, observed| {
                     fault(
                         Cause::UnrelatedFinishedList,
                         FaultOwner::Unrelated(running, observed),
                     )
                 },
-                |(), owner| {
+                |_, owner| {
                     fault(
                         Cause::SchedulerEpochUnavailable,
                         FaultOwner::Normalization(owner),
                     )
                 },
-                |(), completed| Step::Continue(Self::Completed(completed)),
-                |(), owner: CompletionFault<'a, S, N>| {
+                |_, completed| Step::Continue(Self::Completed(completed)),
+                |_, owner: CompletionFault<'a, S, N>| {
                     fault(
                         Cause::Completion(owner.cause()),
                         FaultOwner::Completion(owner),
                     )
                 },
-                |(), owner: RecycleFault<'a, S, N>| {
+                |_, owner: RecycleFault<'a, S, N>| {
                     fault(Cause::Recycle(owner.cause()), FaultOwner::Recycle(owner))
                 },
             ),
@@ -462,15 +673,37 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     // LL/control completion and candidate formation own separate large results.
     #[inline(never)]
     fn complete(completed: Completed<'a, S, N>, link: &mut LinkState<'_>) -> Step<'a, S, N> {
-        if !link
-            .acl
-            .can_accept_controller_batch(completed.connection().received().len())
+        if matches!(
+            completed.connection().status(),
+            oer_esp32s31_bluetooth_memory::PeripheralConnectionSchedulerItemCompletionStatus::Aborted
+        ) {
+            let (task, completed, evidence) = completed.into_parts();
+            link.host_events.observe_radio_abort();
+            return Self::retire(
+                task,
+                completed,
+                evidence,
+                0x1f,
+                false,
+                link.acl,
+                link.host_events,
+            );
+        }
+        if !link.acl.controller_event_is_reserved()
+            || !link
+                .acl
+                .can_accept_controller_batch(completed.connection().required_controller_acl_slots())
         {
-            return Step::Continue(Self::Completed(completed));
+            let (task, completed, evidence) = completed.into_parts();
+            return fault(
+                PeripheralConnectionActiveFaultCause::ControllerRxReservationInvariant,
+                FaultOwner::Control(task, completed, evidence),
+            );
         }
 
         let (task, completed, evidence) = completed.into_parts();
         if (link.termination.is_none() && link.control.local_termination_queued())
+            || link.encryption.blocks_unrelated_transmission()
             || (link.procedure.is_none()
                 && (link.control.local_feature_request_queued()
                     || link.control.local_version_request_queued()))
@@ -496,8 +729,14 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             .link_layer_completion()
             .timing()
             .supervision_timeout_micros();
-        let control_result =
-            task.process_peripheral_control(&mut completed, link.control, link.acl);
+        let control_result = task.process_peripheral_control(
+            &mut completed,
+            link.control,
+            link.encryption,
+            link.acl,
+            link.random,
+        );
+        link.acl.complete_controller_event();
         if link.termination.is_none() {
             *link.termination =
                 super::super::termination::PeripheralTerminationDeadline::after_graph_update(
@@ -507,11 +746,9 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     link.control.local_termination_reason(),
                 );
         }
-        *link.procedure = super::super::procedure::PeripheralProcedureDeadline::after_graph_update(
-            *link.procedure,
+        update_procedure_deadline(
+            link,
             termination_reference,
-            link.control.local_feature_request_transmitted()
-                || link.control.local_version_request_transmitted(),
             matches!(control_result, Ok(true)),
         );
         if !link
@@ -519,6 +756,19 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             .observe_completion(completed.link_layer_completion())
         {
             link.control.request_local_termination(0x1f);
+        }
+        if link.encryption.termination_reason() == Some(0x3d) {
+            link.host_events
+                .observe_acl_completed(link.acl.take_completed_host_packets());
+            return Self::retire(
+                task,
+                completed,
+                evidence,
+                0x3d,
+                true,
+                link.acl,
+                link.host_events,
+            );
         }
         if let Err(error) = control_result {
             link.host_events
@@ -547,7 +797,9 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         }
         link.host_events
             .observe_acl_completed(link.acl.take_completed_host_packets());
-        if let Some(reason) = link.control.local_termination_acknowledged_reason() {
+        if link.control.local_termination_acknowledged()
+            && let Some(reason) = link.control.local_termination_completion_reason()
+        {
             return Self::retire(
                 task,
                 completed,
@@ -572,6 +824,13 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             );
         }
         *link.supervision = task.peripheral_supervision_deadline(&completed);
+        if !link.acl.reserve_controller_event() {
+            return Step::Continue(Self::ControllerRxBackpressured {
+                task,
+                completed,
+                evidence,
+            });
+        }
         // Start with the contiguous successor. A fresh pre-publication sample
         // may rebuild this same completed owner at a later established event.
         let delta = oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta::new(1).unwrap();
@@ -647,7 +906,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 PeripheralTerminationDecision::Expired => {
                     let reason = link
                         .control
-                        .local_termination_reason()
+                        .local_termination_completion_reason()
                         .expect("an armed termination deadline retains its reason");
                     let mut task = now.into_retained_epoch().into_task_service();
                     let (completed, _) = task
@@ -765,6 +1024,133 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             } => fault(
                 Cause::EmptyList(failure.error()),
                 FaultOwner::EmptyList(task, failure, evidence),
+            ),
+        }
+    }
+
+    #[inline(never)]
+    fn finish_controller_rx_current(
+        now: ctrl::ControllerSchedulerNowReady<'a, S, N>,
+        mut completed: sched::PeripheralConnectionSchedulerCompleted,
+        evidence: Evidence,
+        link: &mut LinkState<'_>,
+    ) -> Step<'a, S, N> {
+        let reference = now.peripheral_current_instant();
+        let mut task = now.into_retained_epoch().into_task_service();
+
+        if let Some(deadline) = *link.termination
+            && matches!(
+                deadline.decide(reference, reference),
+                super::super::termination::PeripheralTerminationDecision::Expired
+            )
+        {
+            let reason = link
+                .control
+                .local_termination_completion_reason()
+                .expect("an armed termination deadline retains its reason");
+            return Self::retire(
+                task,
+                completed,
+                evidence,
+                reason,
+                true,
+                link.acl,
+                link.host_events,
+            );
+        }
+        if let Some(deadline) = *link.procedure
+            && let super::super::procedure::PeripheralProcedureDecision::ConnectionLost { reason } =
+                deadline.decide(reference, reference)
+        {
+            link.control.expire_local_procedure();
+            *link.procedure = None;
+            return Self::retire(
+                task,
+                completed,
+                evidence,
+                reason,
+                true,
+                link.acl,
+                link.host_events,
+            );
+        }
+        if let Some(deadline) = *link.supervision
+            && matches!(
+                deadline.decide(reference, reference),
+                super::super::supervision::PeripheralSupervisionDecision::Expired
+            )
+        {
+            return Self::retire(
+                task,
+                completed,
+                evidence,
+                0x08,
+                true,
+                link.acl,
+                link.host_events,
+            );
+        }
+
+        let termination_timeout = completed
+            .link_layer_completion()
+            .timing()
+            .supervision_timeout_micros();
+        let packet_enqueued = task.enqueue_peripheral_transmission(
+            &mut completed,
+            link.control,
+            link.encryption,
+            link.acl,
+        );
+        if link.termination.is_none() {
+            *link.termination =
+                super::super::termination::PeripheralTerminationDeadline::after_graph_update(
+                    Some(reference),
+                    termination_timeout,
+                    link.control.local_termination_queued(),
+                    link.control.local_termination_reason(),
+                );
+        }
+        update_procedure_deadline(link, Some(reference), packet_enqueued);
+
+        if link.acl.reserve_controller_event() {
+            let delta =
+                oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta::new(1).unwrap();
+            Self::prepare_candidate(task, completed, delta, evidence, link)
+        } else {
+            Step::Continue(Self::ControllerRxBackpressured {
+                task,
+                completed,
+                evidence,
+            })
+        }
+    }
+
+    fn begin_controller_rx_current(
+        task: Task<'a, S, N>,
+        completed: sched::PeripheralConnectionSchedulerCompleted,
+        evidence: Evidence,
+        wait_for_recheck: bool,
+    ) -> Step<'a, S, N> {
+        use PeripheralConnectionActiveFaultCause as Cause;
+        let retained = match task.retain_scheduler_epoch() {
+            Ok(retained) => retained,
+            Err(unavailable) => {
+                return fault(
+                    Cause::SchedulerEpochUnavailable,
+                    FaultOwner::ControllerRxEpoch(unavailable, completed, evidence),
+                );
+            }
+        };
+        match retained.begin_fresh_scheduler_current() {
+            Ok(pending) => Step::Continue(Self::ControllerRxCurrent {
+                wait_for_recheck,
+                pending,
+                completed,
+                evidence,
+            }),
+            Err(failure) => fault(
+                Cause::ControllerTimeBegin(failure.error()),
+                FaultOwner::ControllerRxCurrentBegin(failure, completed, evidence),
             ),
         }
     }

@@ -1,0 +1,14 @@
+schema = 4
+id = "bluetooth-peripheral-soak"
+description = "One hundred sequential real LE peripheral connections with exact Feature and Version Exchange, bounded ACL backpressure, two bidirectional fragmented exchanges separated by exact Connection and Channel Map Updates, peer Reset, supervision-timeout retirement and handle reuse"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 1
+tags = ["bluetooth", "peripheral", "connection", "feature-exchange", "version-exchange", "connection-update", "channel-map-update", "acl", "recovery", "soak"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 100
+hold_millis = 100
+termination = "peer-reset"

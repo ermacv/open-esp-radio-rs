@@ -7,7 +7,7 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
-    RxMemoryListPublished,
+    BluetoothSchedulerStoppedItem, RxMemoryListPublished,
 };
 
 use super::{
@@ -34,6 +34,32 @@ fn completed_graph(
     status: PeripheralConnectionSchedulerItemCompletionStatus,
     capture: PeripheralConnectionCapturedAnchorAvailability,
 ) -> PeripheralConnectionMemoryGraphCompletionObserved {
+    let (running, event_span) = running_graph(graph_base);
+    assert!(
+        running
+            .prepared
+            .storage()
+            .model_controller_complete_event(event_span, status, capture)
+    );
+    let observation = BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
+        .expect("list zero is representable");
+    let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest() else {
+        panic!("the semantic observation contains list zero")
+    };
+    match running.observe_completion(observed) {
+        PeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(completed) => {
+            completed
+        }
+        _ => panic!("the non-sentinel status completes the model event"),
+    }
+}
+
+fn running_graph(
+    graph_base: u32,
+) -> (
+    PeripheralConnectionMemoryGraphRunning,
+    PeripheralConnectionEventSpan,
+) {
     let owner = PeripheralConnectionMemoryGraphStorage::pin_static_model(
         storage(),
         PeripheralConnectionMemoryGraphModelAddress::new(graph_base)
@@ -79,30 +105,53 @@ fn completed_graph(
         .install_direction_finding_workspace(workspace.binding().link())
         .prepare_scheduler_admission();
     let scheduler_item_address = prepared.scheduler_head();
-    assert!(
-        prepared
-            .prepared
-            .storage()
-            .model_controller_complete_event(event_span, status, capture)
+    (
+        PeripheralConnectionMemoryGraphRunning {
+            prepared: prepared.prepared,
+            _rx_publication: RxMemoryListPublished::from_parts_for_validation(
+                RxMemoryListClass::NonScanning.selector(),
+                scheduler_item_address,
+            ),
+        },
+        event_span,
+    )
+}
+
+#[test]
+fn stopped_in_flight_graph_is_an_aborted_completion_before_recycle() {
+    let (running, _) = running_graph(0x2f02_9000);
+    let address = running.scheduler_item_address();
+    let head = BluetoothSchedulerHardwareListHead::from_address(address).unwrap();
+    let empty = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+        BluetoothSchedulerHardwareListIndex::ZERO,
+        head,
     );
-    let running = PeripheralConnectionMemoryGraphRunning {
-        prepared: prepared.prepared,
-        _rx_publication: RxMemoryListPublished::from_parts_for_validation(
-            RxMemoryListClass::NonScanning.selector(),
-            scheduler_item_address,
-        ),
-    };
-    let observation = BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
-        .expect("list zero is representable");
-    let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest() else {
-        panic!("the semantic observation contains list zero")
-    };
-    match running.observe_completion(observed) {
-        PeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(completed) => {
-            completed
-        }
-        _ => panic!("the non-sentinel status completes the model event"),
-    }
+    let stopped = BluetoothSchedulerStoppedItem::from_head_for_validation(empty);
+    let (completed, empty) = running
+        .observe_stopped(stopped)
+        .unwrap_or_else(|_| panic!("the stopped item retains the running graph identity"));
+    assert_eq!(
+        completed.status(),
+        PeripheralConnectionSchedulerItemCompletionStatus::Aborted
+    );
+    let recycled = completed
+        .prepare_recycle_after_software_list_removal(
+            BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(empty),
+        )
+        .unwrap_or_else(|_| panic!("the stopped head authorizes ordinary unlink"))
+        .extract_received()
+        .unwrap_or_else(|_| panic!("an aborted event has an empty valid RX batch"))
+        .commit();
+    let (_, batch, status, capture) = recycled.into_parts();
+    assert!(batch.is_empty());
+    assert_eq!(
+        status,
+        PeripheralConnectionSchedulerItemCompletionStatus::Aborted
+    );
+    assert_eq!(
+        capture,
+        PeripheralConnectionCapturedAnchorAvailability::Absent
+    );
 }
 
 fn removal_ready(
@@ -635,7 +684,9 @@ fn control_tx_retains_unacknowledged_payload_and_rotates_after_ack() {
     let first = [9, 0, 0, 0, 0, 0, 0, 0, 0];
     let second = [7, 0xf1];
     for _ in 0..3 {
+        assert!(owner.can_enqueue_transmission());
         assert!(owner.enqueue_control_transmission(&first).unwrap());
+        assert!(!owner.can_enqueue_transmission());
         assert!(!owner.enqueue_control_transmission(&second).unwrap());
         let storage = owner.storage.as_ref().get_ref();
         let transmitted = storage
@@ -650,6 +701,7 @@ fn control_tx_retains_unacknowledged_payload_and_rotates_after_ack() {
             transmitted
         );
         assert!(owner.reclaim_transmission());
+        assert!(owner.can_enqueue_transmission());
         assert!(!owner.reclaim_transmission());
         assert!(owner.enqueue_control_transmission(&second).unwrap());
         let storage = owner.storage.as_ref().get_ref();

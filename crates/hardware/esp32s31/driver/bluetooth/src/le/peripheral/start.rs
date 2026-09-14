@@ -44,7 +44,7 @@ use crate::{
             SingleItemCompletion, SingleItemCompletionFault, SingleItemCompletionFaultCause,
             SingleItemCompletionStep, SingleItemCompletionWaitKind,
         },
-        core::SingleItemSchedulerSoftwareListRemovalReady,
+        core::{SingleItemSchedulerRunning, SingleItemSchedulerSoftwareListRemovalReady},
     },
 };
 
@@ -225,6 +225,10 @@ where
 
 enum LegacyConnectablePeripheralFirstRunningPhase {
     Completion(SingleItemCompletion<PeripheralConnectionCompletionRole>),
+    SchedulerStop {
+        running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    },
     RemovalReady(SingleItemSchedulerSoftwareListRemovalReady<PeripheralConnectionCompletionRole>),
 }
 
@@ -232,6 +236,7 @@ enum LegacyConnectablePeripheralFirstRunningPhase {
 pub enum LegacyConnectablePeripheralFirstRunningWait<'a> {
     Scheduler(&'a crate::interrupt::SchedulerWakeCell),
     PostUnlink(&'a crate::le::dtm::DtmPostUnlinkWakeCell),
+    SchedulerStop,
 }
 
 /// Seven phase-typed continuations for one bounded first-peripheral radio transition.
@@ -343,6 +348,7 @@ where
 /// Finite reason the first peripheral-event owner was sealed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegacyConnectablePeripheralFirstCompletionFailStopCause {
+    SchedulerStopInvariant,
     FinishedListDrainAlreadyActive,
     SchedulerIdentityMismatch,
     FinishedListDrainLost,
@@ -375,11 +381,22 @@ pub struct LegacyConnectablePeripheralFirstCompletionFailStop<
     _task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     _event_counter: u16,
     _evidence: LegacyConnectablePeripheralFirstRunningEvidence,
-    _fault: SingleItemCompletionFault<
-        crate::controller::boot::SingleItemSchedulerCompletionFaultOwner<
-            PeripheralConnectionCompletionRole,
+    _fault: LegacyConnectablePeripheralFirstCompletionFaultOwner,
+}
+
+#[allow(
+    dead_code,
+    reason = "sealed completion and stop failures retain their affine owners opaquely"
+)]
+enum LegacyConnectablePeripheralFirstCompletionFaultOwner {
+    Completion(
+        SingleItemCompletionFault<
+            crate::controller::boot::SingleItemSchedulerCompletionFaultOwner<
+                PeripheralConnectionCompletionRole,
+            >,
         >,
-    >,
+    ),
+    SchedulerStop(crate::scheduler::core::PeripheralConnectionSchedulerStopStep),
 }
 
 /// Finite reason the peripheral-specific recycle tail sealed its owner.
@@ -522,20 +539,66 @@ where
     }
 
     pub fn radio_wait(&self) -> Option<LegacyConnectablePeripheralFirstRunningWait<'_>> {
-        let LegacyConnectablePeripheralFirstRunningPhase::Completion(completion) = &self.phase
-        else {
-            return None;
-        };
-        match completion.wait_kind() {
-            Some(SingleItemCompletionWaitKind::Scheduler) => Some(
-                LegacyConnectablePeripheralFirstRunningWait::Scheduler(self.task.scheduler_wake()),
-            ),
-            Some(SingleItemCompletionWaitKind::PostUnlink) => {
-                Some(LegacyConnectablePeripheralFirstRunningWait::PostUnlink(
-                    self.task.post_unlink_wake(),
-                ))
+        match &self.phase {
+            LegacyConnectablePeripheralFirstRunningPhase::Completion(completion) => {
+                match completion.wait_kind() {
+                    Some(SingleItemCompletionWaitKind::Scheduler) => {
+                        Some(LegacyConnectablePeripheralFirstRunningWait::Scheduler(
+                            self.task.scheduler_wake(),
+                        ))
+                    }
+                    Some(SingleItemCompletionWaitKind::PostUnlink) => {
+                        Some(LegacyConnectablePeripheralFirstRunningWait::PostUnlink(
+                            self.task.post_unlink_wake(),
+                        ))
+                    }
+                    None => None,
+                }
             }
-            None => None,
+            LegacyConnectablePeripheralFirstRunningPhase::SchedulerStop { .. } => {
+                Some(LegacyConnectablePeripheralFirstRunningWait::SchedulerStop)
+            }
+            LegacyConnectablePeripheralFirstRunningPhase::RemovalReady(_) => None,
+        }
+    }
+
+    /// Replace only a parked scheduler-completion wait with the affine common
+    /// stop transaction. All other completion phases are returned unchanged.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a rejected no-alloc stop transition must return the complete affine owner"
+    )]
+    pub(super) fn begin_scheduler_stop(self) -> Result<Self, Self> {
+        let Self {
+            task,
+            phase,
+            event_counter,
+            evidence,
+        } = self;
+        let LegacyConnectablePeripheralFirstRunningPhase::Completion(completion) = phase else {
+            return Err(Self {
+                task,
+                phase,
+                event_counter,
+                evidence,
+            });
+        };
+        match completion.into_scheduler_wait_running() {
+            Ok(running) => Ok(Self {
+                task,
+                phase: LegacyConnectablePeripheralFirstRunningPhase::SchedulerStop {
+                    running,
+                    stop: Default::default(),
+                },
+                event_counter,
+                evidence,
+            }),
+            Err(completion) => Err(Self {
+                task,
+                phase: LegacyConnectablePeripheralFirstRunningPhase::Completion(completion),
+                event_counter,
+                evidence,
+            }),
         }
     }
 
@@ -665,7 +728,53 @@ where
                             _task: task,
                             _event_counter: event_counter,
                             _evidence: evidence,
-                            _fault: fault,
+                            _fault: LegacyConnectablePeripheralFirstCompletionFaultOwner::Completion(
+                                fault,
+                            ),
+                        },
+                    ),
+                }
+            }
+            LegacyConnectablePeripheralFirstRunningPhase::SchedulerStop { running, stop } => {
+                match task.step_peripheral_connection_stop(running, stop) {
+                    crate::scheduler::core::PeripheralConnectionSchedulerStopStep::Pending {
+                        running,
+                        stop,
+                    } => waiting(
+                        context,
+                        Self {
+                            task,
+                            phase: LegacyConnectablePeripheralFirstRunningPhase::SchedulerStop {
+                                running,
+                                stop,
+                            },
+                            event_counter,
+                            evidence,
+                        },
+                    ),
+                    crate::scheduler::core::PeripheralConnectionSchedulerStopStep::Retired(
+                        observed,
+                    ) => continuing(
+                        context,
+                        Self {
+                            task,
+                            phase: LegacyConnectablePeripheralFirstRunningPhase::Completion(
+                                SingleItemCompletion::from_hardware_head_empty(observed),
+                            ),
+                            event_counter,
+                            evidence,
+                        },
+                    ),
+                    fault => completion_fail_stop(
+                        context,
+                        LegacyConnectablePeripheralFirstCompletionFailStop {
+                            cause: LegacyConnectablePeripheralFirstCompletionFailStopCause::SchedulerStopInvariant,
+                            _task: task,
+                            _event_counter: event_counter,
+                            _evidence: evidence,
+                            _fault: LegacyConnectablePeripheralFirstCompletionFaultOwner::SchedulerStop(
+                                fault,
+                            ),
                         },
                     ),
                 }

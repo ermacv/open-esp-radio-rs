@@ -1,6 +1,6 @@
-# HIL protocol v130
+# HIL protocol v136
 
-Host and firmware must both use version 130. Other versions are rejected
+Host and firmware must both use version 136. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
@@ -23,17 +23,33 @@ deadline; a target stalled inside synchronous hardware preparation may need
 reset. Feature discovery identifies images implementing this diagnostic.
 
 `BluetoothPeripheral::StartAdvertising` requests a bounded diagnostic
-`ADV_IND` on channel 37 through production HCI. `Snapshot` returns boot-lifetime
+`ADV_IND` on channel 37 through production HCI and selects peer Reset, verified
+peer rfkill, target Host Disconnect or target HCI Reset as the cycle
+termination. Its hold is
+bounded to 0..5000 ms. `Snapshot` returns boot-lifetime
 advertising/peripheral RUN and disconnection counts, retries, the first terminal
-reason, and separately decoded Host-side Connection/Disconnection Complete
-counts. It also reports nonempty Controller-to-Host ACL packets, ACL echoes
-accepted back from the target Host, and ACL profile or queue faults. Invalid,
+reason, and separately decoded Host-side Connection Complete, Connection
+Update Complete and Disconnection Complete counts. A separate counter records
+Channel Map Update instants applied by the Link Layer. The connection-update counter accepts
+only the recovery profile's 120-ms interval, zero latency and 2-second
+supervision timeout while the sole connection is live. Successful target
+Disconnect Command Status and Reset Command Complete responses have separate
+counters. It also reports each
+nonempty Controller-to-Host ACL fragment, each
+credit returned by the target Host, each deliberately held first-fragment
+credit, each fully reassembled echo accepted back from the target Host, and ACL
+profile or queue faults. A distinct Host-to-Controller completion count proves
+that each queued echo reached Link Layer acknowledgement. The peripheral workload declares one 27-byte Host ACL
+buffer, enables Controller-to-Host flow control and uses two distinct,
+sequenced deterministic 251-byte packets around a live Channel Map Update. Each packet requires
+ten legacy fragments. Invalid,
 out-of-order or profile-mismatched lifecycle events increment
 `host_event_faults`; the last decoded disconnection reason is retained. These
 are software publication observations; a correlated peer observation is
 required to establish RF delivery. The start response includes the public address.
-HCI rejection stages are Reset (0), address read (1), parameters (2), data (3)
-and enable (4).
+HCI rejection stages are Reset (0), base event mask (1), LE event mask (2),
+Host Buffer Size (3), Controller-to-Host flow control (4), address read (5),
+parameters (6), data (7) and enable (8).
 
 The Bluetooth image advertises `bluetooth_peripheral` for this interface.
 DTM is rejected once the peripheral probe starts. Another advertising start is

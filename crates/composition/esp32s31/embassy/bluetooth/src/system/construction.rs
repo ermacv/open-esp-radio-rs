@@ -209,9 +209,11 @@ pub fn compose_esp32s31_bluetooth_system<
         }
     };
     let LeControllerHciEndpoints { host, controller } = hci;
+    let host_acl_credits = host.acl_credit_sender();
 
     Ok(BluetoothSystem {
         hci: ExternalController::new(host),
+        host_acl_credits,
         runners: BluetoothRunners {
             hardware: BluetoothHardwareRunner::new(
                 task,

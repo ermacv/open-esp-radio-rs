@@ -699,9 +699,12 @@ fn unsupported_rx_admission_selector_is_rejected_when_loading_scenarios() {
     );
     for value in ["synchronous-shared", "deferred-ready-diagnostic"] {
         let source = format!("rx_admission = \"{value}\"\n{source}");
-        let error = toml::from_str::<Scenario>(&source).unwrap_err();
-        assert!(error.to_string().contains("unknown field `rx_admission`"));
+        let scenario = toml::from_str::<Scenario>(&source).unwrap();
+        assert!(scenario.historical_rx_admission.is_some());
+        assert!(scenario.validate().is_err());
     }
+    let source = format!("rx_admission = \"invented\"\n{source}");
+    assert!(toml::from_str::<Scenario>(&source).is_err());
 }
 
 #[test]
@@ -711,9 +714,12 @@ fn unsupported_rx_dispatch_selector_is_rejected_when_loading_scenarios() {
     );
     for value in ["asynchronous", "direct-immediate-diagnostic"] {
         let source = format!("rx_dispatch = \"{value}\"\n{source}");
-        let error = toml::from_str::<Scenario>(&source).unwrap_err();
-        assert!(error.to_string().contains("unknown field `rx_dispatch`"));
+        let scenario = toml::from_str::<Scenario>(&source).unwrap();
+        assert!(scenario.historical_rx_dispatch.is_some());
+        assert!(scenario.validate().is_err());
     }
+    let source = format!("rx_dispatch = \"invented\"\n{source}");
+    assert!(toml::from_str::<Scenario>(&source).is_err());
 }
 
 #[test]
@@ -1203,20 +1209,92 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
     scenario.image = ImageClass::Performance;
     assert!(scenario.validate().is_err());
     scenario.image = ImageClass::BluetoothDtm;
-    for connections in [0, 6] {
+    for connections in [0, 101] {
         scenario.workload = Workload::BluetoothPeripheral {
             boots: 1,
             connections,
             hold_millis: 100,
+            termination: BluetoothPeripheralTermination::PeerReset,
         };
         assert!(scenario.validate().is_err());
     }
     scenario.workload = Workload::BluetoothPeripheral {
         boots: 1,
+        connections: 100,
+        hold_millis: 100,
+        termination: BluetoothPeripheralTermination::PeerReset,
+    };
+    scenario.validate().unwrap();
+    scenario.workload = Workload::BluetoothPeripheral {
+        boots: 1,
         connections: 2,
         hold_millis: 5_001,
+        termination: BluetoothPeripheralTermination::PeerReset,
     };
     assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn bluetooth_peripheral_local_termination_scenarios_select_distinct_modes() {
+    for (input, expected) in [
+        (
+            include_str!(
+                "../../../../scenarios/bluetooth/bluetooth-peripheral-local-disconnect.toml"
+            ),
+            BluetoothPeripheralTermination::TargetDisconnect,
+        ),
+        (
+            include_str!("../../../../scenarios/bluetooth/bluetooth-peripheral-local-reset.toml"),
+            BluetoothPeripheralTermination::TargetReset,
+        ),
+    ] {
+        let scenario: Scenario = toml::from_str(input).unwrap();
+        scenario.validate().unwrap();
+        let Workload::BluetoothPeripheral { termination, .. } = scenario.workload else {
+            panic!("local termination scenario changed workload kind");
+        };
+        assert_eq!(termination, expected);
+    }
+}
+
+#[test]
+fn bluetooth_peripheral_rf_loss_uses_peer_rfkill() {
+    let scenario: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-peripheral-rf-loss.toml"
+    ))
+    .unwrap();
+    scenario.validate().unwrap();
+    let Workload::BluetoothPeripheral { termination, .. } = scenario.workload else {
+        panic!("RF-loss scenario changed workload kind");
+    };
+    assert_eq!(termination, BluetoothPeripheralTermination::PeerRfkill);
+}
+
+#[test]
+fn historical_bluetooth_power_off_is_readable_but_cannot_enter_the_catalog() {
+    let source = include_str!("../../../../scenarios/bluetooth/bluetooth-peripheral-rf-loss.toml")
+        .replace("peer-rfkill", "peer-power-off");
+    let scenario: Scenario = toml::from_str(&source).unwrap();
+    let Workload::BluetoothPeripheral { termination, .. } = scenario.workload else {
+        panic!("historical RF-loss scenario changed workload kind");
+    };
+    assert_eq!(
+        termination,
+        BluetoothPeripheralTermination::LegacyPeerPowerOff
+    );
+    assert!(scenario.validate().is_err());
+    assert!(
+        serde_json::to_string(&scenario)
+            .unwrap()
+            .contains("peer-power-off")
+    );
+
+    let mut historical_image: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-peripheral-rf-loss.toml"
+    ))
+    .unwrap();
+    historical_image.image = ImageClass::LegacyDiagnosticRxDeliveryPhySettle;
+    assert!(historical_image.validate().is_err());
 }
 
 #[test]

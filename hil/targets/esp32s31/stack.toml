@@ -240,9 +240,9 @@ reason = "Bluetooth command dispatch retains typed mutually exclusive controller
 [[reviewed_frames]]
 function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
 source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active.rs"]
-max_bytes = 9472
+max_bytes = 11264
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet and the bounded two-packet Controller ACL queue across HCI backpressure"
+reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet, the bounded two-packet Controller ACL queue, the pre-RUN receive reservation and finite completion/controller-time stop frontiers across HCI backpressure"
 
 [[reviewed_frames]]
 function_contains = "::cold_start::start_esp32s31_bluetooth"

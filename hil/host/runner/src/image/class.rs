@@ -18,6 +18,12 @@ pub enum ImageClass {
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
     DiagnosticRxDeliveryPhyHotSram,
+    /// Historical dirty-worktree experiment retained only to read sealed runs.
+    #[serde(rename = "diagnostic-rx-delivery-phy-steps")]
+    LegacyDiagnosticRxDeliveryPhySteps,
+    /// Historical dirty-worktree experiment retained only to read sealed runs.
+    #[serde(rename = "diagnostic-rx-delivery-phy-settle")]
+    LegacyDiagnosticRxDeliveryPhySettle,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     DiagnosticMemoryBenchmark,
@@ -58,6 +64,8 @@ impl ImageClass {
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticRxDeliveryPhyHotSram => "diagnostic-rx-delivery-phy-hot-sram",
+            Self::LegacyDiagnosticRxDeliveryPhySteps => "diagnostic-rx-delivery-phy-steps",
+            Self::LegacyDiagnosticRxDeliveryPhySettle => "diagnostic-rx-delivery-phy-settle",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
@@ -96,6 +104,12 @@ impl ImageClass {
             Self::DiagnosticRxDeliveryPhyHotSram => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,phy-rx-hot-sram,code-psram,profile-psram-data"
             }
+            Self::LegacyDiagnosticRxDeliveryPhySteps => {
+                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,phy-rx-step-timing,code-psram,profile-psram-data"
+            }
+            Self::LegacyDiagnosticRxDeliveryPhySettle => {
+                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,phy-short-settle,code-psram,profile-psram-data"
+            }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
@@ -126,6 +140,8 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticRxDeliveryPhyHotSram
+            | Self::LegacyDiagnosticRxDeliveryPhySteps
+            | Self::LegacyDiagnosticRxDeliveryPhySettle
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent => "psram-code-psram-data-psram-stack",
@@ -134,6 +150,14 @@ impl ImageClass {
 
     pub const fn uses_psram_task_stack(self) -> bool {
         true
+    }
+
+    /// Whether this identity is accepted only while reading immutable old runs.
+    pub const fn historical_only(self) -> bool {
+        matches!(
+            self,
+            Self::LegacyDiagnosticRxDeliveryPhySteps | Self::LegacyDiagnosticRxDeliveryPhySettle
+        )
     }
 
     /// Whether the image promises typed driver-internal evidence.

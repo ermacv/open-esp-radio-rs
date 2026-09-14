@@ -8,12 +8,12 @@ use bt_hci::{
     PacketKind,
     cmd::{
         Cmd, Opcode,
-        le::LeReadRemoteFeatures,
+        le::{LeLongTermKeyRequestNegativeReply, LeLongTermKeyRequestReply, LeReadRemoteFeatures},
         link_control::{Disconnect, ReadRemoteVersionInformation},
     },
     event::{
         EventKind,
-        le::{LeConnectionComplete, LeConnectionUpdateComplete, LeEventParams},
+        le::{LeConnectionComplete, LeConnectionUpdateComplete, LeEventKind, LeEventParams},
     },
     param::{AddrKind, BdAddr, ClockAccuracy, ConnHandle, Duration, LeConnRole, Status},
 };
@@ -36,6 +36,316 @@ pub const LE_READ_REMOTE_FEATURES_COMMAND_STATUS_EVENT_CAPACITY: usize = 6;
 pub const LE_READ_REMOTE_VERSION_INFORMATION_COMPLETE_EVENT_CAPACITY: usize = 10;
 /// Complete Read Remote Version Information Command Status event size without an H4 indicator.
 pub const LE_READ_REMOTE_VERSION_INFORMATION_COMMAND_STATUS_EVENT_CAPACITY: usize = 6;
+/// Complete LE Long Term Key Request event size without an H4 indicator.
+pub const LE_LONG_TERM_KEY_REQUEST_EVENT_CAPACITY: usize = 15;
+/// Complete LE Long Term Key Reply/Negative Reply Command Complete event size.
+pub const LE_LONG_TERM_KEY_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 8;
+/// Complete Encryption Change v1 event size without an H4 indicator.
+pub const LE_ENCRYPTION_CHANGE_EVENT_CAPACITY: usize = 6;
+/// Complete Encryption Key Refresh Complete event size without an H4 indicator.
+pub const LE_ENCRYPTION_KEY_REFRESH_COMPLETE_EVENT_CAPACITY: usize = 5;
+
+/// Host-provided LTK for the sole live Peripheral connection.
+pub struct LeLongTermKeyRequestReplyCommand {
+    handle: ConnHandle,
+    long_term_key: [u8; 16],
+}
+
+impl core::fmt::Debug for LeLongTermKeyRequestReplyCommand {
+    fn fmt(&self, output: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        output
+            .debug_struct("LeLongTermKeyRequestReplyCommand")
+            .field("handle", &self.handle)
+            .field("long_term_key", &"<redacted>")
+            .finish()
+    }
+}
+
+impl LeLongTermKeyRequestReplyCommand {
+    /// Standard HCI LE Long Term Key Request Reply opcode.
+    pub const OPCODE: Opcode = LeLongTermKeyRequestReply::OPCODE;
+
+    pub fn decode(command: HciCommandPacket<'_>) -> Result<Self, LeLongTermKeyCommandDecodeError> {
+        if command.opcode() != Self::OPCODE {
+            return Err(LeLongTermKeyCommandDecodeError::Unsupported);
+        }
+        let parameters: &[u8; 18] = command
+            .parameters()
+            .try_into()
+            .map_err(|_| LeLongTermKeyCommandDecodeError::Malformed)?;
+        let handle = u16::from_le_bytes([parameters[0], parameters[1]]);
+        if handle > 0x0eff {
+            return Err(LeLongTermKeyCommandDecodeError::Malformed);
+        }
+        let mut long_term_key = [0; 16];
+        long_term_key.copy_from_slice(&parameters[2..]);
+        Ok(Self {
+            handle: ConnHandle::new(handle),
+            long_term_key,
+        })
+    }
+
+    pub const fn handle(&self) -> ConnHandle {
+        self.handle
+    }
+
+    /// Consume the command and transfer the secret to the Link Layer owner.
+    pub fn into_long_term_key(self) -> [u8; 16] {
+        self.long_term_key
+    }
+
+    pub fn into_accepted_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(Self::OPCODE, Status::SUCCESS, self.handle)
+    }
+
+    pub fn into_unknown_connection_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(
+            Self::OPCODE,
+            bt_hci::param::Error::UNKNOWN_CONN_IDENTIFIER.to_status(),
+            self.handle,
+        )
+    }
+
+    pub fn into_command_disallowed_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(
+            Self::OPCODE,
+            bt_hci::param::Error::CMD_DISALLOWED.to_status(),
+            self.handle,
+        )
+    }
+}
+
+/// Host rejection of one pending LTK request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLongTermKeyRequestNegativeReplyCommand {
+    handle: ConnHandle,
+}
+
+impl LeLongTermKeyRequestNegativeReplyCommand {
+    /// Standard HCI LE Long Term Key Request Negative Reply opcode.
+    pub const OPCODE: Opcode = LeLongTermKeyRequestNegativeReply::OPCODE;
+
+    pub fn decode(command: HciCommandPacket<'_>) -> Result<Self, LeLongTermKeyCommandDecodeError> {
+        if command.opcode() != Self::OPCODE {
+            return Err(LeLongTermKeyCommandDecodeError::Unsupported);
+        }
+        let [handle_low, handle_high] = command.parameters() else {
+            return Err(LeLongTermKeyCommandDecodeError::Malformed);
+        };
+        let handle = u16::from_le_bytes([*handle_low, *handle_high]);
+        if handle > 0x0eff {
+            return Err(LeLongTermKeyCommandDecodeError::Malformed);
+        }
+        Ok(Self {
+            handle: ConnHandle::new(handle),
+        })
+    }
+
+    pub const fn handle(self) -> ConnHandle {
+        self.handle
+    }
+
+    pub fn into_accepted_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(Self::OPCODE, Status::SUCCESS, self.handle)
+    }
+
+    pub fn into_unknown_connection_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(
+            Self::OPCODE,
+            bt_hci::param::Error::UNKNOWN_CONN_IDENTIFIER.to_status(),
+            self.handle,
+        )
+    }
+
+    pub fn into_command_disallowed_complete(self) -> LeLongTermKeyCommandCompleteEvent {
+        LeLongTermKeyCommandCompleteEvent::new(
+            Self::OPCODE,
+            bt_hci::param::Error::CMD_DISALLOWED.to_status(),
+            self.handle,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLongTermKeyCommandDecodeError {
+    Unsupported,
+    Malformed,
+}
+
+/// Owned Command Complete for either LTK reply command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLongTermKeyCommandCompleteEvent {
+    bytes: [u8; LE_LONG_TERM_KEY_COMMAND_COMPLETE_EVENT_CAPACITY],
+    opcode: Opcode,
+    status: Status,
+    handle: ConnHandle,
+}
+
+impl LeLongTermKeyCommandCompleteEvent {
+    pub(crate) fn new(opcode: Opcode, status: Status, handle: ConnHandle) -> Self {
+        let opcode_bytes = opcode.to_raw().to_le_bytes();
+        let handle_bytes = handle.raw().to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::CommandComplete.0,
+                (LE_LONG_TERM_KEY_COMMAND_COMPLETE_EVENT_CAPACITY - 2) as u8,
+                1,
+                opcode_bytes[0],
+                opcode_bytes[1],
+                status.into_inner(),
+                handle_bytes[0],
+                handle_bytes[1],
+            ],
+            opcode,
+            status,
+            handle,
+        }
+    }
+
+    pub(crate) fn invalid_parameters(opcode: Opcode) -> Self {
+        Self::new(
+            opcode,
+            bt_hci::param::Error::INVALID_HCI_PARAMETERS.to_status(),
+            ConnHandle::new(0),
+        )
+    }
+
+    pub(crate) fn accepted(opcode: Opcode, handle: ConnHandle) -> Self {
+        Self::new(opcode, Status::SUCCESS, handle)
+    }
+
+    pub const fn opcode(self) -> Opcode {
+        self.opcode
+    }
+
+    pub const fn status(self) -> Status {
+        self.status
+    }
+
+    pub const fn handle(self) -> ConnHandle {
+        self.handle
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeLongTermKeyCommandCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// Host-visible Rand/EDIV request produced by a received `LL_ENC_REQ`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLongTermKeyRequestEvent {
+    bytes: [u8; LE_LONG_TERM_KEY_REQUEST_EVENT_CAPACITY],
+}
+
+impl LeLongTermKeyRequestEvent {
+    pub fn new(handle: ConnHandle, random_number: [u8; 8], encrypted_diversifier: u16) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        let encrypted_diversifier = encrypted_diversifier.to_le_bytes();
+        let mut bytes = [0; LE_LONG_TERM_KEY_REQUEST_EVENT_CAPACITY];
+        bytes[0] = EventKind::Le.0;
+        bytes[1] = (LE_LONG_TERM_KEY_REQUEST_EVENT_CAPACITY - 2) as u8;
+        bytes[2] = LeEventKind::LeLongTermKeyRequest.0;
+        bytes[3..5].copy_from_slice(&handle);
+        bytes[5..13].copy_from_slice(&random_number);
+        bytes[13..15].copy_from_slice(&encrypted_diversifier);
+        Self { bytes }
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeLongTermKeyRequestEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// Host-visible transition into or out of LE AES-CCM encryption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeEncryptionChangeEvent {
+    bytes: [u8; LE_ENCRYPTION_CHANGE_EVENT_CAPACITY],
+}
+
+impl LeEncryptionChangeEvent {
+    pub fn new(status: Status, handle: ConnHandle, enabled: bool) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::EncryptionChangeV1.0,
+                (LE_ENCRYPTION_CHANGE_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                handle[0],
+                handle[1],
+                u8::from(enabled),
+            ],
+        }
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeEncryptionChangeEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+/// Host-visible completion of a pause/restart encryption procedure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeEncryptionKeyRefreshCompleteEvent {
+    bytes: [u8; LE_ENCRYPTION_KEY_REFRESH_COMPLETE_EVENT_CAPACITY],
+}
+
+impl LeEncryptionKeyRefreshCompleteEvent {
+    pub fn new(status: Status, handle: ConnHandle) -> Self {
+        let handle = handle.raw().to_le_bytes();
+        Self {
+            bytes: [
+                EventKind::EncryptionKeyRefreshComplete.0,
+                (LE_ENCRYPTION_KEY_REFRESH_COMPLETE_EVENT_CAPACITY - 2) as u8,
+                status.into_inner(),
+                handle[0],
+                handle[1],
+            ],
+        }
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl HciControllerResponse for LeEncryptionKeyRefreshCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
 
 /// The single Link Control command implemented by the peripheral profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

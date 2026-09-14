@@ -2,8 +2,8 @@
 
 use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
-    BluetoothDtmOperation as Operation, BluetoothDtmResult, BluetoothPeripheralEvidence,
-    BluetoothPeripheralOperation,
+    BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BluetoothDtmOperation as Operation, BluetoothDtmResult,
+    BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralTermination,
 };
 use std::{
     path::Path,
@@ -157,9 +157,16 @@ struct PeripheralBaseline {
     peripheral_disconnections: u32,
     connection_complete_events: u32,
     disconnection_complete_events: u32,
+    connection_update_complete_events: u32,
+    channel_map_update_events: u32,
+    target_disconnect_commands: u32,
+    target_reset_commands: u32,
     host_event_faults: u32,
     host_acl_received_packets: u32,
     host_acl_queued_packets: u32,
+    host_acl_transmitted_packets: u32,
+    host_acl_completed_packets: u32,
+    host_acl_backpressure_holds: u32,
     host_acl_faults: u32,
 }
 
@@ -170,9 +177,16 @@ impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
             peripheral_disconnections: evidence.peripheral_disconnections,
             connection_complete_events: evidence.connection_complete_events,
             disconnection_complete_events: evidence.disconnection_complete_events,
+            connection_update_complete_events: evidence.connection_update_complete_events,
+            channel_map_update_events: evidence.channel_map_update_events,
+            target_disconnect_commands: evidence.target_disconnect_commands,
+            target_reset_commands: evidence.target_reset_commands,
             host_event_faults: evidence.host_event_faults,
             host_acl_received_packets: evidence.host_acl_received_packets,
             host_acl_queued_packets: evidence.host_acl_queued_packets,
+            host_acl_transmitted_packets: evidence.host_acl_transmitted_packets,
+            host_acl_completed_packets: evidence.host_acl_completed_packets,
+            host_acl_backpressure_holds: evidence.host_acl_backpressure_holds,
             host_acl_faults: evidence.host_acl_faults,
         }
     }
@@ -182,6 +196,7 @@ pub(crate) fn run_peripheral(
     boots: u8,
     connections: u8,
     hold_millis: u16,
+    termination: BluetoothPeripheralTermination,
     output: &Path,
     context: &Context<'_>,
 ) -> Result<()> {
@@ -198,6 +213,7 @@ pub(crate) fn run_peripheral(
                 adapter,
                 connections,
                 hold_millis,
+                termination,
                 &directory,
                 &mut cycles,
             );
@@ -208,7 +224,7 @@ pub(crate) fn run_peripheral(
                     "adapter": adapter.to_string(),
                     "connections": connections,
                     "hold_millis": hold_millis,
-                    "expected_disconnect_reason": 8,
+                    "termination": termination,
                     "cycles": cycles,
                     "passed": result.is_ok(),
                     "error": result.as_ref().err().map(ToString::to_string),
@@ -225,6 +241,7 @@ fn probe_peripheral(
     adapter: bluetooth::model::Adapter,
     connections: u8,
     hold_millis: u16,
+    termination: BluetoothPeripheralTermination,
     output: &Path,
     cycles: &mut Vec<PeripheralCycle>,
 ) -> Result<()> {
@@ -233,7 +250,11 @@ fn probe_peripheral(
         return Err("firmware lacks Bluetooth peripheral control".into());
     }
     for cycle in 1..=connections {
-        let start = capture.bluetooth_peripheral(BluetoothPeripheralOperation::StartAdvertising)?;
+        let start_operation = BluetoothPeripheralOperation::StartAdvertising {
+            termination,
+            hold_millis,
+        };
+        let start = capture.bluetooth_peripheral(start_operation)?;
         if start.terminal
             || start.saturated
             || start.host_event_faults != 0
@@ -242,7 +263,7 @@ fn probe_peripheral(
             return Err("Bluetooth peripheral was unhealthy before the connection".into());
         }
         let address = start
-            .started_address(BluetoothPeripheralOperation::StartAdvertising)
+            .started_address(start_operation)
             .ok_or("Bluetooth peripheral start omitted its public address")?;
         let baseline = PeripheralBaseline::from(&start);
         cycles.push(PeripheralCycle {
@@ -255,13 +276,14 @@ fn probe_peripheral(
             adapter,
             bluetooth::model::PeerAddress(address),
             hold_millis,
+            termination,
         )?;
         cycles.last_mut().expect("cycle was inserted").fixture = Some(fixture);
 
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
             let snapshot = capture.bluetooth_peripheral(BluetoothPeripheralOperation::Snapshot)?;
-            let complete = peripheral_cycle_complete(baseline, &snapshot)?;
+            let complete = peripheral_cycle_complete(baseline, &snapshot, termination)?;
             cycles.last_mut().expect("cycle was inserted").completion = Some(snapshot);
             if complete {
                 break;
@@ -281,7 +303,11 @@ fn probe_peripheral(
 fn peripheral_cycle_complete(
     baseline: PeripheralBaseline,
     current: &BluetoothPeripheralEvidence,
+    termination: BluetoothPeripheralTermination,
 ) -> Result<bool> {
+    if termination == BluetoothPeripheralTermination::LegacyPeerPowerOff {
+        return Err("historical peer-power-off mode cannot be executed".into());
+    }
     if current.terminal || current.saturated {
         return Err("Bluetooth peripheral entered a terminal or saturated state".into());
     }
@@ -295,9 +321,10 @@ fn peripheral_cycle_complete(
         .peripheral_runs
         .checked_add(1)
         .ok_or("Bluetooth peripheral run counter was exhausted")?;
+    let disconnection_delta = u32::from(termination != BluetoothPeripheralTermination::TargetReset);
     let expected_disconnections = baseline
         .peripheral_disconnections
-        .checked_add(1)
+        .checked_add(disconnection_delta)
         .ok_or("Bluetooth peripheral disconnection counter was exhausted")?;
     let expected_connections = baseline
         .connection_complete_events
@@ -305,34 +332,90 @@ fn peripheral_cycle_complete(
         .ok_or("Bluetooth Host connection-event counter was exhausted")?;
     let expected_host_disconnections = baseline
         .disconnection_complete_events
-        .checked_add(1)
+        .checked_add(disconnection_delta)
         .ok_or("Bluetooth Host disconnection-event counter was exhausted")?;
+    let expected_connection_updates = baseline
+        .connection_update_complete_events
+        .checked_add(1)
+        .ok_or("Bluetooth Host connection-update counter was exhausted")?;
+    let expected_channel_map_updates = baseline
+        .channel_map_update_events
+        .checked_add(1)
+        .ok_or("Bluetooth Link Layer channel-map-update counter was exhausted")?;
+    let expected_target_disconnects = baseline
+        .target_disconnect_commands
+        .checked_add(u32::from(
+            termination == BluetoothPeripheralTermination::TargetDisconnect,
+        ))
+        .ok_or("Bluetooth target Disconnect counter was exhausted")?;
+    let expected_target_resets = baseline
+        .target_reset_commands
+        .checked_add(u32::from(
+            termination == BluetoothPeripheralTermination::TargetReset,
+        ))
+        .ok_or("Bluetooth target Reset counter was exhausted")?;
     let expected_acl_received = baseline
         .host_acl_received_packets
-        .checked_add(1)
+        .checked_add(BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS.saturating_mul(2))
         .ok_or("Bluetooth Host ACL receive counter was exhausted")?;
     let expected_acl_queued = baseline
         .host_acl_queued_packets
-        .checked_add(1)
+        .checked_add(2)
         .ok_or("Bluetooth Host ACL echo counter was exhausted")?;
+    let expected_acl_transmitted = baseline
+        .host_acl_transmitted_packets
+        .checked_add(2)
+        .ok_or("Bluetooth Host ACL transmission-completion counter was exhausted")?;
+    let expected_acl_completed = baseline
+        .host_acl_completed_packets
+        .checked_add(BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS.saturating_mul(2))
+        .ok_or("Bluetooth Host ACL completion counter was exhausted")?;
+    let expected_backpressure_holds = baseline
+        .host_acl_backpressure_holds
+        .checked_add(1)
+        .ok_or("Bluetooth Host ACL backpressure counter was exhausted")?;
     if current.peripheral_disconnections > expected_disconnections
         || current.connection_complete_events > expected_connections
         || current.disconnection_complete_events > expected_host_disconnections
+        || current.connection_update_complete_events > expected_connection_updates
+        || current.channel_map_update_events > expected_channel_map_updates
+        || current.target_disconnect_commands > expected_target_disconnects
+        || current.target_reset_commands > expected_target_resets
         || current.host_acl_received_packets > expected_acl_received
         || current.host_acl_queued_packets > expected_acl_queued
+        || current.host_acl_transmitted_packets > expected_acl_transmitted
+        || current.host_acl_completed_packets > expected_acl_completed
+        || current.host_acl_backpressure_holds > expected_backpressure_holds
     {
         return Err(
-            "Bluetooth peripheral emitted more than one lifecycle edge for one cycle".into(),
+            "Bluetooth peripheral emitted an unexpected lifecycle or ACL edge for one cycle".into(),
         );
     }
     let complete = current.peripheral_runs >= expected_runs
         && current.peripheral_disconnections == expected_disconnections
         && current.connection_complete_events == expected_connections
         && current.disconnection_complete_events == expected_host_disconnections
+        && current.connection_update_complete_events == expected_connection_updates
+        && current.channel_map_update_events == expected_channel_map_updates
+        && current.target_disconnect_commands == expected_target_disconnects
+        && current.target_reset_commands == expected_target_resets
         && current.host_acl_received_packets == expected_acl_received
-        && current.host_acl_queued_packets == expected_acl_queued;
-    if complete && current.last_disconnect_reason != Some(0x08) {
-        return Err("Bluetooth Host disconnection reason was not supervision timeout".into());
+        && current.host_acl_queued_packets == expected_acl_queued
+        && current.host_acl_transmitted_packets == expected_acl_transmitted
+        && current.host_acl_completed_packets == expected_acl_completed
+        && current.host_acl_backpressure_holds == expected_backpressure_holds;
+    let expected_reason = match termination {
+        BluetoothPeripheralTermination::PeerReset | BluetoothPeripheralTermination::PeerRfkill => {
+            Some(0x08)
+        }
+        BluetoothPeripheralTermination::TargetDisconnect => Some(0x16),
+        BluetoothPeripheralTermination::TargetReset => None,
+        BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+    };
+    if complete && expected_reason.is_some() && current.last_disconnect_reason != expected_reason {
+        return Err(
+            "Bluetooth Host disconnection reason did not match the termination mode".into(),
+        );
     }
     Ok(complete)
 }
@@ -351,9 +434,16 @@ mod peripheral_tests {
             peripheral_disconnections: 0,
             connection_complete_events: 0,
             disconnection_complete_events: 0,
+            connection_update_complete_events: 0,
+            channel_map_update_events: 0,
+            target_disconnect_commands: 0,
+            target_reset_commands: 0,
             host_event_faults: 0,
             host_acl_received_packets: 0,
             host_acl_queued_packets: 0,
+            host_acl_transmitted_packets: 0,
+            host_acl_completed_packets: 0,
+            host_acl_backpressure_holds: 0,
             host_acl_faults: 0,
             last_disconnect_reason: None,
             retries: 0,
@@ -371,23 +461,143 @@ mod peripheral_tests {
         let mut current = BluetoothPeripheralEvidence {
             peripheral_runs: 1,
             connection_complete_events: 1,
+            connection_update_complete_events: 1,
+            channel_map_update_events: 1,
             ..before.clone()
         };
-        assert!(!peripheral_cycle_complete(baseline, &current).unwrap());
+        assert!(
+            !peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .unwrap()
+        );
         current.peripheral_disconnections = 1;
         current.disconnection_complete_events = 1;
-        current.host_acl_received_packets = 1;
-        current.host_acl_queued_packets = 1;
+        current.host_acl_received_packets = BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2;
+        current.host_acl_queued_packets = 2;
+        current.host_acl_transmitted_packets = 2;
+        current.host_acl_completed_packets = BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2;
+        current.host_acl_backpressure_holds = 1;
         current.last_disconnect_reason = Some(0x08);
-        assert!(peripheral_cycle_complete(baseline, &current).unwrap());
+        assert!(
+            peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .unwrap()
+        );
+        current.host_acl_transmitted_packets = 1;
+        assert!(
+            !peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .unwrap()
+        );
+        current.host_acl_transmitted_packets = 2;
         current.host_event_faults = 1;
-        assert!(peripheral_cycle_complete(baseline, &current).is_err());
+        assert!(
+            peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .is_err()
+        );
         current.host_event_faults = 0;
         current.host_acl_faults = 1;
-        assert!(peripheral_cycle_complete(baseline, &current).is_err());
+        assert!(
+            peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .is_err()
+        );
         current.host_acl_faults = 0;
-        current.host_acl_queued_packets = 2;
-        assert!(peripheral_cycle_complete(baseline, &current).is_err());
+        current.host_acl_queued_packets = 3;
+        assert!(
+            peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn target_disconnect_and_reset_require_distinct_edges() {
+        let before = evidence();
+        for termination in [
+            BluetoothPeripheralTermination::TargetDisconnect,
+            BluetoothPeripheralTermination::TargetReset,
+        ] {
+            let baseline = PeripheralBaseline::from(&before);
+            let mut current = BluetoothPeripheralEvidence {
+                peripheral_runs: 1,
+                connection_complete_events: 1,
+                connection_update_complete_events: 1,
+                channel_map_update_events: 1,
+                host_acl_received_packets: BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2,
+                host_acl_queued_packets: 2,
+                host_acl_transmitted_packets: 2,
+                host_acl_completed_packets: BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2,
+                host_acl_backpressure_holds: 1,
+                ..before.clone()
+            };
+            match termination {
+                BluetoothPeripheralTermination::TargetDisconnect => {
+                    current.peripheral_disconnections = 1;
+                    current.disconnection_complete_events = 1;
+                    current.target_disconnect_commands = 1;
+                    current.last_disconnect_reason = Some(0x16);
+                }
+                BluetoothPeripheralTermination::TargetReset => {
+                    current.target_reset_commands = 1;
+                }
+                BluetoothPeripheralTermination::PeerReset
+                | BluetoothPeripheralTermination::PeerRfkill
+                | BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+            }
+            assert!(peripheral_cycle_complete(baseline, &current, termination).unwrap());
+            current.target_disconnect_commands = 0;
+            current.target_reset_commands = 0;
+            assert!(!peripheral_cycle_complete(baseline, &current, termination).unwrap());
+        }
+    }
+
+    #[test]
+    fn peer_rfkill_requires_supervision_timeout_recovery_without_target_commands() {
+        let before = evidence();
+        let baseline = PeripheralBaseline::from(&before);
+        let current = BluetoothPeripheralEvidence {
+            peripheral_runs: 1,
+            peripheral_disconnections: 1,
+            connection_complete_events: 1,
+            disconnection_complete_events: 1,
+            connection_update_complete_events: 1,
+            channel_map_update_events: 1,
+            host_acl_received_packets: BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2,
+            host_acl_queued_packets: 2,
+            host_acl_transmitted_packets: 2,
+            host_acl_completed_packets: BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS * 2,
+            host_acl_backpressure_holds: 1,
+            last_disconnect_reason: Some(0x08),
+            ..before
+        };
+        assert!(
+            peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerRfkill,
+            )
+            .unwrap()
+        );
     }
 }
 

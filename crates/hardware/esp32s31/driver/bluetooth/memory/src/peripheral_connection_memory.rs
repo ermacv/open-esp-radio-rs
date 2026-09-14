@@ -1091,6 +1091,51 @@ impl PeripheralConnectionMemoryGraphRunning {
         self.prepared.scheduler_head()
     }
 
+    /// Bind a completed common-stop transaction to this exact running graph.
+    ///
+    /// The in-flight status sentinel is classified as an explicit abort. The
+    /// returned empty-head proof still has to pass the ordinary software unlink
+    /// and recycle lifecycle before any connection memory becomes CPU-owned.
+    #[doc(hidden)]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "a rejected stop join must return both complete no-alloc owners unchanged"
+        )
+    )]
+    pub fn observe_stopped(
+        self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+    ) -> Result<
+        (
+            PeripheralConnectionMemoryGraphCompletionObserved,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+        ),
+        (
+            Self,
+            oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedItem,
+        ),
+    > {
+        if stopped.head().index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || stopped.head().completed_head().address() != Some(self.scheduler_item_address())
+        {
+            return Err((self, stopped));
+        }
+        let completion = self
+            .prepared
+            .storage()
+            .scheduler_completion_observation()
+            .unwrap_or_else(PeripheralConnectionSchedulerCompletionObservation::aborted);
+        Ok((
+            PeripheralConnectionMemoryGraphCompletionObserved {
+                running: self,
+                completion,
+            },
+            stopped.into_head(),
+        ))
+    }
+
     /// Consume one fresh list-zero completion report and inspect the selected item.
     ///
     /// The status word remains private controller SRAM. The in-flight sentinel
@@ -1126,6 +1171,8 @@ impl PeripheralConnectionMemoryGraphRunning {
 pub enum PeripheralConnectionSchedulerItemCompletionStatus {
     Zero,
     NonZero,
+    /// Common scheduler stop retired an item which had not completed.
+    Aborted,
 }
 
 /// One bounded observation of a running connection graph.
@@ -1420,6 +1467,11 @@ impl PeripheralConnectionMemoryGraphActiveCpuOwned {
     /// A scheduler completion by itself does not complete a queued transmission.
     pub fn reclaim_transmission(&mut self) -> bool {
         self.storage.as_ref().get_ref().reclaim_tx(&self.binding)
+    }
+
+    /// Whether the CPU-owned graph can accept one new reliable packet.
+    pub fn can_enqueue_transmission(&self) -> bool {
+        self.storage.as_ref().get_ref().can_enqueue_tx()
     }
 
     /// Queue a control payload under exclusive CPU ownership. `false` leaves

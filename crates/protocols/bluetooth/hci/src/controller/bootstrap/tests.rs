@@ -213,7 +213,7 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
                 &LeReadLocalSupportedFeatures::new(),
             )
             .await,
-            &[1 << 3, 0, 0, 0, 0, 0, 0, 0],
+            &[(1 << 0) | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
         );
 
         let advertising = round_trip(
@@ -559,6 +559,8 @@ fn supported_commands_report_matches_the_closed_operational_inventory() {
     assert!(mask.le_set_scan_enable());
     assert!(mask.le_read_filter_accept_list_size());
     assert!(mask.le_read_remote_features());
+    assert!(mask.le_long_term_key_request_reply());
+    assert!(mask.le_long_term_key_request_negative_reply());
     assert!(mask.le_receiver_test_v1());
     assert!(mask.le_transmitter_test_v1());
     assert!(mask.le_test_end());
@@ -669,7 +671,10 @@ fn dispatch_test_packet(
         | LeControllerCommandClassification::ReadRemoteFeatures(_)
         | LeControllerCommandClassification::MalformedReadRemoteFeatures(_)
         | LeControllerCommandClassification::ReadRemoteVersionInformation(_)
-        | LeControllerCommandClassification::MalformedReadRemoteVersionInformation(_) => {
+        | LeControllerCommandClassification::MalformedReadRemoteVersionInformation(_)
+        | LeControllerCommandClassification::LongTermKeyReply(_)
+        | LeControllerCommandClassification::LongTermKeyNegativeReply(_)
+        | LeControllerCommandClassification::MalformedLongTermKeyReply(_) => {
             command_error(crate::LeDisconnectCommand::OPCODE, HciError::UNKNOWN_CMD)
         }
         LeControllerCommandClassification::Bootstrap(command) => bootstrap.dispatch_owned(command),

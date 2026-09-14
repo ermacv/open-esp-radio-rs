@@ -12,7 +12,7 @@ use crate::{
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     let resolved = lab.resolve_scenario(scenario);
     let lab = &resolved;
-    if let Some(failure) = crate::scenario_precondition(lab, scenario) {
+    if let Some(failure) = crate::execution::preflight::scenario_precondition(lab, scenario) {
         return Err(super::Error::new(failure.message).into());
     }
     let required = Requirements::for_scenario(scenario);

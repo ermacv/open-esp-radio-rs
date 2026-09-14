@@ -10,6 +10,19 @@ UART evidence. `linux-net/` contains only privileged fixture operations.
 adapter checker; its Rust
 implementation belongs to the runner's `fixture/bluetooth/` module.
 
+The runner entry point in `runner/src/main.rs` only wires modules and maps the
+top-level result to the process exit status. `runner/src/command.rs` owns CLI
+startup and command-specific dispatch. Run selection and the suite/scenario/
+repetition lifecycle are in `runner/src/execution/orchestration.rs`, while
+`runner/src/execution/firmware.rs` coordinates run-local build or replay
+publication before calling the existing image and device owners.
+`runner/src/execution/preflight.rs` owns run selection compatibility and
+hardware-facing scenario/image checks; declarative resource discovery remains
+under `lab::requirements`. Machine JSON retains its dedicated descriptor in
+`runner/src/output.rs`. Workload dispatch and typed execution evidence remain
+in `runner/src/execution.rs`; `evidence::run::RunSession` is still the sole run
+writer and sealing owner.
+
 ## One run lifecycle
 
 The implementation order matters because later files must not retroactively

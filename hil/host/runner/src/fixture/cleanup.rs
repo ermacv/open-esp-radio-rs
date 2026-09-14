@@ -95,4 +95,10 @@ pub(crate) fn command(operation: &'static str, command: &mut std::process::Comma
 }
 
 #[cfg(test)]
+pub(crate) fn reset_for_test() {
+    RECORDS.with_borrow_mut(|records| *records = None);
+    QUARANTINE.with_borrow_mut(|quarantine| *quarantine = None);
+}
+
+#[cfg(test)]
 mod tests;

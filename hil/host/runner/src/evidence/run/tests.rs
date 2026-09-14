@@ -560,6 +560,40 @@ fn dropped_session_marks_manifest_interrupted() {
 }
 
 #[test]
+fn failure_before_seal_cannot_leave_a_false_completed_manifest() {
+    let root = temporary_directory("finish-before-seal-failure");
+    let session = integrated_session(&root);
+    let run_directory = session.directory().to_owned();
+    fs::create_dir(run_directory.join("junit.xml")).unwrap();
+
+    assert!(session.finish(Vec::new()).is_err());
+    let manifest: RunManifest =
+        serde_json::from_slice(&fs::read(run_directory.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest.state, RunState::Interrupted);
+    assert!(run_directory.join("suite.json").is_file());
+    assert!(!run_directory.join("report.html").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn seal_failure_rolls_the_manifest_back_to_interrupted() {
+    let root = temporary_directory("seal-failure");
+    let session = integrated_session(&root);
+    let run_directory = session.directory().to_owned();
+    fs::create_dir(run_directory.join("integrity.json")).unwrap();
+
+    assert!(session.finish(Vec::new()).is_err());
+    let manifest: RunManifest =
+        serde_json::from_slice(&fs::read(run_directory.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest.state, RunState::Interrupted);
+    assert!(run_directory.join("suite.json").is_file());
+    assert!(run_directory.join("junit.xml").is_file());
+    assert!(run_directory.join("report.html").is_file());
+    assert!(run_directory.join("integrity.json").is_dir());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn unrelated_history_failure_cannot_revoke_a_sealed_run() {
     for failed in [false, true] {
         let root = temporary_directory("history-failure");

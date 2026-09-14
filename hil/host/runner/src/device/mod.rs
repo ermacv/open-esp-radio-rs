@@ -1,7 +1,11 @@
 //! Attached-device inspection and exact flash transactions.
 
-use crate::image::{Artifacts, program_from_env, run_command};
-use crate::*;
+use std::{fs, path::Path, process::Command};
+
+use crate::{
+    Result,
+    image::{Artifacts, program_from_env, run_command},
+};
 
 use oer_firmware::flash::{
     OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET, ota0_selector_image,

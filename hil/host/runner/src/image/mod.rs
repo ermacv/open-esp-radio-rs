@@ -1,8 +1,19 @@
 //! Reproducible HIL firmware construction and image auditing.
 
-use crate::*;
+use std::{
+    env,
+    error::Error,
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
+
+use crate::Result;
 use oer_process::CommandExt as _;
 use open_esp_radio_hil_protocol::FeatureCapabilities;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 pub(crate) use oer_firmware::network::Integration;
 

@@ -1,10 +1,17 @@
 //! Dispatch from validated scenario workloads to their concrete host owners.
 
-use crate::evidence::run::{Failure, FailureKind, Outcome};
-use crate::*;
+use std::path::Path;
+
+use crate::{
+    Result,
+    evidence::run::{Failure, FailureKind, Outcome},
+};
 
 pub(crate) mod context;
 mod failure;
+pub(crate) mod firmware;
+pub(crate) mod orchestration;
+pub(crate) mod preflight;
 #[cfg(test)]
 mod tests;
 pub(crate) use failure::classify;

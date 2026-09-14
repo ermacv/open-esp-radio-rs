@@ -1,0 +1,219 @@
+//! CLI command dispatch with command-specific ordering and side-effect boundaries.
+
+use std::{env, path::PathBuf};
+
+use clap::Parser as _;
+
+use crate::{
+    Result,
+    cli::{Cli, CliCommand, DeviceCommand, ImageCommand, ReportCommand, ScenarioCommand},
+    device, emit_json,
+    execution::{firmware::RunFirmware, orchestration, preflight},
+    fixture, image, lab, output, reporting, scenario,
+};
+
+pub(crate) fn run() -> Result<()> {
+    let root = repository_root()?;
+    let invocation = env::args_os().collect::<Vec<_>>();
+    let cli = Cli::parse();
+    output::reserve_machine_stdout()?;
+    let _signals = oer_process::install_signal_handlers()?;
+    let lab_path = cli
+        .lab_config
+        .unwrap_or(lab::config::LabConfig::default_path()?);
+    let catalog_path = root.join("hil/scenarios");
+
+    match cli.command {
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::ProbePlan,
+        } => {
+            let plan: Vec<_> = (0..fixture::probe_load::model::REQUESTS)
+                .filter_map(fixture::probe_load::model::request)
+                .collect();
+            emit_json(&plan, true)
+        }
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::BluetoothCheck { adapter },
+        } => fixture::bluetooth::check(&root, adapter),
+        CliCommand::Fixture {
+            command:
+                crate::cli::FixtureCommand::BluetoothConnectReset {
+                    adapter,
+                    peer,
+                    hold_ms,
+                },
+        } => fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms),
+        CliCommand::Archive { command } => crate::archive::run(&root, command),
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::InstallHost,
+        } => fixture::install::run(&root),
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::Check { scenario: id },
+        } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let selected = catalog.get(&id)?;
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            fixture::prepared::check_without_device(&root, &lab, selected)
+        }
+        CliCommand::Doctor(selection) => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let selected = selection.resolve(&catalog)?;
+            lab::doctor::run(&root, &lab::config::LabConfig::load(&lab_path)?, &selected)
+        }
+        CliCommand::Plan(selection) => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let selected = selection.resolve(&catalog)?;
+            emit_json(
+                &serde_json::json!({
+                    "schema": 1,
+                    "requirements": lab::requirements::Requirements::union(&selected),
+                    "scenarios": selected.iter().map(|scenario| serde_json::json!({
+                        "scenario": scenario.id,
+                        "image": scenario.image,
+                        "repetitions": scenario.repetitions,
+                        "requirements": lab::requirements::Requirements::for_scenario(scenario),
+                    })).collect::<Vec<_>>(),
+                }),
+                true,
+            )
+        }
+        CliCommand::Scenario { command } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            match command {
+                ScenarioCommand::List => emit_json(
+                    &serde_json::json!({
+                        "schema": scenario::SCENARIO_SCHEMA,
+                        "scenarios": catalog.all(),
+                    }),
+                    true,
+                ),
+                ScenarioCommand::Validate { scenario: id } => {
+                    if let Some(id) = id {
+                        let _ = catalog.get(&id)?;
+                    }
+                    emit_json(
+                        &serde_json::json!({
+                            "schema": scenario::SCENARIO_SCHEMA,
+                            "scenarios": catalog.all().len(),
+                            "status": "valid"
+                        }),
+                        false,
+                    )
+                }
+            }
+        }
+        CliCommand::Image { command } => match command {
+            ImageCommand::Build { class, network } => {
+                let artifacts = image::build(&root, class, network)?;
+                image::print_artifacts(class, &artifacts, false)
+            }
+            ImageCommand::VerifyRebuild { class, trim_paths } => {
+                image::verify_rebuild(&root, class, trim_paths)
+            }
+            ImageCommand::Flash { class, network } => {
+                let artifacts = image::build(&root, class, network)?;
+                let lab = lab::config::LabConfig::load(&lab_path)?;
+                let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
+                device::flash(&root, &artifacts, &lab.device.serial)?;
+                image::print_artifacts(class, &artifacts, true)
+            }
+            ImageCommand::Replay { run_id, class } => {
+                let firmware =
+                    crate::evidence::verify::archived_firmware(&root, "esp32s31", &run_id, class)?;
+                let lab = lab::config::LabConfig::load(&lab_path)?;
+                let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
+                device::flash_archived(&root, &firmware, &lab.device.serial)?;
+                emit_json(
+                    &serde_json::json!({
+                        "schema": crate::evidence::run::RUN_SCHEMA,
+                        "run_id": firmware.run_id,
+                        "image_class": firmware.image,
+                        "application_image": firmware.application_path,
+                        "application_sha256": firmware.application_sha256,
+                        "flashed": true
+                    }),
+                    true,
+                )
+            }
+        },
+        CliCommand::Device {
+            command: DeviceCommand::Status,
+        } => {
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
+            device::status(&root, &lab)
+        }
+        CliCommand::Report { command } => match command {
+            ReportCommand::Rebuild => {
+                let completion = reporting::history::rebuild(&root, "esp32s31")?;
+                emit_json(&completion, false)
+            }
+            ReportCommand::Verify { run_id } => {
+                let completion =
+                    crate::evidence::verify::verify(&root, "esp32s31", run_id.as_deref())?;
+                emit_json(&completion, false)
+            }
+        },
+        CliCommand::Run {
+            scenario: id,
+            ap_scheduler,
+            firmware_from,
+            network,
+        } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let mut selected = catalog.get(&id)?.clone();
+            preflight::configure_run_selection(
+                &mut selected,
+                ap_scheduler.map(Into::into),
+                firmware_from.is_some(),
+                network,
+            )?;
+            let firmware = match firmware_from {
+                Some(run_id) => {
+                    RunFirmware::Replay(Box::new(crate::evidence::verify::archived_firmware(
+                        &root,
+                        "esp32s31",
+                        &run_id,
+                        selected.image,
+                    )?))
+                }
+                None => RunFirmware::BuildCurrent(network),
+            };
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let required = lab::requirements::Requirements::for_scenario(&selected);
+            fixture::network_helper::require_for(&lab, required)?;
+            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            orchestration::run_one(&root, &lab, &catalog, &selected, firmware, invocation)
+        }
+        CliCommand::RunAll { tag, network } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let selected = crate::cli::Selection {
+                scenario: None,
+                tag: tag.clone(),
+            }
+            .resolve(&catalog)?;
+            let required = lab::requirements::Requirements::union(&selected);
+            fixture::network_helper::require_for(&lab, required)?;
+            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            orchestration::run_all(
+                &root,
+                &lab,
+                &catalog,
+                &selected,
+                orchestration::selection_description(&tag),
+                network,
+                invocation,
+            )
+        }
+    }
+}
+
+pub(crate) fn repository_root() -> Result<PathBuf> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .ancestors()
+        .find(|path| path.join(".git").exists() && path.join("Cargo.toml").is_file())
+        .map(PathBuf::from)
+        .ok_or_else(|| "HIL runner must live inside the repository".into())
+}

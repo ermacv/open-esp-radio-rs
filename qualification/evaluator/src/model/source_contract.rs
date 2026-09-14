@@ -19,11 +19,21 @@ pub(crate) enum SourceComposition {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) struct SourceContract {
-    id: String,
-    composition: SourceComposition,
-    scope: String,
-    limits: String,
-    source_paths: Vec<PathBuf>,
+    pub(crate) id: String,
+    pub(crate) composition: SourceComposition,
+    pub(crate) scope: String,
+    pub(crate) limits: String,
+    pub(crate) source_paths: Vec<PathBuf>,
+}
+
+impl SourceComposition {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Production => "production",
+            Self::Diagnostic => "diagnostic",
+            Self::Unimplemented => "unimplemented",
+        }
+    }
 }
 
 pub(super) fn validate(contracts: &[SourceContract], root: &Path) -> Result<()> {
@@ -46,10 +56,29 @@ pub(super) fn validate(contracts: &[SourceContract], root: &Path) -> Result<()> 
             if !paths.insert(relative) {
                 return Err(format!("source contract {id} repeats {}", relative.display()).into());
             }
-            let path = root.join(relative);
-            if !fs::symlink_metadata(&path)?.file_type().is_file()
-                || !fs::canonicalize(&path)?.starts_with(&root)
-            {
+            let mut path = root.clone();
+            let components = relative.components().collect::<Vec<_>>();
+            let mut valid = true;
+            for (index, component) in components.iter().enumerate() {
+                let std::path::Component::Normal(name) = component else {
+                    valid = false;
+                    break;
+                };
+                path.push(name);
+                let final_component = index + 1 == components.len();
+                let Ok(metadata) = fs::symlink_metadata(&path) else {
+                    valid = false;
+                    break;
+                };
+                if metadata.file_type().is_symlink()
+                    || (final_component && !metadata.file_type().is_file())
+                    || (!final_component && !metadata.file_type().is_dir())
+                {
+                    valid = false;
+                    break;
+                }
+            }
+            if !valid {
                 return Err(format!(
                     "source contract {id} reference must be a regular repository file: {}",
                     relative.display()

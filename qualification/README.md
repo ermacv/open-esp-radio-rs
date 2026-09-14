@@ -23,30 +23,36 @@ the chip, role, PHY, security set, composition, native/lower/composed level,
 activation boundary and limitations. This metadata is validated and rendered,
 but it is not a readiness axis.
 
-The first migrated slice is
-[`channel-selection-switch`](catalog/esp32s31/wifi-phy.toml), including its
-`rf-bb-initialization` dependency, in the ESP32-S31
-[Wi-Fi STA program](targets/esp32s31/wifi-sta.toml). Both declarations retain
-their previous implementation, host, async, vendor and HIL obligations.
+The ESP32-S31 [Wi-Fi/PHY catalog](catalog/esp32s31/wifi-phy.toml) owns all 14
+Wi-Fi STA qualification declarations and the wider Wi-Fi/shared-PHY source
+inventory. Direct roots and their dependency closure resolve to the same exact
+14 required IDs. Source-facet
+inventory status and native/lower/composed level are separate from evaluator
+axes; unselected inventory entries have no readiness value.
 
-Catalog validation and inventory generation use the same resolver and
-evaluator as normal qualification:
+Static catalog validation checks every declaration, dependency graph, source
+contract, disposition mapping, HIL scenario reference and inventory path
+without loading a vendor evidence index or HIL runs:
 
 ```console
 cargo qualification catalog check \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml
+
+cargo qualification catalog render \
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --out target/qualification/catalog/wifi-phy-static
 
 cargo qualification catalog render \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \
   --out target/qualification/catalog/wifi-sta
 ```
 
-The render writes `capabilities.md` under the selected ignored output
-directory. It records the program and catalog schema identities and SHA-256
-source identities, then shows declaration origin, reviewed source coverage,
-program membership, evidence-derived state and readiness in separate columns.
-It is a view of the evaluator result, not another readiness decision or a
-tracked snapshot.
+Static render writes `domain-inventory.md`, `capability-catalog.md`, and
+`migration-map.md`. Manifest render additionally writes
+`program-inventory.md` after evaluation. The program view records repository
+commit/dirty state and configured evidence provenance; a catalog or manifest
+hash is source identity, never firmware identity. All outputs are ignored
+views, not another readiness decision or tracked snapshot.
 
 The Bluetooth LE program includes legacy and extended roles, connected PHY and
 control procedures, security/privacy, periodic advertising and PAwR, Direction
@@ -80,9 +86,10 @@ Three commands have deliberately different contracts:
 - `gate` returns non-zero unless every required capability and dependency is
   ready.
 
-`catalog check` additionally requires at least one selected catalog, while
-`catalog render` writes the ignored derived view after the same validation and
-evaluation succeeds.
+`catalog check --catalog` and `catalog render --catalog` are static operations.
+The compatible `--manifest` check form statically validates its catalogs;
+manifest render also evaluates the resolved program and writes the separate
+readiness view.
 
 ## Declared and derived axes
 

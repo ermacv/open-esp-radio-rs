@@ -200,6 +200,19 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
             .is_some()
     );
 
+    let stale_repository = RepositoryState {
+        commit: "different-commit".to_owned(),
+        dirty: false,
+    };
+    let stale =
+        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &stale_repository).unwrap();
+    assert_eq!(stale.summary().qualifying, 0);
+    let wrong_target =
+        HilEvidenceIndex::load(&root, Path::new("runs"), "other-target", &repository)
+            .unwrap_err()
+            .to_string();
+    assert!(wrong_target.contains("configured target"));
+
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(run.join("manifest.json")).unwrap()).unwrap();
     manifest["firmware"] = json!([{

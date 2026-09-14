@@ -2,8 +2,9 @@ use super::*;
 use crate::{
     hil::{HilEvidenceIndex, RepositoryState, ScenarioCatalog},
     model::{
-        DispositionIndex, EvaluationContext, EvidenceInputs, HilProof, Qualification,
-        VendorEvidenceIndex, VendorProof, evaluate_capability, validate_dependencies,
+        DispositionEntry, DispositionIndex, EvaluationContext, EvidenceInputs, HilProof,
+        Qualification, VendorEvidenceArtifactHash, VendorEvidenceIndex, VendorEvidenceIndexEntry,
+        VendorEvidenceSourceHash, VendorProof, evaluate_capability, validate_dependencies,
     },
 };
 
@@ -90,8 +91,23 @@ impl TestRoot {
         fs::create_dir_all(path.join("scenarios")).unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(
+            path.join("verification.toml"),
+            "id = \"test\"\nverification-addon = \"verification-addon.toml\"\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join("verification-addon.toml"),
+            "evidence-index = \"vendor.json\"\n",
+        )
+        .unwrap();
+        fs::write(
             path.join("scenarios/wifi-channel.toml"),
             "schema = 4\nid = \"wifi-channel\"\nrepetitions = 1\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join("scenarios/base-phy.toml"),
+            "schema = 4\nid = \"base-phy\"\nrepetitions = 1\n",
         )
         .unwrap();
         Self { path }
@@ -99,6 +115,10 @@ impl TestRoot {
 
     fn write_catalog(&self, body: &str) {
         fs::write(self.path.join("catalog/wifi.toml"), body).unwrap();
+    }
+
+    fn write_named_catalog(&self, name: &str, body: &str) {
+        fs::write(self.path.join(format!("catalog/{name}.toml")), body).unwrap();
     }
 }
 
@@ -131,8 +151,9 @@ fn resolution_error(result: Result<ManifestDocument>) -> String {
 #[test]
 fn resolution_preserves_evaluation_and_missing_evidence() {
     let root = TestRoot::new("equivalence");
+    let unselected = BASE_PHY.replace("id = \"base-phy\"", "id = \"unselected-phy\"");
     root.write_catalog(&format!(
-        "schema = 1\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}"
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}{unselected}{BASE_SCOPE}"
     ));
     let canonical_input = catalog_program("catalog/wifi.toml", "wifi-channel");
     let legacy_input = format!("{PROGRAM_PREFIX}{BASE_PHY}{WIFI_CHANNEL}");
@@ -142,6 +163,15 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     let legacy = parse(&legacy_input)
         .resolve_catalogs(&root.path, Path::new("legacy.toml"), &legacy_input)
         .unwrap();
+
+    assert_eq!(canonical.catalog.capabilities.len(), 3);
+    assert!(
+        canonical
+            .catalog
+            .capabilities
+            .contains_key("unselected-phy")
+    );
+    assert!(!canonical.capability_origins.contains_key("unselected-phy"));
 
     let mut canonical_documents = canonical.capabilities;
     let mut legacy_documents = legacy.capabilities;
@@ -208,12 +238,18 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             verification_entries: 0,
             verification_current_release_entries: 0,
             hil: Default::default(),
+            verification_project: PathBuf::from("verification.toml"),
+            vendor_evidence_index: PathBuf::from("vendor.json"),
+            hil_catalog: PathBuf::from("scenarios"),
+            hil_runs: PathBuf::from("runs"),
         },
         capabilities: evaluated,
         program_source: canonical.program_source.unwrap(),
         catalog_sources: canonical.catalog_sources,
         capability_origins: canonical.capability_origins,
         catalog_scopes: canonical.catalog_scopes,
+        catalog: Default::default(),
+        direct_catalog_capabilities: Default::default(),
     };
     assert_eq!(qualification.ready_count(), 0);
 }
@@ -222,7 +258,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
 fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     let root = TestRoot::new("invalid");
     root.write_catalog(&format!(
-        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
+        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
     ));
     let unknown = catalog_program("catalog/wifi.toml", "missing");
     let error = resolution_error(parse(&unknown).resolve_catalogs(
@@ -233,7 +269,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     assert!(error.contains("unsupported capability catalog schema"));
 
     root.write_catalog(&format!(
-        "schema = 1\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{BASE_PHY}{BASE_SCOPE}"
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{BASE_PHY}{BASE_SCOPE}"
     ));
     let error = resolution_error(parse(&unknown).resolve_catalogs(
         &root.path,
@@ -243,7 +279,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     assert!(error.contains("declared by both catalog"));
 
     root.write_catalog(&format!(
-        "schema = 1\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
     ));
     let error = resolution_error(parse(&unknown).resolve_catalogs(
         &root.path,
@@ -252,7 +288,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     ));
     assert!(error.contains("unknown catalog capability"));
 
-    root.write_catalog(&format!("schema = 1\nid = \"test-wifi-phy\"\n{BASE_PHY}"));
+    root.write_catalog(&format!("schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}"));
     let selected = catalog_program("catalog/wifi.toml", "base-phy");
     let error = resolution_error(parse(&selected).resolve_catalogs(
         &root.path,
@@ -269,7 +305,7 @@ fn catalog_paths_reject_symlink_components() {
 
     let root = TestRoot::new("symlink");
     root.write_catalog(&format!(
-        "schema = 1\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
     ));
     symlink(root.path.join("catalog"), root.path.join("linked-catalog")).unwrap();
     let input = catalog_program("linked-catalog/wifi.toml", "base-phy");
@@ -279,4 +315,365 @@ fn catalog_paths_reject_symlink_components() {
         &input,
     ));
     assert!(error.contains("regular directories"));
+}
+
+#[test]
+fn unselected_catalog_declarations_fail_static_validation() {
+    let root = TestRoot::new("unselected-invalid");
+    let selected = catalog_program("catalog/wifi.toml", "base-phy");
+    let check = |body: String| {
+        root.write_catalog(&body);
+        resolution_error(parse(&selected).resolve_catalogs(
+            &root.path,
+            Path::new("program.toml"),
+            &selected,
+        ))
+    };
+
+    let missing_dependency = WIFI_CHANNEL.replace(
+        "depends-on = [\"base-phy\"]",
+        "depends-on = [\"missing-phy\"]",
+    );
+    let error = check(format!(
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{missing_dependency}{WIFI_SCOPE}"
+    ));
+    assert!(error.contains("depends on missing missing-phy"));
+
+    let first = BASE_PHY
+        .replace("id = \"base-phy\"", "id = \"cycle-a\"")
+        .replace(
+            "async = \"bounded\"",
+            "async = \"bounded\"\ndepends-on = [\"cycle-b\"]",
+        );
+    let second = BASE_PHY
+        .replace("id = \"base-phy\"", "id = \"cycle-b\"")
+        .replace(
+            "async = \"bounded\"",
+            "async = \"bounded\"\ndepends-on = [\"cycle-a\"]",
+        );
+    let error = check(format!(
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{first}{BASE_SCOPE}{second}{BASE_SCOPE}"
+    ));
+    assert!(error.contains("dependency cycle"));
+
+    let inconsistent = WIFI_CHANNEL.replace(
+        "gaps = [{ axis = \"vendor\", id = \"vendor-trace-missing\" }]",
+        "gaps = [{ axis = \"implementation\", id = \"impossible-gap\" }, { axis = \"vendor\", id = \"vendor-trace-missing\" }]",
+    );
+    let error = check(format!(
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{inconsistent}{WIFI_SCOPE}"
+    ));
+    assert!(error.contains("terminal implementation axis"));
+
+    let bad_contract = format!(
+        "{}\n[[capabilities.source-contracts]]\nid = \"missing-owner\"\ncomposition = \"production\"\nscope = \"One operation\"\nlimits = \"Bounded scope\"\nsource-paths = [\"missing.rs\"]\n{}",
+        WIFI_CHANNEL, WIFI_SCOPE
+    );
+    let error = check(format!(
+        "schema = 2\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{bad_contract}"
+    ));
+    assert!(error.contains("missing.rs"), "{error}");
+}
+
+#[test]
+fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
+    let root = TestRoot::new("multi-catalog");
+    let base = format!("schema = 2\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    let wifi = format!("schema = 2\nid = \"wifi\"\n{WIFI_CHANNEL}{WIFI_SCOPE}");
+    root.write_named_catalog("a", &base);
+    root.write_named_catalog("b", &wifi);
+    let program = parse(PROGRAM_PREFIX);
+    let empty = BTreeSet::new();
+    let first = CatalogView::load_with_program(
+        &root.path,
+        &[
+            PathBuf::from("catalog/a.toml"),
+            PathBuf::from("catalog/b.toml"),
+        ],
+        Some((&program.verification, &program.hil)),
+        &empty,
+    )
+    .unwrap();
+    let second = CatalogView::load_with_program(
+        &root.path,
+        &[
+            PathBuf::from("catalog/b.toml"),
+            PathBuf::from("catalog/a.toml"),
+        ],
+        Some((&program.verification, &program.hil)),
+        &empty,
+    )
+    .unwrap();
+    assert_eq!(
+        first.capabilities.keys().collect::<Vec<_>>(),
+        second.capabilities.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        first
+            .sources
+            .iter()
+            .map(|source| &source.id)
+            .collect::<Vec<_>>(),
+        second
+            .sources
+            .iter()
+            .map(|source| &source.id)
+            .collect::<Vec<_>>()
+    );
+
+    root.write_named_catalog("b", &base.replace("id = \"base\"", "id = \"other\""));
+    let error = CatalogView::load_with_program(
+        &root.path,
+        &[
+            PathBuf::from("catalog/a.toml"),
+            PathBuf::from("catalog/b.toml"),
+        ],
+        Some((&program.verification, &program.hil)),
+        &empty,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("declared by both catalog"));
+}
+
+#[test]
+fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
+    let root = TestRoot::new("differential-matrix");
+    let base = BASE_PHY
+        .replace("vendor-anchors = [\"Cargo.toml\"]", "vendor-roots = [{ source = \"archive\", symbol = \"base_root\" }]\nvendor-evidence = [{ suite = \"base-suite\", source = \"archive\", symbol = \"base_root\" }]")
+        .replace("hil-requirements = [{ scenario = \"wifi-channel\", minimum-repetitions = 1 }]", "hil-requirements = [{ scenario = \"base-phy\", minimum-repetitions = 1 }]")
+        .replace("gaps = [{ axis = \"vendor\", id = \"vendor-trace-missing\" }]", "");
+    let wifi = WIFI_CHANNEL
+        .replace("vendor-anchors = [\"Cargo.toml\"]", "vendor-roots = [{ source = \"archive\", symbol = \"wifi_root\" }]\nvendor-evidence = [{ suite = \"wifi-suite\", source = \"archive\", symbol = \"wifi_root\" }]")
+        .replace("gaps = [{ axis = \"vendor\", id = \"vendor-trace-missing\" }]", "");
+    let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
+    let canonical: CatalogDocument = toml_edit::de::from_str(&format!(
+        "schema = 2\nid = \"matrix\"\n{base}{BASE_SCOPE}{wifi}{WIFI_SCOPE}"
+    ))
+    .unwrap();
+
+    let dispositions = DispositionIndex {
+        entries: ["base_root", "wifi_root"]
+            .into_iter()
+            .map(|symbol| {
+                (
+                    ("archive".to_owned(), symbol.to_owned()),
+                    DispositionEntry {
+                        has_rust_component: true,
+                        has_contract: true,
+                    },
+                )
+            })
+            .collect(),
+        project_id: "test".to_owned(),
+        vendor_evidence_index: None,
+    };
+    let scenarios = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
+    let source_sha = format!(
+        "{:x}",
+        Sha256::digest(fs::read(root.path.join("Cargo.toml")).unwrap())
+    );
+    let vendor_entry = |suite: &str, symbol: &str| VendorEvidenceIndexEntry {
+        suite: suite.to_owned(),
+        source: "archive".to_owned(),
+        symbol: symbol.to_owned(),
+        evidence_class: "production-trace".to_owned(),
+        status: "match".to_owned(),
+        release_eligible: true,
+        rust_component: Some("crate::component".to_owned()),
+        evidence_digest: Some("ab".repeat(32)),
+        baseline_passed: true,
+        artifact_hashes: vec![VendorEvidenceArtifactHash {
+            role: "trace".to_owned(),
+            sha256: "cd".repeat(32),
+        }],
+        source_hashes: vec![VendorEvidenceSourceHash {
+            path: PathBuf::from("Cargo.toml"),
+            sha256: source_sha.clone(),
+        }],
+        release_blockers: Vec::new(),
+    };
+    let mut stale_entry = vendor_entry("base-suite", "base_root");
+    stale_entry.source_hashes[0].sha256 = "ef".repeat(32);
+    let cases = [
+        ("no-evidence", Vec::new(), Vec::new(), true, 0usize),
+        (
+            "partial-vendor",
+            vec![
+                vendor_entry("base-suite", "base_root"),
+                vendor_entry("wifi-suite", "wifi_root"),
+            ],
+            Vec::new(),
+            true,
+            0,
+        ),
+        (
+            "partial-hil",
+            Vec::new(),
+            vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
+            true,
+            0,
+        ),
+        (
+            "stale-vendor-source",
+            vec![stale_entry, vendor_entry("wifi-suite", "wifi_root")],
+            vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
+            true,
+            0,
+        ),
+        (
+            "sufficient-positive",
+            vec![
+                vendor_entry("base-suite", "base_root"),
+                vendor_entry("wifi-suite", "wifi_root"),
+            ],
+            vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
+            true,
+            2,
+        ),
+        (
+            "dirty-evaluator",
+            vec![
+                vendor_entry("base-suite", "base_root"),
+                vendor_entry("wifi-suite", "wifi_root"),
+            ],
+            vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
+            false,
+            0,
+        ),
+    ];
+    for (name, entries, hil_entries, clean, ready) in cases {
+        let vendor = VendorEvidenceIndex {
+            schema_version: 1,
+            command: "project verify vendor evidence index".to_owned(),
+            project: "test".to_owned(),
+            complete_project_run: true,
+            entries,
+        };
+        let hil = HilEvidenceIndex::synthetic(&hil_entries);
+        let context = EvaluationContext {
+            root: &root.path,
+            dispositions: &dispositions,
+            vendor_index: &vendor,
+            scenario_catalog: &scenarios,
+            hil_index: &hil,
+            evaluator_clean: clean,
+        };
+        let evaluate = |documents: Vec<CapabilityDocument>| {
+            documents
+                .into_iter()
+                .map(|document| evaluate_capability(document, &context).unwrap())
+                .map(|capability| (capability.id.clone(), capability))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let inline_result = evaluate(inline.clone());
+        let catalog_result = evaluate(canonical.capabilities.clone());
+        assert_eq!(catalog_result, inline_result, "case {name}");
+        let qualification = Qualification {
+            target: name.to_owned(),
+            repository: RepositoryState {
+                commit: "test".to_owned(),
+                dirty: !clean,
+            },
+            evidence_inputs: EvidenceInputs {
+                verification_entries: 0,
+                verification_current_release_entries: 0,
+                hil: Default::default(),
+                verification_project: PathBuf::from("verification.toml"),
+                vendor_evidence_index: PathBuf::from("vendor.json"),
+                hil_catalog: PathBuf::from("scenarios"),
+                hil_runs: PathBuf::from("runs"),
+            },
+            capabilities: inline_result,
+            program_source: SourceIdentity {
+                id: name.to_owned(),
+                schema: 4,
+                path: PathBuf::from("program.toml"),
+                sha256: "00".repeat(32),
+            },
+            catalog_sources: Vec::new(),
+            capability_origins: BTreeMap::new(),
+            catalog_scopes: BTreeMap::new(),
+            catalog: Default::default(),
+            direct_catalog_capabilities: Default::default(),
+        };
+        assert_eq!(qualification.ready_count(), ready, "case {name}");
+    }
+
+    let only_wifi_vendor = VendorEvidenceIndex {
+        schema_version: 1,
+        command: "project verify vendor evidence index".to_owned(),
+        project: "test".to_owned(),
+        complete_project_run: true,
+        entries: vec![vendor_entry("wifi-suite", "wifi_root")],
+    };
+    let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
+    let context = EvaluationContext {
+        root: &root.path,
+        dispositions: &dispositions,
+        vendor_index: &only_wifi_vendor,
+        scenario_catalog: &scenarios,
+        hil_index: &hil,
+        evaluator_clean: true,
+    };
+    let evaluated = inline
+        .into_iter()
+        .map(|document| evaluate_capability(document, &context).unwrap())
+        .map(|capability| (capability.id.clone(), capability))
+        .collect::<BTreeMap<_, _>>();
+    assert!(!evaluated["base-phy"].proof_ready());
+    assert!(evaluated["wifi-channel"].proof_ready());
+    let qualification = Qualification {
+        target: "dependency-not-ready".to_owned(),
+        repository: RepositoryState {
+            commit: "test".to_owned(),
+            dirty: false,
+        },
+        evidence_inputs: EvidenceInputs {
+            verification_entries: 1,
+            verification_current_release_entries: 1,
+            hil: Default::default(),
+            verification_project: PathBuf::from("verification.toml"),
+            vendor_evidence_index: PathBuf::from("vendor.json"),
+            hil_catalog: PathBuf::from("scenarios"),
+            hil_runs: PathBuf::from("runs"),
+        },
+        capabilities: evaluated,
+        program_source: SourceIdentity {
+            id: "test".to_owned(),
+            schema: 4,
+            path: PathBuf::from("program.toml"),
+            sha256: "00".repeat(32),
+        },
+        catalog_sources: Vec::new(),
+        capability_origins: BTreeMap::new(),
+        catalog_scopes: BTreeMap::new(),
+        catalog: Default::default(),
+        direct_catalog_capabilities: Default::default(),
+    };
+    assert!(!qualification.is_ready("wifi-channel"));
+
+    let only_base_vendor = VendorEvidenceIndex {
+        schema_version: 1,
+        command: "project verify vendor evidence index".to_owned(),
+        project: "test".to_owned(),
+        complete_project_run: true,
+        entries: vec![vendor_entry("base-suite", "base_root")],
+    };
+    let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
+    let context = EvaluationContext {
+        root: &root.path,
+        dispositions: &dispositions,
+        vendor_index: &only_base_vendor,
+        scenario_catalog: &scenarios,
+        hil_index: &hil,
+        evaluator_clean: true,
+    };
+    let evaluated = inline
+        .into_iter()
+        .map(|document| evaluate_capability(document, &context).unwrap())
+        .map(|capability| (capability.id.clone(), capability))
+        .collect::<BTreeMap<_, _>>();
+    assert!(evaluated["base-phy"].proof_ready());
+    assert!(!evaluated["wifi-channel"].proof_ready());
 }

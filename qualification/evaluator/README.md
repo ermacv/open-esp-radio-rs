@@ -10,8 +10,10 @@ in [qualification](../README.md). Its package name is
 | `validate --manifest PATH` | Reject malformed or inconsistent inputs; a valid incomplete program may pass |
 | `evaluate --manifest PATH` | Derive readiness axes and optionally write `--json-report PATH` |
 | `gate --manifest PATH` | Fail unless every required capability and dependency is ready |
-| `catalog check --manifest PATH` | Resolve selected canonical declarations and run the same fail-closed validation/evaluation |
-| `catalog render --manifest PATH --out DIRECTORY` | Write a deterministic ignored Markdown inventory from the resolved evaluator result |
+| `catalog check --catalog PATH` | Statically validate every catalog declaration without evidence outputs or HIL runs |
+| `catalog check --manifest PATH` | Statically validate every catalog loaded by a program |
+| `catalog render --catalog PATH --out DIRECTORY` | Write deterministic static domain and declaration views |
+| `catalog render --manifest PATH --out DIRECTORY` | Write static views plus a separate evaluator-derived program view |
 
 Schema-4 programs declare implementation, host and async status. Vendor/HIL
 status is derived from independently checked external evidence. Declarations
@@ -26,13 +28,14 @@ interoperability; readers retain separate validation logic.
 Unit tests live beside their private modules. No source-name regex is used to
 turn Rust symbol spelling into an ownership or execution proof.
 
-Capability catalog schema 1 stores schema-4 capability records without a
-second status model. The resolver rejects unsafe catalog paths, symlink path
-components, unsupported schemas, duplicate declarations and unknown selected
-IDs. Structured chip, role, PHY, security, composition, capability level,
-activation and limitation scope is required for each catalog record.
-Catalog-owned dependencies are included transitively before the existing
-exact-set and dependency-cycle checks run.
+Capability catalog schema 2 stores schema-4 qualification declarations and a
+wider source-owned domain inventory. Static validation rejects unsafe/symlink
+paths, unsupported schemas, duplicate declarations, invalid unselected
+records, missing dependencies, cycles, inconsistent axes, invalid source
+contracts and unknown disposition/HIL references. Structured chip, role, PHY,
+security, composition, capability level, activation and limitation scope is
+required for each qualification record. Program resolution includes selected
+catalog dependencies transitively before the existing exact-set check.
 
 HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the current clean repository, and the recorded

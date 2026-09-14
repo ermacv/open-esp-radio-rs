@@ -2,8 +2,8 @@
 
 This reference describes the implemented network/radio boundary. The radio
 owns peer and physical execution state; network adapters own their packet
-storage and stack-facing contract. Source support limits are listed in the
-[ESP32-S31 IEEE 802.11 feature reference](../crates/hardware/esp32s31/driver/ieee80211/FEATURES.md).
+storage and stack-facing contract. The source-inventory entry point and
+generation command are in the [ESP32-S31 IEEE 802.11 feature page](../crates/hardware/esp32s31/driver/ieee80211/FEATURES.md).
 Hardware readiness is decided by [qualification](../qualification/README.md).
 
 For the reason each stack is retained, public selection names and current

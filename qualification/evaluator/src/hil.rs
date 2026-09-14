@@ -187,6 +187,28 @@ const fn one_repetition() -> u8 {
 }
 
 impl HilEvidenceIndex {
+    #[cfg(test)]
+    pub(crate) fn synthetic(entries: &[(&str, usize)]) -> Self {
+        Self {
+            scenarios: entries
+                .iter()
+                .map(|(scenario, repetitions)| {
+                    (
+                        (*scenario).to_owned(),
+                        vec![ScenarioEvidence {
+                            run_id: format!("synthetic-{scenario}"),
+                            repetitions: *repetitions,
+                        }],
+                    )
+                })
+                .collect(),
+            summary: HilEvidenceSummary {
+                qualifying: entries.len(),
+                ..HilEvidenceSummary::default()
+            },
+        }
+    }
+
     pub(crate) fn load(
         root: &Path,
         runs: &Path,

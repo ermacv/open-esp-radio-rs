@@ -1,5 +1,9 @@
-schema = 1
+schema = 2
 id = "esp32s31-wifi-phy"
+
+[validation]
+verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+hil-catalog = "hil/scenarios"
 
 [[capabilities]]
 id = "rf-bb-initialization"
@@ -29,6 +33,7 @@ level = "lower-primitive"
 activation-boundary = "Cold initialization before Wi-Fi MAC activation"
 limitations = "Cold initialization does not establish resume behavior, PLL lock, channel correctness, RF performance, or readiness without the declared vendor and HIL evidence"
 
+
 [[capabilities]]
 id = "channel-selection-switch"
 title = "Channel selection and live switch"
@@ -56,3 +61,1827 @@ composition = "connected-station"
 level = "composed-product"
 activation-boundary = "After the live MAC is stopped and before it is restarted on the selected channel"
 limitations = "Channels 1 through 13 are implemented; channel 14 is rejected, enclosing RXCAL and TXCAL are separate, and channel correctness and RF performance still require the declared evidence"
+
+[[capabilities]]
+id = "cold-registration"
+title = "Cold PHY registration"
+scope = "One cold register_chipv7_phy composition through the typed target port"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["rf-bb-initialization"]
+vendor-roots = [
+  { source = "archive", symbol = "register_chipv7_phy" },
+]
+hil-requirements = [
+  { scenario = "station-reconnect", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "registration-root-contract-blocked-by-bb-init" },
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-full-cold-calibration"
+composition = "production"
+scope = "Wi-Fi cold start executes full PHY calibration without an admitted cache and exports a fresh semantic calibration cache"
+limits = "Cache-backed partial calibration and retained RF wake are separate source contracts; this cold entry does not implement scheduled modem sleep"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/src/cold_start.rs",
+  "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "phy-cache-cold-replay"
+composition = "production"
+scope = "Validate retained semantic calibration, restore it into a cold state owner, regenerate frequency memory, republish gain state and skip the completed full-calibration prefix"
+limits = "Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained wake or broad RF qualification"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
+  "crates/hardware/esp32s31/phy/src/state.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "phy-final-state-cache-handoff"
+composition = "production"
+scope = "Consume the cold-release owner with the platform-derived physical identity, capture the final post-tracking cache and feed both directly into the ordinary validated cold-restart graph"
+limits = "The production supervisor invokes this cold release/restart chain only from its idle control frontier; retained RF wake is a separate lifecycle and broad RF behavior remains outside this source contract"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
+  "crates/hardware/esp32s31/phy/src/registered_radio.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/startup.rs",
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "cold-station-registration"
+level = "composed-product"
+activation-boundary = "One cold register_chipv7_phy composition through the typed target port"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "rx-tx-dma"
+title = "RX and TX DMA ownership"
+scope = "Descriptor lifetime staging publication and finite TX completion for the connected STA path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["interrupt-recovery"]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-rom.toml",
+  "registers/esp32s31/evidence/vendor-libpp.toml",
+]
+hil-requirements = [
+  { scenario = "udp-bidirectional-ht40-rx-delivery-split", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "dma-root-contracts-not-executable" },
+]
+
+# Source-path reference metadata; these entries do not add readiness axes.
+[[capabilities.source-contracts]]
+id = "wifi-sram-dma"
+composition = "production"
+scope = "Wi-Fi MAC RX rings and ordinary TX own descriptors and physical packet storage in internal DMA SRAM"
+limits = "Address admission and storage placement describe the current driver contract, not the full reachability of the silicon; upper network payload storage may use PSRAM after a copy"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/descriptor.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_storage.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-ampdu-descriptor-chain"
+composition = "production"
+scope = "Wi-Fi aggregate TX chains MPDU descriptors and retains stable payload backings across completion and selective retry"
+limits = "Each MPDU uses a contiguous backing range; an A-MPDU descriptor chain does not establish scatter/gather within one MPDU. Descriptors remain in SRAM; pool and burst capacities are software policy"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-psram-tx"
+composition = "diagnostic"
+scope = "The tx-psram-dma-probe feature admits explicitly selected PSRAM TX backings after cache writeback, with descriptors retained in SRAM"
+limits = "AP diagnostic scenarios exercise this path; source composition does not qualify Wi-Fi PSRAM reachability, throughput or retry correctness, and does not extend the production STA DMA scope"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+  "hil/scenarios/ieee80211/access-point/diagnostic-ap-single-client-udp-tx-psram-dma.toml",
+  "hil/scenarios/ieee80211/access-point/diagnostic-ap-single-client-udp-tx-sram-control.toml",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-psram-rx"
+composition = "unimplemented"
+scope = "Direct Wi-Fi MAC receive into PSRAM with a cache-coherent handoff to the CPU"
+limits = "The receive owner admits internal DMA SRAM; Wi-Fi PSRAM RX reachability and its cache invalidation/ownership contract are unknown. This is an absent composition, not a hardware impossibility claim"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
+  "crates/adapters/esp-hal/esp32s31/soc/src/cache/maintenance.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-mpdu-scatter-gather"
+composition = "unimplemented"
+scope = "A single transmitted MPDU assembled by Wi-Fi DMA from independently owned header and payload segments"
+limits = "The current MPDU publication accepts a contiguous range; segment framing, CCMP, FCS and retry ownership are not composed. AXI-GDMA scatter/gather and A-MPDU chaining do not establish this Wi-Fi hardware operation"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "axi-gdma-psram-staging"
+composition = "diagnostic"
+scope = "The AXI-GDMA memory-to-memory probe copies SRAM or PSRAM sources into SRAM, including discontiguous source/destination segment chains"
+limits = "AXI-GDMA is a separate engine from Wi-Fi MAC DMA and is not composed into the production network staging path; unsafe start requires owners to retain buffers and descriptors until hardware completion even if the transfer handle is forgotten"
+source-paths = [
+  "crates/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs",
+  "crates/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/descriptor.rs",
+  "hil/targets/esp32s31/runtime/src/gdma_mem2mem_probe.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "psram-dma-read-cache-writeback"
+composition = "diagnostic"
+scope = "The platform cache adapter writes CPU-dirty PSRAM data back before peripheral reads in the AXI-GDMA and direct Wi-Fi TX diagnostic compositions"
+limits = "Callers own complete affected cache lines and retain storage without CPU mutation through DMA completion; writeback alone proves neither peripheral PSRAM reachability nor a DMA-write-to-CPU-read invalidation contract"
+source-paths = [
+  "crates/adapters/esp-hal/esp32s31/soc/src/cache/maintenance.rs",
+  "crates/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["open","wpa2-personal"]
+composition = "connected-station-dma"
+level = "composed-product"
+activation-boundary = "Descriptor lifetime staging publication and finite TX completion for the connected STA path"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "interrupt-recovery"
+title = "Interrupt acknowledgement and recovery ordering"
+scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-libpp.toml",
+]
+hil-requirements = [
+  { scenario = "station-ap-loss", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "libpp-interrupt-contract-not-executable" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "connected-station-interrupts"
+level = "composed-product"
+activation-boundary = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "authentication-association"
+title = "Open authentication and STA association"
+scope = "Finite selected-peer Open Authentication and Association epochs through accepted response"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["channel-selection-switch", "rx-tx-dma"]
+vendor-anchors = [
+  "crates/protocols/ieee80211/mac/src/station.rs",
+]
+hil-requirements = [
+  { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "net80211-auth-association-contract-not-executable" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["open"]
+composition = "station-association"
+level = "composed-product"
+activation-boundary = "Finite selected-peer Open Authentication and Association epochs through accepted response"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "wpa2"
+title = "WPA2 Personal station handshake"
+scope = "Four-way handshake replay protection key installation response deadline and protected traffic"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["authentication-association"]
+vendor-anchors = [
+  "crates/protocols/ieee80211/security/wpa2/src/supplicant.rs",
+]
+hil-requirements = [
+  { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "supplicant-contract-not-executable" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["wpa2-personal"]
+composition = "station-wpa2"
+level = "composed-product"
+activation-boundary = "Four-way handshake replay protection key installation response deadline and protected traffic"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "async-deadlines"
+title = "Bounded asynchronous and direct hardware waits"
+scope = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-roots = [
+  { source = "rom", symbol = "phy_iq_est_enable" },
+]
+hil-requirements = [
+  { scenario = "station-ap-absence", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "iq-estimator-and-remaining-wait-contracts-not-bound" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "station-runtime"
+level = "composed-product"
+activation-boundary = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "runtime-phy-calibration"
+title = "Connected runtime PHY calibration"
+scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["rx-tx-dma", "interrupt-recovery", "async-deadlines"]
+vendor-roots = [
+  { source = "archive", symbol = "phy_param_track_tot" },
+]
+hil-requirements = [
+  { scenario = "diagnostic-station-phy-rxcal-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-txcal-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-combined-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-rxcal-high-load-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-txcal-high-load-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-combined-high-load-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-calibration-task-poll", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "current-compiled-calibration-comparison-not-release-evidence" },
+  { axis = "hil", id = "repeated-current-clean-rf-quality-cells-missing" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-phy"
+phy = "wifi-2g4"
+security = ["not-applicable"]
+composition = "connected-phy-maintenance"
+level = "lower-primitive"
+activation-boundary = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "runtime-rfpll-tracking"
+title = "Connected runtime RFPLL tracking"
+scope = "Fresh temperature demand selects a finite nonzero RFPLL correction, updates frequency memory, restores the current channel and resumes the same station epoch"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["runtime-phy-calibration", "channel-selection-switch"]
+vendor-roots = [
+  { source = "archive", symbol = "phy_param_track_tot" },
+]
+hil-requirements = [
+  { scenario = "diagnostic-station-phy-rfpll-observed", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-rfpll-thermal-observed", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "current-compiled-rfpll-parent-comparison-not-release-evidence" },
+  { axis = "hil", id = "opposite-thermal-correction-and-radiated-rf-quality-missing" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-phy"
+phy = "wifi-2g4"
+security = ["not-applicable"]
+composition = "connected-rfpll-maintenance"
+level = "lower-primitive"
+activation-boundary = "Fresh temperature demand selects a finite nonzero RFPLL correction, updates frequency memory, restores the current channel and resumes the same station epoch"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "radio-cold-start"
+title = "Always-awake radio cold start"
+scope = "Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "registers/esp32s31/model/peripherals/wifi-mac-rtc-timer-update.toml",
+  "crates/hardware/esp32s31/hal/src/lib.rs",
+]
+hil-requirements = [
+  { scenario = "boot-smoke", minimum-repetitions = 1 },
+]
+async-not-applicable = "no-asynchronous-runtime-boundary"
+gaps = [
+  { axis = "vendor", id = "cold-start-root-contract-incomplete" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "radio-cold-start"
+level = "composed-product"
+activation-boundary = "Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "radio-cold-restart"
+title = "Final-client RF close and cached cold restart"
+scope = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["cold-registration", "radio-cold-start", "timeout-error-recovery"]
+vendor-roots = [
+  { source = "archive", symbol = "register_chipv7_phy" },
+]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
+]
+hil-requirements = [
+  { scenario = "wifi-radio-restart", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "combined-close-cache-replay-restart-not-release-evidence" },
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "radio-cold-restart"
+level = "composed-product"
+activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "radio-retained-wake"
+title = "Retained RF close and wake"
+scope = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["radio-cold-start", "timeout-error-recovery"]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
+]
+hil-requirements = [
+  { scenario = "wifi-radio-retained-cycle", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "vendor", id = "retained-close-wake-parent-production-trace-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-retained-rf-cycle"
+composition = "production"
+scope = "Quiesce the idle Wi-Fi frontier, release the final PHY client, execute RF close and wake to terminal completion inside the owner actor, reacquire Wi-Fi and reconstruct stopped runtime ownership"
+limits = "This is an explicitly requested immediate idle cycle; it does not implement timed modem sleep, connected station power save, Bluetooth or IEEE 802.15.4 resume, and it has no radiated-RF qualification claim"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/registered_radio.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
+]
+
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "radio-retained-wake"
+level = "composed-product"
+activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "timeout-error-recovery"
+title = "Finite failure and owner disposition"
+scope = "Typed cleanup returns the reusable owner only after proven quiescence; otherwise a terminal fault retains the exact hardware frontier"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["rx-tx-dma", "radio-cold-start"]
+vendor-anchors = [
+  "registers/esp32s31/evidence/vendor-libpp.toml",
+]
+hil-requirements = [
+  { scenario = "station-ap-loss", minimum-repetitions = 1 },
+  { scenario = "station-ap-absence", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "failure-cleanup-contracts-incomplete" },
+  { axis = "hil", id = "faulted-quiescence-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "station-error-recovery"
+level = "composed-product"
+activation-boundary = "Typed cleanup returns the reusable owner only after proven quiescence; otherwise a terminal fault retains the exact hardware frontier"
+limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[sections]]
+id = "wifi-overview"
+domain = "wifi"
+title = "Wi-Fi inventory contract"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis document describes the source-owned production boundary. It is not a\ncopy of the chip data sheet and it is not a hardware-qualification claim.\nRegister setters, frame parsers, diagnostics, and host-only state machines do\nnot establish an implemented feature unless the production owner graph carries the operation to, or from, the physical MAC boundary.\n\nImplementation status applies only to the exact feature named by each row.\n`IMPLEMENTED` is a source-composition claim, not a hardware test result.\nA software substitute, a cold register default, or a parser for one input does\nnot raise the status of the hardware/protocol feature itself. Role, security,\nchannel, and PHY scopes are explicit and are not inherited between rows.\n\nThe status terms are:\n\n- **IMPLEMENTED**: a bounded production path owns the complete operation for the\n  scope stated in that row;\n- **PARTIAL**: a source subset exists, but the named feature lacks a complete\n  production owner or covers only the stated role/security/PHY subset;\n- **FAIL-CLOSED**: a typed production path intentionally stops before\n  activation or publication because required evidence is missing;\n- **ABSENT**: there is no production protocol owner for the operation.\n\nThe [qualification specification](../../../../../qualification/targets/esp32s31/wifi-sta.toml)\ncontrols readiness and required hardware evidence independently.\nIts `rx-tx-dma` capability also carries the machine-readable\n[source contracts](../../../../../qualification/README.md#source-contracts) for\nSRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache handoff. Those\nentries distinguish production, diagnostic and unimplemented compositions.\n\nSource ownership follows the [chip STA composition](sta/README.md),\n[AP engine](ap/src/engine.rs), [MAC TX](mac/src/tx.rs) and\n[MAC RX](mac/src/rx.rs). [Local STA](sta/src/profile.rs) and\n[AP](ap/src/profile.rs) profiles select advertisements. Portable codecs and\nrole policy remain in [`crates/protocols/ieee80211`](../../../../protocols/ieee80211/README.md);\nconcrete execution belongs to the [Embassy runtime](../../../../runtime/README.md).\n\nThe hardware scope follows the [ESP32-S31 datasheet v0.5, section 4.3.2](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf).\nThe [S31 ESP-IDF Wi-Fi API](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/network/esp_wifi.html)\nalso describes vendor protocol/API surfaces such as NAN/USD, CSI and LR;\nthese are inventory inputs, not evidence of open-driver support. Hardware\ncrypto engines and software authentication protocols are separate boundaries.\nHE40 and HE SoftAP are outside the documented silicon scope: HE is 20 MHz-only\nnon-AP. Their absence is not an unfinished supported hardware mode."
+source-paths = ["crates/hardware/esp32s31/driver/FEATURES.md","crates/hardware/esp32s31/driver/ieee80211/ap/src/engine.rs","crates/hardware/esp32s31/driver/ieee80211/ap/src/profile.rs","crates/hardware/esp32s31/driver/ieee80211/mac/src/rx.rs","crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs","crates/hardware/esp32s31/driver/ieee80211/sta/README.md","crates/hardware/esp32s31/driver/ieee80211/sta/src/profile.rs","crates/protocols/ieee80211/README.md","crates/runtime/README.md","qualification/README.md","qualification/targets/esp32s31/wifi-sta.toml"]
+
+[[sections]]
+id = "wifi-qualification-scope"
+domain = "wifi"
+title = "Qualification scope"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = "The [STA program](../../../../../qualification/targets/esp32s31/wifi-sta.toml)\nqualifies the connected STA composition, not every AP, ESP-NOW or silicon row\nin this inventory. Its `channel-selection-switch` scope and shared\n`rf-bb-initialization` dependency are owned by the\n[canonical Wi-Fi/PHY declarations](../../../../../qualification/catalog/esp32s31/wifi-phy.toml);\nthe program selects them by ID and the qualification evaluator resolves the\ndependency. Its `cold-registration` source contracts distinguish full\ncold calibration from rejected cache-backed hardware replay. `rx-tx-dma`\nseparates production SRAM operation from diagnostic PSRAM paths and absent\ncompositions. An implementation-complete root still needs its vendor/HIL and\nother required axes; those evidence gaps do not negate its source coverage.\nFor identical scopes, implementation claims must follow the\n[inventory agreement contract](../../../../../docs/verification-and-qualification.md#agreement-with-feature-inventories).\nThe full resolved program view is generated under ignored output with\n`cargo qualification catalog render --manifest qualification/targets/esp32s31/wifi-sta.toml --out target/qualification/catalog/wifi-sta`."
+source-paths = ["docs/verification-and-qualification.md","qualification/catalog/esp32s31/wifi-phy.toml","qualification/targets/esp32s31/wifi-sta.toml"]
+
+[[sections]]
+id = "wifi-interfaces-and-operating-modes"
+domain = "wifi"
+title = "Interfaces and operating modes"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-legacy-and-ht-mac-behavior"
+domain = "wifi"
+title = "Legacy and HT MAC behavior"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-security"
+domain = "wifi"
+title = "Security"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving"
+domain = "wifi"
+title = "TSF, beacon monitoring, and power saving"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-802-11ax-he"
+domain = "wifi"
+title = "802.11ax / HE"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+domain = "wifi"
+title = "Frequency, TX power, antenna, FTM, and ESP-NOW"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "wifi-physical-publication-preconditions"
+domain = "wifi"
+title = "Physical publication preconditions"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = "The following contracts are absent or unverified at their production boundary.\nEach corresponding path rejects activation or keeps its capability bit clear:\n\n1. MCS32 and Espressif LR descriptor, PLCP, queue, power and retry images, plus\n   an affine LR gate epoch through completion and RX normalization;\n2. RTS/CTS duration, basic-rate, power, retry and completion ownership after\n   the typed protection-policy frontier;\n3. station WDEVPWR compare/cause binding plus RF/PHY/BB/clock sleep and exact\n   wake/rollback ordering;\n4. HE-TB RU/GI/LTF/MCS/DATA_LENGTH vector and final doorbell publication;\n5. beamforming feedback memory/formatter/publication and FTM timestamp paths;\n6. channel-14 RF/MIC/regulatory setup.\n\nProtocol preparation cannot grant sequence, PN, replay, DMA or capability\npublication when the corresponding physical transaction is unproven."
+source-paths = []
+
+[[sections]]
+id = "phy-overview"
+domain = "phy"
+title = "Shared PHY inventory contract"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = "See the [whole-radio capability map](../driver/FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis document covers RF, analog, calibration and shared-PHY ownership below\nprotocol MAC/LL. Protocol modulation/rate support belongs to the\n[Wi-Fi](../driver/ieee80211/FEATURES.md), [Bluetooth](../driver/bluetooth/FEATURES.md) and\n[IEEE 802.15.4](../driver/ieee802154/FEATURES.md) inventories. CSI capture, CTE IQ\nsample delivery and protocol antenna-selection policy remain there.\n[Coexistence](../driver/coex/FEATURES.md) owns shared-RF arbitration coverage.\n\n`IMPLEMENTED` means the exact PHY primitive has a complete source-owned\nimplementation for the stated scope. It does not imply that every protocol\ncomposes that primitive or that RF performance has been qualified.\n\nStatus definitions:\n\n- `IMPLEMENTED`: The named bounded algorithm/transition and its stated execution boundary are source-owned.\n- `PARTIAL`: A subset or lower mechanism exists without the complete named lifecycle/composition.\n- `FAIL-CLOSED`: A typed boundary deliberately prevents the stated activation or reuse.\n- `ABSENT`: No complete source owner implements the named operation.\n\nPrimitive rows describe the retained S31 calibration graphs and supported\ninputs, not arbitrary RF configurations. Most graphs use explicit actions,\nidentity-bound completions and finite deadlines. The\n[target port](src/target_port.rs) and [target executor](src/target_executor.rs)\ncomplete MMIO, analog-I2C, PBus, measurement and delay edges; a pure transition\ncompletion is not an observation of RF quality or even proof of PLL lock."
+source-paths = ["crates/hardware/esp32s31/driver/FEATURES.md","crates/hardware/esp32s31/driver/bluetooth/FEATURES.md","crates/hardware/esp32s31/driver/coex/FEATURES.md","crates/hardware/esp32s31/driver/ieee80211/FEATURES.md","crates/hardware/esp32s31/driver/ieee802154/FEATURES.md","crates/hardware/esp32s31/phy/src/target_executor.rs","crates/hardware/esp32s31/phy/src/target_port.rs"]
+
+[[sections]]
+id = "phy-rf-and-analog-primitives"
+domain = "phy"
+title = "RF and analog primitives"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "phy-rx-and-tx-calibration-primitives"
+domain = "phy"
+title = "RX and TX calibration primitives"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "phy-calibration-state-and-tracking"
+domain = "phy"
+title = "Calibration state and tracking"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "phy-protocol-consumer-composition"
+domain = "phy"
+title = "Protocol consumer composition"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[registered shared radio](src/registered_radio.rs),\n[registered Bluetooth](src/registered_bluetooth.rs) and\n[registered IEEE 802.15.4](src/registered_ieee802154.rs).\nThe IEEE timing-ready state explicitly excludes full RF readiness, shared PLL\nrefcount ownership, IRQ routing, DMA ownership and operational MAC service."
+source-paths = ["crates/hardware/esp32s31/driver/bluetooth/src/phy.rs","crates/hardware/esp32s31/driver/ieee80211/src/cold_start.rs","crates/hardware/esp32s31/phy/src/registered_bluetooth.rs","crates/hardware/esp32s31/phy/src/registered_ieee802154.rs","crates/hardware/esp32s31/phy/src/registered_radio.rs"]
+
+[[sections]]
+id = "phy-lifecycle-boundaries"
+domain = "phy"
+title = "Lifecycle boundaries"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = ""
+source-paths = []
+
+[[sections]]
+id = "phy-qualification-boundary"
+domain = "phy"
+title = "Qualification boundary"
+source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
+overview = "There is no standalone PHY qualification target. Current readiness requirements\nare carried by [Wi-Fi](../../../../qualification/targets/esp32s31/wifi-sta.toml),\n[Bluetooth](../../../../qualification/targets/esp32s31/bluetooth-le.toml) and\n[IEEE 802.15.4](../../../../qualification/targets/esp32s31/ieee802154.toml).\nThis inventory does not promote their proof states.\nThe Wi-Fi program resolves its migrated channel-switch scope and RF/baseband\ndependency from the\n[canonical Wi-Fi/PHY catalog](../../../../qualification/catalog/esp32s31/wifi-phy.toml);\nthe catalog does not create a standalone PHY readiness target.\n\nPLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,\nand calibration stability across sleep/wake require their own hardware evidence.\nA completed source transition or protocol cold start cannot substitute for those\nmeasurements. Cache-backed cold partial calibration and RF-close-to-cold-registration\nownership are implemented and composed by the Wi-Fi supervisor. The direct\nretained wake path is also composed for an immediate idle Wi-Fi cycle, with a\ndedicated repeated-cycle HIL scenario. Neither lifecycle supplies scheduled\nmodem sleep. Repeated connection and data-path HIL cover the Wi-Fi cold-restart\nboundary; broad RF qualification remains a separate readiness requirement."
+source-paths = ["qualification/catalog/esp32s31/wifi-phy.toml","qualification/targets/esp32s31/bluetooth-le.toml","qualification/targets/esp32s31/ieee802154.toml","qualification/targets/esp32s31/wifi-sta.toml"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-four-virtual-wi-fi-interfaces"
+section = "wifi-interfaces-and-operating-modes"
+title = "Four virtual Wi-Fi interfaces"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The service owns exactly one STA VIF and one AP VIF on one channel context. Hardware address-match slots do not create protocol VIFs. ESP-NOW borrows the STA VIF and monitor mode is a tap, not another VIF."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-infrastructure-station"
+section = "wifi-interfaces-and-operating-modes"
+title = "Infrastructure station"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Scan, authentication, association, Open/WPA2 data, reconnect, HT20/HT40 and HE20 station paths are present."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-softap"
+section = "wifi-interfaces-and-operating-modes"
+title = "SoftAP"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Open and WPA2-Personal AP service, association table, per-peer keys, beaconing, data, power-save buffering and teardown are present. The AP path is legacy/HT, not HE."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-simultaneous-sta-softap"
+section = "wifi-interfaces-and-operating-modes"
+title = "Simultaneous STA + SoftAP"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "One physical RX/TX/IRQ owner serves one STA and one AP on the same channel. A mismatch is rejected. During concurrent start, STA discovery is constrained to the AP channel; dynamic SoftAP channel following during a general STA scan is not implemented."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-promiscuous-mode"
+section = "wifi-interfaces-and-operating-modes"
+title = "Promiscuous mode"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Standalone normalized monitor capture is implemented. Raw-DMA capture, protocol-validated capture, and monitor operation concurrent with STA/AP are not published capabilities."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-nan-wi-fi-aware"
+section = "wifi-interfaces-and-operating-modes"
+title = "NAN / Wi-Fi Aware"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime."
+source-paths = ["registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-nan-unsynchronized-service-discovery-usd"
+section = "wifi-interfaces-and-operating-modes"
+title = "NAN unsynchronized service discovery (USD)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No cluster-independent Publish/Subscribe, discovery-channel scheduling or service lifecycle is composed."
+source-paths = []
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-wi-fi-csi-capture"
+section = "wifi-interfaces-and-operating-modes"
+title = "Wi-Fi CSI capture"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "[MAC RX](mac/src/rx.rs) understands CSI-dependent descriptor geometry, and reviewed register fields exist, but production STA, scan, AP and monitor RX use `csi_config: 0`. There is no capture configuration, sample-buffer lifecycle or application delivery owner; recovered metadata is not a CSI mode."
+source-paths = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/rx.rs"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-wi-fi-bluetooth-classic-le-ieee-802-15-4-coexistence"
+section = "wifi-interfaces-and-operating-modes"
+title = "Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs), PAC timer controls and [Embassy mailbox](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. The Wi-Fi runtime does not compose a complete shared-radio request/grant/release lifecycle with the other radios; end-to-end coexistence is not a published capability."
+source-paths = ["crates/adapters/embassy/esp32s31/coex/src/lib.rs","crates/hardware/esp32s31/driver/coex/src/lib.rs"]
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "RTS protection"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "ERP Use Protection, all HT protection modes and finite HE TXOP-duration RTS thresholds are retained as typed BSS/peer policy. The initial rate and every retry rate are preflighted before sequence, PN or DMA publication; a protection-required transaction returns `PhysicalPublicationUnverified`. There is no complete RTS formatter, queue image or completion owner, and no on-air capability is claimed."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-cts-to-self-protection"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "CTS-to-Self protection"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Typed TX-protection policy identifies group exchanges that require CTS-to-Self and rejects them before sequence, PN or DMA publication. There is no CTS frame, queue-publication or completion owner; an `SW_CTS` register name or cold queue bit is not a physical implementation."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-immediate-block-ack"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "Immediate Block ACK"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Negotiated immediate BlockAck, hardware bitmap capture/matching, software RX reorder, retained TX MPDUs and selective retry are implemented for the bounded WPA2/QoS STA/AP aggregate paths. STA TX owns TIDs 0/7/5, AP TX owns TID 0, and Open links do not start a BlockAck agreement; other security/TID combinations are not claimed."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-fragmentation-and-defragmentation"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "Fragmentation and defragmentation"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Bounded STA/AP RX reassembly is source-owned for Open and individually addressed WPA2-Personal/CCMP Data or QoS Data. Each role owns two fixed contexts of 1,508 retained MSDU bytes: an 8-byte LLC/SNAP header plus at most one 1,500-byte Ethernet payload. CCMP admission requires hardware authentication, a separate PN per fragment, exact Retry fingerprints and final replay commit before the sole Ethernet publication. TX, group/four-address and protected A-MSDU fragmentation remain absent; no on-air qualification is implied."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-tx-rx-a-mpdu"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "TX/RX A-MPDU"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Bounded WPA2-Personal/CCMP A-MPDU is source-owned for HT/HE STA and HT AP: negotiated per-TID BA windows, RX reorder, retained TX MPDUs and selective retry are connected. Open connected TX is deliberately non-QoS and an Open AP has no BlockAck owner. Other security/TID combinations and HE trigger-based aggregation are not claimed."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-tx-rx-a-msdu"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "TX/RX A-MSDU"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "STA/AP RX decapsulation is present for admitted Open and authenticated WPA2 data. TX scopes differ: STA coalesces one exact two-frame WPA2 protected pair; AP coalesces one exact Open HT/QoS pair, or a WPA2 TID-0 pair only when the operational BA agreement echoed A-MSDU support. Each TX path is bounded to 3,839 bytes and checks peer/order, descriptor+MIC+FCS capacity and fallback before sequence/PN publication. General multi-lease scheduling and the larger class are absent."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-txop"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "TXOP"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "This is a STA-only production subset: negotiated WMM TXOP values reach per-AC station policy and bound the HE A-MPDU APEP ceiling; nonzero HT TXOP duration is rejected. AP TX has no negotiated TXOP owner, and neither role has a general multi-PPDU TXOP scheduler."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-wmm"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "WMM"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "STA owns WMM parsing, DSCP/VLAN classification, ACM downgrade, four per-AC EDCA queues, TID selection and BA routing. AP advertises a fixed WMM parameter set and its bounded QoS/A-MPDU path uses BE/TID-0, but it has no per-peer parameter negotiation, network classification or four-AC scheduler. U-APSD is disabled in both roles."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-20-40-mhz-802-11n-mcs0-mcs7"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "20/40 MHz 802.11n, MCS0-MCS7"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "HT20/HT40 one-stream rate selection, SGI/LGI formatters, retry schedules and the 150-Mbit/s HT40 MCS7 SGI formatter path are present."
+source-paths = []
+
+[[items]]
+id = "wifi-legacy-and-ht-mac-behavior-ht-duplicate-mcs32"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "HT Duplicate MCS32"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Peer capability and HT40/MCS32 RX normalization are retained, while local capability advertisement remains clear. Physical TX needs an exact descriptor/PLCP/HT-SIG/length/protection/power/retry oracle and separate on-air qualification."
+source-paths = []
+
+[[items]]
+id = "wifi-security-open-bss"
+section = "wifi-security"
+title = "Open BSS"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "STA and AP plaintext management/data paths are present."
+source-paths = []
+
+[[items]]
+id = "wifi-security-wpa2-personal-ccmp"
+section = "wifi-security"
+title = "WPA2-Personal / CCMP"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "STA supplicant and AP authenticator paths own the four-way handshake, strict RSN selection, pairwise/group keys, CCMP PN exhaustion, RX replay admission and key teardown. STA GTK rekey is atomic; AP GTK rotation has no complete Group-Key Handshake/acknowledgement owner."
+source-paths = []
+
+[[items]]
+id = "wifi-security-wpa2-enterprise"
+section = "wifi-security"
+title = "WPA2-Enterprise"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner."
+source-paths = []
+
+[[items]]
+id = "wifi-security-wpa3-personal-wpa3-enterprise"
+section = "wifi-security"
+title = "WPA3-Personal / WPA3-Enterprise"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "SAE, transition policy, enterprise authentication and their lifecycle are not present."
+source-paths = []
+
+[[items]]
+id = "wifi-security-opportunistic-wireless-encryption-owe"
+section = "wifi-security"
+title = "Opportunistic Wireless Encryption (OWE)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No OWE key exchange, association selection or key lifecycle exists. Open BSS support does not provide Enhanced Open."
+source-paths = []
+
+[[items]]
+id = "wifi-security-bip-protected-management-frames"
+section = "wifi-security"
+title = "BIP / protected management frames"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "PMF negotiation, IGTK/BIGTK ownership, management replay and BIP MIC verification/publication are not present."
+source-paths = []
+
+[[items]]
+id = "wifi-security-gcmp-tkip-wapi-and-wep"
+section = "wifi-security"
+title = "GCMP, TKIP, WAPI and WEP"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "The public security domain intentionally exposes only Open and WPA2-Personal/CCMP. No other cipher is advertised or selected by fallback."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-hardware-tsf"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Hardware TSF"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Coherent station TSF reads, AP TSF lifecycle and beacon timestamps are owned."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-automatic-hardware-beacon-monitoring"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Automatic hardware beacon monitoring"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Software beacon-loss monitoring, active probe recovery and TIM/DTIM parsing are implemented, but they are not the automatic hardware feature. A one-shot epoch binds BSSID+AID to STA-policy readback and validates the four-bit miss limit, then stops before MMIO; `automatic_monitor_active()` remains false because raw timeout units, automatic-filter lifecycle and the exact WDEVPWR cause are unproven."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-legacy-station-power-save"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Legacy station power save"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "PM=1/PM=0 transitions are ACK-gated; TIM/DTIM/listen interval, PS-Poll and doze permits are source-owned. The S31 boundary probes and rolls back only reviewed wake-prefix fields and does not claim RF/PHY/BB/clock sleep. Passive connected ESP-NOW RX is rejected when this policy is enabled, and concurrent STA+AP remains always awake."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Full modem sleep"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Legacy station power-save policy does not compose RF/PHY/baseband shutdown, clock gating, retention and restoration into a hardware sleep/wake lifecycle."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-disconnected-state-wi-fi-sleep"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Disconnected-state Wi-Fi sleep"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No disconnected radio sleep/wake owner composes RF/PHY/baseband and clock transitions. Radio teardown alone does not establish resumable sleep."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-connectionless-power-save"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Connectionless power save"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No hardware wake-window/interval owner is composed for ESP-NOW or other connectionless exchanges. Standalone ESP-NOW RX remains awake; FTM itself remains fail-closed."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-twt-requester"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "TWT requester"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Portable individual-TWT parsing, bounded requester state, deadlines, teardown and TSF wake planning exist. Explicit agreements are not activated: a local explicit proposal reports the missing TWT Information action/update semantics, and a peer-accepted explicit agreement is queued for immediate teardown rather than installed. S31 implicit agreement admit/install/remove also stops before schedule activation because coexistence mapping, wake compare, retention and restore ordering are missing; the capability bit stays clear."
+source-paths = []
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-intra-ppdu-power-save"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Intra-PPDU power save"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "HE peer setup writes the recovered MAC intra-PPDU and BSS-color-check bits, but no connected owner binds detection to a safe RF/PHY/BB/clock stop/wake transaction. Register setup alone is not a power-saving operation, so no runtime or energy capability is claimed."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-he20-non-ap-1t1r-mcs0-mcs9"
+section = "wifi-802-11ax-he"
+title = "HE20 non-AP, 1T1R, MCS0-MCS9"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Associated STA HE20 SU S-MPDU/A-MPDU, BCC/LDPC, supported GI/LTF combinations and DCM profiles are source-owned. The SoftAP does not advertise or transmit HE."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-he-guard-intervals-0-8-1-6-3-2-microseconds"
+section = "wifi-802-11ax-he"
+title = "HE guard intervals: 0.8 / 1.6 / 3.2 microseconds"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "HE20 SU STA TX/RX owns the supported GI/LTF combinations. This does not establish HE-TB or arbitrary GI/LTF combinations."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-he-dual-carrier-modulation-dcm"
+section = "wifi-802-11ax-he"
+title = "HE dual carrier modulation (DCM)"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The bounded HE20 SU STA DCM profiles are source-owned; DCM is not a claim for every MCS or for trigger-based TX."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-rx-stbc-one-spatial-stream"
+section = "wifi-802-11ax-he"
+title = "RX STBC, one spatial stream"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The HE20 SU STA profile retains RX STBC and [RX normalization](mac/src/rx.rs) distinguishes two space-time streams from one spatial stream. Reviewed [HIL provenance](../../../../../registers/esp32s31/evidence/hil-open.toml) includes `HIL_OPEN_HE20_STBC_NSTS_2026_07_30` observations on the open RX path. This bounded RX claim does not imply TX STBC, two spatial streams or qualification of every STBC mode."
+source-paths = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/rx.rs","registers/esp32s31/evidence/hil-open.toml"]
+
+[[items]]
+id = "wifi-802-11ax-he-multiple-bssids"
+section = "wifi-802-11ax-he"
+title = "Multiple BSSIDs"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "The capability bit is clear, association programs BSSID index zero, and there is no nontransmitted-profile scan/association owner."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-triggered-response-scheduling"
+section = "wifi-802-11ax-he"
+title = "Triggered response scheduling"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Basic Trigger parsing, association/AID validation, bounded response deadlines and queue/MPLEN/BSR preparation exist. Production configuration disables the path, and the final HE-TB PHY vector/doorbell transition is explicitly unverified."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-mu-rts-mu-bar-multi-sta-ba"
+section = "wifi-802-11ax-he"
+title = "MU-RTS, MU-BAR, Multi-STA BA"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Trigger-type parsing alone is present. There is no complete scheduling, response, bitmap, timeout or retry owner for these exchanges."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-two-navs"
+section = "wifi-802-11ax-he"
+title = "Two NAVs"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No independent intra-BSS/basic NAV state and update lifecycle is exposed by production code."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-bss-coloring"
+section = "wifi-802-11ax-he"
+title = "BSS coloring"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The associated peer's effective color is parsed, programmed and placed in HE SU TX vectors. Collision detection, color-change announcements and dynamic recoloring are absent."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-spatial-reuse"
+section = "wifi-802-11ax-he"
+title = "Spatial reuse"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "RX HE metadata can expose spatial-reuse fields, but TX uses zero and there is no OBSS-PD, SRP admission, CCA-threshold or collision-policy owner."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-uplink-power-headroom"
+section = "wifi-802-11ax-he"
+title = "Uplink power headroom"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Wire decoding and the vendor-shaped UL-MU power capability element exist. There is no connected runtime producer/consumer that closes the UPH exchange."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-operating-mode-control"
+section = "wifi-802-11ax-he"
+title = "Operating Mode Control"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Exact PAC fields and optional software HE-Control queue images exist, but no connected OMC negotiation/publication lifecycle invokes them."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-buffer-status-report"
+section = "wifi-802-11ax-he"
+title = "Buffer Status Report"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "HE BSR initialization, queue byte accounting and hardware-generated control-field geometry are recovered. Ordinary production frames do not request the hardware BSR path, and trigger-based publication remains fail-closed."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-txop-duration-rts-threshold"
+section = "wifi-802-11ax-he"
+title = "TXOP-duration RTS threshold"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "A finite peer threshold is parsed and retained in the STA TX-protection policy. A missing HE duration or an exchange requiring RTS is rejected before sequence, PN or DMA publication rather than treated as disabled or as a generic byte threshold; the protected physical image remains unproven."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-uora"
+section = "wifi-802-11ax-he"
+title = "UORA"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Cold initialization writes the recovered 7/31 contention-window defaults, and portable Trigger parsing can recognize random-access RU fields. Neither is a UORA owner: there is no OBO/backoff, RU eligibility, attempt/result state machine or UL-OFDMA random-access publication path."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-uplink-ofdma"
+section = "wifi-802-11ax-he"
+title = "Uplink OFDMA"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "The Trigger/RU schedule can reach the prepared-queue frontier, but the HE-TB PHY publication oracle is missing."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-downlink-ofdma-mu-mimo"
+section = "wifi-802-11ax-he"
+title = "Downlink OFDMA / MU-MIMO"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "HE-MU common metadata and bounded HE20 SIG-B user decoding exist. Production HE20 payload reception for these multi-user modes is not qualified; bounded SIG-B decoding alone is not a complete receive-service claim. This does not require HE40 support."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-su-mu-beamformee"
+section = "wifi-802-11ax-he"
+title = "SU/MU beamformee"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "NDPA detection, association binding and report-rate hardware setup exist. Feedback formatting/publication is unverified and all dependent capability bits are cleared."
+source-paths = []
+
+[[items]]
+id = "wifi-802-11ax-he-channel-quality-indication-cqi-feedback"
+section = "wifi-802-11ax-he"
+title = "Channel quality indication (CQI) feedback"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No triggered or non-triggered report producer exists. The [STA HE profile](sta/src/profile.rs) clears both CQI advertisements independently of beamformee feedback; RX metadata does not implement a feedback exchange."
+source-paths = ["crates/hardware/esp32s31/driver/ieee80211/sta/src/profile.rs"]
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-2412-2484-mhz"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "2412-2484 MHz"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Channels 1-13 are implemented. Channel 14 / 2484 MHz is representable in portable types but is rejected by the S31 PHY while the required channel-14 MIC/RF/regulatory behavior is unproven."
+source-paths = []
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-adjustable-tx-power-ceiling"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "Adjustable TX power ceiling"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "[Cold-start configuration](src/cold_start.rs) carries a quarter-dBm ceiling into the [PHY per-rate power profile](../../phy/src/tx/power.rs), bounded by the init-data maximum before MAC power-code publication. This is a configured ceiling, not a live power-control API or proof of absolute radiated power/vendor gain-table equivalence."
+source-paths = ["crates/hardware/esp32s31/driver/ieee80211/src/cold_start.rs","crates/hardware/esp32s31/phy/src/tx/power.rs"]
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-antenna-diversity"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "Antenna diversity"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[PAC/HAL](../../hal/src/phy/agc.rs) expose a reviewed enable setter and cold antenna initialization. No public RF/GPIO antenna-selection owner, runtime policy or board contract composes them; the setter itself does not reject activation, so this is not a typed fail-closed mode. No HIL claim is made."
+source-paths = ["crates/hardware/esp32s31/hal/src/phy/agc.rs"]
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-802-11mc-ftm"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "802.11mc FTM"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Allocation-free Public Action codecs and a bounded single-burst ASAP requester own peer/token identity, retries, deadlines and raw four-timestamp exchanges. The S31 frontier validates a prepared request and can reversibly probe the recovered PHY-enable leaf, then rejects before connected Action publication. RX/TX antenna-point timestamps, clock and calibration contracts, capability advertisement, distance results and on-air operation remain unclaimed."
+source-paths = []
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-v1-v2-plaintext"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "ESP-NOW v1/v2 plaintext"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Bounded peer/channel ownership, v1/v2 encode/decode, standard DSSS1M, OFDM and HT20 MCS0-MCS7 LGI/SGI TX/RX paths and retry publication are present on the STA VIF. Standalone RX is always awake; connected passive RX is admitted only when legacy station power save is disabled because it has no independent wake owner."
+source-paths = []
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-encrypted-peers"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "ESP-NOW encrypted peers"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Portable LMK/peer ownership exists, but S31 key-selector and Action-frame AAD/CCMP contract are unproven, so encrypted publication is rejected."
+source-paths = []
+
+[[items]]
+id = "wifi-frequency-tx-power-antenna-ftm-and-esp-now-espressif-long-range-wi-fi-phy"
+section = "wifi-frequency-tx-power-antenna-ftm-and-esp-now"
+title = "Espressif Long Range Wi-Fi PHY"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Exact low-rate identities, retry records and a reversible low-rate-gate probe are retained. Physical TX requires an affine gate epoch spanning enable, doorbell, completion/retries and exact restore; RX needs matching gate ownership and descriptor-rate normalization. Those contracts plus the LR PLCP/queue vector are missing, so LR never publishes or masquerades as a standard observed PHY. The recovered frontier is exercised through ESP-NOW; STA/AP have no LR association/service integration. LR is a separate proprietary PHY, not an ESP-NOW-only feature."
+source-paths = []
+
+[[items]]
+id = "phy-rf-and-analog-primitives-common-cold-registration"
+section = "phy-rf-and-analog-primitives"
+title = "Common cold registration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Registration](src/calibration/registration.rs) and target runners execute the retained cold graph and issue target-bound registered state. Hardware lifetime after registration is separate."
+source-paths = ["crates/hardware/esp32s31/phy/src/calibration/registration.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-rf-analog-initialization-prefix"
+section = "phy-rf-and-analog-primitives"
+title = "RF/analog initialization prefix"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Cold graph](src/calibration/cold.rs) and [analog I2C graph](src/analog/i2c.rs) own ordered initialization with target completion. This is cold initialization, not resume from modem sleep."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/i2c.rs","crates/hardware/esp32s31/phy/src/calibration/cold.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-analog-i2c-access"
+section = "phy-rf-and-analog-primitives"
+title = "Analog I2C access"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Read/write, masked updates, command completion and RC-calibration operations are explicit bounded transitions; no vendor ABI callback is required."
+source-paths = []
+
+[[items]]
+id = "phy-rf-and-analog-primitives-pbus-access-and-initialization"
+section = "phy-rf-and-analog-primitives"
+title = "PBus access and initialization"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[PBus](src/analog/pbus.rs) owns command order, readiness and work-mode transitions. [Memory publication](src/analog/pbus/memory.rs) has a separate finite owner."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/pbus.rs","crates/hardware/esp32s31/phy/src/analog/pbus/memory.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-rfpll-frequency-programming-initialization"
+section = "phy-rf-and-analog-primitives"
+title = "RFPLL frequency programming / initialization"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[RFPLL](src/analog/rfpll.rs) owns frequency/SDM programming, calibration wait and capacitor search. Missed lock is outcome data and failed search has a typed failure; success of the outer call alone is not a lock claim."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/rfpll.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-frequency-table-synthesis-publication"
+section = "phy-rf-and-analog-primitives"
+title = "Frequency-table synthesis/publication"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Frequency initialization](src/analog/frequency.rs) generates and publishes retained records incrementally. It does not keep a vendor-owned runtime table."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/frequency.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-wi-fi-channel-retune"
+section = "phy-rf-and-analog-primitives"
+title = "Wi-Fi channel retune"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[Channel transition](src/channel.rs) and target HAL entry points own the supported Wi-Fi channel domain, temperature-dependent work and bounded frequency-ready observations; MAC restart has a composed variant. TX gain uses the current S31 libphy coefficient profile with an independent additive Wi-Fi adjustment. Concrete channel comparison covers ordered effects and channel/temperature state; enclosing RXCAL/TXCAL and RF qualification remain separate. This is not a generic BT/IEEE channel API."
+source-paths = ["crates/hardware/esp32s31/phy/src/channel.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-crystal-duty-calibration"
+section = "phy-rf-and-analog-primitives"
+title = "Crystal-duty calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Crystal search](src/analog/crystal_duty.rs) composes RFPLL, RX-DC and signal-power operations for the retained cold profile. Preparation, search and restoration failures terminate either frequency pass and propagate through the RF parent into registration cleanup."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/crystal_duty.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-d-code-calibration"
+section = "phy-rf-and-analog-primitives"
+title = "D-code calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[D-code transition](src/analog/dcode.rs) visits four Wi-Fi channels through frequency-table switching, reuses its NRX update, and owns CKGEN updates and eight measured codes. Requires initialized frequency tables; complete RX calibration remains a separate boundary."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/dcode.rs"]
+
+[[items]]
+id = "phy-rf-and-analog-primitives-temperature-read-conversion"
+section = "phy-rf-and-analog-primitives"
+title = "Temperature read/conversion"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Temperature transition](src/analog/temperature.rs) owns sampling and conditional range changes. Invalid codes fail closed; the cold reset-code case is handled explicitly."
+source-paths = ["crates/hardware/esp32s31/phy/src/analog/temperature.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-dc-iq-estimator"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "DC/IQ estimator"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Estimator](src/calibration/estimator.rs) exposes readiness, result extraction and cleanup as caller-completed actions."
+source-paths = ["crates/hardware/esp32s31/phy/src/calibration/estimator.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-rx-dc-offset-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "RX DC-offset calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[RX-DC](src/rx/dc_offset.rs) owns the retained finite calibration loop and nested estimator graph."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/dc_offset.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-rx-gain-table-initialization"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "RX gain table initialization"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[RX gain](src/rx/gain.rs) generates/publishes gain memory from copied calibration outcomes; it does not substitute for RX-DC or RX-IQ calibration."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/gain.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-rx-gain-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "RX gain calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Gain calibration](src/rx/gain_calibration.rs) owns recovered DC/IQ/RFPLL calibration steps with explicit hardware completions."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/gain_calibration.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-rx-iq-calibration-correction-setup"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "RX IQ calibration/correction setup"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[RX IQ](src/rx/iq.rs) owns the retained receive-IQ calibration graph, estimator deadlines and cleanup. It does not claim sensitivity or correction quality for every protocol."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/iq.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-rx-saturation-check"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "RX saturation check"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Saturation transition](src/rx/saturation.rs) owns the bounded PBus/sample sequence. It is not an autonomous lifetime saturation-recovery policy."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/saturation.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-receive-signal-power-measurement"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "Receive signal-power measurement"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Signal power](src/rx/signal_power.rs) owns estimator sequencing and derived power results; absolute RF measurement accuracy is not claimed."
+source-paths = ["crates/hardware/esp32s31/phy/src/rx/signal_power.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-tx-dc-offset-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "TX DC-offset calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[TX-DC](src/tx/dc_offset.rs) owns retained calibration results, comparator operations and restoration for the stated calibration inputs."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/dc_offset.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-tx-iq-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "TX IQ calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[TX IQ](src/tx/iq.rs) composes finite cover/search, SAR, RFPLL, PBus and I2C transitions."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/iq.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-power-detector-reference-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "Power-detector reference calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Detector](src/tx/power_detector.rs) owns reference-code measurements and restoration with bounded readiness sampling."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/power_detector.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-tx-dc-power-detector-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "TX DC power-detector calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[DC detector](src/tx/dc_power_detector.rs) owns the current Wi-Fi/BT root, finite search, initial and per-row PBus setup, bounded SAR observations and retained-register restoration. Compiled vendor comparisons cover DC results and ordered control effects with synthetic measurements; the combined RXCAL/TXCAL comparison also covers their parent integration; RF accuracy remains separate."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/dc_power_detector.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-tx-calibration-measurement-primitives"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "TX calibration measurement primitives"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Shared TX calibration](src/tx/calibration.rs) owns attenuation search, tone/SAR operations and calibration-environment transitions."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/calibration.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-tx-power-control-calibration"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "TX power-control calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Power calibration](src/tx/power.rs) owns the retained calibration/search graph. Complete regulatory or measured radiated-power equivalence is not implied."
+source-paths = ["crates/hardware/esp32s31/phy/src/tx/power.rs"]
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-wi-fi-target-power-profile-ceiling"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "Wi-Fi target-power profile/ceiling"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "The power profile resolves per-rate codes and applies a configured ceiling. Codes are gain-table indices, not measured dBm; this is not the IEEE 802.15.4 calibrated provider."
+source-paths = []
+
+[[items]]
+id = "phy-rx-and-tx-calibration-primitives-bluetooth-calibration-state-table-primitives"
+section = "phy-rx-and-tx-calibration-primitives"
+title = "Bluetooth calibration state/table primitives"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Bluetooth calibration](src/calibration/bluetooth.rs) retains explicitly named gain conversions and calibration/publication operations. It does not establish a Bluetooth LL or connected RF lifecycle."
+source-paths = ["crates/hardware/esp32s31/phy/src/calibration/bluetooth.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-common-wi-fi-bluetooth-calibration-state"
+section = "phy-calibration-state-and-tracking"
+title = "Common / Wi-Fi / Bluetooth calibration state"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[State](src/state.rs) holds semantic calibration/configuration values rather than a vendor parameter-memory image."
+source-paths = ["crates/hardware/esp32s31/phy/src/state.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-calibration-snapshot"
+section = "phy-calibration-state-and-tracking"
+title = "Calibration snapshot"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Typed snapshot carries schema, identity and retained results. Snapshot construction is not hardware restoration."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-calibration-cache-representation-export"
+section = "phy-calibration-state-and-tracking"
+title = "Calibration cache representation/export"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`PhyCalibrationCache` owns a snapshot and validates its schema/identity. Persistence/storage belongs to the caller."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-full-initial-calibration"
+section = "phy-calibration-state-and-tracking"
+title = "Full initial calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Registration without an admitted cache executes full calibration. Output reports the selected path and can return a fresh cache."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-cache-backed-cold-restore-partial-cold-calibration"
+section = "phy-calibration-state-and-tracking"
+title = "Cache-backed cold restore / partial cold calibration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Registration validates schema, chip identity, completion guards and RX table shape before restoring semantic products. The cold RF/baseband graph regenerates frequency memory, republishes RX/TX gain state and repeats the mandatory RXIQ/tail work. Invalid caches select `FullAfterRejectedCache`. Persistent storage, retained-sleep wakeup and broad RF qualification remain separate."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-runtime-parameter-tracking-invocation"
+section = "phy-calibration-state-and-tracking"
+title = "Runtime parameter-tracking invocation"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Parameter graph](src/tracking/parameters.rs), bounded executor and target runners complete selected RFPLL, calibration, power, I2C and temperature children while retaining the client owner. Periodic scheduling is separate."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/parameters.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-current-archive-measured-rfpll-correction"
+section = "phy-calibration-state-and-tracking"
+title = "Current-archive measured RFPLL correction"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Measured correction](src/tracking/rfpll/README.md) owns the thermal gate, bounded search, signed frequency-memory update and typed frequency-control restoration. The outer RFPLL action and read-only inspection use this child; the connected service selects it ahead of other due work and rechecks sample freshness after admission. Compiled comparisons cover child effects and the RFPLL-enabled parent. A bounded HIL scenario covers the first nonzero heating correction and same-epoch traffic restoration; the opposite thermal direction, repeated cycles and radiated RF quality remain unqualified. Exclusive caller admission does not qualify joint coexistence grants."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/rfpll/README.md"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-runtime-calibration-tracking-invocation"
+section = "phy-calibration-state-and-tracking"
+title = "Runtime calibration-tracking invocation"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Calibration tracking](src/tracking/calibration.rs) evaluates RX and shared TX temperature references; Wi-Fi then BT/154 run inside one TX envelope. The parent calls it once after both power branches. Compiled combined-parent comparison covers ordered child effects, thermal decisions and semantic RX/TX publication on channel 13/HT40 with synthetic measurements. The full outer comparison additionally covers power/I2C state and final temperature, including a validation-only RFPLL-enabled profile with signed capacitor corrections. Joint grants, physical RFPLL behavior and elapsed timing remain unqualified. This is not cold-cache replay."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/calibration.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-tx-power-tracking"
+section = "phy-calibration-state-and-tracking"
+title = "TX power tracking"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Power tracking](src/tracking/power.rs) provides the selected parameter-tracking child with target execution."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/power.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-wi-fi-i2c-parameter-tracking"
+section = "phy-calibration-state-and-tracking"
+title = "Wi-Fi I2C parameter tracking"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[I2C tracking](src/tracking/i2c.rs) owns the Wi-Fi-specific child; its existence does not create periodic service."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/i2c.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-temperature-triggered-compensation"
+section = "phy-calibration-state-and-tracking"
+title = "Temperature-triggered compensation"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Tracking uses typed measurements, retained references and threshold decisions for the selected calibration graphs. No arbitrary environmental compensation or RF performance guarantee is implied."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-dated-temperature-observation"
+section = "phy-calibration-state-and-tracking"
+title = "Dated temperature observation"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Runtime sensor completion records acquisition start/end in the runtime clock. Undated replacements invalidate freshness; values remain PHY sensor units."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-independent-wi-fi-maintenance-operations"
+section = "phy-calibration-state-and-tracking"
+title = "Independent Wi-Fi maintenance operations"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Temperature, Wi-Fi power/I2C, common and TX calibration reuse finite children and the complete physical restoration boundary. Unrelated periodic deadlines are preserved."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-connected-observation-driven-service"
+section = "phy-calibration-state-and-tracking"
+title = "Connected observation-driven service"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`RadioConfig` enables a one-second observation cadence by default and permits an explicit alternative or disable. The service waits on a deadline or coalesced observation event. Selected work requires exclusive Wi-Fi admission. Joint-radio grants, live-TX compensation and thermally safe deferral limits remain unqualified."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-read-only-tracking-demand"
+section = "phy-calibration-state-and-tracking"
+title = "Read-only tracking demand"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[Schedule](src/tracking/schedule.rs) reports inactive, absolute due time or outstanding demand without advancing source timestamps. [Tracking contracts](src/tracking/README.md) separate demand, execution and physical admission. A demand is not an RF grant."
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/README.md","crates/hardware/esp32s31/phy/src/tracking/schedule.rs"]
+
+[[items]]
+id = "phy-calibration-state-and-tracking-registered-policy-inspection"
+section = "phy-calibration-state-and-tracking"
+title = "Registered-policy inspection"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`RegisteredPhyRadio::inspect_tracking`, `RegisteredWifiPhy::inspect_tracking` and `RegisteredBluetoothPhyClient::inspect_tracking` borrow the existing owner and reuse source predicates. Evaluation deadline and retained thermal conditions are separate; temperature age, independent job admission and RF safety are not inferred."
+source-paths = []
+
+[[items]]
+id = "phy-calibration-state-and-tracking-periodic-tracking-service"
+section = "phy-calibration-state-and-tracking"
+title = "Periodic tracking service"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines and target runners can execute requests. Wi-Fi exposes due-only `WifiStopped::maintain_phy` with an owned HAL `WifiAccess` retaining registers and inactive IRQ setup across execution; admission and release check stopped MAC and RX walker; the supervisor invokes it at elapsed deadlines between logical roles after bounded MAC stop, RX-ring halt and IRQ quiescence. Maintenance restores the prior live RX/IRQ handoff without resuming MAC; the following role applies its policy and resumes MAC. The connected-station service starts from `RadioConfig` on every connected epoch and restores the live MAC/RX/IRQ boundary after each operation. Complete scheduling and teardown are not composed for every protocol."
+source-paths = ["crates/hardware/esp32s31/phy/src/state/client.rs"]
+
+[[items]]
+id = "phy-protocol-consumer-cold-registration-calibration-entry-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Cold registration/calibration entry — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "production cold start invokes the target runner"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-cold-registration-calibration-entry-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Cold registration/calibration entry — Bluetooth"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "common-PHY power/calibration-clock readback precedes the borrowed target runner, retaining the I2C clock lease in the task owner"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-cold-registration-calibration-entry-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Cold registration/calibration entry — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "typed target registration route exists; whole-radio service is incomplete"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-client-ownership-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Protocol-client ownership — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "cold start acquires Wi-Fi and retains the registered radio through MAC startup; runtime retains `RegisteredWifiPhy` and the acquired client scheduler"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-client-ownership-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Protocol-client ownership — Bluetooth"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "acquisition and initial tracking settle before BTBB entry"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-client-ownership-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Protocol-client ownership — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "registered client/foundation/timing wrappers exist without complete operational ownership"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-initial-tracking-before-client-handoff-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Initial tracking before client handoff — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "cold start evaluates the monotonic acquisition timestamp and settles any required tracking before initial channel selection and MAC entry"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-initial-tracking-before-client-handoff-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Initial tracking before client handoff — Bluetooth"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "PHY setup drives the initial request to a terminal result"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Initial tracking before client handoff — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "target runner and pending/settled states exist without a complete public service"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-channel-switching-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Protocol channel switching — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "channel HAL and MAC-restart entry points are composed"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-channel-switching-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Protocol channel switching — Bluetooth"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "DTM/event-specific frequency inputs exist, not a general shared retune lifetime"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-protocol-channel-switching-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Protocol channel switching — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "MAC channel policy and BTBB timing exist; RF retune readiness remains incomplete"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Periodic parameter/calibration tracking — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "connected-station observation service defaults to one second and selects the current Wi-Fi/RFPLL graph at role boundaries; complete thermal/RF qualification remains separate"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Periodic parameter/calibration tracking — Bluetooth"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "the retained client exposes read-only scheduling plus consuming due/periodic evaluation; Controller quiescence, target execution and restoration remain incomplete"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Periodic parameter/calibration tracking — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "target tracking entry exists; RF/runtime service remains incomplete"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-operational-power-selection-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Operational power selection — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "configured Wi-Fi ceiling reaches per-rate MAC codes"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-operational-power-selection-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Operational power selection — Bluetooth"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "default event power encoding, not general live power control"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-operational-power-selection-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Operational power selection — IEEE 802.15.4"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "provider-index resolution lacks calibrated provider/MMIO composition"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-resume-after-rf-sleep-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Resume after RF sleep — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "the idle production supervisor composes final-client release, RF close/wake, Wi-Fi client reacquisition and stopped-owner reconstruction while retaining the registered PHY epoch; this immediate cycle is not scheduled modem sleep"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-resume-after-rf-sleep-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Resume after RF sleep — Bluetooth"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No source-owned composition is declared."
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-resume-after-rf-sleep-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Resume after RF sleep — IEEE 802.15.4"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No source-owned composition is declared."
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-wifi"
+section = "phy-protocol-consumer-composition"
+title = "Complete last-client RF/analog shutdown — Wi-Fi"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "the production Wi-Fi supervisor quiesces an idle role frontier, releases the final client, executes target RF close, restores the captured route-owned clock/reset baseline during cold-owner reunion, and can cold-restart with the final-state cache"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-bluetooth"
+section = "phy-protocol-consumer-composition"
+title = "Complete last-client RF/analog shutdown — Bluetooth"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "the registered Bluetooth client can release while preserving the exact last-client fact; Controller/BTBB/IRQ/timer quiescence, physical-owner reunion and RF close remain absent"
+source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-ieee802154"
+section = "phy-protocol-consumer-composition"
+title = "Complete last-client RF/analog shutdown — IEEE 802.15.4"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No source-owned composition is declared."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-client-acquire-release-bookkeeping"
+section = "phy-lifecycle-boundaries"
+title = "Client acquire/release bookkeeping"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Client state rejects duplicate acquisition/invalid release and retains pending tracking. Releasing a non-final client returns the ordinary registered owner; final release returns a distinct `RegisteredPhyPoweredIdle` owner so its physical disposition cannot be silently erased. This state is still powered."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-target-bound-registration-client-proof"
+section = "phy-lifecycle-boundaries"
+title = "Target-bound registration/client proof"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Registered wrappers couple state/proof to the hardware epoch; target runners produce the completion authority. A model-only result is insufficient."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-cold-rf-activation"
+section = "phy-lifecycle-boundaries"
+title = "Cold RF activation"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "Registration and the Wi-Fi cold-power path compose initialization; protocol-wide reusable wake semantics are not supplied by that cold path."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-rf-wake-from-retained-sleep"
+section = "phy-lifecycle-boundaries"
+title = "RF wake from retained sleep"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`RegisteredPhyRfClosed::wake_rf` executes the finite current-vendor wake parent against retained semantic calibration state and returns `RegisteredPhyPoweredIdle` only after terminal restoration. The Wi-Fi owner actor composes an immediate idle cycle through client reacquisition and RX restoration; the HIL scenario verifies repeated data-path recovery and registration-generation retention. Hardware evidence is still required for qualification."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-rf-sleep-power-down"
+section = "phy-lifecycle-boundaries"
+title = "RF sleep/power-down"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor can either wake immediately while retaining the registration epoch or continue through captured route-owned clock/reset restoration for a cold restart. Scheduled modem sleep and protocol power-save composition remain absent."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-stop-tracking-release-last-client"
+section = "phy-lifecycle-boundaries"
+title = "Stop tracking / release last client"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Model release disarms tracking state and produces a distinct powered-idle hardware owner on the last client. Non-final release cannot enter RF close. Runtime timer cancellation remains a composition responsibility before stopped-owner reunion."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-rf-and-analog-shutdown"
+section = "phy-lifecycle-boundaries"
+title = "RF and analog shutdown"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor, restores the captured Wi-Fi clock/reset baseline and returns the cold radio owner. This is source coverage rather than broad silicon qualification."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-re-registration-after-owned-shutdown"
+section = "phy-lifecycle-boundaries"
+title = "Re-registration after owned shutdown"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Consuming cold release with the platform-derived physical identity returns `Radio<P, Owned>` together with a cache captured from the final post-tracking state; the ordinary power-up and target-registration entry validate that cache and replay hardware-resident frequency/RX/TX state."
+source-paths = []
+
+[[items]]
+id = "phy-lifecycle-boundaries-tracking-failure-containment"
+section = "phy-lifecycle-boundaries"
+title = "Tracking failure containment"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Failed target tracking consumes the unique request into a poisoned epoch. Target futures must reach a terminal result; cancellation requires out-of-band hardware reset rather than reuse of partial state."
+source-paths = []

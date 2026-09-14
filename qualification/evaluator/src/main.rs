@@ -5,11 +5,11 @@ mod report;
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode};
 
-use model::{QUALIFICATION_SCHEMA, Qualification};
+use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog <check|render> --manifest PATH [--root PATH] [--out DIRECTORY]";
+const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\n--catalog performs static catalog validation/rendering without vendor evidence or HIL runs.\n--manifest remains compatible; check is static, while render also emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -34,7 +34,8 @@ impl Command {
 #[derive(Debug)]
 struct Arguments {
     command: Command,
-    manifest: PathBuf,
+    manifest: Option<PathBuf>,
+    catalogs: Vec<PathBuf>,
     root: PathBuf,
     json_report: Option<PathBuf>,
     output_directory: Option<PathBuf>,
@@ -63,6 +64,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         (Command::parse(command_name)?, 1)
     };
     let mut manifest = None;
+    let mut catalogs = Vec::new();
     let mut root = None;
     let mut json_report = None;
     let mut output_directory = None;
@@ -73,6 +75,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 if manifest.replace(value).is_some() {
                     return Err("duplicate --manifest".into());
                 }
+            }
+            "--catalog" => {
+                let value = take_value(&arguments, &mut index, "--catalog")?;
+                catalogs.push(value);
             }
             "--root" => {
                 let value = take_value(&arguments, &mut index, "--root")?;
@@ -104,9 +110,19 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if command == Command::CatalogRender && output_directory.is_none() {
         return Err("catalog render requires --out".into());
     }
+    if matches!(command, Command::CatalogCheck | Command::CatalogRender) {
+        if manifest.is_some() == !catalogs.is_empty() {
+            return Err("catalog commands require exactly one of --manifest or --catalog".into());
+        }
+    } else if manifest.is_none() {
+        return Err("missing --manifest".into());
+    } else if !catalogs.is_empty() {
+        return Err("--catalog is only accepted by catalog commands".into());
+    }
     Ok(Arguments {
         command,
-        manifest: manifest.ok_or("missing --manifest")?,
+        manifest,
+        catalogs,
         root: root.unwrap_or(env::current_dir()?),
         json_report,
         output_directory,
@@ -114,11 +130,45 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
 }
 
 fn execute(arguments: Arguments) -> Result<()> {
-    let manifest_path = if arguments.manifest.is_absolute() {
-        arguments.manifest.clone()
+    if matches!(
+        arguments.command,
+        Command::CatalogCheck | Command::CatalogRender
+    ) && !arguments.catalogs.is_empty()
+    {
+        let catalog = CatalogView::load(&arguments.root, &arguments.catalogs)?;
+        if let Some(path) = arguments.output_directory.as_deref() {
+            let path = if path.is_absolute() {
+                path.to_owned()
+            } else {
+                arguments.root.join(path)
+            };
+            inventory::write_static(&catalog, &path, &arguments.root)?;
+        }
+        println!(
+            "CATALOG-STATIC-VALID\tschema={}\tcatalogs={}\tcapabilities={}\tinventory-items={}",
+            model::CAPABILITY_CATALOG_SCHEMA,
+            catalog.sources.len(),
+            catalog.capabilities.len(),
+            catalog.items.len()
+        );
+        return Ok(());
+    }
+    let manifest = arguments.manifest.as_ref().ok_or("missing --manifest")?;
+    let manifest_path = if manifest.is_absolute() {
+        manifest.clone()
     } else {
-        arguments.root.join(&arguments.manifest)
+        arguments.root.join(manifest)
     };
+    if arguments.command == Command::CatalogCheck {
+        let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
+        println!(
+            "CATALOG-STATIC-VALID\tprogram-schema={QUALIFICATION_SCHEMA}\tcatalogs={}\tcapabilities={}\tinventory-items={}",
+            catalog.sources.len(),
+            catalog.capabilities.len(),
+            catalog.items.len()
+        );
+        return Ok(());
+    }
     let qualification = Qualification::load_and_evaluate(&manifest_path, &arguments.root)?;
     if matches!(
         arguments.command,
@@ -142,7 +192,7 @@ fn execute(arguments: Arguments) -> Result<()> {
         } else {
             arguments.root.join(path)
         };
-        inventory::write(&qualification, &path)?;
+        inventory::write(&qualification, &path, &arguments.root)?;
     }
     if arguments.command == Command::Gate && !qualification.all_required_ready() {
         return Err(format!(
@@ -158,18 +208,22 @@ fn execute(arguments: Arguments) -> Result<()> {
             "VALID\ttarget={}\tschema={QUALIFICATION_SCHEMA}",
             qualification.target
         );
-    } else if arguments.command == Command::CatalogCheck {
-        println!(
-            "CATALOG-VALID\ttarget={}\tprogram-schema={QUALIFICATION_SCHEMA}\tcatalogs={}",
-            qualification.target,
-            qualification.catalog_sources.len()
-        );
     }
     Ok(())
 }
 
+fn is_help(arguments: &[String]) -> bool {
+    matches!(arguments, [value] if matches!(value.as_str(), "--help" | "-h" | "help"))
+        || matches!(arguments, [catalog, value] if catalog == "catalog" && matches!(value.as_str(), "--help" | "-h" | "help"))
+}
+
 fn main() -> ExitCode {
-    let arguments = match parse_arguments(env::args().skip(1)) {
+    let raw_arguments = env::args().skip(1).collect::<Vec<_>>();
+    if is_help(&raw_arguments) {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
+    let arguments = match parse_arguments(raw_arguments) {
         Ok(arguments) => arguments,
         Err(error) => {
             eprintln!("{USAGE}\nerror: {error}");

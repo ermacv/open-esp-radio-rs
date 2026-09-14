@@ -14,7 +14,9 @@ use crate::{
 
 mod catalog;
 mod source_contract;
-pub(crate) use catalog::{CapabilityOrigin, CapabilityScope, SourceIdentity};
+pub(crate) use catalog::{
+    CAPABILITY_CATALOG_SCHEMA, CapabilityOrigin, CapabilityScope, CatalogView, SourceIdentity,
+};
 pub(crate) use source_contract::SourceContract;
 
 pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
@@ -197,6 +199,8 @@ pub(crate) struct Qualification {
     pub(crate) catalog_sources: Vec<SourceIdentity>,
     pub(crate) capability_origins: BTreeMap<String, CapabilityOrigin>,
     pub(crate) catalog_scopes: BTreeMap<String, CapabilityScope>,
+    pub(crate) catalog: CatalogView,
+    pub(crate) direct_catalog_capabilities: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -204,6 +208,10 @@ pub(crate) struct EvidenceInputs {
     pub(crate) verification_entries: usize,
     pub(crate) verification_current_release_entries: usize,
     pub(crate) hil: HilEvidenceSummary,
+    pub(crate) verification_project: PathBuf,
+    pub(crate) vendor_evidence_index: PathBuf,
+    pub(crate) hil_catalog: PathBuf,
+    pub(crate) hil_runs: PathBuf,
 }
 
 impl Qualification {
@@ -273,6 +281,10 @@ struct ManifestDocument {
     capability_origins: BTreeMap<String, CapabilityOrigin>,
     #[serde(skip)]
     catalog_scopes: BTreeMap<String, CapabilityScope>,
+    #[serde(skip)]
+    catalog: CatalogView,
+    #[serde(skip)]
+    direct_catalog_capabilities: BTreeSet<String>,
 }
 
 #[derive(Deserialize)]
@@ -292,25 +304,25 @@ struct HilConfig {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct VendorRoot {
-    source: String,
-    symbol: String,
+pub(crate) struct VendorRoot {
+    pub(crate) source: String,
+    pub(crate) symbol: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct VendorEvidenceRef {
-    suite: String,
-    source: String,
-    symbol: String,
+pub(crate) struct VendorEvidenceRef {
+    pub(crate) suite: String,
+    pub(crate) source: String,
+    pub(crate) symbol: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct HilRequirementDocument {
-    scenario: String,
+pub(crate) struct HilRequirementDocument {
+    pub(crate) scenario: String,
     #[serde(default = "one_repetition")]
-    minimum_repetitions: u8,
+    pub(crate) minimum_repetitions: u8,
 }
 
 impl HilRequirementDocument {
@@ -336,43 +348,43 @@ const fn one_repetition() -> u8 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct GapDocument {
-    axis: Axis,
-    id: String,
+pub(crate) struct GapDocument {
+    pub(crate) axis: Axis,
+    pub(crate) id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct CapabilityDocument {
-    id: String,
-    title: String,
-    scope: String,
-    implementation: ImplementationProof,
-    host: HostProof,
+pub(crate) struct CapabilityDocument {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) scope: String,
+    pub(crate) implementation: ImplementationProof,
+    pub(crate) host: HostProof,
     #[serde(rename = "async")]
-    async_proof: AsyncProof,
+    pub(crate) async_proof: AsyncProof,
     #[serde(default)]
-    vendor_roots: Vec<VendorRoot>,
+    pub(crate) vendor_roots: Vec<VendorRoot>,
     #[serde(default)]
-    vendor_evidence: Vec<VendorEvidenceRef>,
+    pub(crate) vendor_evidence: Vec<VendorEvidenceRef>,
     #[serde(default)]
-    vendor_anchors: Vec<PathBuf>,
+    pub(crate) vendor_anchors: Vec<PathBuf>,
     #[serde(default)]
-    vendor_not_applicable: Option<String>,
+    pub(crate) vendor_not_applicable: Option<String>,
     #[serde(default)]
-    hil_requirements: Vec<HilRequirementDocument>,
+    pub(crate) hil_requirements: Vec<HilRequirementDocument>,
     #[serde(default)]
-    hil_not_applicable: Option<String>,
+    pub(crate) hil_not_applicable: Option<String>,
     #[serde(default)]
-    async_not_applicable: Option<String>,
+    pub(crate) async_not_applicable: Option<String>,
     #[serde(default)]
-    depends_on: Vec<String>,
+    pub(crate) depends_on: Vec<String>,
     #[serde(default)]
-    gaps: Vec<GapDocument>,
+    pub(crate) gaps: Vec<GapDocument>,
     #[serde(default)]
-    source_contracts: Vec<SourceContract>,
+    pub(crate) source_contracts: Vec<SourceContract>,
     #[serde(default)]
-    catalog_scope: Option<CapabilityScope>,
+    pub(crate) catalog_scope: Option<CapabilityScope>,
 }
 
 impl ManifestDocument {
@@ -429,6 +441,10 @@ impl ManifestDocument {
             verification_current_release_entries: vendor_index
                 .current_release_count(root, !repository.dirty),
             hil: hil_index.summary().clone(),
+            verification_project: self.verification.project.clone(),
+            vendor_evidence_index: self.verification.evidence_index.clone(),
+            hil_catalog: self.hil.catalog.clone(),
+            hil_runs: self.hil.runs.clone(),
         };
         let context = EvaluationContext {
             root,
@@ -470,8 +486,23 @@ impl ManifestDocument {
             catalog_sources: self.catalog_sources,
             capability_origins: self.capability_origins,
             catalog_scopes: self.catalog_scopes,
+            catalog: self.catalog,
+            direct_catalog_capabilities: self.direct_catalog_capabilities,
         })
     }
+}
+
+pub(crate) struct StaticContext<'a> {
+    root: &'a Path,
+    dispositions: &'a DispositionIndex,
+    scenario_catalog: &'a ScenarioCatalog,
+}
+
+struct ValidatedDeclaration {
+    id: String,
+    dependencies: Vec<String>,
+    gaps: Vec<Gap>,
+    hil_requirements: Vec<HilRequirement>,
 }
 
 struct EvaluationContext<'a> {
@@ -487,41 +518,19 @@ fn evaluate_capability(
     document: CapabilityDocument,
     context: &EvaluationContext<'_>,
 ) -> Result<Capability> {
-    let id = slug(&document.id, "capability id")?;
-    source_contract::validate(&document.source_contracts, context.root)?;
-    if document.title.trim().is_empty() || document.scope.trim().is_empty() {
-        return Err(format!("capability {id} needs a non-empty title and scope").into());
-    }
-    let dependencies = unique_slugs(document.depends_on.clone(), "dependency", &id)?;
-    let mut gaps = Vec::new();
-    let mut gap_keys = BTreeSet::new();
-    for gap in &document.gaps {
-        let gap = Gap {
-            axis: gap.axis,
-            id: slug(&gap.id, "gap id")?,
-        };
-        if !gap_keys.insert((gap.axis, gap.id.clone())) {
-            return Err(format!(
-                "capability {id} repeats {} gap {}",
-                gap.axis.label(),
-                gap.id
-            )
-            .into());
-        }
-        gaps.push(gap);
-    }
-
-    validate_vendor_anchors(&id, &document.vendor_anchors, context.root)?;
-
-    let implementation = document.implementation;
-    validate_declared_axis(
-        &id,
-        Axis::Implementation,
-        implementation.is_terminal(),
-        &gaps,
+    let validated = validate_capability_declaration_inner(
+        &document,
+        &StaticContext {
+            root: context.root,
+            dispositions: context.dispositions,
+            scenario_catalog: context.scenario_catalog,
+        },
     )?;
+    let id = validated.id;
+    let dependencies = validated.dependencies;
+    let mut gaps = validated.gaps;
+    let implementation = document.implementation;
     let host = document.host;
-    validate_declared_axis(&id, Axis::Host, host.is_terminal(), &gaps)?;
 
     let mut evidence = Vec::new();
 
@@ -552,22 +561,7 @@ fn evaluate_capability(
         }
         HilProof::NotApplicable
     } else {
-        let mut requirements = Vec::new();
-        let mut scenarios = BTreeSet::new();
-        for requirement in &document.hil_requirements {
-            let requirement = requirement.validated(&id)?;
-            if !scenarios.insert(requirement.scenario.clone()) {
-                return Err(format!(
-                    "capability {id} repeats HIL scenario {}",
-                    requirement.scenario
-                )
-                .into());
-            }
-            context
-                .scenario_catalog
-                .validate_requirement(&requirement)?;
-            requirements.push(requirement);
-        }
+        let requirements = validated.hil_requirements;
         let mut complete = !requirements.is_empty() && !has_gap(&gaps, Axis::Hil);
         for requirement in &requirements {
             match context.hil_index.evidence_for(requirement) {
@@ -584,12 +578,6 @@ fn evaluate_capability(
     };
 
     let async_proof = document.async_proof;
-    validate_async_declaration(
-        &id,
-        async_proof,
-        document.async_not_applicable.as_deref(),
-        &gaps,
-    )?;
 
     gaps.sort_by(|left, right| {
         left.axis
@@ -611,6 +599,158 @@ fn evaluate_capability(
         gaps,
         evidence,
         source_contracts: document.source_contracts,
+    })
+}
+
+pub(crate) fn validate_capability_declaration(
+    document: &CapabilityDocument,
+    context: &StaticContext<'_>,
+) -> Result<()> {
+    validate_capability_declaration_inner(document, context).map(|_| ())
+}
+
+fn validate_capability_declaration_inner(
+    document: &CapabilityDocument,
+    context: &StaticContext<'_>,
+) -> Result<ValidatedDeclaration> {
+    let id = slug(&document.id, "capability id")?;
+    source_contract::validate(&document.source_contracts, context.root)?;
+    if document.title.trim().is_empty() || document.scope.trim().is_empty() {
+        return Err(format!("capability {id} needs a non-empty title and scope").into());
+    }
+    let dependencies = unique_slugs(document.depends_on.clone(), "dependency", &id)?;
+    let mut gaps = Vec::new();
+    let mut gap_keys = BTreeSet::new();
+    for gap in &document.gaps {
+        let gap = Gap {
+            axis: gap.axis,
+            id: slug(&gap.id, "gap id")?,
+        };
+        if !gap_keys.insert((gap.axis, gap.id.clone())) {
+            return Err(format!(
+                "capability {id} repeats {} gap {}",
+                gap.axis.label(),
+                gap.id
+            )
+            .into());
+        }
+        gaps.push(gap);
+    }
+    validate_vendor_anchors(&id, &document.vendor_anchors, context.root)?;
+    validate_declared_axis(
+        &id,
+        Axis::Implementation,
+        document.implementation.is_terminal(),
+        &gaps,
+    )?;
+    validate_declared_axis(&id, Axis::Host, document.host.is_terminal(), &gaps)?;
+    validate_async_declaration(
+        &id,
+        document.async_proof,
+        document.async_not_applicable.as_deref(),
+        &gaps,
+    )?;
+
+    if let Some(reason) = document.vendor_not_applicable.as_deref() {
+        validate_reason(reason, "vendor-not-applicable", &id)?;
+        if !document.vendor_roots.is_empty()
+            || !document.vendor_anchors.is_empty()
+            || !document.vendor_evidence.is_empty()
+            || has_gap(&gaps, Axis::Vendor)
+        {
+            return Err(format!(
+                "vendor-not-applicable capability {id} cannot claim vendor evidence or gaps"
+            )
+            .into());
+        }
+    }
+    let roots = document
+        .vendor_roots
+        .iter()
+        .map(|root| (root.source.as_str(), root.symbol.as_str()))
+        .collect::<BTreeSet<_>>();
+    if roots.len() != document.vendor_roots.len() {
+        return Err(format!("capability {id} repeats a vendor root").into());
+    }
+    let mut evidence = BTreeSet::new();
+    for reference in &document.vendor_evidence {
+        slug(&reference.suite, "vendor evidence suite")?;
+        if !matches!(reference.source.as_str(), "rom" | "archive") {
+            return Err(format!("invalid vendor source {:?} for {id}", reference.source).into());
+        }
+        let key = (
+            reference.suite.as_str(),
+            reference.source.as_str(),
+            reference.symbol.as_str(),
+        );
+        if !evidence.insert(key) {
+            return Err(format!(
+                "capability {id} repeats vendor evidence {} {} {}",
+                reference.suite, reference.source, reference.symbol
+            )
+            .into());
+        }
+        if !roots.contains(&(reference.source.as_str(), reference.symbol.as_str())) {
+            return Err(format!(
+                "vendor evidence {} {} {} for {id} does not name a vendor root",
+                reference.suite, reference.source, reference.symbol
+            )
+            .into());
+        }
+    }
+    for root in &document.vendor_roots {
+        if !matches!(root.source.as_str(), "rom" | "archive") {
+            return Err(format!("invalid vendor source {:?} for {id}", root.source).into());
+        }
+        if root.symbol.trim().is_empty() {
+            return Err(format!("vendor root for {id} has an empty symbol").into());
+        }
+        let disposition = context.dispositions.get(root).ok_or_else(|| {
+            format!(
+                "vendor root {} {} for {id} has no disposition",
+                root.source, root.symbol
+            )
+        })?;
+        if !disposition.has_rust_component {
+            return Err(format!(
+                "vendor root {} {} for {id} has no rust-component",
+                root.source, root.symbol
+            )
+            .into());
+        }
+    }
+
+    let mut hil_requirements = Vec::new();
+    let mut scenarios = BTreeSet::new();
+    if let Some(reason) = document.hil_not_applicable.as_deref() {
+        validate_reason(reason, "hil-not-applicable", &id)?;
+        if !document.hil_requirements.is_empty() || has_gap(&gaps, Axis::Hil) {
+            return Err(format!(
+                "HIL-not-applicable capability {id} cannot declare HIL requirements or gaps"
+            )
+            .into());
+        }
+    } else {
+        for requirement in &document.hil_requirements {
+            let requirement = requirement.validated(&id)?;
+            if !scenarios.insert(requirement.scenario.clone()) {
+                return Err(format!(
+                    "capability {id} repeats HIL scenario {}",
+                    requirement.scenario
+                )
+                .into());
+            }
+            context
+                .scenario_catalog
+                .validate_requirement(&requirement)?;
+            hil_requirements.push(requirement);
+        }
+    }
+    Ok(ValidatedDeclaration {
+        id,
+        dependencies,
+        gaps,
+        hil_requirements,
     })
 }
 
@@ -660,6 +800,7 @@ fn validate_declared_axis(id: &str, axis: Axis, terminal: bool, gaps: &[Gap]) ->
 }
 
 fn validate_vendor_anchors(id: &str, anchors: &[PathBuf], root: &Path) -> Result<()> {
+    let repository = fs::canonicalize(root)?;
     let mut unique = BTreeSet::new();
     for anchor in anchors {
         validate_relative_path(anchor)?;
@@ -668,9 +809,27 @@ fn validate_vendor_anchors(id: &str, anchors: &[PathBuf], root: &Path) -> Result
                 format!("capability {id} repeats vendor anchor {}", anchor.display()).into(),
             );
         }
-        let path = root.join(anchor);
-        if !fs::symlink_metadata(&path)?.file_type().is_file() {
-            return Err(format!("vendor anchor is not a regular file: {}", path.display()).into());
+        let mut path = repository.clone();
+        let components = anchor.components().collect::<Vec<_>>();
+        for (index, component) in components.iter().enumerate() {
+            let Component::Normal(name) = component else {
+                return Err(format!("unsafe vendor anchor {}", anchor.display()).into());
+            };
+            path.push(name);
+            let metadata = fs::symlink_metadata(&path).map_err(|error| {
+                format!("cannot inspect vendor anchor {}: {error}", anchor.display())
+            })?;
+            let final_component = index + 1 == components.len();
+            if metadata.file_type().is_symlink()
+                || (final_component && !metadata.file_type().is_file())
+                || (!final_component && !metadata.file_type().is_dir())
+            {
+                return Err(format!(
+                    "vendor anchor path must contain only regular directories and end in a regular file: {}",
+                    anchor.display()
+                )
+                .into());
+            }
         }
     }
     Ok(())
@@ -768,13 +927,6 @@ fn derive_vendor_proof(
         if !roots.contains(&(reference.source.as_str(), reference.symbol.as_str())) {
             return Err(format!(
                 "vendor evidence {} {} {} for {id} does not name a vendor root",
-                reference.suite, reference.source, reference.symbol
-            )
-            .into());
-        }
-        if index.get(reference).is_none() {
-            return Err(format!(
-                "vendor evidence index has no {} {} {} entry required by {id}",
                 reference.suite, reference.source, reference.symbol
             )
             .into());

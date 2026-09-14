@@ -6,14 +6,8 @@ use std::{
     path::{Component, PathBuf},
 };
 
-pub fn source_files(context: &Context) -> Result<Vec<PathBuf>> {
-    let output = process::capture(context.command("git").args([
-        "ls-files",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "-z",
-    ]))?;
+fn git_files(context: &Context, arguments: &[&str]) -> Result<Vec<PathBuf>> {
+    let output = process::capture(context.command("git").args(arguments))?;
     let mut files = BTreeSet::new();
     for bytes in output
         .stdout
@@ -48,6 +42,23 @@ pub fn source_files(context: &Context) -> Result<Vec<PathBuf>> {
         files.insert(path);
     }
     Ok(files.into_iter().collect())
+}
+
+pub fn source_files(context: &Context) -> Result<Vec<PathBuf>> {
+    git_files(
+        context,
+        &[
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+    )
+}
+
+pub fn tracked_files(context: &Context) -> Result<Vec<PathBuf>> {
+    git_files(context, &["ls-files", "--cached", "-z"])
 }
 
 pub fn source_manifests(context: &Context) -> Result<Vec<PathBuf>> {

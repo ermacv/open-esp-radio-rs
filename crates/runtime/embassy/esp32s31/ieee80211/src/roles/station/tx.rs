@@ -97,7 +97,7 @@ const HE_TRIGGER_DATA_TID: u8 = 0;
 
 /// Control-plane notification for the current station TX BlockAck state.
 ///
-/// Unlike [`AggregateTxObserver`](crate::diagnostics::aggregate_tx::AggregateTxObserver), this is application-visible link state,
+/// Unlike [`crate::diagnostics::aggregate_tx::AggregateTxObserver`], this is application-visible link state,
 /// not diagnostic telemetry. It runs only when a negotiated agreement changes
 /// state and therefore never observes aggregate publication or completion.
 pub type StationTxBlockAckStatusSink = fn(tid: u8, operational: bool);

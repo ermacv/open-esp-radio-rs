@@ -338,4 +338,99 @@ fn declared_alternatives_preserve_minimum_and_default_compilation() {
     assert!(profiles.contains(&vec![]));
     assert!(!profiles.contains(&vec!["--no-default-features".into()]));
     assert_eq!(profiles.len(), 3);
+
+    let mut duplicate = package.clone();
+    duplicate.metadata["open-radio"]["supported-feature-profiles"] =
+        serde_json::json!(["left", "left"]);
+    let error = declared_profiles(&duplicate).unwrap_err().to_string();
+    assert!(
+        error.contains("repeats supported feature profile"),
+        "{error}"
+    );
+
+    let mut unknown = package.clone();
+    unknown.metadata["open-radio"]["supported-feature-profiles"] =
+        serde_json::json!(["left,missing"]);
+    let error = declared_profiles(&unknown).unwrap_err().to_string();
+    assert!(
+        error.contains("invalid supported feature profile"),
+        "{error}"
+    );
+
+    let mut explicit_only = package.clone();
+    explicit_only.metadata["open-radio"]["scope"] = "development".into();
+    explicit_only.metadata["open-radio"]["layer"] = "hil".into();
+    explicit_only.metadata["open-radio"]["default-configuration"] = false.into();
+    let profiles = documentation_profiles(&explicit_only).unwrap();
+    assert_eq!(profiles.len(), 2);
+    assert!(
+        profiles
+            .iter()
+            .all(|profile| profile[0] == "--no-default-features")
+    );
+
+    explicit_only.metadata["open-radio"]["supported-feature-profiles"] = serde_json::json!([]);
+    let error = documentation_profiles(&explicit_only)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("disables its default configuration"),
+        "{error}"
+    );
+}
+
+#[test]
+fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
+    let repository = tempfile::tempdir().unwrap();
+    fs::write(
+        repository.path().join("Cargo.toml"),
+        "[workspace]\nresolver='3'\nmembers=['new']\nexclude=['island']\n",
+    )
+    .unwrap();
+    fs::write(repository.path().join(".gitignore"), "/new/\n").unwrap();
+    for (directory, name) in [("new", "new-package"), ("island", "island-package")] {
+        fs::create_dir_all(repository.path().join(directory).join("src")).unwrap();
+        fs::write(
+            repository.path().join(directory).join("Cargo.toml"),
+            format!(
+                "[package]\nname='{name}'\nversion='0.0.0'\nedition='2024'\n[package.metadata.open-radio]\nscope='production'\nlayer='contract'\nplatform='portable'\n{}",
+                if directory == "island" { "[workspace]\n" } else { "" }
+            ),
+        )
+        .unwrap();
+        fs::write(repository.path().join(directory).join("src/lib.rs"), "").unwrap();
+    }
+    let context = Context::new(repository.path()).unwrap();
+    crate::process::run(context.command("git").args(["init", "--quiet"])).unwrap();
+    crate::process::run(
+        context
+            .command("git")
+            .args(["add", "Cargo.toml", ".gitignore", "island"]),
+    )
+    .unwrap();
+    for manifest in ["Cargo.toml", "island/Cargo.toml"] {
+        crate::process::run(context.cargo().args([
+            "generate-lockfile",
+            "--offline",
+            "--manifest-path",
+            manifest,
+        ]))
+        .unwrap();
+    }
+    let packages = source_packages(&context).unwrap();
+    assert_eq!(
+        packages
+            .iter()
+            .map(|package| package.package.name.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["island-package", "new-package"])
+    );
+    assert_eq!(
+        packages
+            .iter()
+            .map(|package| &package.workspace_manifest)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        2
+    );
 }

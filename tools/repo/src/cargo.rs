@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn catalog_read(
+pub(crate) fn catalog_read(
     context: &Context,
     workspace: &Path,
 ) -> Result<Option<oer_firmware::network::CatalogRead>> {

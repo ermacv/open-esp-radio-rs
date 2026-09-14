@@ -100,7 +100,7 @@ impl core::fmt::Debug for TxBindFailure {
 /// Permanently located allocation for one 128-byte transmit frame.
 ///
 /// Construct it in static storage and bind it exactly once with `pin_static`
-/// on the RISC-V S31 target or [`Self::pin_static_model`] on a native host.
+/// on the RISC-V S31 target or `pin_static_model` on a native host.
 #[repr(C)]
 pub struct TxStorage {
     frame: TxFrameBuffer,

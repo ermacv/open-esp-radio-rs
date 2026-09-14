@@ -3,7 +3,7 @@
 //! The register sequence is recovered from `libpp.a[hal_mac.o]::hal_init`,
 //! `mac_txrx_init`, `mac_rxbuf_init`, and `mac_last_rxbuf_init`. It deliberately
 //! stops before publishing an RX descriptor base: ownership of the DMA ring
-//! remains with [`crate::rx::publish_cold_ring`].
+//! remains with the DMA ring `publish_cold_ring` operation.
 
 pub use crate::{
     cold::{

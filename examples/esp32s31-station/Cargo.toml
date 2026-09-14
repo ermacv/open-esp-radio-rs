@@ -71,3 +71,4 @@ scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"
+supported-feature-profiles = ["compat-network", "owned-network"]

@@ -173,3 +173,7 @@ scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"
+default-configuration = false
+supported-feature-profiles = [
+    "open-radio-hil,upstream-network,psram-task-stack,code-psram,profile-psram-data",
+]

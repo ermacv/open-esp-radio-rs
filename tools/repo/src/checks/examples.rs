@@ -1,29 +1,16 @@
 use crate::{Context, Result, process};
 
-use super::TARGET;
+use super::{TARGET, common};
 
 mod dma;
 
 pub fn run(ctx: &Context) -> Result<()> {
-    for name in [
-        "esp32s31-station",
-        "esp32s31-access-point",
-        "esp32s31-monitor",
-        "esp32s31-bluetooth-controller",
-    ] {
-        process::run(
-            ctx.cargo()
-                .args([
-                    "check",
-                    "--locked",
-                    "--offline",
-                    "--release",
-                    "--target",
-                    TARGET,
-                    "--manifest-path",
-                ])
-                .arg(ctx.root.join("examples").join(name).join("Cargo.toml")),
-        )?;
+    let configurations = common::example_configurations(ctx, TARGET)?;
+    for configuration in &configurations {
+        let mut command = ctx.cargo();
+        command.arg("check");
+        configuration.apply(&mut command);
+        process::run(&mut command)?;
     }
     let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let host = process::capture(ctx.command(rustc).arg("-vV"))?;
@@ -32,50 +19,18 @@ pub fn run(ctx: &Context) -> Result<()> {
         .lines()
         .find_map(|line| line.strip_prefix("host: "))
         .ok_or("rustc did not report its host target")?;
-    for example in ["access-point", "bluetooth-controller"] {
-        process::run(
-            ctx.cargo()
-                .args([
-                    "test",
-                    "--locked",
-                    "--offline",
-                    "--lib",
-                    "--target",
-                    host,
-                    "--manifest-path",
-                ])
-                .arg(
-                    ctx.root
-                        .join(format!("examples/esp32s31-{example}/Cargo.toml")),
-                ),
-        )?;
+    let host_configurations = common::example_host_test_configurations(ctx, host)?;
+    for configuration in &host_configurations {
+        let mut command = ctx.cargo();
+        command.arg("test");
+        configuration.apply(&mut command);
+        process::run(&mut command)?;
     }
     dma::check(ctx)?;
-    for (example, feature) in [
-        ("station", "compat-network"),
-        ("station", "owned-network"),
-        ("access-point", "owned-network"),
-        ("access-point", "compat-network"),
-        ("bluetooth-controller", "advertising-smoke"),
-        ("bluetooth-controller", "trouble-gatt"),
-    ] {
-        process::run(
-            ctx.cargo()
-                .args([
-                    "check",
-                    "--locked",
-                    "--offline",
-                    "--release",
-                    "--target",
-                    TARGET,
-                    "--manifest-path",
-                ])
-                .arg(
-                    ctx.root
-                        .join(format!("examples/esp32s31-{example}/Cargo.toml")),
-                )
-                .args(["--no-default-features", "--features", feature]),
-        )?;
-    }
+    eprintln!(
+        "example compilation: {} target configurations, {} host library tests",
+        configurations.len(),
+        host_configurations.len()
+    );
     Ok(())
 }

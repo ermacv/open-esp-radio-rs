@@ -922,7 +922,7 @@ pub(crate) struct ExecuteCompareArgs {
     /// Require the return values to match as well as observable effects.
     #[arg(long)]
     pub(crate) compare_return: bool,
-    /// Repeated complete scenario: NAME[;arg=V][;mmio=ADDR=V][;read=ADDR=V]...
+    /// Repeated complete scenario: `NAME[;arg=V][;mmio=ADDR=V][;read=ADDR=V]...`
     #[arg(long, value_name = "SCENARIO")]
     pub(crate) case: Vec<CaseArgs>,
 }

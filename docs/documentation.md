@@ -82,9 +82,23 @@ depend on documentation paths. Update those consumers without changing the
 meaning of evidence or inventing a replacement proof.
 
 Use the repository's pinned toolchain for examples and API documentation.
-Run the applicable Cargo doc-tests, rustdoc checks and command help; build a
-hardware example for its declared target. Network access, flashing and fixture
-installation are not prerequisites for reviewing a reference page.
+`cargo xtask check docs --list` resolves the documentation plan and records
+why an action is inapplicable without running its builds. `cargo xtask check
+docs` builds public and private rustdoc separately, runs applicable host
+doc-tests, compiles MCU examples without executing them, validates owned local
+Markdown links, and checks and renders static qualification catalogs. The
+command uses locked, offline Cargo operations and writes ignored outputs below
+`target/docs/gate/`; it does not query external links, load runtime evidence,
+evaluate readiness, flash a device or install fixtures. A successful docs gate
+therefore establishes source and presentation consistency, not radio behavior
+or qualification.
+
+The checked Markdown surface consists of tracked documents plus owner
+documents under `docs/`, package `README.md` files and Cargo `readme` targets,
+including newly created files before they are staged. Arbitrary untracked task
+notes are outside that surface. Local relative links, images, references,
+directory targets, percent-encoded paths and supported anchors are checked;
+external URLs are reported as `external-not-checked`.
 
 ## Basis for these conventions
 

@@ -190,7 +190,7 @@ pub extern "C" fn open_phy_channel_trace_publish_tx_gain(input: &[u32; 47]) -> u
 }
 
 /// Actual Bluetooth gain calculation and publication with caller-owned inputs.
-/// ABI conversion only: seed[6], config, packed curve/correction, base/attenuation.
+/// ABI conversion only: `seed[6]`, config, packed curve/correction, base/attenuation.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_bluetooth_trace_tx_gain(input: &[u32; 9], output: &mut [u8; 80]) {

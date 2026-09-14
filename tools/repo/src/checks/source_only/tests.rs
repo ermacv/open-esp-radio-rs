@@ -52,3 +52,22 @@ fn image_audit_uses_the_reported_existing_performance_elf() {
     fs::remove_file(&elf).unwrap();
     assert!(runtime_artifact(&serde_json::to_vec(&report).unwrap()).is_err());
 }
+
+#[test]
+fn docs_failure_stops_source_only_before_the_image_owner_starts() {
+    let mut executed = Vec::new();
+    let error = run_pre_image_stages(|stage| {
+        executed.push(stage);
+        if stage == PreImageStage::Docs {
+            Err("docs fixture failed".into())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap_err()
+    .to_string();
+    assert_eq!(executed, PRE_IMAGE_STAGES);
+    assert!(error.contains("docs fixture failed"), "{error}");
+    // The production image owner is created only after this shared sequence
+    // returns successfully, so this failure path cannot reach hardware/image work.
+}

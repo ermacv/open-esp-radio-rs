@@ -647,7 +647,8 @@ where
 
     /// Consume and classify one Host packet while returning reusable storage.
     ///
-    /// This is the event-loop form of [`Self::try_receive_classified_command`].
+    /// This is the event-loop form of the test-only
+    /// `try_receive_classified_command` helper.
     /// An owned command and a stale `Empty` hint return `buffer`; a data packet
     /// instead transfers its borrow to the outer packet router. Other channel
     /// failures return the scratch storage to the supervisor.

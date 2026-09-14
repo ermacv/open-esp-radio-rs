@@ -35,7 +35,7 @@ const ROUTE_PRIORITY: Priority = Priority::Priority1;
 /// Bind the ACK watchdog to ESP-HAL's one-microsecond monotonic clock.
 ///
 /// The low 32 bits intentionally reproduce the wrapping time domain used by
-/// the reviewed ESP-IDF IEEE 802.15.4 driver. [`esp_hal::init`] must have run
+/// the reviewed ESP-IDF IEEE 802.15.4 driver. `esp_hal::init` must have run
 /// before the returned capability is sampled.
 pub const fn monotonic_microsecond_clock() -> Ieee802154MonotonicMicrosecondClock {
     Ieee802154MonotonicMicrosecondClock::new(sample_monotonic_microseconds)

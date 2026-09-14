@@ -6,11 +6,115 @@ use std::{
 use cargo_metadata::{DependencyKind, Metadata, Package, PackageId};
 
 use crate::{Context, Result, cargo, graph::Graph, paths};
+use sha2::{Digest as _, Sha256};
+use std::process::Command;
 
 pub struct ProductionPackage {
     pub package: Package,
     pub manifest: PathBuf,
     pub workspace_member: bool,
+}
+
+#[derive(Clone)]
+pub struct SourcePackage {
+    pub package: Package,
+    pub manifest: PathBuf,
+    pub workspace_manifest: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CargoBuildProfile {
+    Dev,
+    Release,
+}
+
+impl CargoBuildProfile {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Dev => "dev",
+            Self::Release => "release",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CargoTargetSelection {
+    DefaultTargets,
+    Lib(String),
+    Bin(String),
+}
+
+impl CargoTargetSelection {
+    pub fn label(&self) -> String {
+        match self {
+            Self::DefaultTargets => "default-targets".into(),
+            Self::Lib(name) => format!("lib:{name}"),
+            Self::Bin(name) => format!("bin:{name}"),
+        }
+    }
+}
+
+/// One feature-isolated Cargo invocation. Checks add their own purpose while
+/// sharing this selection identity.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CargoConfiguration {
+    pub manifest: PathBuf,
+    pub workspace_manifest: PathBuf,
+    pub package: String,
+    pub target: String,
+    pub features: Vec<String>,
+    pub build_profile: CargoBuildProfile,
+    pub cargo_target: CargoTargetSelection,
+}
+
+impl CargoConfiguration {
+    pub fn apply(&self, command: &mut Command) {
+        command
+            .args(["--locked", "--offline", "--manifest-path"])
+            .arg(&self.manifest)
+            .args(["--package", &self.package, "--target", &self.target]);
+        if self.build_profile == CargoBuildProfile::Release {
+            command.arg("--release");
+        }
+        match &self.cargo_target {
+            CargoTargetSelection::DefaultTargets => {}
+            CargoTargetSelection::Lib(_) => {
+                command.arg("--lib");
+            }
+            CargoTargetSelection::Bin(name) => {
+                command.args(["--bin", name]);
+            }
+        }
+        command.args(&self.features);
+    }
+
+    pub fn id(&self, root: &Path) -> Result<String> {
+        let manifest = self.manifest.strip_prefix(root)?;
+        let workspace = self.workspace_manifest.strip_prefix(root)?;
+        let identity = format!(
+            "workspace={}\nmanifest={}\npackage={}\ntarget={}\nfeatures={:?}\nbuild-profile={}\ncargo-target={}",
+            workspace.display(),
+            manifest.display(),
+            self.package,
+            self.target,
+            self.features,
+            self.build_profile.label(),
+            self.cargo_target.label(),
+        );
+        let digest = format!("{:x}", Sha256::digest(identity.as_bytes()));
+        let stem = self
+            .package
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() || character == '-' {
+                    character
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        Ok(format!("{stem}-{}", &digest[..16]))
+    }
 }
 
 pub fn package_for_manifest<'a>(metadata: &'a Metadata, manifest: &Path) -> Result<&'a Package> {
@@ -82,6 +186,62 @@ pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
         return Err("no production packages found".into());
     }
     Ok(packages)
+}
+
+/// Discover classified source packages across the root and independent Cargo
+/// workspaces. Workspace membership also retains ignored source members.
+pub fn source_packages(ctx: &Context) -> Result<Vec<SourcePackage>> {
+    let source_manifests = paths::source_manifests(ctx)?
+        .into_iter()
+        .map(|manifest| manifest.canonicalize())
+        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    let mut workspace_manifests = BTreeSet::new();
+    for manifest in &source_manifests {
+        workspace_manifests.insert(cargo::workspace_manifest(ctx, manifest)?);
+    }
+    let root_workspace = cargo::metadata_no_deps(ctx, &ctx.root.join("Cargo.toml"))?;
+    for package in &root_workspace.packages {
+        if root_workspace.workspace_members.contains(&package.id) {
+            workspace_manifests.insert(ctx.root.join("Cargo.toml").canonicalize()?);
+        }
+    }
+
+    let mut packages = std::collections::BTreeMap::new();
+    for workspace_manifest in workspace_manifests {
+        let metadata = cargo::metadata_no_deps(ctx, &workspace_manifest)?;
+        for package in metadata
+            .packages
+            .iter()
+            .filter(|package| metadata.workspace_members.contains(&package.id))
+        {
+            let manifest = package.manifest_path.as_std_path().canonicalize()?;
+            if !manifest.starts_with(&ctx.root) {
+                return Err(format!(
+                    "Cargo workspace member escaped repository: {}",
+                    manifest.display()
+                )
+                .into());
+            }
+            classification(package)?;
+            if packages
+                .insert(
+                    manifest.clone(),
+                    SourcePackage {
+                        package: package.clone(),
+                        manifest,
+                        workspace_manifest: workspace_manifest.clone(),
+                    },
+                )
+                .is_some()
+            {
+                return Err("source package belongs to multiple Cargo workspaces".into());
+            }
+        }
+    }
+    if packages.is_empty() {
+        return Err("no classified source packages found".into());
+    }
+    Ok(packages.into_values().collect())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -259,7 +419,7 @@ pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {
     let profiles = profiles
         .as_array()
         .ok_or("supported-feature-profiles must be an array")?;
-    profiles
+    let profiles = profiles
         .iter()
         .map(|profile| {
             profile
@@ -268,7 +428,31 @@ pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {
                 .map(str::to_owned)
                 .ok_or_else(|| "feature profile must be a nonempty string".into())
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    let mut unique_profiles = BTreeSet::new();
+    for profile in &profiles {
+        if !unique_profiles.insert(profile) {
+            return Err(format!(
+                "package {} repeats supported feature profile {profile}",
+                package.name
+            )
+            .into());
+        }
+        let mut unique_features = BTreeSet::new();
+        for feature in profile.split(',') {
+            if feature.is_empty()
+                || !unique_features.insert(feature)
+                || !package.features.contains_key(feature)
+            {
+                return Err(format!(
+                    "package {} has invalid supported feature profile {profile}",
+                    package.name
+                )
+                .into());
+            }
+        }
+    }
+    Ok(profiles)
 }
 
 pub fn maximal_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
@@ -281,6 +465,197 @@ pub fn maximal_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
             .map(|p| vec!["--no-default-features".into(), "--features".into(), p])
             .collect()
     })
+}
+
+pub fn architecture_configurations(
+    ctx: &Context,
+    packages: &[ProductionPackage],
+    target: &str,
+) -> Result<Vec<CargoConfiguration>> {
+    let root_workspace = ctx.root.join("Cargo.toml").canonicalize()?;
+    let mut configurations = Vec::new();
+    for item in packages {
+        let workspace_manifest = if item.workspace_member {
+            root_workspace.clone()
+        } else {
+            cargo::workspace_manifest(ctx, &item.manifest)?
+        };
+        for features in compilation_profiles(&item.package)? {
+            configurations.push(CargoConfiguration {
+                manifest: item.manifest.clone(),
+                workspace_manifest: workspace_manifest.clone(),
+                package: item.package.name.to_string(),
+                target: target.into(),
+                features,
+                build_profile: CargoBuildProfile::Dev,
+                cargo_target: CargoTargetSelection::DefaultTargets,
+            });
+        }
+    }
+    Ok(configurations)
+}
+
+fn application_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
+    let mut profiles = if uses_default_configuration(package)? {
+        vec![Vec::new()]
+    } else {
+        Vec::new()
+    };
+    profiles.extend(
+        declared_profiles(package)?
+            .into_iter()
+            .map(|profile| vec!["--no-default-features".into(), "--features".into(), profile]),
+    );
+    if profiles.is_empty() {
+        return Err(format!(
+            "package {} disables its default configuration without a supported feature profile",
+            package.name
+        )
+        .into());
+    }
+    Ok(profiles)
+}
+
+pub fn documentation_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
+    let class = classification(package)?;
+    match (class.scope, class.layer) {
+        ("production", _) => compilation_profiles(package),
+        (_, "application") => application_profiles(package),
+        (_, "experiment") => {
+            let mut profiles = if uses_default_configuration(package)? {
+                vec![Vec::new()]
+            } else {
+                Vec::new()
+            };
+            profiles.extend(maximal_profiles(package)?);
+            Ok(profiles)
+        }
+        _ => {
+            let mut profiles = if uses_default_configuration(package)? {
+                vec![Vec::new()]
+            } else {
+                Vec::new()
+            };
+            profiles.extend(
+                declared_profiles(package)?.into_iter().map(|profile| {
+                    vec!["--no-default-features".into(), "--features".into(), profile]
+                }),
+            );
+            if profiles.is_empty() {
+                return Err(format!(
+                    "package {} disables its default configuration without a supported feature profile",
+                    package.name
+                )
+                .into());
+            }
+            Ok(profiles)
+        }
+    }
+}
+
+pub fn uses_default_configuration(package: &Package) -> Result<bool> {
+    match package
+        .metadata
+        .get("open-radio")
+        .and_then(|metadata| metadata.get("default-configuration"))
+    {
+        None => Ok(true),
+        Some(value) => value.as_bool().ok_or_else(|| {
+            format!(
+                "package {} open-radio.default-configuration must be a boolean",
+                package.name
+            )
+            .into()
+        }),
+    }
+}
+
+pub fn example_configurations(ctx: &Context, target: &str) -> Result<Vec<CargoConfiguration>> {
+    let mut configurations = Vec::new();
+    for item in source_packages(ctx)? {
+        let class = classification(&item.package)?;
+        let relative = item.manifest.strip_prefix(&ctx.root)?;
+        if class.layer != "application" || !relative.starts_with("examples") {
+            continue;
+        }
+        if !matches!(class.platform, Platform::Chip("esp32s31")) {
+            return Err(format!(
+                "example package {} has unsupported platform {:?}",
+                item.package.name, class.platform
+            )
+            .into());
+        }
+        if !item
+            .package
+            .targets
+            .iter()
+            .any(|target| target.kind.contains(&cargo_metadata::TargetKind::Bin))
+        {
+            return Err(
+                format!("example package {} has no binary target", item.package.name).into(),
+            );
+        }
+        for features in application_profiles(&item.package)? {
+            configurations.push(CargoConfiguration {
+                manifest: item.manifest.clone(),
+                workspace_manifest: item.workspace_manifest.clone(),
+                package: item.package.name.to_string(),
+                target: target.into(),
+                features,
+                build_profile: CargoBuildProfile::Release,
+                cargo_target: CargoTargetSelection::DefaultTargets,
+            });
+        }
+    }
+    if configurations.is_empty() {
+        return Err("no ESP32-S31 example configurations found".into());
+    }
+    Ok(configurations)
+}
+
+pub fn example_host_test_configurations(
+    ctx: &Context,
+    host: &str,
+) -> Result<Vec<CargoConfiguration>> {
+    let mut configurations = Vec::new();
+    for item in source_packages(ctx)? {
+        let class = classification(&item.package)?;
+        let relative = item.manifest.strip_prefix(&ctx.root)?;
+        if class.layer != "application" || !relative.starts_with("examples") {
+            continue;
+        }
+        let host_tests = item
+            .package
+            .metadata
+            .get("open-radio")
+            .and_then(|metadata| metadata.get("host-tests"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if !host_tests {
+            continue;
+        }
+        let library = item
+            .package
+            .targets
+            .iter()
+            .find(|target| target.kind.contains(&cargo_metadata::TargetKind::Lib))
+            .ok_or_else(|| {
+                format!(
+                    "package {} enables open-radio.host-tests without a library target",
+                    item.package.name
+                )
+            })?;
+        configurations.push(CargoConfiguration {
+            manifest: item.manifest,
+            workspace_manifest: item.workspace_manifest,
+            package: item.package.name.to_string(),
+            target: host.into(),
+            features: Vec::new(),
+            build_profile: CargoBuildProfile::Dev,
+            cargo_target: CargoTargetSelection::Lib(library.name.clone()),
+        });
+    }
+    Ok(configurations)
 }
 
 pub fn production_dependencies(

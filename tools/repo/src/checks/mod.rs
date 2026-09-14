@@ -2,6 +2,7 @@
 
 pub mod architecture;
 pub mod bluetooth;
+pub mod docs;
 pub mod examples;
 pub mod metadata;
 pub mod network;

@@ -7,32 +7,21 @@ mod facade;
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "oer-esp32s31-embassy-wifi";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
-const COMMON_HIL: &str =
-    "open-radio-hil,upstream-network,psram-task-stack,code-psram,profile-psram-data";
 
 pub fn run(ctx: &Context) -> Result<()> {
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
-    let mut profile_count = 0;
-    for item in &packages {
-        for mode in compilation_profiles(&item.package)? {
-            process::run(
-                ctx.cargo()
-                    .args([
-                        "check",
-                        "--quiet",
-                        "--locked",
-                        "--offline",
-                        "--manifest-path",
-                    ])
-                    .arg(&item.manifest)
-                    .args(["--package", item.package.name.as_str(), "--target", TARGET])
-                    .args(mode),
-            )?;
-            profile_count += 1;
-        }
+    let configurations = architecture_configurations(ctx, &packages, TARGET)?;
+    for configuration in &configurations {
+        let mut command = ctx.cargo();
+        command.args(["check", "--quiet"]);
+        configuration.apply(&mut command);
+        process::run(&mut command)?;
     }
-    eprintln!("driver architecture compilation: {profile_count} isolated feature profiles");
+    eprintln!(
+        "driver architecture compilation: {} isolated feature profiles",
+        configurations.len()
+    );
     facade::check(ctx)?;
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(TARGET), true)?;
     for name in [
@@ -150,13 +139,21 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
 }
 
 fn hil_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::Graph> {
-    let features = overlay.map_or_else(
-        || COMMON_HIL.to_owned(),
-        |overlay| format!("{COMMON_HIL},{overlay}"),
-    );
+    let manifest = ctx.root.join(HIL_RUNTIME);
+    let direct = cargo::metadata_no_deps(ctx, &manifest)?;
+    let package = package_for_manifest(&direct, &manifest)?;
+    let profiles = declared_profiles(package)?;
+    let [base] = profiles.as_slice() else {
+        return Err(format!(
+            "HIL runtime must declare exactly one shared supported feature profile, found {}",
+            profiles.len()
+        )
+        .into());
+    };
+    let features = overlay.map_or_else(|| base.to_owned(), |overlay| format!("{base},{overlay}"));
     cargo::metadata(
         ctx,
-        &ctx.root.join(HIL_RUNTIME),
+        &manifest,
         &[
             "--no-default-features".into(),
             "--features".into(),

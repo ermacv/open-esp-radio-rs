@@ -11,7 +11,7 @@ use std::{
 use cargo_metadata::Message;
 
 use super::{
-    TARGET, architecture, artifacts, bluetooth, common, examples, metadata, network, safety,
+    TARGET, architecture, artifacts, bluetooth, common, docs, examples, metadata, network, safety,
 };
 use crate::{
     Context, Result, cargo,
@@ -242,39 +242,74 @@ fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
     )
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreImageStage {
+    RepositoryTests,
+    BlobrayLibraryTests,
+    BlobrayLauncherTests,
+    Metadata,
+    NetworkDependencies,
+    Examples,
+    Docs,
+}
+
+const PRE_IMAGE_STAGES: &[PreImageStage] = &[
+    PreImageStage::RepositoryTests,
+    PreImageStage::BlobrayLibraryTests,
+    PreImageStage::BlobrayLauncherTests,
+    PreImageStage::Metadata,
+    PreImageStage::NetworkDependencies,
+    PreImageStage::Examples,
+    PreImageStage::Docs,
+];
+
+fn run_pre_image_stages(mut execute: impl FnMut(PreImageStage) -> Result<()>) -> Result<()> {
+    for stage in PRE_IMAGE_STAGES {
+        execute(*stage)?;
+    }
+    Ok(())
+}
+
+fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
+    match stage {
+        PreImageStage::RepositoryTests => process::run(ctx.cargo().args([
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "oer-xtask",
+            "-p",
+            "oer-process",
+            "-p",
+            "oer-firmware",
+        ])),
+        PreImageStage::BlobrayLibraryTests => process::run(ctx.cargo().args([
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "blobray",
+            "--lib",
+            "launcher::",
+        ])),
+        PreImageStage::BlobrayLauncherTests => process::run(ctx.cargo().args([
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "blobray",
+            "--test",
+            "launcher",
+        ])),
+        PreImageStage::Metadata => metadata::run(ctx).map(|_| ()),
+        PreImageStage::NetworkDependencies => network::run(ctx, true),
+        PreImageStage::Examples => examples::run(ctx),
+        PreImageStage::Docs => docs::run(ctx, false),
+    }
+}
+
 pub fn run(ctx: &Context) -> Result<()> {
-    process::run(ctx.cargo().args([
-        "test",
-        "--locked",
-        "--offline",
-        "-p",
-        "oer-xtask",
-        "-p",
-        "oer-process",
-        "-p",
-        "oer-firmware",
-    ]))?;
-    process::run(ctx.cargo().args([
-        "test",
-        "--locked",
-        "--offline",
-        "-p",
-        "blobray",
-        "--lib",
-        "launcher::",
-    ]))?;
-    process::run(ctx.cargo().args([
-        "test",
-        "--locked",
-        "--offline",
-        "-p",
-        "blobray",
-        "--test",
-        "launcher",
-    ]))?;
-    metadata::run(ctx)?;
-    network::run(ctx, true)?;
-    examples::run(ctx)?;
+    run_pre_image_stages(|stage| execute_pre_image_stage(ctx, stage))?;
 
     process::run(
         ctx.cargo()

@@ -79,7 +79,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
     }
 
-    /// Descriptor-only counterpart of [`Self::can_commit_ht_frame`].
+    /// Descriptor-only counterpart of the host-side `can_commit_ht_frame` check.
     pub fn can_commit_referenced_ht_frame(
         &self,
         cookie: TxCookie,

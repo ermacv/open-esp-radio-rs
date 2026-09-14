@@ -110,6 +110,14 @@ commit/dirty state and configured evidence provenance; a catalog or manifest
 hash is source identity, never firmware identity. All outputs are ignored
 views, not another readiness decision or tracked snapshot.
 
+`cargo xtask check docs` invokes the static catalog owner for all catalogs and
+program selections, and renders the complete catalog set in both input orders
+to check deterministic presentation. It uses `catalog check --catalog`,
+`catalog check --manifest`, and `catalog render --catalog`; it does not use
+manifest rendering, `validate`, `evaluate`, or `gate`, and it does not read
+vendor evidence or HIL runs. Its ignored static views live below
+`target/docs/gate/catalogs/` and carry no readiness verdict.
+
 The Bluetooth LE program includes legacy and extended roles, connected PHY and
 control procedures, security/privacy, periodic advertising and PAwR, Direction
 Finding, ISO in both connected and broadcast roles, LE Audio and the named LE

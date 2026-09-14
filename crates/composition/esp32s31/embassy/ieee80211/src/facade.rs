@@ -47,7 +47,7 @@ pub struct WifiSystem {
 }
 
 /// Named application capabilities materialized from the Wi-Fi subsystem.
-/// PAC, DMA and interrupt state remain exclusively in [`SystemRunner`].
+/// PAC, DMA and interrupt state remain exclusively in [`crate::SystemRunner`].
 pub struct WifiParts {
     pub control: WifiControl,
     pub station_device: WifiDevice,

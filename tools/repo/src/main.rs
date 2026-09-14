@@ -40,6 +40,12 @@ enum Check {
     /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
     NetworkBackpressure,
     Examples,
+    /// Check first-party rustdoc, doctests, examples, links and static capability views.
+    Docs {
+        /// List the complete plan and inapplicable actions without running checks.
+        #[arg(long)]
+        list: bool,
+    },
     SourceOnly,
     BlobrayStandalone,
 }
@@ -101,6 +107,7 @@ fn run() -> Result<()> {
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Examples => checks::examples::run(&ctx),
+            Check::Docs { list } => checks::docs::run(&ctx, list),
             Check::SourceOnly => checks::source_only::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
         },

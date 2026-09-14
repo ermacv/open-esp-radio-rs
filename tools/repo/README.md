@@ -26,7 +26,9 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
-| `cargo xtask check source-only` | Compose repository suites, Cargo/Clippy, publication and final-image analysis |
+| `cargo xtask check docs --list` | List resolved documentation configurations and genuine inapplicable actions without running doc builds, doctests or qualification evaluation |
+| `cargo xtask check docs` | Build separate public/private rustdoc, run applicable host doctests, compile MCU example consumers, check owned Markdown links and render static qualification views |
+| `cargo xtask check source-only` | Compose repository suites, including the docs gate, Cargo/Clippy, publication and final-image analysis |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
@@ -35,6 +37,28 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 The root Cargo alias selects this package. `--root PATH` selects an explicit
 repository checkout. A nested independent workspace does not acquire the root
 workspace's package membership through `--manifest-path`.
+
+Architecture, example and documentation checks resolve their Cargo jobs from
+the same typed configuration model. Package metadata owns supported feature
+alternatives; the model keeps workspace, package/target, host or MCU target,
+feature selection and Cargo build profile separate. A package or target that
+cannot take a documentation action is listed with its reason instead of being
+silently omitted.
+
+The full docs gate uses the pinned toolchain and target with locked, offline
+Cargo operations. Its ignored outputs live below `target/docs/gate/`: the
+resolved plan is `job-plan.json`, public and private rustdoc snapshots are
+separate, static catalog views are under `catalogs/`, and `report.json` is
+written only after every stage succeeds. The gate checks tracked Markdown,
+owner documents below `docs/`, package `README.md` files and Cargo `readme`
+targets. Arbitrary untracked working notes are not repository documentation.
+External URLs are counted as `external-not-checked`; no network requests are
+made. Static catalog checking and rendering neither load runtime evidence nor
+evaluate readiness, and the command performs no hardware operations.
+Rustdoc type-checking of the bootstrap uses an owned empty compile input for
+its required `PSRAM_RUNTIME_BIN`; it is never linked, packed or presented as a
+firmware image. The source-only image owner continues to provide the real
+packed stage-two runtime for final-image analysis.
 
 Network dependency checks distinguish released compatibility, original upstream,
 maintained owned and research contracts. Compatibility products

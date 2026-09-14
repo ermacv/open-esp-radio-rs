@@ -1,4 +1,5 @@
 mod hil;
+mod inventory;
 mod model;
 mod report;
 
@@ -8,13 +9,15 @@ use model::{QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]";
+const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog <check|render> --manifest PATH [--root PATH] [--out DIRECTORY]";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
     Validate,
     Evaluate,
     Gate,
+    CatalogCheck,
+    CatalogRender,
 }
 
 impl Command {
@@ -34,6 +37,7 @@ struct Arguments {
     manifest: PathBuf,
     root: PathBuf,
     json_report: Option<PathBuf>,
+    output_directory: Option<PathBuf>,
 }
 
 fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
@@ -47,11 +51,21 @@ fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<P
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
     let command_name = arguments.first().ok_or("missing qualification command")?;
-    let command = Command::parse(command_name)?;
+    let (command, mut index) = if command_name == "catalog" {
+        let operation = arguments.get(1).ok_or("missing catalog operation")?;
+        let command = match operation.as_str() {
+            "check" => Command::CatalogCheck,
+            "render" => Command::CatalogRender,
+            _ => return Err(format!("unknown catalog operation {operation:?}").into()),
+        };
+        (command, 2)
+    } else {
+        (Command::parse(command_name)?, 1)
+    };
     let mut manifest = None;
     let mut root = None;
     let mut json_report = None;
-    let mut index = 1;
+    let mut output_directory = None;
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--manifest" => {
@@ -72,14 +86,30 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     return Err("duplicate --json-report".into());
                 }
             }
+            "--out" => {
+                let value = take_value(&arguments, &mut index, "--out")?;
+                if output_directory.replace(value).is_some() {
+                    return Err("duplicate --out".into());
+                }
+            }
             option => return Err(format!("unknown option {option:?}").into()),
         }
+    }
+    if matches!(command, Command::CatalogCheck | Command::CatalogRender) && json_report.is_some() {
+        return Err("catalog commands do not accept --json-report".into());
+    }
+    if !matches!(command, Command::CatalogRender) && output_directory.is_some() {
+        return Err("--out is only accepted by catalog render".into());
+    }
+    if command == Command::CatalogRender && output_directory.is_none() {
+        return Err("catalog render requires --out".into());
     }
     Ok(Arguments {
         command,
         manifest: manifest.ok_or("missing --manifest")?,
         root: root.unwrap_or(env::current_dir()?),
         json_report,
+        output_directory,
     })
 }
 
@@ -90,6 +120,13 @@ fn execute(arguments: Arguments) -> Result<()> {
         arguments.root.join(&arguments.manifest)
     };
     let qualification = Qualification::load_and_evaluate(&manifest_path, &arguments.root)?;
+    if matches!(
+        arguments.command,
+        Command::CatalogCheck | Command::CatalogRender
+    ) && qualification.catalog_sources.is_empty()
+    {
+        return Err("qualification program does not select a capability catalog".into());
+    }
     report::print(&qualification);
     if let Some(path) = arguments.json_report.as_deref() {
         let path = if path.is_absolute() {
@@ -98,6 +135,14 @@ fn execute(arguments: Arguments) -> Result<()> {
             arguments.root.join(path)
         };
         report::write_json(&qualification, &path)?;
+    }
+    if let Some(path) = arguments.output_directory.as_deref() {
+        let path = if path.is_absolute() {
+            path.to_owned()
+        } else {
+            arguments.root.join(path)
+        };
+        inventory::write(&qualification, &path)?;
     }
     if arguments.command == Command::Gate && !qualification.all_required_ready() {
         return Err(format!(
@@ -112,6 +157,12 @@ fn execute(arguments: Arguments) -> Result<()> {
         println!(
             "VALID\ttarget={}\tschema={QUALIFICATION_SCHEMA}",
             qualification.target
+        );
+    } else if arguments.command == Command::CatalogCheck {
+        println!(
+            "CATALOG-VALID\ttarget={}\tprogram-schema={QUALIFICATION_SCHEMA}\tcatalogs={}",
+            qualification.target,
+            qualification.catalog_sources.len()
         );
     }
     Ok(())

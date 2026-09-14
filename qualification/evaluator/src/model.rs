@@ -12,7 +12,9 @@ use crate::{
     hil::{HilEvidenceIndex, HilEvidenceSummary, HilRequirement, RepositoryState, ScenarioCatalog},
 };
 
+mod catalog;
 mod source_contract;
+pub(crate) use catalog::{CapabilityOrigin, CapabilityScope, SourceIdentity};
 pub(crate) use source_contract::SourceContract;
 
 pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
@@ -159,7 +161,7 @@ pub(crate) struct Gap {
     pub(crate) id: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Capability {
     pub(crate) id: String,
     pub(crate) title: String,
@@ -191,6 +193,10 @@ pub(crate) struct Qualification {
     pub(crate) repository: RepositoryState,
     pub(crate) evidence_inputs: EvidenceInputs,
     pub(crate) capabilities: BTreeMap<String, Capability>,
+    pub(crate) program_source: SourceIdentity,
+    pub(crate) catalog_sources: Vec<SourceIdentity>,
+    pub(crate) capability_origins: BTreeMap<String, CapabilityOrigin>,
+    pub(crate) catalog_scopes: BTreeMap<String, CapabilityScope>,
 }
 
 #[derive(Clone, Debug)]
@@ -217,7 +223,8 @@ impl Qualification {
                 path.display()
             )
         })?;
-        document.evaluate(root)
+        let resolved = document.resolve_catalogs(root, path, &input)?;
+        resolved.evaluate(root)
     }
 
     pub(crate) fn is_ready(&self, id: &str) -> bool {
@@ -250,9 +257,22 @@ struct ManifestDocument {
     schema: u16,
     target: String,
     required_capabilities: Vec<String>,
+    #[serde(default)]
+    catalogs: Vec<PathBuf>,
+    #[serde(default)]
+    catalog_capabilities: Vec<String>,
     verification: VerificationConfig,
     hil: HilConfig,
+    #[serde(default)]
     capabilities: Vec<CapabilityDocument>,
+    #[serde(skip)]
+    program_source: Option<SourceIdentity>,
+    #[serde(skip)]
+    catalog_sources: Vec<SourceIdentity>,
+    #[serde(skip)]
+    capability_origins: BTreeMap<String, CapabilityOrigin>,
+    #[serde(skip)]
+    catalog_scopes: BTreeMap<String, CapabilityScope>,
 }
 
 #[derive(Deserialize)]
@@ -321,7 +341,7 @@ struct GapDocument {
     id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct CapabilityDocument {
     id: String,
@@ -351,6 +371,8 @@ struct CapabilityDocument {
     gaps: Vec<GapDocument>,
     #[serde(default)]
     source_contracts: Vec<SourceContract>,
+    #[serde(default)]
+    catalog_scope: Option<CapabilityScope>,
 }
 
 impl ManifestDocument {
@@ -362,6 +384,10 @@ impl ManifestDocument {
             )
             .into());
         }
+        let program_source = self
+            .program_source
+            .clone()
+            .ok_or("qualification program was not resolved")?;
         let target = slug(&self.target, "qualification target")?;
         let hil_target = slug(&self.hil.target, "HIL target")?;
         validate_relative_path(&self.verification.project)?;
@@ -440,6 +466,10 @@ impl ManifestDocument {
             repository,
             evidence_inputs,
             capabilities,
+            program_source,
+            catalog_sources: self.catalog_sources,
+            capability_origins: self.capability_origins,
+            catalog_scopes: self.catalog_scopes,
         })
     }
 }

@@ -16,7 +16,7 @@ pub(crate) enum SourceComposition {
     Unimplemented,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) struct SourceContract {
     id: String,

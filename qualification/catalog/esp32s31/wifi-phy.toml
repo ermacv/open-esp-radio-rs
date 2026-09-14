@@ -1,0 +1,58 @@
+schema = 1
+id = "esp32s31-wifi-phy"
+
+[[capabilities]]
+id = "rf-bb-initialization"
+title = "RF and baseband initialization"
+scope = "Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registration"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-roots = [
+  { source = "archive", symbol = "phy_rf_init" },
+  { source = "archive", symbol = "phy_bb_init" },
+]
+hil-requirements = [
+  { scenario = "station-reconnect", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "bb-init-contract-and-blocker-chain-incomplete" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-phy"
+phy = "wifi-2g4"
+security = ["not-applicable"]
+composition = "production-phy-initialization"
+level = "lower-primitive"
+activation-boundary = "Cold initialization before Wi-Fi MAC activation"
+limitations = "Cold initialization does not establish resume behavior, PLL lock, channel correctness, RF performance, or readiness without the declared vendor and HIL evidence"
+
+[[capabilities]]
+id = "channel-selection-switch"
+title = "Channel selection and live switch"
+scope = "Typed 2.4-GHz PHY selection plus MAC stop restart around a live switch"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+depends-on = ["rf-bb-initialization"]
+vendor-roots = [
+  { source = "archive", symbol = "phy_chip_set_chan" },
+]
+hil-requirements = [
+  { scenario = "station-reconnect-ht40", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "channel-production-trace-difference-unreviewed" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["independent-of-link-security"]
+composition = "connected-station"
+level = "composed-product"
+activation-boundary = "After the live MAC is stopped and before it is restarted on the selected channel"
+limitations = "Channels 1 through 13 are implemented; channel 14 is rejected, enclosing RXCAL and TXCAL are separate, and channel correctness and RF performance still require the declared evidence"

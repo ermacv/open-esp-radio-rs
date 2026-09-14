@@ -50,13 +50,19 @@ non-AP. Their absence is not an unfinished supported hardware mode.
 
 The [STA program](../../../../../qualification/targets/esp32s31/wifi-sta.toml)
 qualifies the connected STA composition, not every AP, ESP-NOW or silicon row
-in this inventory. Its `cold-registration` source contracts distinguish full
+in this inventory. Its `channel-selection-switch` scope and shared
+`rf-bb-initialization` dependency are owned by the
+[canonical Wi-Fi/PHY declarations](../../../../../qualification/catalog/esp32s31/wifi-phy.toml);
+the program selects them by ID and the qualification evaluator resolves the
+dependency. Its `cold-registration` source contracts distinguish full
 cold calibration from rejected cache-backed hardware replay. `rx-tx-dma`
 separates production SRAM operation from diagnostic PSRAM paths and absent
 compositions. An implementation-complete root still needs its vendor/HIL and
 other required axes; those evidence gaps do not negate its source coverage.
 For identical scopes, implementation claims must follow the
 [inventory agreement contract](../../../../../docs/verification-and-qualification.md#agreement-with-feature-inventories).
+The full resolved program view is generated under ignored output with
+`cargo qualification catalog render --manifest qualification/targets/esp32s31/wifi-sta.toml --out target/qualification/catalog/wifi-sta`.
 
 ## Interfaces and operating modes
 

@@ -24,6 +24,15 @@ Workspace tests and review are responsible for the declared source states.
 The evaluator lives in `qualification/evaluator`; its CLI is
 `cargo qualification validate|evaluate|gate`.
 
+Schema-4 programs may select canonical capability records from schema-1 files
+under `qualification/catalog/`. Resolution includes the selected stable IDs
+and their catalog-owned dependency closure before the same evaluator applies
+the exact-set, dependency, declaration and evidence rules. Catalog structure
+and generated inventories are not evidence and cannot promote an axis or a
+readiness verdict. Catalog scope metadata records chip, role, PHY, security,
+composition level, activation boundary and limitations separately from those
+axes.
+
 ## Agreement with feature inventories
 
 `FEATURES.md` and qualification describe the same implementation. For an

@@ -132,6 +132,10 @@ are carried by [Wi-Fi](../../../../qualification/targets/esp32s31/wifi-sta.toml)
 [Bluetooth](../../../../qualification/targets/esp32s31/bluetooth-le.toml) and
 [IEEE 802.15.4](../../../../qualification/targets/esp32s31/ieee802154.toml).
 This inventory does not promote their proof states.
+The Wi-Fi program resolves its migrated channel-switch scope and RF/baseband
+dependency from the
+[canonical Wi-Fi/PHY catalog](../../../../qualification/catalog/esp32s31/wifi-phy.toml);
+the catalog does not create a standalone PHY readiness target.
 
 PLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,
 and calibration stability across sleep/wake require their own hardware evidence.

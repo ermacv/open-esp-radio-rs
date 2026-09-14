@@ -8,6 +8,46 @@ states are derived from independent evidence.
 
 The ESP32-S31 Wi-Fi, Bluetooth LE and IEEE 802.15.4 programs are independent.
 
+## Capability catalogs and program resolution
+
+Canonical capability declarations may live below `catalog/`. A qualification
+program names one or more catalog files with `catalogs` and selects stable IDs
+with `catalog-capabilities`. Resolution adds the selected declaration and its
+catalog-owned dependency closure to the program before the schema-4 evaluator
+runs. Inline capabilities remain supported while domains migrate; a capability
+ID cannot be declared both inline and in a loaded catalog.
+
+Every catalog declaration keeps the existing reviewed/evidence axes and may
+carry the existing source contracts. Its required `catalog-scope` identifies
+the chip, role, PHY, security set, composition, native/lower/composed level,
+activation boundary and limitations. This metadata is validated and rendered,
+but it is not a readiness axis.
+
+The first migrated slice is
+[`channel-selection-switch`](catalog/esp32s31/wifi-phy.toml), including its
+`rf-bb-initialization` dependency, in the ESP32-S31
+[Wi-Fi STA program](targets/esp32s31/wifi-sta.toml). Both declarations retain
+their previous implementation, host, async, vendor and HIL obligations.
+
+Catalog validation and inventory generation use the same resolver and
+evaluator as normal qualification:
+
+```console
+cargo qualification catalog check \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml
+
+cargo qualification catalog render \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml \
+  --out target/qualification/catalog/wifi-sta
+```
+
+The render writes `capabilities.md` under the selected ignored output
+directory. It records the program and catalog schema identities and SHA-256
+source identities, then shows declaration origin, reviewed source coverage,
+program membership, evidence-derived state and readiness in separate columns.
+It is a view of the evaluator result, not another readiness decision or a
+tracked snapshot.
+
 The Bluetooth LE program includes legacy and extended roles, connected PHY and
 control procedures, security/privacy, periodic advertising and PAwR, Direction
 Finding, ISO in both connected and broadcast roles, LE Audio and the named LE
@@ -39,6 +79,10 @@ Three commands have deliberately different contracts:
   report through `--json-report PATH`;
 - `gate` returns non-zero unless every required capability and dependency is
   ready.
+
+`catalog check` additionally requires at least one selected catalog, while
+`catalog render` writes the ignored derived view after the same validation and
+evaluation succeeds.
 
 ## Declared and derived axes
 

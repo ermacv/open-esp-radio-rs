@@ -17,6 +17,12 @@ required-capabilities = [
   "radio-retained-wake",
   "timeout-error-recovery",
 ]
+catalogs = [
+  "qualification/catalog/esp32s31/wifi-phy.toml",
+]
+catalog-capabilities = [
+  "channel-selection-switch",
+]
 
 [verification]
 project = "verification/vendor/projects/esp32s31/vendor-project.toml"
@@ -75,42 +81,6 @@ source-paths = [
   "crates/hardware/esp32s31/phy/src/registered_radio.rs",
   "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
   "crates/hardware/esp32s31/driver/ieee80211/src/startup.rs",
-]
-
-[[capabilities]]
-id = "rf-bb-initialization"
-title = "RF and baseband initialization"
-scope = "Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registration"
-implementation = "complete"
-host = "covered"
-async = "bounded"
-vendor-roots = [
-  { source = "archive", symbol = "phy_rf_init" },
-  { source = "archive", symbol = "phy_bb_init" },
-]
-hil-requirements = [
-  { scenario = "station-reconnect", minimum-repetitions = 1 },
-]
-gaps = [
-  { axis = "vendor", id = "bb-init-contract-and-blocker-chain-incomplete" },
-]
-
-[[capabilities]]
-id = "channel-selection-switch"
-title = "Channel selection and live switch"
-scope = "Typed 2.4-GHz PHY selection plus MAC stop restart around a live switch"
-implementation = "complete"
-host = "covered"
-async = "bounded"
-depends-on = ["rf-bb-initialization"]
-vendor-roots = [
-  { source = "archive", symbol = "phy_chip_set_chan" },
-]
-hil-requirements = [
-  { scenario = "station-reconnect-ht40", minimum-repetitions = 1 },
-]
-gaps = [
-  { axis = "vendor", id = "channel-production-trace-difference-unreviewed" },
 ]
 
 [[capabilities]]

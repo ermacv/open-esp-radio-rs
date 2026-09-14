@@ -10,6 +10,8 @@ in [qualification](../README.md). Its package name is
 | `validate --manifest PATH` | Reject malformed or inconsistent inputs; a valid incomplete program may pass |
 | `evaluate --manifest PATH` | Derive readiness axes and optionally write `--json-report PATH` |
 | `gate --manifest PATH` | Fail unless every required capability and dependency is ready |
+| `catalog check --manifest PATH` | Resolve selected canonical declarations and run the same fail-closed validation/evaluation |
+| `catalog render --manifest PATH --out DIRECTORY` | Write a deterministic ignored Markdown inventory from the resolved evaluator result |
 
 Schema-4 programs declare implementation, host and async status. Vendor/HIL
 status is derived from independently checked external evidence. Declarations
@@ -23,6 +25,14 @@ interoperability; readers retain separate validation logic.
 
 Unit tests live beside their private modules. No source-name regex is used to
 turn Rust symbol spelling into an ownership or execution proof.
+
+Capability catalog schema 1 stores schema-4 capability records without a
+second status model. The resolver rejects unsafe catalog paths, symlink path
+components, unsupported schemas, duplicate declarations and unknown selected
+IDs. Structured chip, role, PHY, security, composition, capability level,
+activation and limitation scope is required for each catalog record.
+Catalog-owned dependencies are included transitively before the existing
+exact-set and dependency-cycle checks run.
 
 HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the current clean repository, and the recorded

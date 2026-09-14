@@ -35,6 +35,13 @@ axes. The same catalog may contain a wider source inventory whose source
 status is not a readiness result; static catalog checking validates all
 declarations without consuming vendor evidence indexes or HIL runs.
 
+When two views describe the exact same source scope, a catalog source fact owns
+its status, level, limits and source contract. Inventory projections and
+qualification declarations reference that fact explicitly and cannot override
+it. This reference is not a readiness dependency: narrower implemented facts
+do not close broader incomplete capabilities, and related scopes remain
+separate assertions.
+
 ## Agreement with feature inventories
 
 `FEATURES.md` and qualification describe the same implementation. For an

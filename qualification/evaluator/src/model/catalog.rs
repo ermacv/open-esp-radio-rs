@@ -16,8 +16,10 @@ pub(crate) struct CatalogView {
     pub(crate) capabilities: BTreeMap<String, CapabilityDocument>,
     pub(crate) scopes: BTreeMap<String, CapabilityScope>,
     pub(crate) capability_owners: BTreeMap<String, (String, PathBuf)>,
+    pub(crate) source_facts: BTreeMap<String, SourceFact>,
     pub(crate) sections: Vec<InventorySection>,
     pub(crate) items: Vec<InventoryItem>,
+    pub(crate) references: Vec<InventoryReference>,
 }
 
 #[derive(Clone, Debug)]
@@ -140,8 +142,63 @@ pub(crate) struct InventoryItem {
     pub(crate) status: SourceStatus,
     pub(crate) level: CapabilityLevel,
     pub(crate) scope_and_limitations: String,
+    pub(crate) source_paths: Vec<PathBuf>,
+    pub(crate) source_fact: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum InventoryReferenceKind {
+    QualificationMapping,
+    SourceReference,
+}
+
+impl InventoryReferenceKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::QualificationMapping => "qualification-mapping",
+            Self::SourceReference => "source-reference",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) struct InventoryReference {
+    pub(crate) id: String,
+    pub(crate) section: String,
+    pub(crate) title: String,
+    pub(crate) kind: InventoryReferenceKind,
+    pub(crate) details: String,
     #[serde(default)]
     pub(crate) source_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) struct SourceFact {
+    pub(crate) id: String,
+    pub(crate) status: SourceStatus,
+    pub(crate) level: CapabilityLevel,
+    pub(crate) source_contract: super::SourceContract,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct InventoryItemDocument {
+    id: String,
+    section: String,
+    title: String,
+    #[serde(default)]
+    status: Option<SourceStatus>,
+    #[serde(default)]
+    level: Option<CapabilityLevel>,
+    #[serde(default)]
+    scope_and_limitations: Option<String>,
+    #[serde(default)]
+    source_paths: Vec<PathBuf>,
+    #[serde(default)]
+    source_fact: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -162,7 +219,19 @@ struct CatalogDocument {
     #[serde(default)]
     sections: Vec<InventorySection>,
     #[serde(default)]
-    items: Vec<InventoryItem>,
+    items: Vec<InventoryItemDocument>,
+    #[serde(default)]
+    source_facts: Vec<SourceFact>,
+    #[serde(default)]
+    references: Vec<InventoryReference>,
+}
+
+struct LoadedCatalog {
+    id: String,
+    path: PathBuf,
+    verification_project: PathBuf,
+    hil_catalog: PathBuf,
+    document: CatalogDocument,
 }
 
 impl CatalogView {
@@ -171,68 +240,11 @@ impl CatalogView {
     }
 
     pub(crate) fn load_for_program(root: &Path, path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(path).map_err(|error| {
-            format!(
-                "cannot read qualification manifest {}: {error}",
-                path.display()
-            )
-        })?;
-        let document: ManifestDocument = toml_edit::de::from_str(&input).map_err(|error| {
-            format!(
-                "cannot parse qualification manifest {}: {error}",
-                path.display()
-            )
-        })?;
-        if document.schema != QUALIFICATION_SCHEMA {
-            return Err(format!(
-                "unsupported qualification schema {} (expected {QUALIFICATION_SCHEMA})",
-                document.schema
-            )
-            .into());
+        let program = ManifestDocument::load_and_validate(path, root)?;
+        if program.catalog().sources.is_empty() {
+            return Err("qualification program does not select a capability catalog".into());
         }
-        let mut inline = BTreeSet::new();
-        for capability in &document.capabilities {
-            let id = slug(&capability.id, "capability id")?;
-            if !inline.insert(id.clone()) {
-                return Err(format!("qualification manifest repeats capability {id}").into());
-            }
-            if capability.catalog_scope.is_some() {
-                return Err(format!(
-                    "inline capability {id} cannot declare catalog-scope metadata"
-                )
-                .into());
-            }
-        }
-        let view = Self::load_with_program(
-            root,
-            &document.catalogs,
-            Some((&document.verification, &document.hil)),
-            &inline,
-        )?;
-        let dispositions =
-            DispositionIndex::load_project(&root.join(&document.verification.project))?;
-        let scenarios = ScenarioCatalog::load(root, &document.hil.catalog)?;
-        let context = StaticContext {
-            root,
-            dispositions: &dispositions,
-            scenario_catalog: &scenarios,
-        };
-        let mut combined = view.capabilities.clone();
-        for capability in &document.capabilities {
-            validate_capability_declaration(capability, &context)?;
-            if combined
-                .insert(capability.id.clone(), capability.clone())
-                .is_some()
-            {
-                return Err(format!(
-                    "capability {} is declared both inline and in a catalog",
-                    capability.id
-                )
-                .into());
-            }
-        }
-        validate_catalog_dependencies(&combined, &BTreeSet::new())?;
-        Ok(view)
+        Ok(program.catalog().clone())
     }
 
     fn load_with_program(
@@ -250,6 +262,8 @@ impl CatalogView {
         let mut capability_owners = BTreeMap::new();
         let mut section_ids = BTreeSet::new();
         let mut item_ids = BTreeSet::new();
+        let mut reference_ids = BTreeSet::new();
+        let mut loaded_catalogs = Vec::new();
 
         let mut ordered_paths = paths.to_vec();
         ordered_paths.sort();
@@ -263,12 +277,13 @@ impl CatalogView {
                 .into());
             }
             let input = read_contained_file(root, relative, "capability catalog")?;
-            let document: CatalogDocument = toml_edit::de::from_str(&input).map_err(|error| {
-                format!(
-                    "cannot parse capability catalog {}: {error}",
-                    relative.display()
-                )
-            })?;
+            let mut document: CatalogDocument =
+                toml_edit::de::from_str(&input).map_err(|error| {
+                    format!(
+                        "cannot parse capability catalog {}: {error}",
+                        relative.display()
+                    )
+                })?;
             if document.schema != CAPABILITY_CATALOG_SCHEMA {
                 return Err(format!(
                     "unsupported capability catalog schema {} in {} (expected {CAPABILITY_CATALOG_SCHEMA})",
@@ -280,10 +295,14 @@ impl CatalogView {
             if !catalog_ids.insert(catalog_id.clone()) {
                 return Err(format!("duplicate capability catalog id {catalog_id}").into());
             }
-            if document.capabilities.is_empty() && document.items.is_empty() {
+            if document.capabilities.is_empty()
+                && document.items.is_empty()
+                && document.source_facts.is_empty()
+                && document.references.is_empty()
+            {
                 return Err(format!("capability catalog {catalog_id} is empty").into());
             }
-            let (verification_project, hil_catalog) = match (document.validation, fallback) {
+            let (verification_project, hil_catalog) = match (document.validation.take(), fallback) {
                 (Some(validation), _) => (validation.verification_project, validation.hil_catalog),
                 (None, Some((verification, hil))) => (verification.project.clone(), hil.catalog.clone()),
                 (None, None) => return Err(format!(
@@ -292,41 +311,101 @@ impl CatalogView {
             };
             validate_relative_path(&verification_project)?;
             validate_relative_path(&hil_catalog)?;
-            let dispositions = DispositionIndex::load_project(&root.join(verification_project))?;
-            let scenarios = ScenarioCatalog::load(root, &hil_catalog)?;
-            let context = StaticContext {
-                root,
-                dispositions: &dispositions,
-                scenario_catalog: &scenarios,
-            };
             view.sources.push(SourceIdentity {
                 id: catalog_id.clone(),
                 schema: document.schema,
                 path: relative.clone(),
                 sha256: sha256(input.as_bytes()),
             });
-            for capability in document.capabilities {
+            loaded_catalogs.push(LoadedCatalog {
+                id: catalog_id,
+                path: relative.clone(),
+                verification_project,
+                hil_catalog,
+                document,
+            });
+        }
+
+        for loaded in &mut loaded_catalogs {
+            for fact in std::mem::take(&mut loaded.document.source_facts) {
+                let id = slug(&fact.id, "source fact id")?;
+                let contract_id = slug(&fact.source_contract.id, "source contract")?;
+                if id != contract_id {
+                    return Err(format!(
+                        "source fact {id} must own a source contract with the same id, not {contract_id}"
+                    )
+                    .into());
+                }
+                super::source_contract::validate(
+                    std::slice::from_ref(&fact.source_contract),
+                    root,
+                )?;
+                if view.source_facts.insert(id.clone(), fact).is_some() {
+                    return Err(format!("duplicate source fact {id}").into());
+                }
+            }
+        }
+
+        for loaded in loaded_catalogs {
+            let dispositions =
+                DispositionIndex::load_project(&root.join(&loaded.verification_project))?;
+            let scenarios = ScenarioCatalog::load(root, &loaded.hil_catalog)?;
+            let context = StaticContext {
+                root,
+                dispositions: &dispositions,
+                scenario_catalog: &scenarios,
+            };
+            for mut capability in loaded.document.capabilities {
                 let id = slug(&capability.id, "capability id")?;
+                let mut fact_refs = BTreeSet::new();
+                let explicit_contracts = std::mem::take(&mut capability.source_contracts);
+                for reference in &capability.source_fact_refs {
+                    let reference = slug(reference, "source fact reference")?;
+                    if !fact_refs.insert(reference.clone()) {
+                        return Err(format!(
+                            "catalog capability {id} repeats source fact reference {reference}"
+                        )
+                        .into());
+                    }
+                    let fact = view.source_facts.get(&reference).ok_or_else(|| {
+                        format!(
+                            "catalog capability {id} references missing source fact {reference}"
+                        )
+                    })?;
+                    if explicit_contracts
+                        .iter()
+                        .any(|contract| contract.id == reference)
+                    {
+                        return Err(format!(
+                            "catalog capability {id} cannot override referenced source fact {reference}"
+                        )
+                        .into());
+                    }
+                    capability
+                        .source_contracts
+                        .push(fact.source_contract.clone());
+                }
+                capability.source_contracts.extend(explicit_contracts);
                 let scope = capability.catalog_scope.as_ref().ok_or_else(|| {
                     format!("catalog capability {id} requires catalog-scope metadata")
                 })?;
                 scope.validate(&id)?;
                 validate_capability_declaration(&capability, &context)?;
                 if let Some(previous) =
-                    capability_owners.insert(id.clone(), (catalog_id.clone(), relative.clone()))
+                    capability_owners.insert(id.clone(), (loaded.id.clone(), loaded.path.clone()))
                 {
                     return Err(format!(
-                        "capability {id} is declared by both catalog {} and {catalog_id}",
-                        previous.0
+                        "capability {id} is declared by both catalog {} and {}",
+                        previous.0, loaded.id
                     )
                     .into());
                 }
                 view.scopes.insert(id.clone(), scope.clone());
                 view.capability_owners
-                    .insert(id.clone(), (catalog_id.clone(), relative.clone()));
+                    .insert(id.clone(), (loaded.id.clone(), loaded.path.clone()));
                 view.capabilities.insert(id, capability);
             }
-            for section in document.sections {
+            for section in loaded.document.sections {
                 let id = slug(&section.id, "inventory section id")?;
                 slug(&section.domain, "inventory domain")?;
                 if section.title.trim().is_empty() {
@@ -353,30 +432,106 @@ impl CatalogView {
                 }
                 view.sections.push(section);
             }
-            for item in document.items {
+            for item in loaded.document.items {
                 let id = slug(&item.id, "inventory item id")?;
                 slug(&item.section, "inventory section reference")?;
-                if item.title.trim().is_empty() || item.scope_and_limitations.trim().is_empty() {
-                    return Err(format!(
-                        "inventory item {id} requires title and scope-and-limitations"
-                    )
-                    .into());
+                if item.title.trim().is_empty() {
+                    return Err(format!("inventory item {id} requires a title").into());
+                }
+                let resolved = if let Some(reference) = item.source_fact {
+                    let reference = slug(&reference, "source fact reference")?;
+                    if item.status.is_some()
+                        || item.level.is_some()
+                        || item.scope_and_limitations.is_some()
+                        || !item.source_paths.is_empty()
+                    {
+                        return Err(format!(
+                            "inventory projection {id} cannot override source fact {reference}"
+                        )
+                        .into());
+                    }
+                    let fact = view.source_facts.get(&reference).ok_or_else(|| {
+                        format!("inventory item {id} references missing source fact {reference}")
+                    })?;
+                    InventoryItem {
+                        id: id.clone(),
+                        section: item.section,
+                        title: item.title,
+                        status: fact.status,
+                        level: fact.level,
+                        scope_and_limitations: format!(
+                            "{}\n\nLimits: {}",
+                            fact.source_contract.scope, fact.source_contract.limits
+                        ),
+                        source_paths: fact.source_contract.source_paths.clone(),
+                        source_fact: Some(reference),
+                    }
+                } else {
+                    let status = item.status.ok_or_else(|| {
+                        format!("inventory item {id} requires status or source-fact")
+                    })?;
+                    let level = item.level.ok_or_else(|| {
+                        format!("inventory item {id} requires level or source-fact")
+                    })?;
+                    let scope_and_limitations = item.scope_and_limitations.ok_or_else(|| {
+                        format!("inventory item {id} requires scope-and-limitations or source-fact")
+                    })?;
+                    if scope_and_limitations.trim().is_empty() {
+                        return Err(format!(
+                            "inventory item {id} requires non-empty scope-and-limitations"
+                        )
+                        .into());
+                    }
+                    let mut paths = BTreeSet::new();
+                    for path in &item.source_paths {
+                        if !paths.insert(path) {
+                            return Err(format!(
+                                "inventory item {id} repeats source path {}",
+                                path.display()
+                            )
+                            .into());
+                        }
+                        validate_regular_reference(root, path, "inventory source path")?;
+                    }
+                    InventoryItem {
+                        id: id.clone(),
+                        section: item.section,
+                        title: item.title,
+                        status,
+                        level,
+                        scope_and_limitations,
+                        source_paths: item.source_paths,
+                        source_fact: None,
+                    }
+                };
+                if !item_ids.insert(id.clone()) {
+                    return Err(format!("duplicate inventory item {id}").into());
+                }
+                view.items.push(resolved);
+            }
+            for reference in loaded.document.references {
+                let id = slug(&reference.id, "inventory reference id")?;
+                slug(&reference.section, "inventory section reference")?;
+                if reference.title.trim().is_empty() || reference.details.trim().is_empty() {
+                    return Err(
+                        format!("inventory reference {id} requires title and details").into(),
+                    );
                 }
                 let mut paths = BTreeSet::new();
-                for path in &item.source_paths {
+                for path in &reference.source_paths {
                     if !paths.insert(path) {
                         return Err(format!(
-                            "inventory item {id} repeats source path {}",
+                            "inventory reference {id} repeats source path {}",
                             path.display()
                         )
                         .into());
                     }
-                    validate_regular_reference(root, path, "inventory source path")?;
+                    validate_regular_reference(root, path, "inventory reference source path")?;
                 }
-                if !item_ids.insert(id.clone()) {
-                    return Err(format!("duplicate inventory item {id}").into());
+                if !reference_ids.insert(id.clone()) {
+                    return Err(format!("duplicate inventory reference {id}").into());
                 }
-                view.items.push(item);
+                view.references.push(reference);
             }
         }
         for item in &view.items {
@@ -384,6 +539,15 @@ impl CatalogView {
                 return Err(format!(
                     "inventory item {} names missing section {}",
                     item.id, item.section
+                )
+                .into());
+            }
+        }
+        for reference in &view.references {
+            if !section_ids.contains(&reference.section) {
+                return Err(format!(
+                    "inventory reference {} names missing section {}",
+                    reference.id, reference.section
                 )
                 .into());
             }
@@ -424,6 +588,12 @@ impl ManifestDocument {
             if capability.catalog_scope.is_some() {
                 return Err(format!(
                     "inline capability {id} cannot declare catalog-scope metadata"
+                )
+                .into());
+            }
+            if !capability.source_fact_refs.is_empty() {
+                return Err(format!(
+                    "inline capability {id} cannot reference catalog source facts"
                 )
                 .into());
             }
@@ -505,7 +675,7 @@ fn resolve_capability(
     }
 }
 
-fn validate_catalog_dependencies(
+pub(super) fn validate_catalog_dependencies(
     declarations: &BTreeMap<String, CapabilityDocument>,
     allowed_external: &BTreeSet<String>,
 ) -> Result<()> {

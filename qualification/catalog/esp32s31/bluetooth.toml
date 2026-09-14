@@ -1,0 +1,3862 @@
+schema = 2
+id = "esp32s31-bluetooth"
+
+[validation]
+verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+hil-catalog = "hil/scenarios"
+
+[[capabilities]]
+id = "cold-ownership"
+title = "Cold Bluetooth radio ownership"
+scope = "Affine platform-plus-radio stopped owner and lossless protocol-neutral root roundtrip through the inactive exclusive Bluetooth route"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "source-ownership-contract"
+async-not-applicable = "no-asynchronous-runtime-boundary"
+gaps = [
+  { axis = "hil", id = "cold-owner-hardware-roundtrip-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "cold-ownership"
+level = "lower-primitive"
+activation-boundary = "Affine platform-plus-radio stopped owner and lossless protocol-neutral root roundtrip through the inactive exclusive Bluetooth route"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "clock-reset-prerequisite"
+title = "Bluetooth controller clock and reset prerequisite"
+scope = "Standalone main-XTAL low-power timer clock and reset transaction with semantic readback and rollback"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "crates/adapters/esp-hal/esp32s31/radio/README.md",
+]
+async-not-applicable = "no-asynchronous-runtime-boundary"
+gaps = [
+  { axis = "vendor", id = "clock-production-trace-not-release-eligible" },
+  { axis = "hil", id = "bluetooth-clock-readback-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "clock-reset-prerequisite"
+level = "lower-primitive"
+activation-boundary = "Standalone main-XTAL low-power timer clock and reset transaction with semantic readback and rollback"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "controller-initialization"
+title = "Complete LE Controller initialization"
+scope = "Non-cancellable production cold start from an owned radio root through BLE PHY and controller-global disabled-CTE workspace publication controller-output preparation runtime-timer start stable interrupt-owner publication final placement standard HCI facade and sole hardware runner while retaining a private affine standalone always-awake selection"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md",
+]
+depends-on = [
+  "clock-reset-prerequisite",
+]
+gaps = [
+  { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
+  { axis = "hil", id = "initialized-controller-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "controller-initialization"
+level = "lower-primitive"
+activation-boundary = "Non-cancellable production cold start from an owned radio root through BLE PHY and controller-global disabled-CTE workspace publication controller-output preparation runtime-timer start stable interrupt-owner publication final placement standard HCI facade and sole hardware runner while retaining a private affine standalone always-awake selection"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "controller-timebase"
+title = "Event-driven controller scheduler timebase"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone post-enable timing projection without an RF-readiness claim exact initial current-before-post-enable recurring-RX post-enable-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+depends-on = [
+  "controller-initialization",
+]
+gaps = [
+  { axis = "implementation", id = "source-127-expiration-consumer-and-controller-phy-tracking-integration-missing" },
+  { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
+  { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
+  { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "controller-timebase"
+level = "composed-product"
+activation-boundary = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone post-enable timing projection without an RF-readiness claim exact initial current-before-post-enable recurring-RX post-enable-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "common-phy-baseband"
+title = "Registered common PHY, Bluetooth client, and baseband lifetime"
+scope = "Borrowed target common-PHY registration Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband entry followed by periodic tracking wake cancellation and last-client physical release"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md",
+]
+depends-on = [
+  "controller-initialization",
+]
+gaps = [
+  { axis = "implementation", id = "controller-phy-maintenance-admission-execution-and-physical-release-missing" },
+  { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },
+  { axis = "hil", id = "bluetooth-registered-phy-client-tracking-and-baseband-cell-missing" },
+  { axis = "async", id = "periodic-tracking-wake-cancellation-and-teardown-contract-missing" },
+]
+source-fact-refs = [
+  "bluetooth-initial-phy-handoff",
+]
+
+[[capabilities.source-contracts]]
+id = "bluetooth-phy-demand-and-release"
+composition = "production"
+scope = "Retain the registered Bluetooth PHY client while inspecting or cancellation-safely waiting for periodic demand, consume due or periodic evaluation into the exact pending tracking request, and release the client without discarding the saved last-client fact"
+limits = "These lower transitions acquire no Controller or shared-RF permission; Controller quiescence, target execution, timer integration, physical-owner reunion and RF close remain unimplemented"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/hardware/esp32s31/phy/src/state/client.rs",
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "common-phy-baseband"
+level = "lower-primitive"
+activation-boundary = "Borrowed target common-PHY registration Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband entry followed by periodic tracking wake cancellation and last-client physical release"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "ble-phy-engine"
+title = "BLE PHY engine register initialization"
+scope = "Complete reviewed BLE PHY register transaction with affine static environment resolving-list storage and a separate controller-global disabled-CTE workspace retained with its HAL publication proof"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/verification-policy.toml",
+]
+depends-on = [
+  "common-phy-baseband",
+]
+gaps = [
+  { axis = "implementation", id = "ble-environment-word-semantics-and-packet-engine-missing" },
+  { axis = "hil", id = "ble-phy-register-init-and-storage-publication-cell-missing" },
+  { axis = "async", id = "bounded-async-evidence-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "ble-phy-engine"
+level = "lower-primitive"
+activation-boundary = "Complete reviewed BLE PHY register transaction with affine static environment resolving-list storage and a separate controller-global disabled-CTE workspace retained with its HAL publication proof"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "interrupt-runtime"
+title = "Live Controller interrupt epoch"
+scope = "Controller masks CPU route bounded hard-handler classification acknowledgement and task wake"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
+]
+depends-on = [
+  "controller-initialization",
+]
+gaps = [
+  { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
+  { axis = "implementation", id = "feature-specific-nrt-policy-missing" },
+  { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
+  { axis = "hil", id = "bluetooth-interrupt-epoch-hil-missing" },
+  { axis = "async", id = "bounded-finished-list-role-dispatch-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "interrupt-runtime"
+level = "lower-primitive"
+activation-boundary = "Controller masks CPU route bounded hard-handler classification acknowledgement and task wake"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "controller-memory-lists"
+title = "Controller packet-list ownership"
+scope = "Three positional current and next RX pointer pairs plus exact scan versus ordinary non-scan global-insertion routing and explicit DTM bypass"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+depends-on = [
+  "controller-initialization",
+]
+gaps = [
+  { axis = "implementation", id = "normal-scan-and-nonscan-current-next-list-lifecycle-missing" },
+  { axis = "vendor", id = "complete-current-next-rx-list-lifecycle-production-trace-missing" },
+  { axis = "hil", id = "controller-list-publication-cell-missing" },
+  { axis = "async", id = "list-completion-wake-and-backpressure-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "controller-memory-lists"
+level = "lower-primitive"
+activation-boundary = "Three positional current and next RX pointer pairs plus exact scan versus ordinary non-scan global-insertion routing and explicit DTM bypass"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-memory-graph"
+title = "Static DTM controller-memory graph"
+scope = "Complete CPU-produced one-time SRAM graph and non-movable no-heap storage for every vendor-written per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph; undocumented hardware-reader field names remain a vendor and HIL qualification question rather than an omitted producer write"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "bounded-affine-memory-and-ownership-transitions"
+depends-on = [
+  "controller-memory-lists",
+]
+gaps = [
+  { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
+  { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-memory-graph"
+level = "lower-primitive"
+activation-boundary = "Complete CPU-produced one-time SRAM graph and non-movable no-heap storage for every vendor-written per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph; undocumented hardware-reader field names remain a vendor and HIL qualification question rather than an omitted producer write"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-rx-accounting"
+title = "DTM returned-buffer accounting"
+scope = "Affine returned-header validation exact positional low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph, without assigning unsupported meanings to the rejected low twenty-four bits"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
+depends-on = [
+  "dtm-memory-graph",
+]
+gaps = [
+  { axis = "vendor", id = "rx-result-low-twenty-four-physical-meanings-missing" },
+  { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-rx-accounting"
+level = "lower-primitive"
+activation-boundary = "Affine returned-header validation exact positional low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph, without assigning unsupported meanings to the rejected low twenty-four bits"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-link-state-reset"
+title = "DTM controller-SRAM link-state reset region"
+scope = "Complete CPU-produced DTM link-state reset over a zero-based allocation: exact positional transforms for every vendor-written reset word with chip-private construction from one composition-owned physical default-power request bound private links and typed role without publication claims; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "pure-synchronous-transform"
+depends-on = [
+  "dtm-memory-graph",
+]
+gaps = [
+  { axis = "vendor", id = "remaining-hardware-consumed-words-and-field-semantics-missing" },
+  { axis = "hil", id = "dtm-link-state-reset-register-and-memory-trace-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-link-state-reset"
+level = "lower-primitive"
+activation-boundary = "Complete CPU-produced DTM link-state reset over a zero-based allocation: exact positional transforms for every vendor-written reset word with chip-private construction from one composition-owned physical default-power request bound private links and typed role without publication claims; field-specific hardware-reader names remain outside the producer contract"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-scheduler-item"
+title = "DTM scheduler-item event region"
+scope = "Complete CPU-produced scheduler item over a zero-based allocation: exact allocation event sequence overlap-power bookkeeping and empty-list linkage transforms with typed channel role PHY images and bidirectional scheduler epoch projection; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "pure-synchronous-transform"
+depends-on = [
+  "controller-timebase",
+  "dtm-link-state-reset",
+]
+gaps = [
+  { axis = "vendor", id = "remaining-hardware-consumed-words-and-packet-field-semantics-missing" },
+  { axis = "hil", id = "dtm-scheduler-item-memory-and-insert-trace-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-scheduler-item"
+level = "lower-primitive"
+activation-boundary = "Complete CPU-produced scheduler item over a zero-based allocation: exact allocation event sequence overlap-power bookkeeping and empty-list linkage transforms with typed channel role PHY images and bidirectional scheduler epoch projection; field-specific hardware-reader names remain outside the producer contract"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-tx-payload"
+title = "Bounded DTM transmitter packet preparation"
+scope = "Full static packet allocation header image all eight HCI test patterns affine active-TX retention across first and recurring events and Test End transition into the reusable reclaimed graph epoch"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "pure-synchronous-transform"
+gaps = [
+  { axis = "vendor", id = "packet-engine-header-field-reader-and-meaning-missing" },
+  { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-tx-payload"
+level = "lower-primitive"
+activation-boundary = "Full static packet allocation header image all eight HCI test patterns affine active-TX retention across first and recurring events and Test End transition into the reusable reclaimed graph epoch"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "dtm-tx-timing"
+title = "DTM transmitter interval and scheduler timing"
+scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone post-enable timing projection initial-TX current-before-post-enable and recurring-TX current-only acquisition order"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+async-not-applicable = "pure-synchronous-transform"
+depends-on = [
+  "dtm-tx-payload",
+]
+gaps = [
+  { axis = "vendor", id = "effective-controller-counter-width-missing" },
+  { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
+  { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "dtm-tx-timing"
+level = "lower-primitive"
+activation-boundary = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone post-enable timing projection initial-TX current-before-post-enable and recurring-TX current-only acquisition order"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "hci-handoff-storage"
+title = "Bounded bidirectional HCI handoff"
+scope = "Affine allocation-free bidirectional transport with validation backpressure wake cancellation-safe caller-buffer retry and one storage-checked bootstrap resource epoch at the direct in-process HCI boundary"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-not-applicable = "portable-host-controller-storage"
+gaps = [
+  { axis = "hil", id = "hci-handoff-hardware-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "hci-handoff-storage"
+level = "lower-primitive"
+activation-boundary = "Affine allocation-free bidirectional transport with validation backpressure wake cancellation-safe caller-buffer retry and one storage-checked bootstrap resource epoch at the direct in-process HCI boundary"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "hci-bootstrap"
+title = "Conservative LE HCI Host bootstrap"
+scope = "Closed Reset mask address buffer flow-control information and fail-closed unsupported-command semantics before any Link Layer or radio capability"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "portable-hci-bootstrap-policy"
+async-not-applicable = "no-asynchronous-runtime-boundary"
+depends-on = [
+  "hci-handoff-storage",
+]
+gaps = [
+  { axis = "hil", id = "hci-bootstrap-hardware-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "hci-bootstrap"
+level = "lower-primitive"
+activation-boundary = "Closed Reset mask address buffer flow-control information and fail-closed unsupported-command semantics before any Link Layer or radio capability"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "hci-controller-endpoints"
+title = "RTOS-free affine HCI Controller endpoints"
+scope = "One bounded HCI epoch split into a disjoint Host transport and sole combined Controller transport and mutable-bootstrap command owner with a one-shot initial CommandReady claim that survives endpoint drop and resource resplit without reminting full epoch-bound idle classification opaque deferred RX and TX starts a closed portable Success or Hardware Failure completion domain whose hardware preconditions are supplied by chip compositions no public generic response construction and next-command authority returned only by successful response publication"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-not-applicable = "portable-hci-endpoint-ownership"
+depends-on = [
+  "hci-handoff-storage",
+  "hci-bootstrap",
+]
+gaps = [
+  { axis = "hil", id = "hci-controller-endpoint-hardware-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "hci-controller-endpoints"
+level = "lower-primitive"
+activation-boundary = "One bounded HCI epoch split into a disjoint Host transport and sole combined Controller transport and mutable-bootstrap command owner with a one-shot initial CommandReady claim that survives endpoint drop and resource resplit without reminting full epoch-bound idle classification opaque deferred RX and TX starts a closed portable Success or Hardware Failure completion domain whose hardware preconditions are supplied by chip compositions no public generic response construction and next-command authority returned only by successful response publication"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "scheduler-head-transaction"
+title = "Event-driven scheduler lock-modify head transaction"
+scope = "Live finite PAC and HAL request publication with split task and ISR observations durable cancellation-safe worker state and lock-free latest-event handoff without polling"
+implementation = "incomplete"
+host = "covered"
+async = "bounded"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+]
+depends-on = [
+  "controller-initialization",
+  "controller-timebase",
+  "interrupt-runtime",
+]
+gaps = [
+  { axis = "implementation", id = "nonempty-list-lock-modify-admission-missing" },
+  { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
+  { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "scheduler-head-transaction"
+level = "lower-primitive"
+activation-boundary = "Live finite PAC and HAL request publication with split task and ISR observations durable cancellation-safe worker state and lock-free latest-event handoff without polling"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "scheduler-finished-list-drain"
+title = "Bounded scheduler finished-list event drain"
+scope = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, caller-owned absolute retry deadline, direct read-only removal rechecks independent of command-ready interrupt causality, and finite removal-ready observation"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/reference/bluetooth-interrupt-runtime.md",
+  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
+]
+depends-on = [
+  "interrupt-runtime",
+]
+gaps = [
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
+  { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
+  { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
+  { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
+  { axis = "async", id = "outer-finished-list-role-dispatch-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "scheduler-finished-list-drain"
+level = "lower-primitive"
+activation-boundary = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, caller-owned absolute retry deadline, direct read-only removal rechecks independent of command-ready interrupt causality, and finite removal-ready observation"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "packet-dataplane"
+title = "BLE packet TX and RX dataplane"
+scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery role-specific bounded recurrence back to hardware RUN and HCI-backpressure-independent active-session progression"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+]
+depends-on = [
+  "common-phy-baseband",
+  "interrupt-runtime",
+  "controller-memory-lists",
+  "dtm-memory-graph",
+  "dtm-rx-accounting",
+  "dtm-link-state-reset",
+  "dtm-scheduler-item",
+  "dtm-tx-payload",
+  "dtm-tx-timing",
+  "scheduler-head-transaction",
+  "scheduler-finished-list-drain",
+]
+gaps = [
+  { axis = "implementation", id = "unrelated-list-dispatch-and-live-radio-role-composition-missing" },
+  { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
+  { axis = "vendor", id = "sleep-enabled-rf-wake-and-open-vendor-test-end-semantics-diverge" },
+  { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
+  { axis = "async", id = "unrelated-list-and-modem-expiration-dispatch-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "bounded-dtm-session"
+composition = "production"
+scope = "Bounded Receiver and Transmitter Test sessions own first and recurring event publication RX accounting recycle and Test End through the Embassy DTM session"
+limits = "Matches the bounded DTM feature scope; general unrelated-list dispatch and the full Controller lifetime remain unimplemented outside this subset. RF qualification is a separate evidence requirement"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/dtm.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/dtm/task.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/dtm/active.rs",
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "packet-dataplane"
+level = "composed-product"
+activation-boundary = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery role-specific bounded recurrence back to hardware RUN and HCI-backpressure-independent active-session progression"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "portable-legacy-advertising"
+title = "Portable legacy non-connectable advertising"
+scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty ordered primary channel event plan affine enable generation and event identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "portable-legacy-advertising"
+level = "lower-primitive"
+activation-boundary = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty ordered primary channel event plan affine enable generation and event identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "portable-peripheral-connection"
+title = "Portable legacy LE peripheral connection admission"
+scope = "Exact CONNECT_IND decode intrinsic uncoded Access Address validation first-window recurring interval latency and supervision relation validation bounded data-channel map negotiated CSA one or two event selection affine prepare cancel submit complete progression and mutually exclusive pending Central Connection Update or Channel Map Update applied at its exact wrapping instant without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "portable-peripheral-connection"
+level = "lower-primitive"
+activation-boundary = "Exact CONNECT_IND decode intrinsic uncoded Access Address validation first-window recurring interval latency and supervision relation validation bounded data-channel map negotiated CSA one or two event selection affine prepare cancel submit complete progression and mutually exclusive pending Central Connection Update or Channel Map Update applied at its exact wrapping instant without a hardware or executor dependency"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "portable-connectable-advertising"
+title = "Portable legacy connectable advertising response"
+scope = "Exact bounded ADV_IND encode and decode public or random TxAdd and channel-selection capability non-empty ordered primary channel event plan exact advertiser-address CONNECT_IND admission lossless malformed foreign-address and unsupported-CSA-two rejection transition into the portable peripheral connection owner and fresh bounded interval-plus-delay recurrence without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "controller-foundation"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "portable-connectable-advertising"
+level = "lower-primitive"
+activation-boundary = "Exact bounded ADV_IND encode and decode public or random TxAdd and channel-selection capability non-empty ordered primary channel event plan exact advertiser-address CONNECT_IND admission lossless malformed foreign-address and unsupported-CSA-two rejection transition into the portable peripheral connection owner and fresh bounded interval-plus-delay recurrence without a hardware or executor dependency"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "legacy-passive-scanning"
+title = "Legacy LE passive scanning"
+scope = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
+implementation = "incomplete"
+host = "covered"
+async = "bounded"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "controller-timebase",
+  "scheduler-finished-list-drain",
+  "hci-controller-endpoints",
+  "packet-dataplane",
+]
+gaps = [
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
+  { axis = "vendor", id = "scanner-descriptor-engine-physical-contract-missing" },
+  { axis = "hil", id = "passive-scanning-on-air-cell-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "legacy-passive-scanning"
+level = "composed-product"
+activation-boundary = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "le-link-layer"
+title = "Bluetooth LE Link Layer"
+scope = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through causal captured-packet timestamp projection initialized LE 1M PHY normalization absolute first transmit-window derivation S31 event scheduling packet reliability supervision and minimum LL control procedures"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+  "verification/vendor/projects/esp32s31/reference/bluetooth-legacy-advertising.md",
+  "verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md",
+]
+depends-on = [
+  "packet-dataplane",
+  "portable-legacy-advertising",
+  "portable-connectable-advertising",
+  "portable-peripheral-connection",
+  "legacy-passive-scanning",
+]
+gaps = [
+  { axis = "implementation", id = "initial-establishment-window-policy-and-other-procedure-timers-missing" },
+  { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
+  { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
+  { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
+  { axis = "async", id = "initial-establishment-lateness-powered-shutdown-and-unrelated-role-dispatch-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "le-link-layer"
+level = "composed-product"
+activation-boundary = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through causal captured-packet timestamp projection initialized LE 1M PHY normalization absolute first transmit-window derivation S31 event scheduling packet reliability supervision and minimum LL control procedures"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "typed-hci-controller"
+title = "Typed bt-hci Controller implementation"
+scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features Read Remote Version Information and Long Term Key reply transitions masked encryption events bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "hci-handoff-storage",
+  "hci-bootstrap",
+  "hci-controller-endpoints",
+  "le-link-layer",
+]
+gaps = [
+  { axis = "implementation", id = "remaining-connected-llcp-and-powered-lifecycle-missing" },
+  { axis = "host", id = "hardware-radio-axis-and-full-controller-task-integration-tests-missing" },
+  { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
+  { axis = "hil", id = "external-hci-interoperability-cell-missing" },
+  { axis = "async", id = "unrelated-finished-list-dispatch-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "typed-hci-controller"
+level = "composed-product"
+activation-boundary = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features Read Remote Version Information and Long Term Key reply transitions masked encryption events bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "async-controller-runtime"
+title = "RTOS-free asynchronous Controller runtime"
+scope = "Sole affine hardware owner bounded ISR handoff timer events run-to-quiescence and cancellation-safe shutdown"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+]
+depends-on = [
+  "interrupt-runtime",
+  "packet-dataplane",
+  "hci-controller-endpoints",
+]
+gaps = [
+  { axis = "implementation", id = "initial-establishment-window-and-powered-lifecycle-runtime-missing" },
+  { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
+  { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
+  { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
+  { axis = "async", id = "unrelated-list-timer-expiration-and-powered-shutdown-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "async-controller-runtime"
+level = "composed-product"
+activation-boundary = "Sole affine hardware owner bounded ISR handoff timer events run-to-quiescence and cancellation-safe shutdown"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "trouble-host-integration"
+title = "Trouble BLE Host integration"
+scope = "Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
+implementation = "complete"
+host = "covered"
+async = "incomplete"
+vendor-not-applicable = "upstream-open-host-integration"
+depends-on = [
+  "typed-hci-controller",
+  "async-controller-runtime",
+]
+gaps = [
+  { axis = "hil", id = "trouble-gatt-interoperability-cell-missing" },
+  { axis = "async", id = "trouble-runner-lifecycle-and-shutdown-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "trouble-host-integration"
+level = "composed-product"
+activation-boundary = "Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "coexistence"
+title = "Standalone and Wi-Fi plus BLE coexistence"
+scope = "Standalone Bluetooth registration hooks followed by bounded joint-radio arbitration without owning either controller lifecycle"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+]
+depends-on = [
+  "async-controller-runtime",
+]
+gaps = [
+  { axis = "implementation", id = "bluetooth-lifecycle-hooks-and-wifi-platform-migration-missing" },
+  { axis = "vendor", id = "complete-standalone-and-joint-coex-contracts-missing" },
+  { axis = "hil", id = "standalone-and-wifi-bluetooth-coex-cells-missing" },
+  { axis = "async", id = "bluetooth-request-deadline-and-cancellation-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "coex-timer-validation-bridge"
+composition = "diagnostic"
+scope = "Execute the recovered coexistence core timer operations through the validation-probes HAL bridge"
+limits = "Core tables clock conversion and an Embassy mailbox exist; production Wi-Fi and Bluetooth runtimes do not compose this concrete timer owner"
+source-paths = [
+  "crates/hardware/esp32s31/hal/src/coex.rs",
+  "crates/hardware/esp32s31/driver/coex/src/lib.rs",
+  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-bluetooth-coex-runtime"
+composition = "unimplemented"
+scope = "Compose joint Wi-Fi and Bluetooth ownership with live RF request grant and release arbitration"
+limits = "The recovered core and mailbox do not supply safe concurrent platform ownership or a production policy scheduler"
+source-paths = [
+  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
+  "crates/hardware/esp32s31/driver/coex/src/core.rs",
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "coexistence"
+level = "lower-primitive"
+activation-boundary = "Standalone Bluetooth registration hooks followed by bounded joint-radio arbitration without owning either controller lifecycle"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "powered-teardown"
+title = "Powered Controller and last-owner PHY teardown"
+scope = "Disable interrupts quiesce tasks and lists shut down baseband and PHY reverse clocks and recover the neutral radio owner"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/README.md",
+]
+depends-on = [
+  "async-controller-runtime",
+]
+gaps = [
+  { axis = "implementation", id = "powered-cleanup-and-cold-reconstruction-missing" },
+  { axis = "implementation", id = "scheduler-disable-recheck-wake-packet-bottom-half-irq-output-btbb-phy-clock-and-cold-reconstruction-missing" },
+  { axis = "vendor", id = "complete-disable-deinit-production-trace-missing" },
+  { axis = "vendor", id = "scheduler-disable-comparison-missing" },
+  { axis = "hil", id = "repeated-powered-roundtrip-and-fault-cells-missing" },
+  { axis = "hil", id = "scheduler-disable-command-and-busy-observation-cell-missing" },
+  { axis = "async", id = "quiescence-deadline-and-terminal-disposition-missing" },
+  { axis = "async", id = "scheduler-disable-recheck-wake-and-bottom-half-contract-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "powered-teardown"
+level = "lower-primitive"
+activation-boundary = "Disable interrupts quiesce tasks and lists shut down baseband and PHY reverse clocks and recover the neutral radio owner"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "controller-capacity-limits"
+title = "Controller capacity and admission limits"
+scope = "Bounded supported connections advertising sets periodic syncs PAwR responses and ISO streams with checked controller-SRAM and queue budgets and lossless rejection before resource exhaustion"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "async-controller-runtime",
+]
+gaps = [
+  { axis = "implementation", id = "controller-capacity-limits-production-composition-missing" },
+  { axis = "host", id = "controller-capacity-limits-behavioral-regressions-missing" },
+  { axis = "vendor", id = "controller-capacity-limits-production-contract-evidence-missing" },
+  { axis = "hil", id = "controller-capacity-limits-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "controller-capacity-limits-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "controller-capacity-limits"
+level = "composed-product"
+activation-boundary = "Bounded supported connections advertising sets periodic syncs PAwR responses and ISO streams with checked controller-SRAM and queue budgets and lossless rejection before resource exhaustion"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "legacy-advertising-roles"
+title = "Complete legacy advertising roles"
+scope = "Production nonconnectable scannable connectable and low-duty or high-duty directed advertising with scan responses all selected primary channels public or static random addresses and the high-duty-cycle nonconnectable policy"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "le-link-layer",
+  "typed-hci-controller",
+]
+gaps = [
+  { axis = "implementation", id = "legacy-advertising-roles-production-composition-missing" },
+  { axis = "host", id = "legacy-advertising-roles-behavioral-regressions-missing" },
+  { axis = "vendor", id = "legacy-advertising-roles-production-contract-evidence-missing" },
+  { axis = "hil", id = "legacy-advertising-roles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "legacy-advertising-roles-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "legacy-advertising-roles"
+level = "composed-product"
+activation-boundary = "Production nonconnectable scannable connectable and low-duty or high-duty directed advertising with scan responses all selected primary channels public or static random addresses and the high-duty-cycle nonconnectable policy"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "active-scanning"
+title = "Legacy active scanning"
+scope = "SCAN_REQ transmission SCAN_RSP matching duplicate filtering scan-window recurrence and bounded cancellation through standard HCI scan commands"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "legacy-passive-scanning",
+  "typed-hci-controller",
+]
+gaps = [
+  { axis = "implementation", id = "active-scanning-production-composition-missing" },
+  { axis = "host", id = "active-scanning-behavioral-regressions-missing" },
+  { axis = "vendor", id = "active-scanning-production-contract-evidence-missing" },
+  { axis = "hil", id = "active-scanning-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "active-scanning-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "active-scanning"
+level = "composed-product"
+activation-boundary = "SCAN_REQ transmission SCAN_RSP matching duplicate filtering scan-window recurrence and bounded cancellation through standard HCI scan commands"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "central-initiator"
+title = "LE Central and Initiator"
+scope = "Legacy initiating Create Connection cancellation connection establishment and reliable Central ACL events with supervision and Host-visible disconnect"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "active-scanning",
+  "le-link-layer",
+  "typed-hci-controller",
+]
+gaps = [
+  { axis = "implementation", id = "central-initiator-production-composition-missing" },
+  { axis = "host", id = "central-initiator-behavioral-regressions-missing" },
+  { axis = "vendor", id = "central-initiator-production-contract-evidence-missing" },
+  { axis = "hil", id = "central-initiator-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "central-initiator-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "central-initiator"
+level = "composed-product"
+activation-boundary = "Legacy initiating Create Connection cancellation connection establishment and reliable Central ACL events with supervision and Host-visible disconnect"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "concurrent-le-roles"
+title = "Multiple connections and simultaneous LE roles"
+scope = "Bounded multi-handle scheduling and packet ownership for simultaneous Broadcaster Observer Central and Peripheral operation with collision admission fairness cancellation and multi-connection optimization"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "central-initiator",
+  "legacy-advertising-roles",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "concurrent-le-roles-production-composition-missing" },
+  { axis = "host", id = "concurrent-le-roles-behavioral-regressions-missing" },
+  { axis = "vendor", id = "concurrent-le-roles-production-contract-evidence-missing" },
+  { axis = "hil", id = "concurrent-le-roles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "concurrent-le-roles-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "concurrent-le-roles"
+level = "composed-product"
+activation-boundary = "Bounded multi-handle scheduling and packet ownership for simultaneous Broadcaster Observer Central and Peripheral operation with collision admission fairness cancellation and multi-connection optimization"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "connected-phy-and-data-length"
+title = "Connected PHY selection and Data Length Extension"
+scope = "Negotiated LE 1M 2M and Coded S2 or S8 operation PHY Update Data Length Update and bounded packet geometry in both connection roles independent of DTM selectors"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "central-initiator",
+  "le-link-layer",
+]
+gaps = [
+  { axis = "implementation", id = "connected-phy-and-data-length-production-composition-missing" },
+  { axis = "host", id = "connected-phy-and-data-length-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connected-phy-and-data-length-production-contract-evidence-missing" },
+  { axis = "hil", id = "connected-phy-and-data-length-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connected-phy-and-data-length-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "connected-phy-and-data-length"
+level = "composed-product"
+activation-boundary = "Negotiated LE 1M 2M and Coded S2 or S8 operation PHY Update Data Length Update and bounded packet geometry in both connection roles independent of DTM selectors"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "ll-control-procedures"
+title = "Connected Link Layer control procedures"
+scope = "Procedure serialization collision handling response timeouts and instant application for connection parameter and channel-map updates feature and version exchange LE Ping and termination"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "le-link-layer",
+  "typed-hci-controller",
+]
+gaps = [
+  { axis = "implementation", id = "ll-control-procedures-production-composition-missing" },
+  { axis = "host", id = "ll-control-procedures-behavioral-regressions-missing" },
+  { axis = "vendor", id = "ll-control-procedures-production-contract-evidence-missing" },
+  { axis = "hil", id = "ll-control-procedures-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "ll-control-procedures-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "ll-control-procedures"
+level = "composed-product"
+activation-boundary = "Procedure serialization collision handling response timeouts and instant application for connection parameter and channel-map updates feature and version exchange LE Ping and termination"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "link-layer-encryption"
+title = "LE Link Layer encryption"
+scope = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
+implementation = "complete"
+host = "incomplete"
+async = "bounded"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "ll-control-procedures",
+  "connected-phy-and-data-length",
+]
+gaps = [
+  { axis = "host", id = "link-layer-encryption-production-boundary-regressions-missing" },
+  { axis = "vendor", id = "link-layer-encryption-production-contract-evidence-missing" },
+  { axis = "hil", id = "link-layer-encryption-interoperability-and-fault-cells-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "le-security",
+]
+composition = "link-layer-encryption"
+level = "composed-product"
+activation-boundary = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "privacy-and-filtering"
+title = "LE Privacy 1.2 and address filtering"
+scope = "Operational Filter Accept List and Resolving List HCI commands IRK installation RPA generation rotation and resolution device or network privacy policies and extended scanner filters across advertising scanning and initiating"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "central-initiator",
+  "legacy-advertising-roles",
+]
+gaps = [
+  { axis = "implementation", id = "privacy-and-filtering-production-composition-missing" },
+  { axis = "host", id = "privacy-and-filtering-behavioral-regressions-missing" },
+  { axis = "vendor", id = "privacy-and-filtering-production-contract-evidence-missing" },
+  { axis = "hil", id = "privacy-and-filtering-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "privacy-and-filtering-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "le-security",
+]
+composition = "privacy-and-filtering"
+level = "composed-product"
+activation-boundary = "Operational Filter Accept List and Resolving List HCI commands IRK installation RPA generation rotation and resolution device or network privacy policies and extended scanner filters across advertising scanning and initiating"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "secure-connections-host"
+title = "Secure Connections and bonding integration"
+scope = "Production SMP Host composition for authenticated and unauthenticated LE Secure Connections legacy pairing bonding persistent key restoration encrypted reconnect and security failure handling"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "trouble-host-integration",
+  "link-layer-encryption",
+  "privacy-and-filtering",
+]
+gaps = [
+  { axis = "implementation", id = "secure-connections-host-production-composition-missing" },
+  { axis = "host", id = "secure-connections-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "secure-connections-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "secure-connections-host-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "le-security",
+]
+composition = "secure-connections-host"
+level = "composed-product"
+activation-boundary = "Production SMP Host composition for authenticated and unauthenticated LE Secure Connections legacy pairing bonding persistent key restoration encrypted reconnect and security failure handling"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "extended-advertising"
+title = "Advertising Extensions and multiple sets"
+scope = "ADV_EXT_IND AUX_ADV_IND AUX_CHAIN_IND AUX_SCAN_RSP and AUX_CONNECT_RSP scheduling multiple advertising-set lifecycle data fragmentation secondary 1M 2M or Coded PHY Advertising Coding Selection and Advertising Channel Index"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "legacy-advertising-roles",
+  "controller-capacity-limits",
+  "connected-phy-and-data-length",
+]
+gaps = [
+  { axis = "implementation", id = "extended-advertising-production-composition-missing" },
+  { axis = "host", id = "extended-advertising-behavioral-regressions-missing" },
+  { axis = "vendor", id = "extended-advertising-production-contract-evidence-missing" },
+  { axis = "hil", id = "extended-advertising-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "extended-advertising-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "extended-advertising"
+level = "composed-product"
+activation-boundary = "ADV_EXT_IND AUX_ADV_IND AUX_CHAIN_IND AUX_SCAN_RSP and AUX_CONNECT_RSP scheduling multiple advertising-set lifecycle data fragmentation secondary 1M 2M or Coded PHY Advertising Coding Selection and Advertising Channel Index"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "extended-scanning-initiating"
+title = "Extended scanning and initiating"
+scope = "Primary-to-AUX reception chaining extended reports response matching and extended initiating on supported PHYs with privacy filtering report backpressure and cancellation"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "extended-advertising",
+  "active-scanning",
+  "central-initiator",
+  "privacy-and-filtering",
+]
+gaps = [
+  { axis = "implementation", id = "extended-scanning-initiating-production-composition-missing" },
+  { axis = "host", id = "extended-scanning-initiating-behavioral-regressions-missing" },
+  { axis = "vendor", id = "extended-scanning-initiating-production-contract-evidence-missing" },
+  { axis = "hil", id = "extended-scanning-initiating-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "extended-scanning-initiating-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "extended-scanning-initiating"
+level = "composed-product"
+activation-boundary = "Primary-to-AUX reception chaining extended reports response matching and extended initiating on supported PHYs with privacy filtering report backpressure and cancellation"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "periodic-advertising"
+title = "Periodic advertiser"
+scope = "Periodic advertising-set lifecycle SyncInfo publication AUX_SYNC_IND and chain scheduling AdvDataInfo and periodic advertising enhancements with bounded data updates"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "extended-advertising",
+]
+gaps = [
+  { axis = "implementation", id = "periodic-advertising-production-composition-missing" },
+  { axis = "host", id = "periodic-advertising-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-advertising-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-advertising-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-advertising-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "periodic-advertising"
+level = "composed-product"
+activation-boundary = "Periodic advertising-set lifecycle SyncInfo publication AUX_SYNC_IND and chain scheduling AdvDataInfo and periodic advertising enhancements with bounded data updates"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "periodic-synchronization"
+title = "Periodic advertising synchronization"
+scope = "Create Sync cancellation multiple sync owners receive scheduling clock uncertainty duplicate handling sync loss and reacquisition through HCI"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "extended-scanning-initiating",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "periodic-synchronization-production-composition-missing" },
+  { axis = "host", id = "periodic-synchronization-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-synchronization-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-synchronization-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-synchronization-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "periodic-synchronization"
+level = "composed-product"
+activation-boundary = "Create Sync cancellation multiple sync owners receive scheduling clock uncertainty duplicate handling sync loss and reacquisition through HCI"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "periodic-sync-transfer"
+title = "Periodic Advertising Sync Transfer"
+scope = "PAST sender and recipient ACL procedures synchronization transfer application and transfer errors across independently owned connection and periodic sync lifetimes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "periodic-advertising",
+  "periodic-synchronization",
+  "ll-control-procedures",
+]
+gaps = [
+  { axis = "implementation", id = "periodic-sync-transfer-production-composition-missing" },
+  { axis = "host", id = "periodic-sync-transfer-behavioral-regressions-missing" },
+  { axis = "vendor", id = "periodic-sync-transfer-production-contract-evidence-missing" },
+  { axis = "hil", id = "periodic-sync-transfer-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "periodic-sync-transfer-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "periodic-sync-transfer"
+level = "composed-product"
+activation-boundary = "PAST sender and recipient ACL procedures synchronization transfer application and transfer errors across independently owned connection and periodic sync lifetimes"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "pawr-advertiser"
+title = "PAwR advertiser"
+scope = "Periodic Advertising with Responses subevent data publication response-slot receive scheduling response reports and bounded subevent or response buffer ownership"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "periodic-advertising",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "pawr-advertiser-production-composition-missing" },
+  { axis = "host", id = "pawr-advertiser-behavioral-regressions-missing" },
+  { axis = "vendor", id = "pawr-advertiser-production-contract-evidence-missing" },
+  { axis = "hil", id = "pawr-advertiser-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "pawr-advertiser-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "pawr-advertiser"
+level = "composed-product"
+activation-boundary = "Periodic Advertising with Responses subevent data publication response-slot receive scheduling response reports and bounded subevent or response buffer ownership"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "pawr-responder"
+title = "PAwR synchronized responder"
+scope = "Synchronized PAwR subevent selection response data admission precisely scheduled response transmission and loss or cancellation handling"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "periodic-synchronization",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "pawr-responder-production-composition-missing" },
+  { axis = "host", id = "pawr-responder-behavioral-regressions-missing" },
+  { axis = "vendor", id = "pawr-responder-production-contract-evidence-missing" },
+  { axis = "hil", id = "pawr-responder-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "pawr-responder-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "pawr-responder"
+level = "composed-product"
+activation-boundary = "Synchronized PAwR subevent selection response data admission precisely scheduled response transmission and loss or cancellation handling"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "encrypted-advertising-data"
+title = "Encrypted Advertising Data integration"
+scope = "Production Host advertiser and observer encryption and authentication of advertising data with key material and randomizer lifetime including key distribution and malformed or unauthenticated data rejection"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "extended-advertising",
+  "extended-scanning-initiating",
+  "secure-connections-host",
+]
+gaps = [
+  { axis = "implementation", id = "encrypted-advertising-data-production-composition-missing" },
+  { axis = "host", id = "encrypted-advertising-data-behavioral-regressions-missing" },
+  { axis = "hil", id = "encrypted-advertising-data-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "encrypted-advertising-data-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "le-security",
+]
+composition = "encrypted-advertising-data"
+level = "composed-product"
+activation-boundary = "Production Host advertiser and observer encryption and authentication of advertising data with key material and randomizer lifetime including key distribution and malformed or unauthenticated data rejection"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "connected-direction-finding"
+title = "Connected Direction Finding"
+scope = "Connected CTE request and response procedures antenna switching AoA or AoD TX and RX IQ storage and HCI reports with supported sampling intervals and bounded buffer reuse"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "ll-control-procedures",
+  "ble-phy-engine",
+]
+gaps = [
+  { axis = "implementation", id = "connected-direction-finding-production-composition-missing" },
+  { axis = "host", id = "connected-direction-finding-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connected-direction-finding-production-contract-evidence-missing" },
+  { axis = "hil", id = "connected-direction-finding-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connected-direction-finding-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "connected-direction-finding"
+level = "composed-product"
+activation-boundary = "Connected CTE request and response procedures antenna switching AoA or AoD TX and RX IQ storage and HCI reports with supported sampling intervals and bounded buffer reuse"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "connectionless-direction-finding"
+title = "Connectionless Direction Finding"
+scope = "Periodic advertising CTE TX and synchronized CTE RX antenna patterns IQ sampling HCI delivery and later-version CTE Direct Test Mode commands"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "periodic-advertising",
+  "periodic-synchronization",
+  "ble-phy-engine",
+]
+gaps = [
+  { axis = "implementation", id = "connectionless-direction-finding-production-composition-missing" },
+  { axis = "host", id = "connectionless-direction-finding-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connectionless-direction-finding-production-contract-evidence-missing" },
+  { axis = "hil", id = "connectionless-direction-finding-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connectionless-direction-finding-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "connectionless-direction-finding"
+level = "composed-product"
+activation-boundary = "Periodic advertising CTE TX and synchronized CTE RX antenna patterns IQ sampling HCI delivery and later-version CTE Direct Test Mode commands"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "rf-power-and-lbt"
+title = "LE RF power selection and Listen Before Talk"
+scope = "Live static transmit-power selection calibrated TX and RX for every LE PHY and test pattern and hardware Listen Before Talk policy with measured on-air behavior"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "common-phy-baseband",
+  "packet-dataplane",
+]
+gaps = [
+  { axis = "implementation", id = "rf-power-and-lbt-production-composition-missing" },
+  { axis = "host", id = "rf-power-and-lbt-behavioral-regressions-missing" },
+  { axis = "vendor", id = "rf-power-and-lbt-production-contract-evidence-missing" },
+  { axis = "hil", id = "rf-power-and-lbt-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "rf-power-and-lbt-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "rf-power-and-lbt"
+level = "composed-product"
+activation-boundary = "Live static transmit-power selection calibrated TX and RX for every LE PHY and test pattern and hardware Listen Before Talk policy with measured on-air behavior"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "channel-assessment"
+title = "Adaptive frequency hopping and channel classification"
+scope = "Live channel assessment classification reporting Host channel-map policy and negotiated channel-map application while preserving reliable connection event sequencing"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "ll-control-procedures",
+  "central-initiator",
+]
+gaps = [
+  { axis = "implementation", id = "channel-assessment-production-composition-missing" },
+  { axis = "host", id = "channel-assessment-behavioral-regressions-missing" },
+  { axis = "vendor", id = "channel-assessment-production-contract-evidence-missing" },
+  { axis = "hil", id = "channel-assessment-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "channel-assessment-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "channel-assessment"
+level = "composed-product"
+activation-boundary = "Live channel assessment classification reporting Host channel-map policy and negotiated channel-map application while preserving reliable connection event sequencing"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "le-power-control"
+title = "LE Power Control and Path Loss Monitoring"
+scope = "Connected power-change procedures path-loss measurement thresholds hysteresis reports and HCI events across PHY changes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "ll-control-procedures",
+  "rf-power-and-lbt",
+  "connected-phy-and-data-length",
+]
+gaps = [
+  { axis = "implementation", id = "le-power-control-production-composition-missing" },
+  { axis = "host", id = "le-power-control-behavioral-regressions-missing" },
+  { axis = "vendor", id = "le-power-control-production-contract-evidence-missing" },
+  { axis = "hil", id = "le-power-control-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-power-control-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "le-power-control"
+level = "composed-product"
+activation-boundary = "Connected power-change procedures path-loss measurement thresholds hysteresis reports and HCI events across PHY changes"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "connection-subrating"
+title = "LE Connection Subrating"
+scope = "Subrate negotiation anchor selection continuation events peripheral latency and recovery under parameter updates and supervision constraints"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "ll-control-procedures",
+  "central-initiator",
+]
+gaps = [
+  { axis = "implementation", id = "connection-subrating-production-composition-missing" },
+  { axis = "host", id = "connection-subrating-behavioral-regressions-missing" },
+  { axis = "vendor", id = "connection-subrating-production-contract-evidence-missing" },
+  { axis = "hil", id = "connection-subrating-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "connection-subrating-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "connection-subrating"
+level = "composed-product"
+activation-boundary = "Subrate negotiation anchor selection continuation events peripheral latency and recovery under parameter updates and supervision constraints"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "modem-sleep-wake"
+title = "Bluetooth modem sleep and wake"
+scope = "RF PHY baseband and clock retention stop and wake using supported low-frequency clocks with local accuracy bounds deadline compensation periodic maintenance and cancellation-safe return to active operation"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "controller-timebase",
+  "common-phy-baseband",
+  "powered-teardown",
+]
+gaps = [
+  { axis = "implementation", id = "modem-sleep-wake-production-composition-missing" },
+  { axis = "host", id = "modem-sleep-wake-behavioral-regressions-missing" },
+  { axis = "vendor", id = "modem-sleep-wake-production-contract-evidence-missing" },
+  { axis = "hil", id = "modem-sleep-wake-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "modem-sleep-wake-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "modem-sleep-wake"
+level = "composed-product"
+activation-boundary = "RF PHY baseband and clock retention stop and wake using supported low-frequency clocks with local accuracy bounds deadline compensation periodic maintenance and cancellation-safe return to active operation"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "external-coexistence"
+title = "External Bluetooth coexistence"
+scope = "Board-owned external request grant priority and status pins with PTI policy deadline-bound RF admission cancellation and return of shared platform resources"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "coexistence",
+]
+gaps = [
+  { axis = "implementation", id = "external-coexistence-production-composition-missing" },
+  { axis = "host", id = "external-coexistence-behavioral-regressions-missing" },
+  { axis = "vendor", id = "external-coexistence-production-contract-evidence-missing" },
+  { axis = "hil", id = "external-coexistence-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "external-coexistence-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "external-coexistence"
+level = "lower-primitive"
+activation-boundary = "Board-owned external request grant priority and status pins with PTI policy deadline-bound RF admission cancellation and return of shared platform resources"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "multi-radio-coordination"
+title = "Bluetooth Wi-Fi and IEEE 802.15.4 coordination"
+scope = "Shared platform ownership and request grant release arbitration for Bluetooth alongside Wi-Fi and IEEE 802.15.4 without overlapping independent singleton claims"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "coexistence",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "multi-radio-coordination-production-composition-missing" },
+  { axis = "host", id = "multi-radio-coordination-behavioral-regressions-missing" },
+  { axis = "vendor", id = "multi-radio-coordination-production-contract-evidence-missing" },
+  { axis = "hil", id = "multi-radio-coordination-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "multi-radio-coordination-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "shared-radio"
+phy = "le-2g4"
+security = [
+  "independent-of-link-security",
+]
+composition = "multi-radio-coordination"
+level = "lower-primitive"
+activation-boundary = "Shared platform ownership and request grant release arbitration for Bluetooth alongside Wi-Fi and IEEE 802.15.4 without overlapping independent singleton claims"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "iso-dataplane"
+title = "ISOAL and HCI ISO dataplane"
+scope = "Framed and unframed ISOAL SDU segmentation and reassembly ISO packet routing timestamp and sequence handling packet status loss and flush accounting bounded stream credits and cancellation-safe buffers"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "typed-hci-controller",
+  "controller-capacity-limits",
+]
+gaps = [
+  { axis = "implementation", id = "iso-dataplane-production-composition-missing" },
+  { axis = "host", id = "iso-dataplane-behavioral-regressions-missing" },
+  { axis = "vendor", id = "iso-dataplane-production-contract-evidence-missing" },
+  { axis = "hil", id = "iso-dataplane-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "iso-dataplane-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "iso-dataplane"
+level = "composed-product"
+activation-boundary = "Framed and unframed ISOAL SDU segmentation and reassembly ISO packet routing timestamp and sequence handling packet status loss and flush accounting bounded stream credits and cancellation-safe buffers"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "cis-central"
+title = "CIG and CIS Central"
+scope = "Connected Isochronous Group and Stream creation negotiation event and subevent scheduling retransmission and flush encrypted and unencrypted bidirectional operation and stream teardown as Central"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "iso-dataplane",
+  "central-initiator",
+  "ll-control-procedures",
+  "link-layer-encryption",
+]
+gaps = [
+  { axis = "implementation", id = "cis-central-production-composition-missing" },
+  { axis = "host", id = "cis-central-behavioral-regressions-missing" },
+  { axis = "vendor", id = "cis-central-production-contract-evidence-missing" },
+  { axis = "hil", id = "cis-central-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "cis-central-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "cis-central"
+level = "composed-product"
+activation-boundary = "Connected Isochronous Group and Stream creation negotiation event and subevent scheduling retransmission and flush encrypted and unencrypted bidirectional operation and stream teardown as Central"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "cis-peripheral"
+title = "CIS Peripheral"
+scope = "CIS request acceptance rejection stream establishment synchronized event scheduling bidirectional ISO data encryption and stream teardown as Peripheral"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "iso-dataplane",
+  "le-link-layer",
+  "ll-control-procedures",
+  "link-layer-encryption",
+]
+gaps = [
+  { axis = "implementation", id = "cis-peripheral-production-composition-missing" },
+  { axis = "host", id = "cis-peripheral-behavioral-regressions-missing" },
+  { axis = "vendor", id = "cis-peripheral-production-contract-evidence-missing" },
+  { axis = "hil", id = "cis-peripheral-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "cis-peripheral-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "cis-peripheral"
+level = "composed-product"
+activation-boundary = "CIS request acceptance rejection stream establishment synchronized event scheduling bidirectional ISO data encryption and stream teardown as Peripheral"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "bis-broadcaster"
+title = "BIG and BIS broadcaster"
+scope = "Broadcast Isochronous Group creation BIGInfo periodic publication BIS event scheduling retransmission encrypted or unencrypted stream data and group termination"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "iso-dataplane",
+  "periodic-advertising",
+]
+gaps = [
+  { axis = "implementation", id = "bis-broadcaster-production-composition-missing" },
+  { axis = "host", id = "bis-broadcaster-behavioral-regressions-missing" },
+  { axis = "vendor", id = "bis-broadcaster-production-contract-evidence-missing" },
+  { axis = "hil", id = "bis-broadcaster-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "bis-broadcaster-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "bis-broadcaster"
+level = "composed-product"
+activation-boundary = "Broadcast Isochronous Group creation BIGInfo periodic publication BIS event scheduling retransmission encrypted or unencrypted stream data and group termination"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "bis-synchronizer"
+title = "BIG and BIS synchronized receiver"
+scope = "BIG synchronization BIS selection reception clock recovery encrypted stream admission loss reporting and group or stream teardown"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-anchors = [
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+]
+depends-on = [
+  "iso-dataplane",
+  "periodic-synchronization",
+]
+gaps = [
+  { axis = "implementation", id = "bis-synchronizer-production-composition-missing" },
+  { axis = "host", id = "bis-synchronizer-behavioral-regressions-missing" },
+  { axis = "vendor", id = "bis-synchronizer-production-contract-evidence-missing" },
+  { axis = "hil", id = "bis-synchronizer-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "bis-synchronizer-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "bluetooth-le-controller"
+phy = "le-multi-phy"
+security = [
+  "independent-of-link-security",
+]
+composition = "bis-synchronizer"
+level = "composed-product"
+activation-boundary = "BIG synchronization BIS selection reception clock recovery encrypted stream admission loss reporting and group or stream teardown"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "le-audio-unicast"
+title = "LE Audio unicast integration"
+scope = "Production LC3 audio source and sink with bounded codec and PCM buffers clock drift control presentation timing BAP PACS ASCS and CAP client or server orchestration over CIS"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "cis-central",
+  "cis-peripheral",
+  "secure-connections-host",
+  "trouble-host-integration",
+]
+gaps = [
+  { axis = "implementation", id = "le-audio-unicast-production-composition-missing" },
+  { axis = "host", id = "le-audio-unicast-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-unicast-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-unicast-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "le-audio-unicast"
+level = "composed-product"
+activation-boundary = "Production LC3 audio source and sink with bounded codec and PCM buffers clock drift control presentation timing BAP PACS ASCS and CAP client or server orchestration over CIS"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "le-audio-broadcast"
+title = "LE Audio broadcast integration"
+scope = "Production LC3 broadcast source and sink discovery synchronization presentation timing broadcast-code lifecycle BAP and BASS assistant or scan-delegator integration over BIS"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "bis-broadcaster",
+  "bis-synchronizer",
+  "trouble-host-integration",
+]
+gaps = [
+  { axis = "implementation", id = "le-audio-broadcast-production-composition-missing" },
+  { axis = "host", id = "le-audio-broadcast-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-broadcast-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-broadcast-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "le-audio-broadcast"
+level = "composed-product"
+activation-boundary = "Production LC3 broadcast source and sink discovery synchronization presentation timing broadcast-code lifecycle BAP and BASS assistant or scan-delegator integration over BIS"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "le-audio-profiles"
+title = "LE Audio profiles and services"
+scope = "Production Generic Audio Framework profiles and services including CAP CAS VCP MICP CSIP MCP and CCP and HAP GMAP TMAP and PBP application roles with interoperable control and audio lifetimes"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "le-audio-unicast",
+  "le-audio-broadcast",
+]
+gaps = [
+  { axis = "implementation", id = "le-audio-profiles-production-composition-missing" },
+  { axis = "host", id = "le-audio-profiles-behavioral-regressions-missing" },
+  { axis = "hil", id = "le-audio-profiles-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "le-audio-profiles-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "le-audio-profiles"
+level = "composed-product"
+activation-boundary = "Production Generic Audio Framework profiles and services including CAP CAS VCP MICP CSIP MCP and CCP and HAP GMAP TMAP and PBP application roles with interoperable control and audio lifetimes"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "host-eatt-and-gatt"
+title = "EATT and GATT feature integration"
+scope = "Production Enhanced Attribute Protocol GATT client and server caching invalidation and LE GATT Security Levels Characteristic integrated with the open Controller"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "trouble-host-integration",
+  "secure-connections-host",
+]
+gaps = [
+  { axis = "implementation", id = "host-eatt-and-gatt-production-composition-missing" },
+  { axis = "host", id = "host-eatt-and-gatt-behavioral-regressions-missing" },
+  { axis = "hil", id = "host-eatt-and-gatt-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "host-eatt-and-gatt-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "host-eatt-and-gatt"
+level = "composed-product"
+activation-boundary = "Production Enhanced Attribute Protocol GATT client and server caching invalidation and LE GATT Security Levels Characteristic integrated with the open Controller"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "mesh-host"
+title = "Bluetooth Mesh 1.1 integration"
+scope = "Production open Mesh 1.1 Host composition including provisioning persistent network state security advertising and GATT bearers with explicit role and resource limits"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "legacy-advertising-roles",
+  "active-scanning",
+  "host-eatt-and-gatt",
+]
+gaps = [
+  { axis = "implementation", id = "mesh-host-production-composition-missing" },
+  { axis = "host", id = "mesh-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "mesh-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "mesh-host-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "mesh-host"
+level = "composed-product"
+activation-boundary = "Production open Mesh 1.1 Host composition including provisioning persistent network state security advertising and GATT bearers with explicit role and resource limits"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[capabilities]]
+id = "blufi-host"
+title = "BluFi integration"
+scope = "Production BluFi Host profile for secure provisioning configuration exchange Wi-Fi status and reconnect over an open BLE and Wi-Fi composition"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+vendor-not-applicable = "open-host-profile-integration"
+depends-on = [
+  "secure-connections-host",
+  "coexistence",
+  "trouble-host-integration",
+]
+gaps = [
+  { axis = "implementation", id = "blufi-host-production-composition-missing" },
+  { axis = "host", id = "blufi-host-behavioral-regressions-missing" },
+  { axis = "hil", id = "blufi-host-interoperability-and-fault-cells-missing" },
+  { axis = "async", id = "blufi-host-runtime-lifetime-missing" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "host-integration"
+phy = "not-applicable"
+security = [
+  "independent-of-link-security",
+]
+composition = "blufi-host"
+level = "composed-product"
+activation-boundary = "Production BluFi Host profile for secure provisioning configuration exchange Wi-Fi status and reconnect over an open BLE and Wi-Fi composition"
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+
+[[sections]]
+id = "bluetooth-overview"
+domain = "bluetooth"
+title = "Bluetooth source inventory contract"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = """
+See the [whole-radio capability map](../FEATURES.md) for shared ownership,
+clock/power lifecycle and cross-protocol composition limits. This inventory
+describes source-owned Bluetooth paths and their composition limits. It does
+not claim RF delivery, interoperable connectivity or Bluetooth qualification.
+Status applies only to the exact scope of each row.
+
+| Status | Meaning |
+| --- | --- |
+| IMPLEMENTED | A bounded production source path owns the complete operation in the stated scope; this is not a hardware qualification result. |
+| PARTIAL | A source subset exists, including narrower role, PHY, DTM or lower-layer machinery, but the full named feature is not composed. |
+| FAIL-CLOSED | Production deliberately prevents activation or advertisement at the stated boundary. Recovered registers alone do not establish this status. |
+| ABSENT | No production protocol/runtime owner exists for the operation. |
+| HOST-ONLY | The named Host/profile function is above HCI. This is a scope label, not a claim that a Host integration implements it. |
+
+The [qualification specification](../../../../../qualification/targets/esp32s31/bluetooth-le.toml)
+owns readiness requirements and hardware evidence independently. A successful
+HCI command, scheduler `RUN`, SRAM graph, PAC accessor, parser or isolated state
+machine does not establish an end-to-end Controller capability. In particular,
+DTM PHY coverage does not establish connected PHY support.
+
+Standalone cold start prepares common PHY power, resets and calibration clocks
+with semantic readback before invoking borrowed registration. The task retains
+the PHY I2C clock lease throughout the powered epoch. Power-readback and
+calibration failures retain fail-stop ownership; cold reunion requires physical
+teardown, which remains incomplete. See the
+[PHY consumer boundary](../../phy/FEATURES.md#protocol-consumer-composition).
+"""
+
+[[sections]]
+id = "bluetooth-capability-sources"
+domain = "bluetooth"
+title = "Capability sources and scope"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "Vendor declarations identify capabilities to account for; they do not establish open-driver support. The datasheet combines Controller and Host features, so Host functions are listed separately below. Features beyond this hardware inventory, such as Monitoring Advertisers, must not be inferred from passive scanning or a Bluetooth version number."
+
+[[sections]]
+id = "bluetooth-qualification-scope-mapping"
+domain = "bluetooth"
+title = "Qualification scope mapping"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "The [LE qualification program](../../../../../qualification/targets/esp32s31/bluetooth-le.toml) uses broader Controller roots as well as narrow portable capabilities. These scopes must agree with the rows below; missing RF evidence alone does not make an implemented source operation incomplete.\n\nThe LE program includes the full LE inventory and its named Host integrations. Its acceptance requirements do not promote source capability status. Classic remains outside the LE program."
+
+[[sections]]
+id = "bluetooth-le-phy-rf-dtm"
+domain = "bluetooth"
+title = "LE PHY, RF and Direct Test Mode"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-legacy-advertising-scanning"
+domain = "bluetooth"
+title = "Legacy advertising and scanning"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-le-roles-connections-reliability"
+domain = "bluetooth"
+title = "LE roles, connections and reliability"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-security-privacy"
+domain = "bluetooth"
+title = "Security and privacy"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-extended-periodic-direction-finding"
+domain = "bluetooth"
+title = "Extended advertising, periodic advertising and Direction Finding"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-power-subrating-iso"
+domain = "bluetooth"
+title = "Power control, subrating and isochronous transport"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-hci-host-boundary"
+domain = "bluetooth"
+title = "HCI and Host boundary"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-controller-lifetime"
+domain = "bluetooth"
+title = "Controller scheduling, power and lifetime"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-coexistence"
+domain = "bluetooth"
+title = "Coexistence"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-classic-phy"
+domain = "bluetooth"
+title = "Bluetooth Classic PHY"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "The datasheet and `SOC_BT_CLASSIC_SUPPORTED` declare BR/EDR hardware. The open Controller implementation is LE-only; vendor Host availability does not determine whether Classic belongs in the silicon inventory. Shared RF, SRAM or HCI packet types do not implement a Classic protocol/runtime owner."
+
+[[sections]]
+id = "bluetooth-classic-link-controller"
+domain = "bluetooth"
+title = "Bluetooth Classic Link Controller"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-classic-security-audio"
+domain = "bluetooth"
+title = "Bluetooth Classic security and audio"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[sections]]
+id = "bluetooth-host-only-capabilities"
+domain = "bluetooth"
+title = "Host-only product capabilities"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+
+[[items]]
+id = "bluetooth-le-1m-phy"
+section = "bluetooth-le-phy-rf-dtm"
+title = "LE 1M PHY"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "DTM and bounded legacy advertising/scanning paths own 1M event publication. This does not imply a complete connected Controller."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-2m-phy"
+section = "bluetooth-le-phy-rf-dtm"
+title = "LE 2M PHY"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[DTM parameters](src/le/dtm/parameters.rs) own TX/RX selectors and scheduler geometry. Ordinary advertising/scanning and peripheral roles do not select 2M."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-coded-s-8-125-kbit-s"
+section = "bluetooth-le-phy-rf-dtm"
+title = "LE Coded S=8 / 125 kbit/s"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "Enhanced DTM owns the S=8 TX selection and generic Coded RX selection. No ordinary advertising/scanning or ACL role selects Coded PHY."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-coded-s-2-500-kbit-s"
+section = "bluetooth-le-phy-rf-dtm"
+title = "LE Coded S=2 / 500 kbit/s"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "DTM has a distinct S=2 TX identity. RX uses the generic Coded selector; S=2 is not a separate accepted RX selector. No connected Coded path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hardware-listen-before-talk-lbt"
+section = "bluetooth-le-phy-rf-dtm"
+title = "Hardware Listen Before Talk (LBT)"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "No Bluetooth LBT policy/activation owner is composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-static-default-tx-power-selection"
+section = "bluetooth-le-phy-rf-dtm"
+title = "Static/default TX power selection"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "DTM, advertising, scanning and peripheral graph preparation carry default power requests through the recovered [power encoding](memory/src/le_tx_power.rs). No general live power-selection API or radiated-power qualification is implied."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-receiver-test-transmitter-test"
+section = "bluetooth-le-phy-rf-dtm"
+title = "LE Receiver Test / Transmitter Test"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending."
+source-paths = []
+
+[[items]]
+id = "bluetooth-enhanced-dtm-phy-selection"
+section = "bluetooth-le-phy-rf-dtm"
+title = "Enhanced DTM PHY selection"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions."
+source-paths = []
+
+[[items]]
+id = "bluetooth-dtm-test-patterns"
+section = "bluetooth-le-phy-rf-dtm"
+title = "DTM test patterns"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants."
+source-paths = []
+
+[[items]]
+id = "bluetooth-long-running-rf-phy-maintenance-including-dtm"
+section = "bluetooth-le-phy-rf-dtm"
+title = "Long-running RF/PHY maintenance, including DTM"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "Initial common-PHY/client and baseband acquisition exist. The retained Bluetooth client owns read-only demand, consuming due/periodic evaluation and a release that preserves the last-client fact. Controller admission, target execution, timer integration, BTBB/IRQ/timer quiescence and physical RF close remain incomplete. RF/HIL readiness belongs to qualification."
+source-paths = []
+
+[[items]]
+id = "bluetooth-legacy-non-connectable-advertising-adv-nonconn-ind"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Legacy non-connectable advertising (`ADV_NONCONN_IND`)"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "A bounded event owns one to three primary-channel descriptors, scheduler publication, completion, retirement and recycle."
+source-paths = []
+
+[[items]]
+id = "bluetooth-legacy-connectable-advertising-adv-ind"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Legacy connectable advertising (`ADV_IND`)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[Connectable advertising](src/le/advertising/connectable.rs) owns configuration, response graph, recurrence and `CONNECT_IND` handoff. The S31 slice accepts exactly one selected primary channel."
+source-paths = []
+
+[[items]]
+id = "bluetooth-advertiser-scan-response-scan-rsp"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Advertiser Scan Response (`SCAN_RSP`)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Bounded response state and graph preparation belong to connectable advertising; this is not a general scannable advertiser."
+source-paths = []
+
+[[items]]
+id = "bluetooth-scannable-non-connectable-advertising-adv-scan-ind"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Scannable non-connectable advertising (`ADV_SCAN_IND`)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No production role publishes this advertising mode."
+source-paths = []
+
+[[items]]
+id = "bluetooth-low-duty-high-duty-directed-advertising-adv-direct-ind"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Low-duty / high-duty directed advertising (`ADV_DIRECT_IND`)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No directed-advertising scheduler and lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-high-duty-cycle-non-connectable-advertising"
+section = "bluetooth-legacy-advertising-scanning"
+title = "High-duty-cycle non-connectable advertising"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No production scheduling policy implements the named feature."
+source-paths = []
+
+[[items]]
+id = "bluetooth-static-random-advertiser-address"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Static random advertiser address"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "HCI retains a requested random address; application to advertising is role-specific. This does not provide private-address rotation."
+source-paths = []
+
+[[items]]
+id = "bluetooth-legacy-passive-scanning"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Legacy passive scanning"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[Passive scanning](src/le/scanning/passive.rs) composes recurring primary-channel LE 1M windows, public own address, accept-all policy, bounded reports and optional exact report-duplicate suppression. Privacy is disabled; unrelated finished-list dispatch remains incomplete."
+source-paths = []
+
+[[items]]
+id = "bluetooth-active-scanning"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Active scanning"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No `SCAN_REQ` producer and complete request/response scanning lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-extended-secondary-channel-scanning"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Extended / secondary-channel scanning"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No AUX scanner, secondary 2M scanner or ordinary Coded scanner is composed. DTM RX is separate."
+source-paths = []
+
+[[items]]
+id = "bluetooth-extended-scanner-filter-policies"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Extended scanner filter policies"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Production uses the restricted accept-all policy."
+source-paths = []
+
+[[items]]
+id = "bluetooth-filter-accept-list-operation"
+section = "bluetooth-legacy-advertising-scanning"
+title = "Filter Accept List operation"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "HCI capacity reporting exists, but list commands and advertiser/scanner admission policy are not composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-broadcaster-observer"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Broadcaster / Observer"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-peripheral"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Peripheral"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "`CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Central-initiated feature exchange, Connection Update and Channel Map Update have bounded control paths; active HCI command intake, Disconnect, Reset and bidirectional ACL are composed. Controller-to-Host delivery uses a bounded two-packet FIFO and Host-managed credits. General LLCP remains unsupported."
+source-paths = []
+
+[[items]]
+id = "bluetooth-central-initiator"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Central / Initiator"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Create Connection/initiator scheduling or Central connection owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-simultaneous-broadcaster-observer-central-peripheral"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Simultaneous Broadcaster + Observer + Central + Peripheral"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Individual role subsets do not form a simultaneous multi-role runtime."
+source-paths = []
+
+[[items]]
+id = "bluetooth-multiple-connections-multi-connection-optimization"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Multiple connections / multi-connection optimization"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-connect-ind-decoding-and-admission"
+section = "bluetooth-le-roles-connections-reliability"
+title = "`CONNECT_IND` decoding and admission"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "[Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only."
+source-paths = []
+
+[[items]]
+id = "bluetooth-first-peripheral-connection-window"
+section = "bluetooth-le-roles-connections-reliability"
+title = "First peripheral connection window"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Causal timestamp projection, window planning, SRAM preparation and first hardware `RUN` exist; a successful connection exchange is not established."
+source-paths = []
+
+[[items]]
+id = "bluetooth-recurring-peripheral-events"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Recurring peripheral events"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[Active lifecycle](src/le/peripheral/active.rs) drives completion, recycle, fresh controller time and successor RUN through lower recurrence. Before each successor RUN it reserves software capacity for the complete two-node hardware RX batch; the CPU-owned backpressure boundary races Host capacity with periodic supervision/procedure checks. A guarded window missed before publication is cancelled and rebuilt directly at a later established event with accumulated widening. Published completion, unlink and following Controller-time acquisition share an absolute progress deadline; an overdue live RUN enters bounded common stop, exact-head retirement, unlink and recycle, while a stalled time request fails closed. Requires an explicit local clock accuracy bound; initial establishment-window policy and hardware timing qualification remain open."
+source-paths = []
+
+[[items]]
+id = "bluetooth-channel-selection-algorithm-1"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Channel Selection Algorithm #1"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable channel progression exists within the incomplete connection owner."
+source-paths = []
+
+[[items]]
+id = "bluetooth-channel-selection-algorithm-2"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Channel Selection Algorithm #2"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Connectable `ADV_IND` sets local ChSel support, `CONNECT_IND` admission negotiates CSA#2 only when both devices set ChSel, and recurring connection events select the resulting data channels in the portable event owner before S31 descriptor preparation. HIL interoperability remains unqualified."
+source-paths = []
+
+[[items]]
+id = "bluetooth-peripheral-latency"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Peripheral latency"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Timing is validated and retained; live skip/recovery scheduling is not complete."
+source-paths = []
+
+[[items]]
+id = "bluetooth-sleep-clock-accuracy-window-widening"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Sleep Clock Accuracy / window widening"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned. Established pre-publication missed events advance the widening reference by their exact delta; initial establishment lateness and HIL behavior remain open."
+source-paths = []
+
+[[items]]
+id = "bluetooth-establishment-supervision-timeout"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Establishment / supervision timeout"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. A source-backed HIL scenario rfkill-blocks the Linux peer for at least 2500 ms and requires timeout recovery, but has no recorded hardware evidence; CRC-error behavior remains unqualified."
+source-paths = []
+
+[[items]]
+id = "bluetooth-missed-event-recovery"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Missed-event recovery"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Fresh Controller time detects an established event whose guarded start closed before RUN. The active owner cancels its unpublished reservation and rebuilds directly at a later event counter, preserving LL/TX ownership and accumulating widening across the full delta. Supervision and `T_terminate` bound recovery. Crossing a Connection Update or Channel Map Update instant retires with `0x28`. Initial establishment-window treatment and on-air qualification remain open."
+source-paths = []
+
+[[items]]
+id = "bluetooth-ll-data-pdu-rx"
+section = "bluetooth-le-roles-connections-reliability"
+title = "LL Data PDU RX"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Accepted nonempty LLID 1/2 payloads retain their L2CAP boundary in a bounded Controller-to-Host HCI ACL FIFO and split at the Host-declared ACL buffer length. Empty acknowledgements consume no slot. Each RUN reserves the worst-case hardware RX batch before an on-air ACK is possible, so a mixed data/control completion remains wholly processable under Host backpressure. Host-managed credits are enforced; exhausted credits stop further RUN admission while Controller-time deadline checks and command intake continue. Disconnect closes new handle use while retaining the old handle solely for outstanding credit returns; idle/reconnect waits for the count to reach zero. The peripheral recovery HIL workload declares one 27-byte Host credit, holds it for 300 ms after the first fragment, returns twenty exact credits and requires two distinct complete ten-fragment 251-byte packets per connection, separated by live channel-map application, but no recorded hardware run qualifies it; DLE remains absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-ll-data-pdu-tx"
+section = "bluetooth-le-roles-connections-reliability"
+title = "LL Data PDU TX"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The single TX allocation retains control or Host ACL bytes through publication and peer acknowledgement. One 251-byte HCI ACL credit is fragmented into 27-byte legacy Data PDUs when plaintext or 23-byte plaintext fragments plus a four-octet MIC when encrypted; the HCI queue retains later credited packets. The peripheral recovery HIL workload reassembles each ten-fragment unencrypted input and queues two distinct exact 251-byte Host echoes, with the second following live channel-map application, but has no recorded hardware evidence. Multiple radio-resident packets and DLE remain absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments"
+section = "bluetooth-le-roles-connections-reliability"
+title = "SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledgments"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The bounded control path preserves hardware sequence state and uncompleted TX packets; connection RX applies the reviewed acceptance gate. General ACL reliability is not qualified."
+source-paths = []
+
+[[items]]
+id = "bluetooth-llcp-framework"
+section = "bluetooth-le-roles-connections-reliability"
+title = "LLCP framework"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "A bounded peripheral responder queues feature, version, LE Ping and unknown responses. Central Connection Update and Channel Map Update share a single pending instant-procedure boundary. Same-procedure and incompatible-procedure collisions are distinguished. Local termination has its dedicated supervision-duration timer; Peripheral-initiated Feature and Version Exchange share the 40-second `connProcedureTimeout`, which restarts whenever another LL Control PDU enters the TX graph. Other procedure response timers and LLCP procedures remain absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-connection-update-channel-map-update"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Connection Update / Channel Map Update"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Validated Central `LL_CONNECTION_UPDATE_IND` and `LL_CHANNEL_MAP_IND` values survive scheduler cancellation and apply at their exact wrapping instants. Connection Update uses the old interval plus the new offset for the instant window, then the new interval; it resets supervision and emits LE Connection Update Complete only when interval, latency or timeout changes. Channel Map Update preserves CSA#1 state and updates CSA#1 or CSA#2 selection. Passed instants and procedure collisions request protocol termination; executor recovery crossing either instant retires with `0x28`. The peripheral recovery HIL source requests an exact 120-ms interval, requires matching successful completion from both Hosts, applies an exact two-channel map and completes a second fragmented ACL round trip afterward, but no recorded hardware run qualifies it."
+source-paths = []
+
+[[items]]
+id = "bluetooth-phy-update"
+section = "bluetooth-le-roles-connections-reliability"
+title = "PHY Update"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No connected PHY negotiation/application owner exists; DTM selection does not implement LLCP."
+source-paths = []
+
+[[items]]
+id = "bluetooth-data-length-extension-data-length-update"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Data Length Extension / Data Length Update"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No negotiated connected packet-length owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-feature-exchange"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Feature Exchange"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with the used-feature octet intersected against the local mask. Host LE Read Remote Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, retains the request through TX-graph handoff and response, caches a successful page-zero result, reports unsupported peers with `0x1a`, and treats a 40-second response timeout as immediate connection loss with `0x22`. The source-backed peripheral HIL workload requires successful Command Status followed by the exact remote feature mask `18:40:00:00:00:00:00:00`; no recorded hardware run qualifies it."
+source-paths = []
+
+[[items]]
+id = "bluetooth-version-exchange"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Version Exchange"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Peer and Host-initiated exchanges share one configured Controller identity and queue at most one `LL_VERSION_IND` per connection. Read Remote Version Information publishes Command Status before LL admission, caches the peer identity, preserves reject and timeout status, and retains its masked completion under backpressure. Its 40-second procedure timer starts at the initiating TX graph update and restarts for each later queued LL Control PDU. A missing local identity is rejected rather than inferred from the chip. The source-backed peripheral HIL workload requires successful Command Status followed by Core version 5.4, company value `0xffff` and subversion 1; no recorded hardware run qualifies it."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-ping"
+section = "bluetooth-le-roles-connections-reliability"
+title = "LE Ping"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The declared LE Ping feature accepts an exact `LL_PING_REQ`, queues one `LL_PING_RSP` through the existing reliable control TX owner and consumes `LL_PING_RSP` without creating a response loop. No Host command is needed for this peer-initiated responder."
+source-paths = []
+
+[[items]]
+id = "bluetooth-termination"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Termination"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "An accepted peer `LL_TERMINATE_IND` or supervision timeout retires the unlinked connection, publishes Disconnection Complete under the Host mask and only then restores idle HCI intake. Host Disconnect for the sole handle publishes Command Status, retains the requested reason in `LL_TERMINATE_IND` through retransmission and peer acknowledgment, and reports local-host termination (`0x16`) without replacing the peer-visible reason. A fresh Controller sample immediately before first TX allocation arms `T_terminate` for the connection supervision timeout; expiry also retires the link. A source-backed HIL scenario checks target reason `0x16`, peer reason `0x13` and reconnect, but recorded hardware evidence remains absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-adaptive-frequency-hopping-channel-assessment"
+section = "bluetooth-le-roles-connections-reliability"
+title = "Adaptive Frequency Hopping / channel assessment"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Initial channel maps, CSA progression and Central-initiated live map application exist. Local channel assessment and Controller-initiated map generation are absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-channel-classification"
+section = "bluetooth-le-roles-connections-reliability"
+title = "LE Channel Classification"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No connected classification generation/report/update procedure exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-ble-encryption-accelerator-surface"
+section = "bluetooth-security-privacy"
+title = "BLE encryption accelerator surface"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[Reviewed hardware registers](../../../../../registers/esp32s31/model/peripherals/ble-hw-accelerator.toml) describe encryption operations. The production Link Layer path currently uses the portable software AES-CCM owner, so no connected owner drives this accelerator."
+source-paths = []
+
+[[items]]
+id = "bluetooth-link-layer-encryption"
+section = "bluetooth-security-privacy"
+title = "Link Layer Encryption"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The portable LL crate owns non-copyable LTK/session material, the Peripheral start/pause/restart handshakes, independent 39-bit direction counters, nonce/AAD construction, four-octet MIC authentication and allocation-free software AES-CCM. The production composition supplies fresh SKDp/IVp from the ESP32-S31 hardware RNG, routes the standard redacted HCI LTK reply and negative-reply commands only for the live pending request, and publishes masked LTK Request, Encryption Change and Encryption Key Refresh Complete events. The radio path authenticates and decrypts RX before LL dispatch, encrypts control, ACL and empty acknowledgement packets, retains ciphertext and its counter through retransmission, and limits encrypted legacy ACL plaintext to 23 octets. Pause keeps its response encrypted, accepts only the peer's unencrypted pause response, requires fresh SKDp/IVp and resets both counters under the replacement session key. MIC or physical-channel sequence failure retires the link with `0x3d`; a missing restart key reliably terminates with `0x06`. Official Core vectors and host regressions cover portable cryptography, HCI policy, counters, retransmission and MIC failure; the target composition builds, but vendor comparison and on-air interoperability/fault evidence remain absent. SMP, pairing and key persistence remain Host responsibilities."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-privacy-1-2"
+section = "bluetooth-security-privacy"
+title = "LE Privacy 1.2"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "The production [scanner image](memory/src/passive_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle."
+source-paths = []
+
+[[items]]
+id = "bluetooth-resolving-list"
+section = "bluetooth-security-privacy"
+title = "Resolving List"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[PHY engine storage](memory/src/ble_phy_engine.rs) owns allocation and base publication. HCI list commands, IRKs and live resolution policy are not composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-secure-connections-integration"
+section = "bluetooth-security-privacy"
+title = "LE Secure Connections integration"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No SMP Host integration is connected to a working ACL/encryption Controller path. Generic cryptographic hardware is not pairing support."
+source-paths = []
+
+[[items]]
+id = "bluetooth-encrypted-advertising-data"
+section = "bluetooth-security-privacy"
+title = "Encrypted Advertising Data"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No key/material lifecycle and advertiser/scanner formatter or consumer exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-advertising-extensions-multiple-advertising-sets"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Advertising Extensions / multiple advertising sets"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No `ADV_EXT_IND` or `AUX_ADV_IND` production role or set lifecycle exists. Allocation counts do not create roles."
+source-paths = []
+
+[[items]]
+id = "bluetooth-secondary-channel-advertising-2m-coded-advertising-and-advertising-coding-selection"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Secondary-channel advertising, 2M / Coded advertising and Advertising Coding Selection"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No AUX scheduling and PHY-selection owner exists. DTM coverage does not extend to advertising."
+source-paths = []
+
+[[items]]
+id = "bluetooth-periodic-advertising-synchronization"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Periodic Advertising / synchronization"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No periodic advertiser or sync role exists; reserved sync capacity is only geometry."
+source-paths = []
+
+[[items]]
+id = "bluetooth-periodic-advertising-sync-transfer-past"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Periodic Advertising Sync Transfer (PAST)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Neither the ACL procedure nor periodic-sync owner is composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-periodic-advertising-with-responses-pawr"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Periodic Advertising with Responses (PAwR)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No subevent/response-slot scheduling or advertiser/scanner runtime exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-advdatainfo-periodic-advertising-enhancements"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "AdvDataInfo / Periodic Advertising Enhancements"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No production periodic-advertising foundation exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-advertising-channel-index"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Advertising Channel Index"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No production owner implements the named feature."
+source-paths = []
+
+[[items]]
+id = "bluetooth-constant-tone-extension-activation"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Constant Tone Extension activation"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Normal initialization publishes a [disabled CTE workspace](memory/src/direction_finding_workspace.rs). Recovered CTE controls do not activate Direction Finding."
+source-paths = []
+
+[[items]]
+id = "bluetooth-aoa-aod"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "AoA / AoD"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No antenna pattern, IQ sampling, CTE TX/RX protocol or report lifecycle exists; the CTE activation boundary remains disabled."
+source-paths = []
+
+[[items]]
+id = "bluetooth-connected-connectionless-cte-procedures"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "Connected / connectionless CTE procedures"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Neither connected LLCP nor periodic-advertising CTE ownership exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-iq-sample-delivery-over-hci"
+section = "bluetooth-extended-periodic-direction-finding"
+title = "IQ sample delivery over HCI"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No sampling-to-HCI producer or reporting lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-power-control-path-loss-monitoring"
+section = "bluetooth-power-subrating-iso"
+title = "LE Power Control / Path Loss Monitoring"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No connected procedure, threshold state or HCI event producer exists. Default power encoding is separate."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-connection-subrating"
+section = "bluetooth-power-subrating-iso"
+title = "LE Connection Subrating"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No LLCP, subrate anchor or scheduling lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-isochronous-channels-isoal"
+section = "bluetooth-power-subrating-iso"
+title = "LE Isochronous Channels / ISOAL"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No ISO adaptation, stream scheduling or Controller data-path owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-connected-isochronous-groups-streams-cig-cis"
+section = "bluetooth-power-subrating-iso"
+title = "Connected Isochronous Groups / Streams (CIG/CIS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No connected group/stream control and scheduling lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-broadcast-isochronous-groups-streams-big-bis"
+section = "bluetooth-power-subrating-iso"
+title = "Broadcast Isochronous Groups / Streams (BIG/BIS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No BIG control, periodic-advertising integration or broadcast ISO scheduler exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-audio-transport"
+section = "bluetooth-power-subrating-iso"
+title = "LE Audio transport"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "CIS/BIS transport is not implemented. Host audio profiles cannot supply the missing Controller path."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hci-command-event-packets"
+section = "bluetooth-hci-host-boundary"
+title = "HCI Command / Event packets"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Bounded in-process transport and typed dispatch own the current bootstrap, DTM and legacy advertising/scanning command/response subset."
+source-paths = []
+
+[[items]]
+id = "bluetooth-acl-sco-iso-packet-framing"
+section = "bluetooth-hci-host-boundary"
+title = "ACL / SCO / ISO packet framing"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "[Packet validation](../../../../protocols/bluetooth/hci/src/transport/packet.rs) recognizes standard packet kinds and declared lengths. This is framing only, not an operational data plane."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hci-acl-routing-and-bidirectional-flow-control"
+section = "bluetooth-hci-host-boundary"
+title = "HCI ACL routing and bidirectional flow control"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Host packets for live handle `0x0001` enter one owned ACL slot, preserve HCI packet boundaries across 27-byte unencrypted or 23-byte encrypted plaintext LL fragmentation, and return Number Of Completed Packets only after final acknowledgement or teardown cancellation. Foreign, invalid-boundary or profile-rejected data returns its consumed credit. Accepted Controller packets preserve LL start/continuation boundaries in a two-packet FIFO, cannot precede Connection Complete, fragment to Host Buffer Size and consume one Host credit per emitted HCI packet. Host Number Of Completed Packets restores bounded credits without a success event; the composition exposes a restricted write-only Host credit authority alongside the standard `ExternalController` facade. Flow-controlled output keeps command intake live even when the Host ACL owner is occupied, while an older pending normal response retains causal order. Disconnect removes the handle from data/command admission but retains it for old Controller-credit returns; idle admission prevents handle reuse until all such credits settle. The peripheral recovery HIL workload correlates two distinct exact 251-byte, ten-fragment unencrypted exchanges between a Linux central and a target Host that declares one 27-byte credit and deliberately delays its first return, but no recorded hardware run qualifies it."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hci-sco-iso-data-plane"
+section = "bluetooth-hci-host-boundary"
+title = "HCI SCO / ISO data plane"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Generic transport packet representations exist, but no synchronous/isochronous stream routes them to radio execution."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hci-reset"
+section = "bluetooth-hci-host-boundary"
+title = "HCI Reset"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Software bootstrap reset and selected active-role reset coordination exist. A source-backed HIL scenario checks active Reset completion, peer supervision timeout, Host bootstrap reconfiguration and reconnect; recorded hardware evidence remains absent. Complete powered reconstruction remains separate."
+source-paths = []
+
+[[items]]
+id = "bluetooth-event-masks"
+section = "bluetooth-hci-host-boundary"
+title = "Event masks"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Bootstrap retains Host masks. Legacy advertising reports, LE Connection Complete, LE Connection Update Complete, LE Long Term Key Request, Encryption Change, Encryption Key Refresh Complete and Disconnection Complete enforce their standard base/LE masks; the complete event inventory is not composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-read-local-supported-commands"
+section = "bluetooth-hci-host-boundary"
+title = "Read Local Supported Commands"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The standard 64-octet bitmap declares the closed production classifier's exact bootstrap, legacy advertising/scanning, DTM, connected Disconnect/remote-information, LTK reply/negative-reply and Host ACL-credit inventory. Unsupported neighboring commands remain clear."
+source-paths = []
+
+[[items]]
+id = "bluetooth-public-bd-addr-le-read-buffer-size"
+section = "bluetooth-hci-host-boundary"
+title = "Public BD_ADDR / LE Read Buffer Size"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-set-random-address"
+section = "bluetooth-hci-host-boundary"
+title = "LE Set Random Address"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Bootstrap retains the request; hardware application is role-specific and does not establish privacy."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-read-local-supported-features-command"
+section = "bluetooth-hci-host-boundary"
+title = "LE Read Local Supported Features command"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "[Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns bit 0 for LE Encryption, bit 3 for Peripheral-initiated Feature Exchange, bit 4 for the LE Ping responder and bit 14 for Channel Selection Algorithm #2. Every other optional feature bit remains clear."
+source-paths = []
+
+[[items]]
+id = "bluetooth-optional-le-capability-advertisement"
+section = "bluetooth-hci-host-boundary"
+title = "Optional LE capability advertisement"
+status = "fail-closed"
+level = "composed-product"
+scope-and-limitations = "Unsupported optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-read-filter-accept-list-size"
+section = "bluetooth-hci-host-boundary"
+title = "LE Read Filter Accept List Size"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "Configured capacity is reported; list operation remains absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-connection-handles-connection-complete-disconnection-complete"
+section = "bluetooth-hci-host-boundary"
+title = "Connection handles / Connection Complete / Disconnection Complete"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The sole supported peripheral connection uses handle `0x0001`. Successful and failed establishment plus peer/timeout/Host teardown publish standard events in causal order with bounded backpressure. Foreign Disconnect handles return Unknown Connection Identifier; foreign Host ACL is discarded with credit return. Controller-to-Host ACL uses the same handle after Connection Complete. The retired connection remains the exclusive generation barrier until its queued data, events and outstanding Host flow-control credits drain, so `0x0001` cannot be reassigned early; multiple-handle allocation remains absent."
+source-paths = []
+
+[[items]]
+id = "bluetooth-trouble-host-integration"
+section = "bluetooth-hci-host-boundary"
+title = "Trouble Host integration"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[Production composition](../../../../composition/esp32s31/embassy/bluetooth/src/trouble.rs) consumes the source-owned `bt-hci` Controller facade into a released `trouble-host` 0.8.0 stack with peripheral/GATT support and retains its exact hardware runner beside it. The [`trouble-gatt` standalone application](../../../../../examples/esp32s31-bluetooth-controller/README.md) builds that target composition with a bounded read/write GATT service. A portable integration test proves the affine ownership boundary, while the [typed-HCI tests](../../../../protocols/bluetooth/hci/src/controller/bootstrap/tests.rs) drive the real Trouble runner through bootstrap. Connected GATT interoperability still lacks HIL evidence."
+source-paths = []
+
+[[items]]
+id = "bluetooth-controller-scheduler-timebase"
+section = "bluetooth-controller-lifetime"
+title = "Controller scheduler timebase"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Always-awake event-driven time ownership uses two raw ticks per microsecond and retains fractional ticks across epoch updates. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete."
+source-paths = []
+
+[[items]]
+id = "bluetooth-controller-interrupt-epoch"
+section = "bluetooth-controller-lifetime"
+title = "Controller interrupt epoch"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "IRQ routing, bounded hard-handler classification and task wake exist; unrelated finished-list and complete role dispatch remain incomplete."
+source-paths = []
+
+[[items]]
+id = "bluetooth-controller-sram-ownership"
+section = "bluetooth-controller-lifetime"
+title = "Controller SRAM ownership"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts. Missing role graphs and packet-engine contracts are not implied."
+source-paths = []
+
+[[items]]
+id = "bluetooth-always-awake-controller"
+section = "bluetooth-controller-lifetime"
+title = "Always-awake Controller"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Production selects standalone always-awake operation; incomplete role and maintenance lifetimes still apply."
+source-paths = []
+
+[[items]]
+id = "bluetooth-bluetooth-modem-sleep-wake-request"
+section = "bluetooth-controller-lifetime"
+title = "Bluetooth modem sleep / wake request"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No controller sleep scheduler, RF/PHY/baseband stop/wake, retention or wake-request transaction is composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-low-frequency-sleep-clock-operation"
+section = "bluetooth-controller-lifetime"
+title = "Low-frequency sleep-clock operation"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Production uses the standalone main-XTAL time profile. Portable SCA types do not implement a low-power clock/wake lifecycle."
+source-paths = []
+
+[[items]]
+id = "bluetooth-powered-shutdown"
+section = "bluetooth-controller-lifetime"
+title = "Powered shutdown"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Pre-publication rollback and selected HCI Reset paths exist. Complete hardware quiescence, PHY/client release and cold reconstruction remain incomplete."
+source-paths = []
+
+[[items]]
+id = "bluetooth-internal-wi-fi-bluetooth-coexistence"
+section = "bluetooth-coexistence"
+title = "Internal Wi-Fi/Bluetooth coexistence"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs), PAC and [Embassy mailbox](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. Safe concurrent Wi-Fi/Bluetooth singleton ownership is not composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination"
+section = "bluetooth-coexistence"
+title = "Wi-Fi/Bluetooth/IEEE 802.15.4 radio coordination"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Shared arbitration infrastructure exists without a complete multi-radio production lifecycle."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hardware-pti-coexistence"
+section = "bluetooth-coexistence"
+title = "Hardware PTI coexistence"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Recovered priority/register machinery exists without a complete Bluetooth request/grant/release policy."
+source-paths = []
+
+[[items]]
+id = "bluetooth-external-coexistence-interface"
+section = "bluetooth-coexistence"
+title = "External coexistence interface"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "The SoC declares advanced external coexistence hardware. No Bluetooth board-pin contract and external request/grant runtime is composed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-basic-rate-gfsk-1-mbit-s"
+section = "bluetooth-classic-phy"
+title = "Basic Rate GFSK, 1 Mbit/s"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "No BR/EDR PHY-event or Baseband role exists. LE DTM does not exercise Classic."
+source-paths = []
+
+[[items]]
+id = "bluetooth-edr-pi-4-dqpsk-2-mbit-s"
+section = "bluetooth-classic-phy"
+title = "EDR pi/4-DQPSK, 2 Mbit/s"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "No EDR formatter/receiver owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-edr-8dpsk-3-mbit-s"
+section = "bluetooth-classic-phy"
+title = "EDR 8DPSK, 3 Mbit/s"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "No EDR formatter/receiver owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-hardware-cca"
+section = "bluetooth-classic-phy"
+title = "Hardware CCA"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "No Classic PHY/runtime owner drives channel assessment."
+source-paths = []
+
+[[items]]
+id = "bluetooth-power-class-1-operation"
+section = "bluetooth-classic-phy"
+title = "Power Class 1 operation"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "No Classic TX power/runtime path establishes the advertised radio capability."
+source-paths = []
+
+[[items]]
+id = "bluetooth-inquiry-inquiry-scan"
+section = "bluetooth-classic-link-controller"
+title = "Inquiry / Inquiry Scan"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic discovery role exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-paging-page-scan"
+section = "bluetooth-classic-link-controller"
+title = "Paging / Page Scan"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic connection-establishment owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-acl-links"
+section = "bluetooth-classic-link-controller"
+title = "ACL links"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No BR/EDR ACL connection or operational HCI data path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-sco-links"
+section = "bluetooth-classic-link-controller"
+title = "SCO links"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No synchronous Classic link owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-esco-links"
+section = "bluetooth-classic-link-controller"
+title = "eSCO links"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No enhanced synchronous Classic link owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-active-mode"
+section = "bluetooth-classic-link-controller"
+title = "Active mode"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic connected state exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-sniff-mode"
+section = "bluetooth-classic-link-controller"
+title = "Sniff mode"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic low-duty connected scheduler exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-sniff-subrating"
+section = "bluetooth-classic-link-controller"
+title = "Sniff Subrating"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic subrating procedure exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-role-switching"
+section = "bluetooth-classic-link-controller"
+title = "Role switching"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic piconet role manager exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-channel-classification"
+section = "bluetooth-classic-link-controller"
+title = "Channel classification"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic channel assessment/classification owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-adaptive-frequency-hopping"
+section = "bluetooth-classic-link-controller"
+title = "Adaptive Frequency Hopping"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic hopping and channel-map lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-traditional-power-control"
+section = "bluetooth-classic-link-controller"
+title = "Traditional Power Control"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic power-control procedure exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-enhanced-power-control"
+section = "bluetooth-classic-link-controller"
+title = "Enhanced Power Control"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic enhanced power-control procedure exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-ping"
+section = "bluetooth-classic-link-controller"
+title = "Ping"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic Link Manager transaction owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-piconet-management"
+section = "bluetooth-classic-link-controller"
+title = "Piconet management"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic piconet scheduler/link manager exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-scatternet-management"
+section = "bluetooth-classic-link-controller"
+title = "Scatternet management"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No multi-piconet scheduler exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-multiple-connections"
+section = "bluetooth-classic-link-controller"
+title = "Multiple connections"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic link table or concurrent connection scheduler exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-active-peripheral-broadcast"
+section = "bluetooth-classic-link-controller"
+title = "Active Peripheral Broadcast"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic broadcast role exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-secure-simple-pairing-ssp"
+section = "bluetooth-classic-security-audio"
+title = "Secure Simple Pairing (SSP)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic Host/Link Manager pairing lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-secure-connections"
+section = "bluetooth-classic-security-audio"
+title = "Secure Connections"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic connection/security owner exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-e0-encryption"
+section = "bluetooth-classic-security-audio"
+title = "E0 encryption"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Classic encryption procedure and packet lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-aes-ccm-encryption"
+section = "bluetooth-classic-security-audio"
+title = "AES-CCM encryption"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Generic crypto hardware does not establish a Classic encrypted link."
+source-paths = []
+
+[[items]]
+id = "bluetooth-a-law-voice"
+section = "bluetooth-classic-security-audio"
+title = "A-law voice"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No SCO/eSCO audio path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-mu-law-voice"
+section = "bluetooth-classic-security-audio"
+title = "mu-law voice"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No SCO/eSCO audio path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-cvsd-voice"
+section = "bluetooth-classic-security-audio"
+title = "CVSD voice"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No SCO/eSCO audio path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-transparent-voice-data"
+section = "bluetooth-classic-security-audio"
+title = "Transparent voice data"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No synchronous Classic audio path exists."
+source-paths = []
+
+[[items]]
+id = "bluetooth-voice-over-hci"
+section = "bluetooth-classic-security-audio"
+title = "Voice over HCI"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Packet framing exists, but no synchronous link routes voice over HCI."
+source-paths = []
+
+[[items]]
+id = "bluetooth-voice-over-pcm-i2s"
+section = "bluetooth-classic-security-audio"
+title = "Voice over PCM/I2S"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "The SoC declares Bluetooth/I2S routing; no Classic synchronous-link composition owns it."
+source-paths = []
+
+[[items]]
+id = "bluetooth-bluetooth-mesh-1-1"
+section = "bluetooth-host-only-capabilities"
+title = "Bluetooth Mesh 1.1"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "Requires a Host/profile stack over an adequate LE Controller; no production Mesh integration is claimed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-enhanced-attribute-protocol-eatt"
+section = "bluetooth-host-only-capabilities"
+title = "Enhanced Attribute Protocol (EATT)"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "ATT/L2CAP Host function; no production Host integration is claimed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-gatt-caching"
+section = "bluetooth-host-only-capabilities"
+title = "GATT Caching"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "GATT Host function; no production Host integration is claimed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-gatt-security-levels-characteristic"
+section = "bluetooth-host-only-capabilities"
+title = "LE GATT Security Levels Characteristic"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "GATT/security Host function; no production Host integration is claimed."
+source-paths = []
+
+[[items]]
+id = "bluetooth-blufi"
+section = "bluetooth-host-only-capabilities"
+title = "BluFi"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "Espressif application/profile protocol requiring LE and Wi-Fi integration; not supplied by this Controller."
+source-paths = []
+
+[[items]]
+id = "bluetooth-le-audio-generic-audio-framework"
+section = "bluetooth-host-only-capabilities"
+title = "LE Audio Generic Audio Framework"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "Profiles/services are Host-side; the missing ISO/CIS/BIS Controller transport is tracked separately above."
+source-paths = []
+
+[[items]]
+id = "bluetooth-classic-audio-data-profiles"
+section = "bluetooth-host-only-capabilities"
+title = "Classic audio/data profiles"
+status = "host-only"
+level = "composed-product"
+scope-and-limitations = "A2DP/HFP and other Host profiles do not establish BR/EDR Controller support."
+source-paths = []
+
+[[items]]
+id = "bluetooth-shared-phy-initial-handoff"
+section = "bluetooth-qualification-scope-mapping"
+title = "Implemented initial common-PHY handoff subset"
+source-fact = "bluetooth-initial-phy-handoff"
+
+[[references]]
+id = "bluetooth-source-esp32-s31-datasheet-pre-release-v0-5-sections-4-3-3-and-4-3-4"
+section = "bluetooth-capability-sources"
+title = "[ESP32-S31 datasheet, pre-release v0.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf), sections 4.3.3 and 4.3.4"
+kind = "source-reference"
+details = "LE PHY, Controller/Host features and Classic BR/EDR capabilities"
+source-paths = []
+
+[[references]]
+id = "bluetooth-source-esp-idf-s31-soc-capabilities"
+section = "bluetooth-capability-sources"
+title = "[ESP-IDF S31 SoC capabilities](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h)"
+kind = "source-reference"
+details = "Classic, LE, ISO/Audio, privacy, CTE, power control, subrating, PAwR and coexistence declarations"
+source-paths = []
+
+[[references]]
+id = "bluetooth-source-esp-idf-s31-bluetooth-documentation"
+section = "bluetooth-capability-sources"
+title = "[ESP-IDF S31 Bluetooth documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/bluetooth/index.html)"
+kind = "source-reference"
+details = "Vendor Controller/Host integration boundary"
+source-paths = []
+
+[[references]]
+id = "bluetooth-source-chip-owners-portable-bluetooth-and-embassy-runtime"
+section = "bluetooth-capability-sources"
+title = "[Chip owners](README.md), [portable Bluetooth](../../../../protocols/bluetooth/) and [Embassy runtime](../../../../runtime/embassy/esp32s31/bluetooth/)"
+kind = "source-reference"
+details = "Actual open-driver production composition"
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-initial-phy-registration-acquisition-and-tracking"
+section = "bluetooth-qualification-scope-mapping"
+title = "Initial PHY registration, acquisition and tracking"
+kind = "qualification-mapping"
+details = "`common-phy-baseband` / `bluetooth-initial-phy-handoff`. Common-PHY power/clock prerequisites and borrowed handoff are implemented. The retained client can inspect and evaluate periodic demand; Controller quiescence, target execution and physical release remain incomplete."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-bounded-dtm-sessions"
+section = "bluetooth-qualification-scope-mapping"
+title = "Bounded DTM sessions"
+kind = "qualification-mapping"
+details = "`packet-dataplane` / `bounded-dtm-session`; `dtm-*` roots. DTM source composition exists; the broad dataplane still lacks unrelated-list dispatch and the full Controller lifetime."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-hci-bootstrap-and-command-event-handoff"
+section = "bluetooth-qualification-scope-mapping"
+title = "HCI bootstrap and command/event handoff"
+kind = "qualification-mapping"
+details = "`hci-bootstrap`, `hci-handoff-storage`, `hci-controller-endpoints`. Complete bounded interfaces do not establish `typed-hci-controller`, which also requires LL and ACL routing."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-portable-advertising-peripheral-admission"
+section = "bluetooth-qualification-scope-mapping"
+title = "Portable advertising / peripheral admission"
+kind = "qualification-mapping"
+details = "`portable-legacy-advertising`, `portable-connectable-advertising`, `portable-peripheral-connection`. Portable readiness has no RF/HIL obligation and does not qualify a hardware advertising or ACL role."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-passive-scanning-complete-link-layer"
+section = "bluetooth-qualification-scope-mapping"
+title = "Passive scanning / complete Link Layer"
+kind = "qualification-mapping"
+details = "`legacy-passive-scanning`, `le-link-layer`. Partial hardware roles remain incomplete at the broader runtime/reliable-link scope."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-coexistence"
+section = "bluetooth-qualification-scope-mapping"
+title = "Coexistence"
+kind = "qualification-mapping"
+details = "`coexistence` / `coex-timer-validation-bridge`, `wifi-bluetooth-coex-runtime`. Diagnostic timer access exists; production joint-radio arbitration is unimplemented."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-powered-shutdown"
+section = "bluetooth-qualification-scope-mapping"
+title = "Powered shutdown"
+kind = "qualification-mapping"
+details = "`powered-teardown`. Selected cleanup paths do not close the complete last-owner lifetime."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-resource-limits"
+section = "bluetooth-qualification-scope-mapping"
+title = "Resource limits"
+kind = "qualification-mapping"
+details = "`controller-capacity-limits`. Storage geometry does not establish supported concurrent connections, sets, syncs or streams."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-complete-legacy-roles"
+section = "bluetooth-qualification-scope-mapping"
+title = "Complete legacy roles"
+kind = "qualification-mapping"
+details = "`legacy-advertising-roles`, `active-scanning`, `central-initiator`, `concurrent-le-roles`. Bounded advertising and passive scanning do not close Central or simultaneous roles."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-connected-phy-and-control"
+section = "bluetooth-qualification-scope-mapping"
+title = "Connected PHY and control"
+kind = "qualification-mapping"
+details = "`connected-phy-and-data-length`, `ll-control-procedures`, `channel-assessment`. DTM PHY selectors and initial channel maps do not establish negotiated PHY, DLE, LLCP or live assessment."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-encryption-privacy-and-pairing"
+section = "bluetooth-qualification-scope-mapping"
+title = "Encryption, privacy and pairing"
+kind = "qualification-mapping"
+details = "`link-layer-encryption`, `privacy-and-filtering`, `secure-connections-host`. Hardware encryption and resolving-list storage do not establish operational keys, addresses or pairing."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-extended-advertising-scanning-and-initiating"
+section = "bluetooth-qualification-scope-mapping"
+title = "Extended advertising, scanning and initiating"
+kind = "qualification-mapping"
+details = "`extended-advertising`, `extended-scanning-initiating`. AUX chains, multiple sets, secondary PHY and coding selection have no production role."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-periodic-advertising-and-synchronization"
+section = "bluetooth-qualification-scope-mapping"
+title = "Periodic advertising and synchronization"
+kind = "qualification-mapping"
+details = "`periodic-advertising`, `periodic-synchronization`, `periodic-sync-transfer`. Includes ADI, periodic enhancements and PAST; reserved storage is not a sync lifecycle."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-pawr"
+section = "bluetooth-qualification-scope-mapping"
+title = "PAwR"
+kind = "qualification-mapping"
+details = "`pawr-advertiser`, `pawr-responder`. Advertiser response reception and synchronized response transmission require distinct owners."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-encrypted-advertising-data"
+section = "bluetooth-qualification-scope-mapping"
+title = "Encrypted Advertising Data"
+kind = "qualification-mapping"
+details = "`encrypted-advertising-data`. Host data authentication and key distribution are separate from LL encryption."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-direction-finding-and-cte-tests"
+section = "bluetooth-qualification-scope-mapping"
+title = "Direction Finding and CTE tests"
+kind = "qualification-mapping"
+details = "`connected-direction-finding`, `connectionless-direction-finding`. The current CTE publication remains disabled."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-rf-power-lbt-and-connected-power-policy"
+section = "bluetooth-qualification-scope-mapping"
+title = "RF power, LBT and connected power policy"
+kind = "qualification-mapping"
+details = "`rf-power-and-lbt`, `le-power-control`, `connection-subrating`. Default power encoding does not supply live RF policy or connected procedures."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-sleep-and-external-multi-radio-coexistence"
+section = "bluetooth-qualification-scope-mapping"
+title = "Sleep and external/multi-radio coexistence"
+kind = "qualification-mapping"
+details = "`modem-sleep-wake`, `external-coexistence`, `multi-radio-coordination`. Always-awake operation and shared primitives do not establish retained wake or concurrent ownership."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-iso-adaptation-and-connected-streams"
+section = "bluetooth-qualification-scope-mapping"
+title = "ISO adaptation and connected streams"
+kind = "qualification-mapping"
+details = "`iso-dataplane`, `cis-central`, `cis-peripheral`. ISO framing alone does not route SDUs or establish CIS in either role."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-broadcast-isochronous-streams"
+section = "bluetooth-qualification-scope-mapping"
+title = "Broadcast isochronous streams"
+kind = "qualification-mapping"
+details = "`bis-broadcaster`, `bis-synchronizer`. BIG/BIS publication and synchronization require periodic advertising and the ISO dataplane."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-le-audio"
+section = "bluetooth-qualification-scope-mapping"
+title = "LE Audio"
+kind = "qualification-mapping"
+details = "`le-audio-unicast`, `le-audio-broadcast`, `le-audio-profiles`. Host codec/profile composition depends on operational CIS/BIS transport."
+source-paths = []
+
+[[references]]
+id = "bluetooth-qualification-mapping-other-le-host-features"
+section = "bluetooth-qualification-scope-mapping"
+title = "Other LE Host features"
+kind = "qualification-mapping"
+details = "`host-eatt-and-gatt`, `mesh-host`, `blufi-host`. EATT, GATT caching/security levels, Mesh 1.1 and BluFi require their own production Host integrations."
+source-paths = []
+
+[[sections]]
+id = "bluetooth-capability-advertisement"
+domain = "bluetooth"
+title = "Capability advertisement"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "`LE Read Local Supported Features` currently returns bit 0 for the composed\nLink Layer Encryption path, bit 3 for Peripheral-initiated Feature Exchange,\nbit 4 for the LE Ping responder and bit 14 for Channel Selection Algorithm #2.\nEach optional bit requires the complete production Controller operation named\nby that feature. A recovered register, SRAM layout, portable parser, DTM-only\nPHY or vendor capability cannot grant advertisement. The command itself is\nimplemented; its bounded result is not a claim of a complete Controller."
+
+[[sections]]
+id = "bluetooth-ownership"
+domain = "bluetooth"
+title = "Ownership"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "| Owner | Authority |\n| --- | --- |\n| PAC | MMIO representation and restricted access |\n| HAL | Semantic accessors, register transactions and hardware ownership proofs |\n| [Memory crate](memory/) | Controller-SRAM layouts, private codecs and DMA-visible storage |\n| Portable LE LL | Protocol policy and advertising generation/event identity |\n| Chip roles | Scheduler timing, admission, publication and role-specific RX/recycle |\n| Embassy runtime | Waits, command/response fairness and durable task state |\n| Integration | Static resources, platform claims and interrupt routes |\n\n`single_item_completion` is the shared lower completion engine for advertising,\nscanning and peripheral roles. `controller_start/timed_preparation` owns shared\ntime requests, rechecks, rollback and orphan draining. Sharing those mechanisms\ndoes not compose a missing caller or transfer protocol policy between roles."
+
+[[sections]]
+id = "bluetooth-peripheral-timing-limits"
+domain = "bluetooth"
+title = "Peripheral timing limits"
+source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
+overview = "The [active controller branch](../../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs)\ndrives completion and recycle before preparing a contiguous successor through\nfresh controller time, validation and scheduler publication. Each\n`PeripheralConnectionActive` boundary represents a first or successor `RUN`.\nResponse backpressure does not block radio readiness; cancellation retains\nboth the radio phase and HCI authority. A lost completion wake is bounded by\nan absolute recheck and common hardware stop; stop, identity, unlink or\npreparation failures seal both owners in `PeripheralConnectionActiveFailStop`.\n\n`PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must\nsupply the local clock accuracy bound. The default configuration leaves it\nunset and stops with `TimingPolicyUnavailable` when recurrence is attempted.\nThe actor responds to central feature requests through a bounded TX queue.\nIt consumes active HCI commands and Host-to-Controller ACL packets. Accepted\npeer LL Data fragments enter a bounded Controller-to-Host ACL FIFO after\nConnection Complete and split to the Host-declared ACL buffer length.\nHost Number Of Completed Packets restores the bounded single-handle credits;\nthe special command remains serialized behind an older pending normal response.\nAfter disconnection, the old handle accepts only outstanding credit returns and\ncannot be reused by another connection until those credits reach zero.\nCentral Connection Update and Channel Map Update are retained to their wrapping\nconnection instants; general LLCP and arbitrary missed-event recovery remain absent. Established\nsupervision uses the hardware valid-RX timestamp and retires the unlinked owner\nwith `0x08`. A source-backed HIL scenario now rfkill-blocks the peer adapter for\nat least 2500 ms, but abrupt RF loss remains unqualified until that scenario has current\nhardware evidence. A compiled lifecycle does not establish a successful\nover-air link.\n\nLower recurrence requires a caller-owned local clock accuracy bound. Its\nsoftware window widening does not establish arbitrary missed-event anchor\nrecovery or accumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."

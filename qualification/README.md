@@ -30,6 +30,12 @@ inventory. Direct roots and their dependency closure resolve to the same exact
 inventory status and native/lower/composed level are separate from evaluator
 axes; unselected inventory entries have no readiness value.
 
+The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 68 existing
+Bluetooth LE qualification declarations and the wider LE, Classic and Host-only
+source inventory. The LE program loads it together with the Wi-Fi/PHY catalog
+only to reuse the exact `bluetooth-initial-phy-handoff` source fact; that lower
+implemented handoff does not promote the incomplete common-PHY lifetime.
+
 Static catalog validation checks every declaration, dependency graph, source
 contract, disposition mapping, HIL scenario reference and inventory path
 without loading a vendor evidence index or HIL runs:
@@ -45,6 +51,14 @@ cargo qualification catalog render \
 cargo qualification catalog render \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \
   --out target/qualification/catalog/wifi-sta
+
+cargo qualification catalog check \
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --catalog qualification/catalog/esp32s31/bluetooth.toml
+
+cargo qualification catalog render \
+  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
+  --out target/qualification/catalog/bluetooth-le
 ```
 
 Static render writes `domain-inventory.md`, `capability-catalog.md`, and
@@ -86,10 +100,12 @@ Three commands have deliberately different contracts:
 - `gate` returns non-zero unless every required capability and dependency is
   ready.
 
-`catalog check --catalog` and `catalog render --catalog` are static operations.
-The compatible `--manifest` check form statically validates its catalogs;
-manifest render also evaluates the resolved program and writes the separate
-readiness view.
+`catalog check --catalog` and `catalog render --catalog` are static operations
+over the complete explicitly loaded catalog set. The `--manifest` check form
+also resolves selected IDs and dependencies and enforces the program's exact
+`required-capabilities` set, still without reading vendor evidence or HIL runs.
+Manifest render then evaluates that same statically validated program and
+writes the separate readiness view.
 
 ## Declared and derived axes
 

@@ -5,6 +5,22 @@ id = "esp32s31-wifi-phy"
 verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
 hil-catalog = "hil/scenarios"
 
+[[source-facts]]
+id = "bluetooth-initial-phy-handoff"
+status = "implemented"
+level = "lower-primitive"
+
+[source-facts.source-contract]
+id = "bluetooth-initial-phy-handoff"
+composition = "production"
+scope = "Common-PHY power reset and calibration-clock preparation with semantic readback and retained I2C clock lease followed by borrowed registration Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband initialization"
+limits = "This bounded handoff retains fail-stop ownership on power or calibration failure; the parent also requires periodic maintenance and final physical release"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
+  "crates/hardware/esp32s31/hal/src/power.rs",
+  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+]
+
 [[capabilities]]
 id = "rf-bb-initialization"
 title = "RF and baseband initialization"
@@ -1660,6 +1676,12 @@ status = "implemented"
 level = "composed-product"
 scope-and-limitations = "PHY setup drives the initial request to a terminal result"
 source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-bluetooth-initial-phy-handoff"
+section = "phy-protocol-consumer-composition"
+title = "Complete initial common-PHY handoff — Bluetooth"
+source-fact = "bluetooth-initial-phy-handoff"
 
 [[items]]
 id = "phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154"

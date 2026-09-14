@@ -495,6 +495,8 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     };
     let mut stale_entry = vendor_entry("base-suite", "base_root");
     stale_entry.source_hashes[0].sha256 = "ef".repeat(32);
+    let mut wrong_source_entry = vendor_entry("base-suite", "base_root");
+    wrong_source_entry.source = "rom".to_owned();
     let cases = [
         ("no-evidence", Vec::new(), Vec::new(), true, 0usize),
         (
@@ -517,6 +519,13 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         (
             "stale-vendor-source",
             vec![stale_entry, vendor_entry("wifi-suite", "wifi_root")],
+            vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
+            true,
+            0,
+        ),
+        (
+            "wrong-vendor-source",
+            vec![wrong_source_entry, vendor_entry("wifi-suite", "wifi_root")],
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             true,
             0,
@@ -676,4 +685,250 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         .collect::<BTreeMap<_, _>>();
     assert!(evaluated["base-phy"].proof_ready());
     assert!(!evaluated["wifi-channel"].proof_ready());
+}
+
+const SHARED_FACT: &str = r#"
+[[source-facts]]
+id = "shared-handoff"
+status = "implemented"
+level = "lower-primitive"
+
+[source-facts.source-contract]
+id = "shared-handoff"
+composition = "production"
+scope = "One initial PHY handoff"
+limits = "The broader PHY lifetime remains incomplete"
+source-paths = ["Cargo.toml"]
+"#;
+
+const TEST_CATALOG_VALIDATION: &str = r#"
+[validation]
+verification-project = "verification.toml"
+hil-catalog = "scenarios"
+"#;
+
+const FACT_SECTIONS: &str = r#"
+[[sections]]
+id = "shared-view"
+domain = "phy"
+title = "Shared view"
+source-document = "Cargo.toml"
+
+[[sections]]
+id = "bluetooth-view"
+domain = "bluetooth"
+title = "Bluetooth view"
+source-document = "Cargo.toml"
+
+[[items]]
+id = "shared-handoff-row"
+section = "shared-view"
+title = "Initial Bluetooth PHY handoff"
+source-fact = "shared-handoff"
+
+[[items]]
+id = "bluetooth-handoff-row"
+section = "bluetooth-view"
+title = "Initial PHY handoff"
+source-fact = "shared-handoff"
+"#;
+
+#[test]
+fn source_fact_projects_one_edit_into_inventory_and_qualification_views() {
+    let root = TestRoot::new("source-fact-projection");
+    let capability = BASE_PHY.replace(
+        "async = \"bounded\"",
+        "async = \"bounded\"\nsource-fact-refs = [\"shared-handoff\"]",
+    );
+    root.write_catalog(&format!(
+        "schema = 2\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+    ));
+    let first = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
+    assert_eq!(first.items.len(), 2);
+    assert!(first.items.iter().all(|item| {
+        item.source_fact.as_deref() == Some("shared-handoff")
+            && item.status == SourceStatus::Implemented
+            && item
+                .scope_and_limitations
+                .contains("One initial PHY handoff")
+            && item
+                .scope_and_limitations
+                .contains("broader PHY lifetime remains incomplete")
+    }));
+    assert_eq!(first.capabilities["base-phy"].source_contracts.len(), 1);
+    assert_eq!(
+        first.capabilities["base-phy"].source_contracts[0],
+        first.source_facts["shared-handoff"].source_contract
+    );
+
+    let changed = SHARED_FACT
+        .replace("status = \"implemented\"", "status = \"partial\"")
+        .replace("One initial PHY handoff", "One revised PHY handoff");
+    root.write_catalog(&format!(
+        "schema = 2\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{changed}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+    ));
+    let second = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
+    assert!(second.items.iter().all(|item| {
+        item.status == SourceStatus::Partial
+            && item
+                .scope_and_limitations
+                .contains("One revised PHY handoff")
+    }));
+    assert_eq!(
+        second.capabilities["base-phy"].source_contracts[0].scope,
+        "One revised PHY handoff"
+    );
+}
+
+#[test]
+fn source_fact_references_reject_dangling_and_independent_overrides() {
+    let root = TestRoot::new("source-fact-invalid");
+    root.write_catalog(&format!(
+        "schema = 2\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{}{}{}",
+        BASE_PHY.replace(
+            "async = \"bounded\"",
+            "async = \"bounded\"\nsource-fact-refs = [\"missing-fact\"]"
+        ),
+        BASE_SCOPE,
+        FACT_SECTIONS
+    ));
+    let error = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")])
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("references missing source fact missing-fact"),
+        "{error}"
+    );
+
+    let overridden = FACT_SECTIONS.replace(
+        "source-fact = \"shared-handoff\"",
+        "source-fact = \"shared-handoff\"\nstatus = \"absent\"",
+    );
+    root.write_catalog(&format!(
+        "schema = 2\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{BASE_PHY}{BASE_SCOPE}{overridden}"
+    ));
+    let error = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")])
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("cannot override source fact shared-handoff"),
+        "{error}"
+    );
+}
+
+#[test]
+fn implemented_source_fact_does_not_promote_an_incomplete_parent() {
+    let root = TestRoot::new("source-fact-parent");
+    let capability = BASE_PHY
+        .replace(
+            "implementation = \"complete\"",
+            "implementation = \"incomplete\"",
+        )
+        .replace(
+            "gaps = [",
+            "gaps = [{ axis = \"implementation\", id = \"broader-lifetime-incomplete\" },",
+        )
+        .replace(
+            "async = \"bounded\"",
+            "async = \"bounded\"\nsource-fact-refs = [\"shared-handoff\"]",
+        );
+    root.write_catalog(&format!(
+        "schema = 2\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+    ));
+    let view = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
+    assert_eq!(
+        view.source_facts["shared-handoff"].status,
+        SourceStatus::Implemented
+    );
+    assert_eq!(
+        view.capabilities["base-phy"].implementation,
+        crate::model::ImplementationProof::Incomplete
+    );
+}
+
+#[test]
+fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let manifest = root.join("qualification/targets/esp32s31/bluetooth-le.toml");
+    let validated = ManifestDocument::load_and_validate(&manifest, &root).unwrap();
+    let document = &validated.document;
+    assert_eq!(document.capabilities.len(), 68);
+    assert_eq!(document.required_capabilities.len(), 68);
+    assert_eq!(
+        document
+            .capabilities
+            .iter()
+            .map(|capability| capability.id.as_str())
+            .collect::<BTreeSet<_>>(),
+        document
+            .required_capabilities
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(document.direct_catalog_capabilities.len(), 17);
+
+    let catalog = &document.catalog;
+    let bluetooth_document = Path::new("crates/hardware/esp32s31/driver/bluetooth/FEATURES.md");
+    let bluetooth_sections = catalog
+        .sections
+        .iter()
+        .filter(|section| section.source_document == bluetooth_document)
+        .map(|section| section.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let source_rows = catalog
+        .items
+        .iter()
+        .filter(|item| {
+            bluetooth_sections.contains(item.section.as_str()) && item.source_fact.is_none()
+        })
+        .count();
+    let bluetooth_projections = catalog
+        .items
+        .iter()
+        .filter(|item| {
+            bluetooth_sections.contains(item.section.as_str()) && item.source_fact.is_some()
+        })
+        .count();
+    assert_eq!((source_rows, bluetooth_projections), (137, 1));
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| { reference.kind == InventoryReferenceKind::QualificationMapping })
+            .count(),
+        22
+    );
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| reference.kind == InventoryReferenceKind::SourceReference)
+            .count(),
+        4
+    );
+    let classic_rows = catalog
+        .items
+        .iter()
+        .filter(|item| item.section.starts_with("bluetooth-classic-"))
+        .count();
+    let host_only_rows = catalog
+        .items
+        .iter()
+        .filter(|item| item.status == SourceStatus::HostOnly)
+        .count();
+    assert_eq!((classic_rows, host_only_rows), (33, 7));
+
+    let handoff = &catalog.source_facts["bluetooth-initial-phy-handoff"];
+    let parent = &catalog.capabilities["common-phy-baseband"];
+    assert_eq!(handoff.status, SourceStatus::Implemented);
+    assert_eq!(
+        parent.implementation,
+        crate::model::ImplementationProof::Incomplete
+    );
+    assert_eq!(parent.source_fact_refs, ["bluetooth-initial-phy-handoff"]);
+    assert_eq!(parent.source_contracts[0], handoff.source_contract);
 }

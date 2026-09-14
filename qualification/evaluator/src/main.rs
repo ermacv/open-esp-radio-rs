@@ -9,7 +9,7 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\n--catalog performs static catalog validation/rendering without vendor evidence or HIL runs.\n--manifest remains compatible; check is static, while render also emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\n--catalog validates/renders every explicitly loaded catalog without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the exact required set without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -145,11 +145,12 @@ fn execute(arguments: Arguments) -> Result<()> {
             inventory::write_static(&catalog, &path, &arguments.root)?;
         }
         println!(
-            "CATALOG-STATIC-VALID\tschema={}\tcatalogs={}\tcapabilities={}\tinventory-items={}",
+            "CATALOG-STATIC-VALID\tschema={}\tcatalogs={}\tcapabilities={}\tinventory-items={}\treferences={}",
             model::CAPABILITY_CATALOG_SCHEMA,
             catalog.sources.len(),
             catalog.capabilities.len(),
-            catalog.items.len()
+            catalog.items.len(),
+            catalog.references.len()
         );
         return Ok(());
     }
@@ -162,10 +163,11 @@ fn execute(arguments: Arguments) -> Result<()> {
     if arguments.command == Command::CatalogCheck {
         let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
         println!(
-            "CATALOG-STATIC-VALID\tprogram-schema={QUALIFICATION_SCHEMA}\tcatalogs={}\tcapabilities={}\tinventory-items={}",
+            "CATALOG-STATIC-VALID\tprogram-schema={QUALIFICATION_SCHEMA}\tcatalogs={}\tcapabilities={}\tinventory-items={}\treferences={}",
             catalog.sources.len(),
             catalog.capabilities.len(),
-            catalog.items.len()
+            catalog.items.len(),
+            catalog.references.len()
         );
         return Ok(());
     }

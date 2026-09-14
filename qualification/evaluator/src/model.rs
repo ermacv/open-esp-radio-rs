@@ -177,6 +177,11 @@ pub(crate) struct Capability {
     pub(crate) gaps: Vec<Gap>,
     pub(crate) evidence: Vec<String>,
     pub(crate) source_contracts: Vec<SourceContract>,
+    pub(crate) vendor_evidence: Vec<VendorEvidenceRef>,
+    pub(crate) vendor_not_applicable: Option<String>,
+    pub(crate) hil_requirements: Vec<HilRequirement>,
+    pub(crate) hil_not_applicable: Option<String>,
+    pub(crate) async_not_applicable: Option<String>,
 }
 
 impl Capability {
@@ -216,23 +221,7 @@ pub(crate) struct EvidenceInputs {
 
 impl Qualification {
     pub(crate) fn load_and_evaluate(path: &Path, root: &Path) -> Result<Self> {
-        if !root.is_dir() {
-            return Err(format!("repository root {} is not a directory", root.display()).into());
-        }
-        let input = fs::read_to_string(path).map_err(|error| {
-            format!(
-                "cannot read qualification manifest {}: {error}",
-                path.display()
-            )
-        })?;
-        let document: ManifestDocument = toml_edit::de::from_str(&input).map_err(|error| {
-            format!(
-                "cannot parse qualification manifest {}: {error}",
-                path.display()
-            )
-        })?;
-        let resolved = document.resolve_catalogs(root, path, &input)?;
-        resolved.evaluate(root)
+        ManifestDocument::load_and_validate(path, root)?.evaluate(root)
     }
 
     pub(crate) fn is_ready(&self, id: &str) -> bool {
@@ -285,6 +274,10 @@ struct ManifestDocument {
     catalog: CatalogView,
     #[serde(skip)]
     direct_catalog_capabilities: BTreeSet<String>,
+}
+
+pub(super) struct ValidatedProgram {
+    document: ManifestDocument,
 }
 
 #[derive(Deserialize)]
@@ -384,67 +377,120 @@ pub(crate) struct CapabilityDocument {
     #[serde(default)]
     pub(crate) source_contracts: Vec<SourceContract>,
     #[serde(default)]
+    pub(crate) source_fact_refs: Vec<String>,
+    #[serde(default)]
     pub(crate) catalog_scope: Option<CapabilityScope>,
 }
 
 impl ManifestDocument {
-    fn evaluate(self, root: &Path) -> Result<Qualification> {
-        if self.schema != QUALIFICATION_SCHEMA {
-            return Err(format!(
-                "unsupported qualification schema {} (expected {QUALIFICATION_SCHEMA})",
-                self.schema
-            )
-            .into());
+    pub(super) fn load_and_validate(path: &Path, root: &Path) -> Result<ValidatedProgram> {
+        if !root.is_dir() {
+            return Err(format!("repository root {} is not a directory", root.display()).into());
         }
-        let program_source = self
-            .program_source
-            .clone()
-            .ok_or("qualification program was not resolved")?;
+        let input = fs::read_to_string(path).map_err(|error| {
+            format!(
+                "cannot read qualification manifest {}: {error}",
+                path.display()
+            )
+        })?;
+        let document: Self = toml_edit::de::from_str(&input).map_err(|error| {
+            format!(
+                "cannot parse qualification manifest {}: {error}",
+                path.display()
+            )
+        })?;
+        let resolved = document.resolve_catalogs(root, path, &input)?;
+        resolved.validate_program_structure(root)?;
+        Ok(ValidatedProgram { document: resolved })
+    }
+
+    fn validate_program_structure(&self, root: &Path) -> Result<()> {
         let target = slug(&self.target, "qualification target")?;
-        let hil_target = slug(&self.hil.target, "HIL target")?;
+        slug(&self.hil.target, "HIL target")?;
         validate_relative_path(&self.verification.project)?;
         validate_relative_path(&self.verification.evidence_index)?;
         validate_relative_path(&self.hil.catalog)?;
         validate_relative_path(&self.hil.runs)?;
 
         let mut required = BTreeSet::new();
-        for id in self.required_capabilities {
-            let id = slug(&id, "required capability")?;
+        for id in &self.required_capabilities {
+            let id = slug(id, "required capability")?;
             if !required.insert(id.clone()) {
                 return Err(format!("duplicate required capability {id}").into());
             }
         }
         if required.is_empty() {
-            return Err("qualification manifest has no required capabilities".into());
+            return Err(
+                format!("qualification program {target} has no required capabilities").into(),
+            );
         }
 
         let dispositions = DispositionIndex::load_project(&root.join(&self.verification.project))?;
-        let configured_index = root.join(&self.verification.evidence_index);
-        let project_index = dispositions
-            .vendor_evidence_index
-            .as_ref()
-            .ok_or("verification project has no evidence-index output")?;
-        if fs::canonicalize(&configured_index)? != fs::canonicalize(project_index)? {
+        validate_evidence_index_binding(root, &self.verification, &dispositions)?;
+        let scenarios = ScenarioCatalog::load(root, &self.hil.catalog)?;
+        let context = StaticContext {
+            root,
+            dispositions: &dispositions,
+            scenario_catalog: &scenarios,
+        };
+        let mut declarations = BTreeMap::new();
+        for capability in &self.capabilities {
+            validate_capability_declaration(capability, &context)?;
+            if declarations
+                .insert(capability.id.clone(), capability.clone())
+                .is_some()
+            {
+                return Err(format!(
+                    "qualification manifest repeats capability {}",
+                    capability.id
+                )
+                .into());
+            }
+        }
+        let actual = declarations.keys().cloned().collect::<BTreeSet<_>>();
+        if actual != required {
+            let missing = required.difference(&actual).cloned().collect::<Vec<_>>();
+            let undeclared = actual.difference(&required).cloned().collect::<Vec<_>>();
             return Err(format!(
-                "qualification vendor evidence index {} does not match verification project output {}",
-                configured_index.display(),
-                project_index.display()
+                "qualification root mismatch: missing=[{}], undeclared=[{}]",
+                missing.join(", "),
+                undeclared.join(", ")
             )
             .into());
         }
+        catalog::validate_catalog_dependencies(&declarations, &BTreeSet::new())
+    }
+}
+
+impl ValidatedProgram {
+    pub(super) fn catalog(&self) -> &CatalogView {
+        &self.document.catalog
+    }
+
+    fn evaluate(self, root: &Path) -> Result<Qualification> {
+        let document = self.document;
+        let program_source = document
+            .program_source
+            .clone()
+            .ok_or("qualification program was not resolved")?;
+        let target = slug(&document.target, "qualification target")?;
+        let hil_target = slug(&document.hil.target, "HIL target")?;
+        let dispositions =
+            DispositionIndex::load_project(&root.join(&document.verification.project))?;
+        let configured_index = root.join(&document.verification.evidence_index);
         let repository = RepositoryState::read(root)?;
         let vendor_index = VendorEvidenceIndex::load(&configured_index, &dispositions.project_id)?;
-        let scenario_catalog = ScenarioCatalog::load(root, &self.hil.catalog)?;
-        let hil_index = HilEvidenceIndex::load(root, &self.hil.runs, &hil_target, &repository)?;
+        let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
+        let hil_index = HilEvidenceIndex::load(root, &document.hil.runs, &hil_target, &repository)?;
         let evidence_inputs = EvidenceInputs {
             verification_entries: vendor_index.entries.len(),
             verification_current_release_entries: vendor_index
                 .current_release_count(root, !repository.dirty),
             hil: hil_index.summary().clone(),
-            verification_project: self.verification.project.clone(),
-            vendor_evidence_index: self.verification.evidence_index.clone(),
-            hil_catalog: self.hil.catalog.clone(),
-            hil_runs: self.hil.runs.clone(),
+            verification_project: document.verification.project.clone(),
+            vendor_evidence_index: document.verification.evidence_index.clone(),
+            hil_catalog: document.hil.catalog.clone(),
+            hil_runs: document.hil.runs.clone(),
         };
         let context = EvaluationContext {
             root,
@@ -456,25 +502,14 @@ impl ManifestDocument {
         };
 
         let mut capabilities = BTreeMap::new();
-        for document in self.capabilities {
-            let capability = evaluate_capability(document, &context)?;
+        for capability_document in document.capabilities {
+            let capability = evaluate_capability(capability_document, &context)?;
             if capabilities
                 .insert(capability.id.clone(), capability)
                 .is_some()
             {
                 return Err("qualification manifest repeats a capability id".into());
             }
-        }
-        let actual = capabilities.keys().cloned().collect::<BTreeSet<_>>();
-        if actual != required {
-            let missing = required.difference(&actual).cloned().collect::<Vec<_>>();
-            let undeclared = actual.difference(&required).cloned().collect::<Vec<_>>();
-            return Err(format!(
-                "qualification root mismatch: missing=[{}], undeclared=[{}]",
-                missing.join(", "),
-                undeclared.join(", ")
-            )
-            .into());
         }
         validate_dependencies(&capabilities)?;
         Ok(Qualification {
@@ -483,13 +518,34 @@ impl ManifestDocument {
             evidence_inputs,
             capabilities,
             program_source,
-            catalog_sources: self.catalog_sources,
-            capability_origins: self.capability_origins,
-            catalog_scopes: self.catalog_scopes,
-            catalog: self.catalog,
-            direct_catalog_capabilities: self.direct_catalog_capabilities,
+            catalog_sources: document.catalog_sources,
+            capability_origins: document.capability_origins,
+            catalog_scopes: document.catalog_scopes,
+            catalog: document.catalog,
+            direct_catalog_capabilities: document.direct_catalog_capabilities,
         })
     }
+}
+
+fn validate_evidence_index_binding(
+    root: &Path,
+    verification: &VerificationConfig,
+    dispositions: &DispositionIndex,
+) -> Result<()> {
+    let configured_index = root.join(&verification.evidence_index);
+    let project_index = dispositions
+        .vendor_evidence_index
+        .as_ref()
+        .ok_or("verification project has no evidence-index output")?;
+    if configured_index != *project_index {
+        return Err(format!(
+            "qualification vendor evidence index {} does not match verification project output {}",
+            configured_index.display(),
+            project_index.display()
+        )
+        .into());
+    }
+    Ok(())
 }
 
 pub(crate) struct StaticContext<'a> {
@@ -529,6 +585,7 @@ fn evaluate_capability(
     let id = validated.id;
     let dependencies = validated.dependencies;
     let mut gaps = validated.gaps;
+    let hil_requirements = validated.hil_requirements.clone();
     let implementation = document.implementation;
     let host = document.host;
 
@@ -599,6 +656,11 @@ fn evaluate_capability(
         gaps,
         evidence,
         source_contracts: document.source_contracts,
+        vendor_evidence: document.vendor_evidence,
+        vendor_not_applicable: document.vendor_not_applicable,
+        hil_requirements,
+        hil_not_applicable: document.hil_not_applicable,
+        async_not_applicable: document.async_not_applicable,
     })
 }
 

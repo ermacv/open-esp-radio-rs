@@ -11,7 +11,7 @@ in [qualification](../README.md). Its package name is
 | `evaluate --manifest PATH` | Derive readiness axes and optionally write `--json-report PATH` |
 | `gate --manifest PATH` | Fail unless every required capability and dependency is ready |
 | `catalog check --catalog PATH` | Statically validate every catalog declaration without evidence outputs or HIL runs |
-| `catalog check --manifest PATH` | Statically validate every catalog loaded by a program |
+| `catalog check --manifest PATH` | Statically validate catalogs, program selection, dependency closure and the exact required set without evidence outputs |
 | `catalog render --catalog PATH --out DIRECTORY` | Write deterministic static domain and declaration views |
 | `catalog render --manifest PATH --out DIRECTORY` | Write static views plus a separate evaluator-derived program view |
 
@@ -36,6 +36,12 @@ contracts and unknown disposition/HIL references. Structured chip, role, PHY,
 security, composition, capability level, activation and limitation scope is
 required for each qualification record. Program resolution includes selected
 catalog dependencies transitively before the existing exact-set check.
+
+Catalog source facts provide a narrow reuse mechanism for exact matching source
+scopes. A fact owns one status, level and source contract; inventory projections
+and catalog capability `source-fact-refs` cannot override it. Related or broader
+scopes remain independent declarations, and an implemented fact does not
+promote a parent capability or any readiness axis.
 
 HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the current clean repository, and the recorded

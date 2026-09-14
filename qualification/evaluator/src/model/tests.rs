@@ -140,10 +140,42 @@ fn dependency_cycles_fail_closed() {
         gaps: Vec::new(),
         evidence: Vec::new(),
         source_contracts: Vec::new(),
+        vendor_evidence: Vec::new(),
+        vendor_not_applicable: Some("not-applicable".to_owned()),
+        hil_requirements: Vec::new(),
+        hil_not_applicable: Some("not-applicable".to_owned()),
+        async_not_applicable: Some("not-applicable".to_owned()),
     };
     let capabilities = BTreeMap::from([
         ("a".to_owned(), capability("a", "b")),
         ("b".to_owned(), capability("b", "a")),
     ]);
     assert!(validate_dependencies(&capabilities).is_err());
+}
+
+#[test]
+fn corrupt_and_invalid_vendor_indexes_fail_closed() {
+    let path = std::env::temp_dir().join(format!(
+        "open-radio-invalid-vendor-index-{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, "{not-json").unwrap();
+    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
+
+    std::fs::write(
+        &path,
+        r#"{
+  "schema_version": 1,
+  "command": "wrong-command",
+  "project": "test",
+  "complete_project_run": true,
+  "entries": []
+}"#,
+    )
+    .unwrap();
+    let error = VendorEvidenceIndex::load(&path, "test")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unsupported or incomplete"), "{error}");
+    std::fs::remove_file(path).unwrap();
 }

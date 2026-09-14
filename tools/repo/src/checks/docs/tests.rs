@@ -272,6 +272,171 @@ fn explicit_configuration_target_overrides_caller_defaults() {
 }
 
 #[test]
+fn planner_follows_transitive_required_features_like_cargo() {
+    let repository = tempfile::tempdir().unwrap();
+    for path in [
+        "fixture/src",
+        "examples/example/src",
+        "qualification/catalog/chip",
+    ] {
+        fs::create_dir_all(repository.path().join(path)).unwrap();
+    }
+    fs::write(
+        repository.path().join("Cargo.toml"),
+        "[workspace]\nresolver='3'\nmembers=['fixture', 'examples/example']\n",
+    )
+    .unwrap();
+    fs::write(repository.path().join("README.md"), "# Fixture\n").unwrap();
+    fs::write(
+        repository.path().join("fixture/Cargo.toml"),
+        "[package]\nname='required-features-fixture'\nversion='0.0.0'\nedition='2024'\n\
+         [package.metadata.open-radio]\nscope='production'\nlayer='facade'\nplatform='portable'\n\
+         supported-feature-profiles=['profile']\n\
+         [features]\ndefault=['profile']\nprofile=['api']\napi=[]\n\
+         [[bin]]\nname='demo'\npath='src/main.rs'\nrequired-features=['api']\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("fixture/src/lib.rs"),
+        "pub struct Library;\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("fixture/src/main.rs"),
+        "fn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("examples/example/Cargo.toml"),
+        "[package]\nname='example-fixture'\nversion='0.0.0'\nedition='2024'\n\
+         [package.metadata.open-radio]\nscope='development'\nlayer='application'\nplatform='chip'\nchip='esp32s31'\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("examples/example/src/main.rs"),
+        "fn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repository
+            .path()
+            .join("qualification/catalog/chip/catalog.toml"),
+        "schema = 1\n",
+    )
+    .unwrap();
+
+    let context = Context::new(repository.path()).unwrap();
+    process::run(context.command("git").args(["init", "--quiet"])).unwrap();
+    process::run(context.cargo().args(["generate-lockfile", "--offline"])).unwrap();
+    process::run(context.command("git").args(["add", "."])).unwrap();
+
+    let plan = build_plan(&context, "x86_64-unknown-linux-gnu").unwrap();
+    let demo_jobs = plan
+        .jobs
+        .iter()
+        .filter(|job| {
+            matches!(
+                &job.configuration.cargo_target,
+                common::CargoTargetSelection::Bin(name) if name == "demo"
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(demo_jobs.len(), 4);
+    assert_eq!(
+        demo_jobs
+            .iter()
+            .filter(|job| job.configuration.features.is_empty())
+            .count(),
+        2
+    );
+    assert_eq!(
+        demo_jobs
+            .iter()
+            .filter(|job| {
+                job.configuration.features == ["--no-default-features", "--features", "profile"]
+            })
+            .count(),
+        2
+    );
+    assert!(!plan.inapplicable.iter().any(|entry| {
+        entry.package == "required-features-fixture"
+            && entry.target == "demo"
+            && entry.action == "rustdoc"
+    }));
+
+    let mut package = common::source_packages(&context)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.package.name == "required-features-fixture")
+        .unwrap()
+        .package;
+    package.features.insert(
+        "profile".into(),
+        vec![
+            "dep:api".into(),
+            "dependency/api".into(),
+            "weak?/api".into(),
+        ],
+    );
+    let profile = [
+        "--no-default-features".into(),
+        "--features".into(),
+        "profile".into(),
+    ];
+    assert!(!required_features_enabled(&package, &profile, &["api".into()]).unwrap());
+    assert!(
+        required_features_enabled(&package, &["--all-features".into()], &["api".into()]).unwrap()
+    );
+    assert!(
+        !required_features_enabled(&package, &["--no-default-features".into()], &["api".into()])
+            .unwrap()
+    );
+    package
+        .features
+        .insert("profile".into(), vec!["api".into()]);
+    package
+        .features
+        .insert("api".into(), vec!["profile".into()]);
+    assert!(required_features_enabled(&package, &profile, &["api".into()]).unwrap());
+    assert!(
+        required_features_enabled(&package, &["--features=profile".into()], &["api".into()])
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported Cargo feature flag")
+    );
+
+    let manifest = repository.path().join("fixture/Cargo.toml");
+    for flags in [
+        Vec::<&str>::new(),
+        vec!["--no-default-features", "--features", "profile"],
+    ] {
+        let mut command = context.cargo();
+        command
+            .args(["check", "--locked", "--offline", "--manifest-path"])
+            .arg(&manifest)
+            .args(["--package", "required-features-fixture", "--bin", "demo"])
+            .args(flags);
+        process::run(&mut command).unwrap();
+    }
+    let mut command = context.cargo();
+    command
+        .args(["check", "--locked", "--offline", "--manifest-path"])
+        .arg(&manifest)
+        .args([
+            "--package",
+            "required-features-fixture",
+            "--bin",
+            "demo",
+            "--no-default-features",
+        ]);
+    let output = process::output(&mut command, None).unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires the features"), "{stderr}");
+    assert!(stderr.contains("api"), "{stderr}");
+}
+
+#[test]
 fn missing_or_mismatched_toolchain_identity_and_target_fail_closed() {
     assert!(validate_tool_release("rustdoc", "", "1.97.1").is_err());
     let error = validate_tool_release("rustc", "rustc 1.96.0\n", "1.97.1")

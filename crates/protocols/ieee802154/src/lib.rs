@@ -10,6 +10,13 @@
 //! trait. Platform adapters translate these contracts to their own hardware
 //! ownership model; OpenThread- and Zephyr-facing code can use them without
 //! inheriting that platform representation.
+//!
+//! Start with [`RadioStateMachine`], which distinguishes accepted commands
+//! from terminal [`RadioEvent`] values while retaining bounded [`Frame`]
+//! storage. The ESP32-S31 lower crates separately implement timing,
+//! energy-detection/CCA, DMA, IRQ and affine MAC-operation boundaries. There is
+//! currently no public RF-ready IEEE 802.15.4 service composition: these types
+//! must not be read as an application start API or as hardware readiness.
 
 #[cfg(test)]
 extern crate std;

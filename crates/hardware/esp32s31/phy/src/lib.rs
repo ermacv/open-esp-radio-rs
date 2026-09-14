@@ -1,10 +1,38 @@
 #![no_std]
 // The private `ieee802154_timing_boundary` module is the sole scoped override.
 #![deny(unsafe_code)]
-#![doc = "Source-only ESP32-S31 radio frontier."]
-#![doc = ""]
-#![doc = "This crate deliberately has no dependency on"]
-#![doc = "`esp-wifi-sys`, vendor archives, or a radio/Wi-Fi ROM ABI."]
+
+//! Source-only ESP32-S31 shared RF/PHY ownership frontier.
+//!
+//! This crate turns a cold radio owner into a registered calibration epoch,
+//! admits protocol clients, performs client-specific maintenance, and closes
+//! or retains the shared RF domain. It deliberately has no dependency on
+//! `esp-wifi-sys`, vendor archives, or a radio/Wi-Fi ROM ABI. PAC ownership and
+//! semantic register access come from the HAL; protocol roles and executors
+//! live above this layer.
+//!
+//! Start with [`PhyConfig`] and the registration state machine, then use
+//! [`RegisteredPhyRadio`] to acquire a Wi-Fi, Bluetooth, or IEEE 802.15.4
+//! client. [`RegisteredWifiPhy`] and [`RegisteredBluetoothPhy`] keep the
+//! registration identity and tracking state attached to the live client.
+//! Releasing a non-final client returns a still-powered shared owner; only the
+//! final-client close path may proceed toward a cold owner.
+//!
+//! # Ownership and cancellation
+//!
+//! Registration, tracking, RF close, and retained wake are hardware
+//! transactions. Preparation errors that expose an owner are retryable only
+//! through that returned owner. Failures after a physical transition retain a
+//! poisoned/fail-stop owner instead of claiming recovery. Once an async close,
+//! wake, or maintenance future has been polled across its hardware edge, the
+//! caller must drive it to a terminal result; dropping it does not reconstruct
+//! the preceding typestate.
+//!
+//! Timing types identify raw ticks, microseconds, or absolute deadlines at
+//! their owning API. [`HARDWARE_EDGE_LIMIT`] is an observation-attempt limit,
+//! not a wall-clock duration. The chip Wi-Fi and Bluetooth drivers are the
+//! real target consumers; host tests exercise the pure transitions and
+//! validation probes without claiming RF readiness.
 
 #[cfg(test)]
 extern crate std;

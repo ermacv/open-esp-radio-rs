@@ -303,7 +303,7 @@ fn build_plan(ctx: &Context, host: &str) -> Result<Plan> {
             let selector = selector.expect("checked above");
             let mut applicable_profiles = 0;
             for features in &profiles {
-                if !required_features_enabled(&item.package, features, &target.required_features) {
+                if !required_features_enabled(&item.package, features, &target.required_features)? {
                     continue;
                 }
                 applicable_profiles += 1;
@@ -430,32 +430,78 @@ fn required_features_enabled(
     package: &cargo_metadata::Package,
     flags: &[String],
     required: &[String],
-) -> bool {
-    if required.is_empty() || flags.iter().any(|flag| flag == "--all-features") {
-        return true;
+) -> Result<bool> {
+    if required.is_empty() {
+        return Ok(true);
     }
-    let no_default = flags.iter().any(|flag| flag == "--no-default-features");
-    let mut enabled = BTreeSet::<&str>::new();
-    if !no_default && let Some(defaults) = package.features.get("default") {
-        enabled.extend(
-            defaults
-                .iter()
-                .filter(|feature| package.features.contains_key(feature.as_str()))
-                .map(String::as_str),
-        );
+
+    let mut no_default = false;
+    let mut all_features = false;
+    let mut roots = Vec::new();
+    let mut index = 0;
+    while index < flags.len() {
+        match flags[index].as_str() {
+            "--no-default-features" => no_default = true,
+            "--all-features" => all_features = true,
+            "--features" => {
+                index += 1;
+                let selection = flags.get(index).ok_or_else(|| {
+                    format!(
+                        "package {} documentation profile has --features without a value",
+                        package.name
+                    )
+                })?;
+                for feature in selection.split(',') {
+                    if feature.is_empty() || !package.features.contains_key(feature) {
+                        return Err(format!(
+                            "package {} documentation profile selects unsupported local feature {feature:?}",
+                            package.name
+                        )
+                        .into());
+                    }
+                    roots.push(feature.to_owned());
+                }
+            }
+            flag => {
+                return Err(format!(
+                    "package {} documentation profile contains unsupported Cargo feature flag {flag:?}",
+                    package.name
+                )
+                .into());
+            }
+        }
+        index += 1;
     }
-    if let Some(index) = flags.iter().position(|flag| flag == "--features")
-        && let Some(features) = flags.get(index + 1)
-    {
-        enabled.extend(
-            features
-                .split(',')
-                .filter(|feature| package.features.contains_key(*feature)),
-        );
+
+    if all_features {
+        roots.extend(package.features.keys().cloned());
+    } else if !no_default && package.features.contains_key("default") {
+        roots.push("default".into());
     }
-    required
-        .iter()
-        .all(|feature| enabled.contains(feature.as_str()))
+
+    let mut enabled = BTreeSet::new();
+    while let Some(feature) = roots.pop() {
+        if !enabled.insert(feature.clone()) {
+            continue;
+        }
+        let Some(edges) = package.features.get(&feature) else {
+            continue;
+        };
+        for edge in edges {
+            // `dep:name`, `name/feature` and `name?/feature` select dependency
+            // state, not another local feature. Cargo metadata exposes an
+            // implicit optional-dependency feature as its own key when that
+            // feature is selectable, so only exact local keys are traversed.
+            if edge.starts_with("dep:") || edge.contains('/') {
+                continue;
+            }
+            if package.features.contains_key(edge) {
+                roots.push(edge.clone());
+            }
+        }
+    }
+
+    Ok(required.iter().all(|feature| enabled.contains(feature)))
 }
 
 fn toolchain_identity(ctx: &Context) -> Result<ToolchainIdentity> {

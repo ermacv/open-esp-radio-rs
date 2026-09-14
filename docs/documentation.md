@@ -13,9 +13,10 @@ changes.
 | `docs/` | Contracts that cross code owners: architecture, terminology, evidence and source policy |
 | Directory or crate `README.md` | That component's purpose, inputs, outputs, dependencies and operating instructions |
 | Rust module and item docs | API semantics, ownership, errors, cancellation, panic and safety conditions |
-| Chip `FEATURES.md` | Current implementation coverage and explicit unsupported hardware/protocol behavior |
+| Chip `FEATURES.md` | Navigation to current implementation scope, limitations and generated capability views; not a hand-maintained readiness matrix |
 | `examples/` | Buildable application examples and their board/configuration requirements |
-| `qualification/targets/` | Machine-readable capability requirements and declared proof states |
+| `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
+| `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
@@ -56,8 +57,11 @@ build and an attached-hardware run establish different things.
 
 ## Describe capability without a work log
 
-A feature matrix names the chip, protocol/role, implemented boundary and
-limitations. Distinguish a pure model, an executable hardware operation, a
+A capability view names the chip, protocol/role, implemented boundary and
+limitations. Canonical identities and declarations stay in the catalog and
+source contracts; qualification programs choose requirements, and generated
+views present their resolved state. `FEATURES.md` links readers to those
+owners instead of copying their rows. Distinguish a pure model, an executable hardware operation, a
 composed application path and independently qualified readiness. A recovered
 register meaning or matching semantic leaf is not complete protocol support.
 

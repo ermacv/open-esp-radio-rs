@@ -7,6 +7,12 @@
 //! driver trait. Compatibility and optimized integrations map their external
 //! network-stack types onto these values without making radio policy depend on
 //! either integration.
+//!
+//! [`NetworkInterfaceId`] and [`LinkState`] describe logical publication, not
+//! ownership of an Ethernet buffer. Buffer loans, queue capacity and wakeups
+//! belong to the selected adapter, while DMA-visible storage remains governed
+//! by `oer-memory` and the chip datapath. A successful conversion of these
+//! values therefore does not imply zero-copy transfer or hardware completion.
 
 mod flow;
 pub use flow::TransportFlow;

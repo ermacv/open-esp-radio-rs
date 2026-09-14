@@ -7,6 +7,50 @@ execution live in the [runtime](../../../../runtime/embassy/esp32s31/bluetooth/)
 and final storage and hardware composition live in
 [integration](../../../../composition/esp32s31/embassy/bluetooth/).
 
+## Choose a reading path
+
+- Application integration starts at the composition's `BluetoothSystem` and
+  `BluetoothRunners`; the [Embassy runtime](../../../../runtime/embassy/esp32s31/bluetooth/)
+  explains how those finite owners are polled.
+- Host command classification, response order, event masks and ACL credits are
+  portable contracts in
+  [`oer-bluetooth-hci`](../../../../protocols/bluetooth/hci/).
+- Over-the-air PDU and role policy belongs to the portable
+  [LE Link Layer](../../../../protocols/bluetooth/le/ll/). This crate lowers
+  that policy into scheduler, DMA and interrupt mechanisms.
+- The module table below is the chip API map. `FEATURES.md` links current
+  limitations to the generated qualification view; it is not a second
+  readiness inventory.
+
+## Bounded LE peripheral lifecycle
+
+One peripheral connection is a sequence of owner transfers, not a linear
+"start then close" call:
+
+| Stage | Completion and retained ownership |
+| --- | --- |
+| Initialization | Composition reserves final static storage, claims all memory graphs, enables clocks, initializes/registers the shared PHY client and publishes one controller actor. Failures after reservation or a physical transition retain a fail-stop slot; HCI Reset cannot recover the cold owner. |
+| Connectable advertising | HCI configuration stays in the portable reset-scoped owner. Set Enable becomes a deferred start; command success waits until the chip runner proves scheduler `RUN`, rather than merely accepting the Host packet. |
+| Connection admission | An accepted `CONNECT_IND` transfers the advertising graph into the first-event peripheral owner. A handle becomes Host-visible only with LE Connection Complete; six missed initial events produce status `0x3e` without allocating a handle. |
+| Active recurrence | A scheduler reservation is only planned work. DMA-visible nodes and the IRQ/timer owner remain in the chip session through `RUN`, terminal completion, exact-head retirement and software unlink. A new event is not published when the guarded start or supervision deadline has already closed. |
+| ACL flow control | Host-to-Controller input is owned through LL fragmentation, retransmission and acknowledgement; its HCI credit returns after acknowledgement. Controller-to-Host packets and connection events retain their exact owned buffers while the Host FIFO is full. Radio supervision and command intake continue to be polled, but a successor `RUN` is admitted only when complete RX-batch capacity is reserved. |
+| Disconnect or Reset | Peer/local termination first reaches its protocol terminal condition, then completes hardware stop if necessary, retires the exact head, unlinks the scheduler item and restores the graph. Disconnection Complete may remain owned behind Host backpressure. Reset uses the same retirement disciplines and starts a fresh bounded HCI bootstrap; it is not powered teardown. |
+| Reuse | Idle command intake returns only after unlink/recycle and ordered Host events. The sole connection handle is not reusable until every Host-owned Controller ACL buffer for the old connection has returned its credit. |
+
+The 40-second per-event progress budget covers completion, unlink and the next
+Controller-time acquisition; it is not the Link Layer supervision timeout.
+If live hardware must be stopped, that stop has its own 100-millisecond budget.
+An expired stop/unlink budget or identity mismatch seals the owner in
+fail-stop state: protocol termination does not imply hardware recovery.
+
+Dropping an Embassy wait only abandons that waiter. Durable notifications and
+the controller actor retain the response, packet, reservation or active owner
+until the corresponding state transition consumes it. Controller-to-Host
+backpressure therefore delays publication without authorizing buffer or handle
+reuse. Detailed scheduler, peripheral, HCI and timing contracts live beside
+their implementations under `src/`; the sections below preserve the reviewed
+chip-specific limits and provenance.
+
 | Module under `src/` | Responsibility |
 | --- | --- |
 | `le/dtm` | Direct Test Mode commands, payloads, event timing, scheduler reservations and active/stopping transitions |

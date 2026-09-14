@@ -58,6 +58,31 @@ An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.
 
+## From policy to an application
+
+The production path is deliberately directional:
+
+| Boundary | Decides | Retains |
+| --- | --- | --- |
+| Portable protocol/service | Valid frames, role transitions, request planning and typed outcomes | Protocol values and affine logical state; never PAC ownership |
+| Chip HAL/driver | Semantic register transactions, DMA/IRQ state and physical transition results | PAC capabilities, stable-memory proofs and fail-stop hardware frontiers |
+| Concrete runtime | Which owner-bearing future is polled and how wakes, deadlines and bounded mailboxes progress | Active role/session owners across awaits and client cancellation |
+| Composition | One-time storage placement, board/chip roots, final IRQ bindings and application capability split | The sole hardware runner plus static resource claims |
+| Application/facade | Credentials, requested role, network/IP policy and sockets | Hardware-free control handles and application packet/socket owners |
+
+The command plane moves requests and value reports between the application and
+the sole actor. Submission is not hardware publication, and a response is not
+necessarily frame completion. The data plane separately moves bounded packet
+leases through adapter queues, stable storage, DMA publication, terminal
+completion and return. A protocol policy may request an operation without
+owning the PAC; conversely, the concrete actor owns the hardware epoch without
+becoming the authority for protocol semantics.
+
+Applications start from the public facade or the final chip composition.
+Developers of a lower subsystem start from its defining crate and owner types.
+This is why internal crates depend on specific lower contracts and never route
+their dependencies back through `oer`.
+
 Portable packages cannot depend on chip or host packages; the public facade
 is the explicit selection boundary. Chip packages can depend on portable
 packages and packages for the same chip. Host packages can depend on portable

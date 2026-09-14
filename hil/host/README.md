@@ -1,412 +1,347 @@
-# HIL host
+# HIL host setup and operations
 
-`runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
-UART evidence. `linux-net/` contains only privileged fixture operations.
-[Linux Bluetooth setup](linux-bluetooth/README.md) installs the finite DTM
-adapter checker; its Rust
-implementation belongs to the runner's `fixture/bluetooth/` module.
-
-Public commands:
-
-```console
-cargo hil doctor
-cargo hil fixture bluetooth-check --adapter hci0
-cargo hil doctor timebase
-cargo hil plan udp-rx-ht40-ceiling
-cargo hil scenario list
-cargo hil scenario validate [id]
-cargo hil image build|flash <image-class>
-cargo hil image verify-rebuild <image-class>
-cargo hil image verify-rebuild <image-class> --trim-paths
-cargo hil image replay <run-id> <image-class>
-cargo hil device status
-cargo hil report rebuild
-cargo hil report verify [run-id]
-cargo hil archive export <archive-id> --run <run-id>
-cargo hil archive verify|import <archive.tar.gz>
-cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
-cargo hil archive fetch <archive-id> --repo <owner/repository>
-cargo hil run <scenario-id>
-cargo hil run <scenario-id> --firmware-from <run-id>
-cargo hil run-all [--tag qualification]
-```
-
-The `network-comparison` tag selects the same five station workloads for each
-network implementation: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
-TX-only at 130 Mbit/s, bidirectional UDP at 130 + 130 Mbit/s, and idle ping.
-Each scenario runs once and uses the task-residence image. UDP windows last
-12 seconds; idle ping sends 120 requests at 100 ms intervals. This is a quick
-comparison, not a repeatability or endurance qualification. Build, association,
-reset and cleanup time is additional. Run one implementation at a time:
-
-```console
-cargo hil run-all --tag network-comparison --network patched-xarxa
-```
-
-Select `upstream-xarxa`, `upstream-smoltcp` or `owned-xarxa` for the other
-compositions. The throughput criteria still apply under overload; a completed
-measurement can fail its speed gate. Task residence is not full CPU utilization.
-
-The separate `ap-network-comparison` tag uses ESP as an HT40 AP with two
-physical stations (laptop and OpenWrt). Each scenario has one boot, one AP
-cycle and one 12-second UDP window:
-
-| Workload | Offered traffic, relative to ESP |
-| --- | --- |
-| Balanced TX | 65 Mbit/s to each station |
-| Balanced RX | 65 Mbit/s from each station |
-| Balanced bidirectional | 32.5 Mbit/s in each direction per station |
-| TX with sparse peer | 130 Mbit/s to laptop; two datagrams every 100 ms to OpenWrt |
-
-```console
-cargo hil run-all --tag ap-network-comparison --network patched-xarxa
-```
-
-The AP comparison checks per-peer progress, with an additional sparse-peer
-delivery and interarrival gate. Its low throughput floors do not qualify
-performance or fairness. Task residence and throughput alone do not establish
-A-MPDU aggregation quality; that requires separate aggregation evidence.
-Multi-client UDP saves each peer's raw host delivery and available target
-transport counters in `cycle-*/delivery-progress.json` before terminal-evidence
-and delivery/rate gates. A later gate failure does not discard these measurements.
-Reverse-path UDP probes wait for target session readiness. Sender failures are
-recorded after joining the receivers and collecting/acknowledging available
-terminal evidence, so they do not discard the other direction's delivery.
-Single-cycle measurements do not replace the catalog's repeated AP lifecycle
-qualification scenarios.
-
-Durable evidence packages and private remote storage are described in
-[HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.
-
-`plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
-it does not read `hil/local.toml`, inspect tools or contact hardware. `doctor`
-accepts the same selection and reports all independent environment checks as
-JSON, returning nonzero if any fail. With no selection it checks the whole
-catalog. It checks build/flash tools, scenario preconditions, required fixture
-services and current cooperative resource availability; it neither flashes nor
-resets the target. Availability is an observation, not a reservation for a
-later run. Optional monitor tools are checked only when selected evidence uses
-them. AP workloads currently include an initial STA connection, so their
-requirements include the station network.
-
-`cargo hil run memory-copy-benchmark` builds the dedicated memory diagnostic
-image and measures CPU, blocking GDMA and async GDMA copies from SRAM and
-PSRAM into SRAM. It requires the board and serial connection, without an AP
-or network helper. `cargo hil run memory-copy-batch-benchmark` uses the same
-image to compare CPU frame loops with single-chain GDMA batches of 1, 2, 8 and
-32 frames. Scenarios select frame sizes, batch sizes, iterations and repeated
-boots. An omitted `batch_sizes` field means `[1]`; every size/batch combination
-must fit the 49,152-byte payload limit per iteration. Case order is source,
-frame size, batch size, then copy mode.
-
-`memory-benchmark.json` schema 2 preserves each requested case and its typed target
-result, including failed observations. Each case has a 15-second host response
-deadline. The runner checks completeness, data/guard results and counter-scope
-consistency without imposing a throughput or speedup floor. Elapsed and
-foreground cycles/instructions describe their measurement windows, not CPU
-utilization or energy consumption. Measurements distinguish bytes per frame,
-frames per iteration and total payload bytes per iteration; comparisons must
-use the same geometry and source memory.
-
-`device status` attaches to the flashed runtime without reset, provisioning,
-initialization or result acknowledgement. The report includes the boot ID,
-capabilities, operation state, retained session identity, stack snapshot when
-available, and cumulative target link counters. A null stack means the target
-cannot safely snapshot it in its current state. Existing link errors are
-reported as observations. Every invocation gets its own directory under
-`target/hil/esp32s31/device-status/`, containing `status.json` and UART evidence,
-including on failure. Firmware must implement read-only boot discovery; there
-is no reset fallback. Serial-driver line behavior remains platform-dependent;
-the runner issues no reset-line sequence when attaching.
-
-Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain workload,
-isolation and acceptance criteria, never serial paths or secrets. Machine-local
-device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
-`LabConfig` is immutable. Each workload receives its own execution context:
-borrowed laboratory inputs and the selected scenario's initialization settings.
-Experiment policies are never written back to the shared laboratory object.
-The CLI grammar lives in `runner/src/cli.rs`. Scenario dispatch passes typed
-workload configurations directly; workloads neither rebuild CLI arguments nor
-parse private command-line dialects. Serial ownership comes from the execution
-context, independently of traffic configuration. Workload limits and acceptance
-policy remain enforced when constructing a running workload.
-
-By default, `run` builds and flashes the scenario's exact image before
-executing it. An explicit `--firmware-from` selects exact artifact replay
-instead, never a rebuild. `run-all` groups scenarios by image class, so changing
-UDP/TCP direction or rates does not rebuild or reflash firmware. It continues
-after scenario, image-build and image-flash failures, records the remaining
-scenarios as blocked when necessary, writes the complete suite, and returns a
-non-zero status unless every selected scenario passed. Independent scenarios
-reset the target. Ordinary scenario files must use `reset` isolation.
-
-AP scenarios select a controlled Linux or OpenWrt client. The Linux fixture
-leases WLAN as a managed WPA2 client without a gateway and restores
-NetworkManager on every return path. Lifecycle, ICMP,
-UDP and TCP are independent workloads over the same declared image class.
-Correctness scenarios record terminal AP observations in
-`access-point-report.json`; performance scenarios reject driver observations
-and retain only transport, external-fixture and stack evidence. AP IP policy
-belongs to HIL, not to the radio driver request.
-
-Each invocation creates an immutable directory under
-`target/hil/esp32s31/runs/<run-id>/`. The runner never deletes or reuses an old
-run. Its canonical records are:
+Run commands in this guide from the repository root. HIL executes the
+production driver on real hardware and records typed evidence; it is not an
+alternative radio implementation or the qualification evaluator. Read the
+[execution and evidence architecture](architecture.md) before interpreting a
+bundle.
 
 ```text
-manifest.json       invocation, repository, host, lab and firmware provenance
-lab-provenance.json secret-free pre-run topology, host and fixture observation
-plan.json           selected and filtered catalog entries
-events.jsonl        append-only execution timeline
-suite.json          typed suite/scenario/repetition outcomes
-junit.xml           CI view derived from suite.json
-report.html         human view derived from suite.json
-integrity.json      deterministic size/SHA-256 inventory of the whole bundle
-firmware/<image>/
-├── build-provenance.json
-│                   build recipe, source materials, tools and output subjects
-├── application.bin exact application bytes used by the flash operation
-├── runtime.elf     exact symbolized runtime used to produce the image
-├── runtime.bin     exact packed stage-two runtime
-├── bootstrap.elf   exact bootstrap used to encode the application
-└── effective-Cargo.lock
-                    embedded dependency resolution observed before restore
-scenarios/<id>/
-├── scenario.json
-├── result.json
-└── repetition-NNN/
-    ├── result.json
-    ├── host-route.json
-    ├── cleanup.json
-    ├── measurements.json
-    └── workload evidence
+hil/
+├── protocol/          host/target command and telemetry wire protocol
+├── scenarios/         versioned, non-secret host workloads and criteria
+├── host/
+│   ├── runner/        build, flash and scenario orchestration
+│   └── linux-net/     privileged Linux AP/monitor fixture
+└── targets/
+    └── esp32s31/      current embedded target workspace
 ```
 
-`lab-provenance.json` is collected while the fixture lock is held and before a
-firmware build or flash. Its explicit `system` scope collects OS facts and sysfs
-interface identity without calling `ip`, `iw` or SSH; network fields are not
-observed and the fixture is `not-used`. Network workloads use `network` scope.
-Offline verification requires a matching archived plan and scenario snapshots
-before accepting system-only provenance. It deliberately omits both network credentials and
-transport endpoints. For a managed OpenWrt fixture it records the actual
-release/kernel/boot identity, driver and firmware, country, TX power, channel,
-frequency, width, associated-station count and concurrent VIFs. Host interface
-and route-table state are recorded at the same boundary. The target-specific
-route cannot exist reliably at that point, so every station traffic repetition
-later writes `host-route.json` after address assignment and fails unless the
-socket source and required Ethernet/WLAN medium match the kernel route.
+Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
+lives in immutable bundles under `target/hil/<chip>/runs`. The qualification
+evaluator independently checks those bundles; Markdown is not proof input.
 
-Repetition records index every evidence attachment with its relative path,
-media type, byte length and SHA-256 digest. Schema 2 repetition records also
-carry typed measurements: a stable name, integer value, unit and, where the
-scenario has a gate, its comparator, threshold and independently computed
-verdict. Every workload family receives one repetition-owned recorder through
-its execution context. Captures project decoded protocol values into numeric
-observations and save a `measurements.json` beside `protocol.jsonl`, including
-on error or unwinding. Repetition results include the same observations.
-Names distinguish boot/capture paths, sessions, requests and individual flows;
-`ReplayResult` cannot duplicate or replace the first traffic observation.
-Transport rates use the target's reported elapsed time; zero elapsed time
-produces no rate. Link counters are explicitly named as lifetime observations.
-The projection includes transport, link/stack, timer, scan, monitor, AP peer
-and ED polling measurements; other typed facts remain in `protocol.jsonl`.
+Vendor-linked oracles remain isolated under `verification/vendor`; they are
+not HIL scenarios or runner commands.
 
-Workload-owned ICMP loss/latency, station UDP RX/TX and TCP rate measurements
-also expose their existing acceptance floors. The UDP RX target gate retains
-its integer kbit/s resolution; the host offer gate retains bit/s resolution.
-These are the resolved predicates, not new criteria. Target observations have
-no implicit verdict, and numerical observations alone do not qualify a radio
-feature. Broken or interrupted repetitions can retain failed measurements;
-a passed repetition cannot. Rendering never parses Markdown to decide an
-outcome. Host ICMP and TCP measurements are recorded before UART finalization,
-so a later link failure does not discard completed host observations.
-The HTML run report groups measurements by repetition in expandable sections;
-the history page filters measurement trends by scenario or metric name.
+The ownership map and bundle contract are in the
+[execution and evidence architecture](architecture.md).
 
-The context owns the shared capture lifecycle: cancellation check, output-scope
-validation, reset, observation collection and finalization. Bounded control
-and probe operations use `with_capture`; concurrent traffic owners can keep an
-explicit capture handle. Both paths retain primary and teardown errors, and
-ordinary unwinding saves partial observations. Concrete fixtures still own
-restoration of their AP/client/monitor state.
+Run the host interface through the workspace alias:
 
-SIGINT and SIGTERM cancel protocol waits, paced traffic and supervised host
-commands. The active repetition is saved as `interrupted`; execution does not
-start another repetition or fabricate results for unexecuted scenarios. The
-manifest and integrity index retain the partial run, and stdout reports its
-location. An interrupted run does not require a completed suite.
+```console
+cp hil/local.example.toml hil/local.toml
+chmod 0600 hil/local.toml
+cargo hil doctor
+```
 
-Fixture owners restore partially configured resources on errors and cancellation.
-`cleanup.json` records restoration attempts, elapsed time and failures separately
-from the primary workload failure. Restoration runs within a bounded cleanup
-scope (30 seconds, shared by nested operations). A cleanup failure alone makes
-the repetition `broken`; it cannot turn a failed workload into a pass.
-OpenWrt client preparation installs host recovery before restarting wireless;
-the remote restart also restores wireless on ordinary shell exit or signals.
-TX-monitor ownership starts before spawning SSH or waiting for readiness. A
-private remote directory identifies that capture's resources, so a rejected
-pre-existing monitor is left intact. Remote traps remove the owned interface;
-host cleanup retries removal and deletes the capture directory, with failures
-recorded in `cleanup.json`. Loss of SSH connectivity can prevent restoration;
-the runner reports that failure rather than claiming the fixture was restored.
-OpenWrt client cleanup checks the remaining NAT/forwarding rules and managed
-interface. An already absent resource is safe to retry; an inspection or
-deletion failure is recorded. Before signalling a stored PID, cleanup checks
-that its command is `wpa_supplicant` with the owned interface and configuration;
-a different command is left intact and reported as a recovery failure.
-AP management, packet capture and fixture snapshot failures carry a typed
-fixture error and produce `broken/infrastructure`, including errors returned
-by the secondary-client probe thread. Actual peer packet loss remains a
-scenario failure. A radio configuration mismatch
-reports the required channel/width and the observed channel line without
-including network credentials. These failures do not change scenario criteria.
+`hil/local.toml` is the only source for the stable lab-cell and DUT identities,
+serial device, STA/AP credentials and addresses, startup artifact and OpenWrt
+fixture. It is ignored by Git; scenarios contain no lab secrets or
+machine-specific paths. The identities are written into every run manifest so
+results from different cells and boards cannot be silently mixed.
 
-The laptop helper contract is schema 6. Its `client` action returns status 10
-only when a prepared client exhausts the association wait; command failures
-and malformed supplicant status are infrastructure errors. `doctor` and the
-selected run preflight reject older helpers before flashing or resetting the DUT.
-Provision it with `sudo hil/host/linux-net/install.sh`
-from the repository root before using laptop client scenarios.
+Multi-boot station lifecycle scenarios require a configured startup artifact.
+Their first boot may create or replace it; every later boot must report
+`Restored` before the station lifecycle can qualify. This makes cold PHY cache
+replay an asserted transition rather than an informational UART message.
 
-`oer-process` owns local child process groups, drains captured stdout/stderr
-concurrently and stops descendants on cancellation, deadlines or owner drop.
-Routine commands have a 120-second deadline; image commands allow 30 minutes;
-packet captures use their configured duration plus shutdown allowance. Remote
-process lifetimes additionally depend on the OpenWrt scripts' timeouts and traps.
+`cargo hil run <scenario>` builds and flashes the required image before the
+scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
+`upstream-smoltcp` or `owned-xarxa` to choose the stack implementation. The same choice
+is available for station and access-point examples through `cargo xtask build
+firmware <example> --network …`; see the
+[implementation guide](../../docs/network-implementations.md).
+`cargo hil run-all` reuses each image across its scenario group but
+does not fail fast. Every invocation retains an immutable evidence bundle in
+`target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
+XML, a standalone HTML report and the exact application image flashed for each
+firmware class. The flash operation reads that archived copy, binding firmware
+provenance to the bytes sent to the DUT. Completed and interrupted bundles also
+carry a deterministic integrity inventory covering every retained file.
 
-HIL cell leases and serial-device leases live in the user's host cache, outside
-individual checkouts. Serial leases are shared with `cargo xtask build firmware <example> --flash`
-and use USB identity when available, otherwise the canonical device path.
-A run additionally leases every required local wiphy and the managed OpenWrt
-host boot. Local client/monitor interfaces sharing a radio conflict even across
-cell IDs. The remote boot identity makes different SSH aliases and radio
-interfaces on one OpenWrt host conflict; the whole host is reserved because
-client setup also changes firewall state. A remote reboot invalidates that
-fixture epoch. These are cooperative locks between runners on this host and
-user account, not distributed reservations across separate laboratory hosts.
-External unmanaged APs have no discovered physical identity and rely on a
-consistent cell ID. Build/flash-only commands and device inspection acquire no
-AP or laptop-radio resources.
+The target-level `history.json` and `history.html` are deterministic derived
+views over those bundles. Rebuild them at any time with
+`cargo hil report rebuild`; no DUT or private lab configuration is required.
+Verify the structure and content digests of one bundle with
+`cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
+also runs without a DUT or private lab configuration.
 
-A session unwound by a runner error is marked interrupted in the manifest.
-Each UART capture owns its output directory before opening or resetting the
-serial device. `uart.bin` is the exact received stream, written as bytes arrive;
-`uart.log` is its lossy UTF-8 view for diagnostics. `protocol.jsonl` contains
-received target events, decoder counters, a `capture-end` record with the first
-typed link failure, and the final target-health query when available. Host
-commands and host error messages are never inserted into the received stream.
+Qualification v4 independently reads the sealed bundles instead of trusting a
+handwritten HIL status. A capability is HIL-qualified only when its declared
+scenario and repetition requirement is satisfied by a completed bundle for
+the exact current commit, and both the producer and evaluator worktrees are
+clean. Scenario IDs and achievable repetition counts are checked against the
+versioned catalog in `hil/scenarios`.
 
-Serial open, reset, read, write and worker failures wake protocol waits. Decode
-errors, receive overflow, sequence gaps and an unexpected new boot invalidate
-the capture. A later boot cannot erase an earlier failure: each intentional
-reset starts a new capture. Optional event waits distinguish a healthy timeout
-from a broken link. A traffic result has one collection deadline; target
-session and Wi-Fi operation failures terminate their corresponding waits.
-Before acknowledging a completed traffic session, the host requests its
-retained result again and requires identical evidence and completion digest.
-These protocol exchanges run after the measured traffic interval.
+The controlled OpenWrt AP and HIL host share the fixture LAN. Reverse flows
+use the local IPv4 route selected for the discovered target. External AP
+fixtures provide compatibility workloads; exact-delivery scenarios require
+the controlled fixture declared by the scenario.
 
-Host I/O and typed link failures produce `broken/infrastructure`; scenario
-assertions produce `failed/scenario`. Operation context preserves the typed
-cause. Capture finalization saves partial evidence before returning a link
-failure; when both the scenario and finalization fail, the report retains both
-messages and classifies the primary cause. Ordinary early returns also save
-the decoded transcript through the capture's destructor. Abrupt process
-termination can leave only the incrementally written raw bytes; it does not
-run Rust destructors or seal a completed run.
+Every network scenario owns a prepared station AP, including target-AP tests
+that first qualify a station connection. OpenWrt `radio` and `ap_section` identify
+the UCI resources; the transient netdev is not used to infer ownership. The
+runner discovers PHY/AP capabilities, applies the scenario's HT20/HT40/HE20
+profile, channel, WPA2 credentials and WMM, then checks enabled hostapd, generated
+HT/HE settings, width and center frequency. `phys` is an access policy, not
+hardware discovery. Original options, pending UCI edits and radio up/down state
+are restored; HIL does not commit temporary settings to flash.
 
-Reconnect stores captures per boot. The command emits one completion
-JSON object on stdout; diagnostics, progress and inherited child-process output
-belong on stderr.
+AP scenarios derive target bandwidth from their link profile. A router hosting
+their managed client uses the same primary and secondary channel. These scenarios
+start a fresh epoch of the selected radio; other radios and the wired uplink are
+not brought down. Scoped client forwarding/VIF cleanup remains a separate owner.
+`fixture-applied.json` records actual settings without network credentials.
+Cleanup failures are retained and quarantine subsequent network workloads in
+the same runner invocation.
 
-After a completed run, the runner deterministically rebuilds
-`target/hil/esp32s31/history.json` and `history.html`. These are disposable
-views, not authoritative state: `cargo hil report rebuild` recreates them from
-the immutable manifests and suites without hardware access. The history view
-shows run/cell/DUT provenance plus per-scenario pass rate, mixed-outcome
-flakiness and the current consecutive non-passed count. Measurement series are
-kept separate by scenario, name, unit and threshold contract, and expose
-minimum/latest/maximum values plus failed-verdict counts. A malformed or
-inconsistent run bundle makes rebuilding fail closed.
+Fixture preparation can be exercised without opening the serial port, building
+firmware, resetting or transmitting traffic from the DUT:
 
-Publication of a new run directory and history snapshots share a short-lived
-index lock. History writers hold it through snapshot and publication, so a
-slower writer cannot overwrite a newer snapshot. Firmware builds and hardware
-workloads run outside that lock. A malformed unrelated bundle still makes
-`report rebuild` fail explicitly. It cannot revoke a completed run: the run's
-completion JSON retains its outcome and artifact paths, sets `history_report`
-and `history_html` to null, and reports `history_failure`. Retrying the derived
-view does not change the sealed bundle.
+```console
+cargo hil fixture check udp-tx-he20
+```
 
-`cargo hil report verify [run-id]
-cargo hil archive export <archive-id> --run <run-id>
-cargo hil archive verify|import <archive.tar.gz>
-cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
-cargo hil archive fetch <archive-id> --repo <owner/repository>` performs a read-only offline integrity
-check. With no run ID it checks every bundle. It validates manifest/suite
-structure, canonical relative paths, regular-file boundaries, attachment byte
-lengths and SHA-256 digests, plus the archived application image for every
-recorded firmware class. Completed and interrupted runs are sealed by
-`integrity.json`; verification also requires an exact match for every regular
-file in the bundle, including plan, event stream, scenario records and derived
-JUnit/HTML views. Unindexed additions, missing files, symlinks, path traversal
-and changed content fail closed. The hashes detect accidental corruption and
-internally inconsistent bundles; because they live beside the evidence, they
-are not a signature against a malicious rewrite of the whole bundle.
+This command uses the same prerequisites and profile owner as `run`, opens and
+stops the required OpenWrt packet captures, restores the AP and writes its report
+to `target/hil/fixture-checks`. Control scenarios also exercise AP stop/restart.
+Scenarios requesting the independent laptop observer exercise Linux monitor
+setup, capture readiness, tshark decoding and managed-interface restoration;
+`fixture-monitor.json` retains the capture result. This passive check uses a
+synthetic parser filter and sends no target traffic.
+It does not establish target associations or qualify target throughput.
+`doctor` checks available tools and capabilities without applying a profile;
+a successful doctor result does not assert that current radio settings already
+match the selected scenario.
 
-Runs retain all firmware subjects through a SHA-256 content-addressed
-store under `target/hil/<target>/objects/`. The files inside a run are ordinary
-hard links when the filesystem supports them, or independent copies
-otherwise. This keeps a copied run self-contained without allocating another
-large runtime ELF for every repeated scenario. Build provenance follows the
-subjects/materials/recipe separation described in
-[build and report reproducibility](../../docs/hil-reproducibility.md). A tracked dirty delta is stored
-as a binary Git patch; untracked content is identified but never copied
-implicitly, and makes source reconstruction incomplete.
+Capture handles acknowledge readiness before the session starts. Dumpcap's
+opened-file notification and tcpdump's opened-interface notification replace
+startup sleeps. The runner explicitly stops capture after session collection;
+traffic duration does not set an early capture stop. Independent process
+watchdogs and file limits remain failure bounds. Passive observers use the AP's
+actual primary frequency, width and center frequency, including HE20 geometry.
+Tshark parsing and monitor setup/teardown are invoked by the runner.
 
-`cargo hil image replay <run-id> <image-class>` first performs the same offline
-bundle verification and then flashes the archived `application.bin` without
-running Cargo or changing its bytes. It is the supported primitive for exact
-same-artifact comparison. It does not by itself rerun a scenario or claim that the lab
-environment matches the original run.
+AP workload evidence and qualification are separate. `cycle-progress.json`
+retains each available traffic, link and teardown result even if another stage
+fails; `access-point-report.json` retains completed boots/cycles and the boot
+error. Multi-client UDP additionally writes `delivery-progress.json` before
+applying gates, including partial host sends, target evidence and worker errors.
 
-`cargo hil run <scenario-id> --firmware-from <run-id>` performs the same
-verification before acquiring the physical fixture, requires the archived
-image class to match the selected scenario, and then executes the ordinary
-scenario lifecycle without invoking Cargo. The resulting run imports all
-available firmware subjects, effective lock and tracked source patches into
-its own CAS-backed bundle; it remains verifiable after the source run is
-removed. Its manifest records the source run and source integrity digest, and
-the independent qualification reader deliberately excludes replayed firmware
-from current-clean evidence. `run-all` does not accept `--firmware-from`.
+Host UDP collectors finish from the correlated `Finished` transport count.
+Complete delivery returns immediately. If packets remain undelivered, a two-second
+delivery deadline bounds collection after that event; reaching it records
+`delivery-deadline`, never proof of a drained radio. Each `*-reception.json`
+retains the expected/unique/undelivered packet counts, partial bursts and the
+termination reason even on target failure, I/O error, cancellation or unwinding.
+There is no additional fixed reception window after the configured workload.
 
-The qualification evaluator consumes these same sealed bundles through an
-independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
-scenario IDs and minimum passing repetitions; only a bundle produced from the
-exact current commit with a clean worktree can satisfy the HIL axis. The
-derived history views and Markdown narratives are never proof inputs.
+Serial I/O waits for descriptor readiness or explicit command/shutdown events.
+SIGINT/SIGTERM notifications wake both serial protocol waiters and UDP collectors;
+periodic polling is unnecessary for cancellation. Physical USB reset timing and
+exclusive-port acquisition remain owned by the serial setup boundary.
 
-`boot-smoke` intentionally precedes the radio protocol and proves only runtime
-relocation plus one Embassy timer wake. It uses its single fixed PASS record;
-all radio, lifecycle and traffic evidence uses the typed HIL protocol.
+For multi-client RX offers, `minimum_host_offer_percent` independently checks
+bytes accepted by host UDP send calls over both the requested window and the
+sender's elapsed time. The AP comparison scenarios require 95%. An under-offer
+invalidates the requested load condition; it does not identify a DUT delivery
+fault. No criterion means `not-assessed`, never an implicit load validation.
+Host socket admission is not an on-air transmission measurement.
 
-## Source ownership
+Diagnostic image features can change scheduling and linked code placement.
+Compare performance only with the recorded image/configuration identity; a
+more instrumented image is a separate experiment, not interchangeable evidence.
 
-`runner/src` follows execution and evidence boundaries:
+The Linux helper is installed separately because its narrowly scoped AP,
+managed-client, monitor and USB-reset operations require root privileges:
 
-- `scenario` owns catalog values, discovery and semantic acceptance rules;
-  `image/class` owns image identities and feature recipes.
-- `image` owns build/rebuild and placement/stack auditing; the reusable ELF
-  analyzer remains `tools/memory-report`.
-- `lab` owns local configuration, topology/provenance and the exclusive fixture
-  guard; `fixture` implements controlled host and peer capabilities.
-- `session` owns one UART capture and its protocol/readiness/validation state.
-- `workload` groups system, IEEE 802.15.4, IEEE 802.11 role and network traffic
-  operations. They report scenario outcomes, not product readiness.
-- `evidence` owns sealed run models, archive/integrity/verification and build
-  provenance. `reporting` renders HTML/JUnit and rebuildable history views.
+```console
+cargo hil fixture install-host
+```
 
-The recursive [catalog contract](../scenarios/README.md) is checked independently
-by the runner and qualification evaluator. Shared synthetic input documents
-exercise both readers; qualification never imports execution or validation
-implementation from the runner. Tests are adjacent files within each owner.
+`cargo hil doctor` also verifies the installed helper schema and its
+non-interactive sudo capability before a scenario takes ownership of WLAN.
+
+The installer needs interactive sudo authorization. Routine scenarios use the
+installed narrow helper without prompting. Local Linux AP profiles are generated
+from the station credentials and `station_fixture.country`, `channel` and CIDR
+`address`; HT/HE mode comes from the scenario. The DHCP range excludes the AP
+address and stays inside its subnet. Static station addresses must agree with
+that subnet and gateway. The helper receives these values on stdin and keeps the
+temporary hostapd configuration under root-owned `/run` with private permissions;
+stop/cleanup removes it. No installed credential profiles are consumed.
+
+The runner subscribes to hostapd control events, confirms ENABLED and actual
+HT/HE mode, WPA2, channel geometry and IPv4 address before workload execution.
+It records these non-secret settings in `fixture-applied.json`. The Linux helper
+keeps hostapd startup diagnostics in a group-readable runtime log and includes
+its bounded, credential-redacted tail in preparation errors before cleanup.
+Debug logging ends before the workload starts; cleanup removes the runtime log.
+The Linux helper owns only `wlan0`; cleanup returns it to managed mode.
+
+AP scenarios wait for the matching `WifiAccessPointStarted` event and validate
+the successful `Idle` to `AccessPoint` transition before starting either external
+client. Sending the start command is not readiness: the target completes the
+request after activating AP RX interrupts, publishing the first beacon and
+applying its network configuration. Initialization failures produce a start
+failure instead of an early success followed by a stop error.
+The controlled Linux client starts with its network disabled. The runner attaches
+through the group-accessible private supplicant control socket before enabling
+that network, then waits for events and `wpa_state=COMPLETED`. It does not poll
+status on a timer. The connection watchdog is 20 seconds. In each cycle's
+`linux-client/` directory, `helper.log` records setup failures, `control.jsonl`
+records timestamped events, status replies and scan results, and `connection.json`
+records the final state, last rejection/disconnect and outcome. Unknown states
+remain unknown rather than being classified as discovery failures. The transcript
+is bounded to 4096 records and records no credential-setting commands. Connection
+artifacts survive restoration of the managed interface. When the OpenWrt fixture
+has `monitor_interface` configured, AP scenarios capture management and control
+frames before enabling the Linux client and retain capture through traffic and
+AP stop. A failed connection also finishes the capture before restoring clients.
+The cycle owns `management.pcap` and capture counts in `management.json`. Capture
+readiness and stop are explicit events; immediate packet delivery preserves short
+connection captures. Empty captures and capture-socket drops report incomplete
+fixture evidence. The monitor is removed before client restoration and on errors.
+This on-router monitor is not an independent receiver: missing ACKs in its tap
+alone do not prove that no ACK was transmitted over the air.
+Diagnostic firmware retains the first failed probe response receiver, Sequence
+Control, publication/completion times, final rate and retry report in UART output.
+The record identifies a terminal failure; ordinary retry attempts do not create it.
+Probe responses use one hardware attempt and a global 10-ms admission interval.
+Excess requests are discarded without deferred response timers; changing sender
+MAC does not bypass the budget. Authentication, association, EAPOL and data retain
+their own retry policy. `tx_probe_ack_timeouts` is a subset of
+`tx_hardware_failures`, not a successful delivery count. The AP gate reconciles
+this named subset and unacknowledged disconnects against the total; unrelated
+failures, timeouts, collision limits and saturated totals still fail.
+This bounds software retry amplification, not RF contention or interference.
+Unlike [hostapd's no-ACK submission](https://chromium.googlesource.com/chromiumos/third_party/hostap/+/fb2d4c1a3971302455730191117b0e91ce9b8793/src/ap/beacon.c)
+for wildcard broadcast probes, this backend
+still waits for the ordinary hardware completion and records a missing ACK.
+Control transcripts include host Unix timestamps for comparison with pcap; clock
+offset between hosts must be checked before interpreting sub-millisecond timing.
+
+For multi-flow UDP TX with driver observation, terminal `OTXFLOW` records describe
+flow 1 at socket admission and at the radio's claim of an Ethernet owner. Once
+that flow shows activity, both boundaries are printed, including a boundary
+with zero packets. `first_us` measures time from the diagnostic interval start
+to first admission; `idle_us` includes silence before the first packet and after
+the last. `gap_us` measures only intervals between admitted packets. `errors`
+counts terminal socket failures, which close `pending_us` without counting a
+packet. These are supplemental UART diagnostics, not MAC completion or host
+reception evidence. The current per-flow records do not correlate individual
+packets with hardware publication and completion.
+
+`cargo hil fixture install-host` first runs `cargo xtask build hostapd` without
+root, then installs the resulting binary, build provenance and helper through
+interactive sudo. The build uses the pinned hostapd release and reviewed
+[coexistence patch](linux-net/hostapd/README.md). It requires a C compiler,
+make, pkg-config, libnl3 and OpenSSL development files, curl, tar and patch.
+Verified cached outputs can be reused without downloading or compiling again.
+Updating the helper contract requires rerunning the installer.
+
+For `local-linux`, `station_fixture.coexistence` selects `respect` (default) or
+`force-ht40`. The latter applies `noscan=1` only to HT40 scenarios; the OpenWrt
+patch also skips client coexistence/intolerance handling in this mode. HT20 and
+HE20 retain normal policy. The selected policy is recorded in fixture evidence.
+Either policy still fails preparation when actual channel geometry differs
+from the scenario: requested 40 MHz never silently becomes an accepted 20 MHz run.
+
+### Controlled probe-request load
+
+`diagnostic-ap-probe-load` combines a 12-second AP two-client UDP TX window
+with a finite Linux probe source. The primary offered rate is 130 Mbit/s;
+the secondary sends one 1472-byte datagram every 50 ms. The scenario requires
+at least 200 secondary datagrams and a maximum 250 ms interarrival gap.
+These are progress gates, not a throughput qualification.
+
+The runner prepares the source after client association and starts it only
+after the device acknowledges the UDP session. Offsets from that Start event
+are: one directed-SSID request at 1 s, 200 requests from one MAC at 3–3.995 s,
+and 200 requests from distinct locally administered MACs at 6–6.995 s.
+The source uses event/deadline waits, rejects pacing lateness above 4 ms,
+and stops on controller EOF or cancellation.
+
+`cargo hil fixture install-host` builds and installs the bounded Rust helper
+`open-radio-probe`. The helper accepts no command-line arguments or arbitrary
+frame input. It checks the controlled `wlan0` association SSID/channel, owns
+a temporary monitor interface on the same PHY, and removes it before reporting
+completion. It does not retune the associated interface. Monitor coexistence
+and injection support are requirements of this Linux adapter; creation or
+injection failure fails the scenario. Those capabilities still require an
+actual fixture run; host tests alone do not establish them.
+
+The runner automatically captures management traffic on OpenWrt and invokes
+tshark after capture shutdown. `probe-source.json` records submission,
+associated BSSID, pacing and errors; `probe-air.json` records observed request
+and response counts. All 401 source/sequence pairs must appear in the capture,
+with no reported kernel drops. Responses must come from the associated AP and
+cover both source modes. Retries, duplicate response sequences and more than
+105 responses in any one-second window fail the gate. The five-frame margin
+allows capture timing variation around the driver's 10 ms admission interval.
+Successful socket submission alone cannot satisfy these gates. OpenWrt is a
+separate observer device, but its capture still shares its client PHY.
+
+`cargo hil fixture probe-plan` prints the finite request schedule without
+loading lab configuration, opening interfaces or accessing the ESP. Installing
+the helper or executing the scenario is separate from this offline preview.
+
+A private `[air_observer]` section can attach a second OpenWrt host to station
+UDP RX/bidirectional runs: `ssh_target`, `phy` and `interface` name its SSH
+endpoint, dedicated PHY and temporary monitor interface. The PHY must initially
+have no interfaces; the runner refuses to retune an active AP/client. It locks
+both OpenWrt hosts, verifies distinct boot identities, derives the channel from
+the active AP and checks the observer's actual geometry after tcpdump readiness.
+The monitor and capture are owned until explicit Stop and cleaned up on errors.
+`independent-openwrt-air.pcap` and adjacent JSON record passive air evidence;
+the AP's own TX monitor remains a separate observation boundary. Captures with
+socket drops are retained but fail completeness. Fixture checks exercise setup,
+readiness and teardown without requiring a packet to arrive before immediate
+Stop; real traffic captures require at least one frame. Missing passive frames
+alone cannot establish over-the-air loss, and encrypted payloads require either
+a captured handshake/decryption or correlation with the AP's MAC identities.
+
+Independent OpenWrt air runs also collect `host-wire.pcapng` on the selected
+host route, including ARP and both UDP directions. This observes the host packet
+socket boundary, not a hardware transmit acknowledgement. Capture drop counts
+are retained and checked independently from radio and application drops.
+
+Station UDP RX and bidirectional scenarios can require
+`criteria.maximum_rx_silence_ms`. The gate consumes complete-window typed
+transport evidence, including the trailing silence; missing observation fails
+rather than falling back to average throughput. The no-maintenance PHY
+bidirectional control uses 250 ms to reject long delivery stalls independently
+of its throughput floor. This is a delivery-continuity limit, not an RF airtime
+measurement. Multi-client receive windows do not publish one ambiguous maximum.
+
+The `diagnostic-station-absence-{unannounced,pm}-rx` pair holds the same physical
+maintenance access for 10 ms without running a PHY algorithm. `station_pause =
+{ synthetic = { duration_micros = 10000, notify_ap = true } }` selects confirmed
+PM=1 before local stop and confirmed PM=0 after RX/MAC restoration. Durations
+are bounded to 1..=200000 us; this is an experimental hold, not a listen/DTIM
+schedule or a promise about AP buffer capacity. The ordinary idle power-save
+planner cannot concurrently own this exchange; conflicting control ownership
+returns Busy. A failed PM=1 requires acknowledged PM=0 recovery before normal
+traffic resumes. An ambiguous return retains the runner in quarantine.
+The reported round trip includes both PM exchanges when selected, while the
+requested hold starts only after physical admission. These scenarios do not
+enable PM notification for automatic calibration or qualify long absences.
+
+Managed OpenWrt RX runs retain `openwrt-wifi-egress.pcap` in the repetition
+artifacts. This is plaintext packet-socket evidence on the AP wireless
+interface, before driver/hardware transmission; it does not prove over-air
+delivery. The existing readiness/Stop capture owner bounds its lifetime,
+retains a 128-byte packet prefix, checks capture drops, and removes its private
+remote files. Same-boot probes keep separate capture directories. Independent
+observer and host clocks are not assumed synchronized; correlate packet
+identities before comparing timestamps across hosts.
+
+An OpenWrt fixture may set `read_only = true` in its private lab configuration
+when the AP also carries essential connectivity. HIL verifies the existing
+SSID, WPA2 credentials/settings and active PHY/channel geometry; it neither
+applies nor restores AP configuration. A mismatch fails before DUT traffic.
+Scenarios requiring AP stop/restart, an OpenWrt client, rate overrides or an
+AP-side monitor are rejected. Read-only station counters and packet capture on
+an existing interface remain available; independent observers may be used.
+This mode is explicit and never a fallback from failed automatic preparation.

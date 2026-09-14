@@ -43,5 +43,13 @@ register access. Both must stay associated for their full control epoch.
 The standalone Wi-Fi PHY maintenance capability is a separate HAL boundary;
 a timer index or mailbox reply cannot be converted into that capability.
 
+Three similarly timed operations remain separate contracts. Wi-Fi
+peer-facing power save exchanges PM state with an AP and governs peer buffering.
+Local PHY maintenance pauses a role and admits temporary register/interrupt
+access for tracking. Physical RF/baseband/clock close consumes the final
+registered protocol client and follows the shared PHY lifecycle. A coex timer
+request grants none of those authorities, and the immediate retained RF
+close/wake cycle is not connected modem sleep.
+
 IEEE 802.15.4 is not an inferred third numeric `CoexClient`. Its MAC PTI fields
 and reviewed vendor wrappers have a distinct interface, currently uncomposed.

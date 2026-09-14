@@ -913,17 +913,7 @@ gaps = [
   { axis = "hil", id = "standalone-and-wifi-bluetooth-coex-cells-missing" },
   { axis = "async", id = "bluetooth-request-deadline-and-cancellation-missing" },
 ]
-
-[[capabilities.source-contracts]]
-id = "coex-timer-validation-bridge"
-composition = "diagnostic"
-scope = "Execute the recovered coexistence core timer operations through the validation-probes HAL bridge"
-limits = "Core tables clock conversion and an Embassy mailbox exist; production Wi-Fi and Bluetooth runtimes do not compose this concrete timer owner"
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/coex.rs",
-  "crates/hardware/esp32s31/driver/coex/src/lib.rs",
-  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
-]
+source-fact-refs = ["coex-timer-validation-bridge"]
 
 [[capabilities.source-contracts]]
 id = "wifi-bluetooth-coex-runtime"

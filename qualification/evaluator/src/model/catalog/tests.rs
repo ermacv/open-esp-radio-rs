@@ -906,7 +906,10 @@ fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
         catalog
             .references
             .iter()
-            .filter(|reference| reference.kind == InventoryReferenceKind::SourceReference)
+            .filter(|reference| {
+                bluetooth_sections.contains(reference.section.as_str())
+                    && reference.kind == InventoryReferenceKind::SourceReference
+            })
             .count(),
         4
     );
@@ -931,4 +934,219 @@ fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
     );
     assert_eq!(parent.source_fact_refs, ["bluetooth-initial-phy-handoff"]);
     assert_eq!(parent.source_contracts[0], handoff.source_contract);
+}
+
+#[test]
+fn coex_and_whole_radio_catalogs_preserve_facets_without_program_promotion() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let paths = [
+        "qualification/catalog/esp32s31/wifi-phy.toml",
+        "qualification/catalog/esp32s31/coex.toml",
+        "qualification/catalog/esp32s31/bluetooth.toml",
+        "qualification/catalog/esp32s31/whole-radio.toml",
+    ]
+    .map(PathBuf::from);
+    let catalog = CatalogView::load(&root, &paths).unwrap();
+    let coex_document = Path::new("crates/hardware/esp32s31/driver/coex/FEATURES.md");
+    let whole_radio_document = Path::new("crates/hardware/esp32s31/driver/FEATURES.md");
+    let section_ids = |document: &Path| {
+        catalog
+            .sections
+            .iter()
+            .filter(|section| section.source_document == document)
+            .map(|section| section.id.as_str())
+            .collect::<BTreeSet<_>>()
+    };
+    let coex_sections = section_ids(coex_document);
+    let whole_radio_sections = section_ids(whole_radio_document);
+    let item_counts = |sections: &BTreeSet<&str>| {
+        catalog
+            .items
+            .iter()
+            .filter(|item| sections.contains(item.section.as_str()))
+            .fold((0, 0), |(rows, projections), item| {
+                if item.source_fact.is_some() {
+                    (rows, projections + 1)
+                } else {
+                    (rows + 1, projections)
+                }
+            })
+    };
+    assert_eq!(item_counts(&coex_sections), (42, 1));
+    assert_eq!(item_counts(&whole_radio_sections), (28, 2));
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| coex_sections.contains(reference.section.as_str()))
+            .count(),
+        8
+    );
+    assert!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| { coex_sections.contains(reference.section.as_str()) })
+            .all(|reference| reference.kind == InventoryReferenceKind::SourceReference)
+    );
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| whole_radio_sections.contains(reference.section.as_str()))
+            .count(),
+        6
+    );
+
+    let timer_fact = &catalog.source_facts["coex-timer-validation-bridge"];
+    assert_eq!(timer_fact.status, SourceStatus::Diagnostic);
+    let coexistence = &catalog.capabilities["coexistence"];
+    assert_eq!(
+        coexistence.implementation,
+        crate::model::ImplementationProof::Incomplete
+    );
+    assert_eq!(
+        coexistence.source_fact_refs,
+        ["coex-timer-validation-bridge"]
+    );
+    assert_eq!(coexistence.source_contracts[0], timer_fact.source_contract);
+    assert_eq!(
+        coexistence.source_contracts[1].id,
+        "wifi-bluetooth-coex-runtime"
+    );
+    assert!(catalog.items.iter().any(|item| {
+        item.id == "whole-radio-diagnostic-coexistence-timer-bridge"
+            && item.source_fact.as_deref() == Some("coex-timer-validation-bridge")
+    }));
+    assert!(catalog.items.iter().any(|item| {
+        item.id == "whole-radio-bounded-bluetooth-initial-phy-handoff"
+            && item.source_fact.as_deref() == Some("bluetooth-initial-phy-handoff")
+    }));
+    assert_eq!(
+        catalog
+            .items
+            .iter()
+            .find(|item| item.title == "Protocol-specific PHY handoff")
+            .unwrap()
+            .status,
+        SourceStatus::Partial
+    );
+    assert_eq!(
+        catalog
+            .items
+            .iter()
+            .find(|item| item.title == "Wi-Fi + Bluetooth concurrent composition")
+            .unwrap()
+            .status,
+        SourceStatus::Absent
+    );
+    assert!(
+        catalog
+            .capability_owners
+            .values()
+            .all(|(owner, _)| { owner != "esp32s31-coex" && owner != "esp32s31-whole-radio" })
+    );
+
+    let error = CatalogView::load(
+        &root,
+        &[PathBuf::from(
+            "qualification/catalog/esp32s31/whole-radio.toml",
+        )],
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("references missing source fact"), "{error}");
+}
+
+#[test]
+fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let manifest = root.join("qualification/targets/esp32s31/ieee802154.toml");
+    let validated = ManifestDocument::load_and_validate(&manifest, &root).unwrap();
+    let document = &validated.document;
+    assert_eq!(document.capabilities.len(), 6);
+    assert_eq!(document.required_capabilities.len(), 6);
+    assert_eq!(
+        document
+            .capabilities
+            .iter()
+            .map(|capability| capability.id.as_str())
+            .collect::<BTreeSet<_>>(),
+        document
+            .required_capabilities
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(document.direct_catalog_capabilities.len(), 2);
+
+    let catalog = &document.catalog;
+    assert_eq!(catalog.sources.len(), 1);
+    let source_document = Path::new("crates/hardware/esp32s31/driver/ieee802154/FEATURES.md");
+    let sections = catalog
+        .sections
+        .iter()
+        .filter(|section| section.source_document == source_document)
+        .map(|section| section.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(sections.len(), 11);
+    let source_rows = catalog
+        .items
+        .iter()
+        .filter(|item| sections.contains(item.section.as_str()) && item.source_fact.is_none())
+        .count();
+    let projections = catalog
+        .items
+        .iter()
+        .filter(|item| sections.contains(item.section.as_str()) && item.source_fact.is_some())
+        .count();
+    assert_eq!((source_rows, projections), (42, 2));
+    assert_eq!(
+        catalog
+            .items
+            .iter()
+            .filter(|item| item.status == SourceStatus::HostOnly)
+            .count(),
+        3
+    );
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| reference.kind == InventoryReferenceKind::QualificationMapping)
+            .count(),
+        6
+    );
+    assert_eq!(
+        catalog
+            .references
+            .iter()
+            .filter(|reference| reference.kind == InventoryReferenceKind::SourceReference)
+            .count(),
+        11
+    );
+
+    for (fact_id, parent_id) in [
+        ("ieee802154-registered-timing-entry", "rf-channel-readiness"),
+        ("ieee802154-mac-operation-subset", "rx-tx-dataplane"),
+    ] {
+        let fact = &catalog.source_facts[fact_id];
+        let parent = &catalog.capabilities[parent_id];
+        assert_eq!(fact.status, SourceStatus::Implemented);
+        assert_eq!(
+            parent.implementation,
+            crate::model::ImplementationProof::Incomplete
+        );
+        assert_eq!(parent.source_fact_refs, [fact_id]);
+        assert_eq!(
+            parent.source_contracts.as_slice(),
+            std::slice::from_ref(&fact.source_contract),
+        );
+    }
 }

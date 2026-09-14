@@ -10,6 +10,14 @@ required-capabilities = [
   "rx-tx-dataplane",
 ]
 
+catalogs = [
+  "qualification/catalog/esp32s31/ieee802154.toml",
+]
+catalog-capabilities = [
+  "polled-ed-cca",
+  "rx-tx-dataplane",
+]
+
 [verification]
 project = "verification/vendor/projects/esp32s31/vendor-project.toml"
 evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
@@ -18,136 +26,3 @@ evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence
 target = "esp32s31"
 catalog = "hil/scenarios"
 runs = "target/hil/esp32s31/runs"
-
-[[capabilities]]
-id = "clock-reset-foundation"
-title = "IEEE 802.15.4 clock reset and masked MAC foundation"
-scope = "Whole-radio transition through reviewed clocks private reset exact event and abort masking and semantic readback"
-implementation = "complete"
-host = "covered"
-async = "not-applicable"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-lifecycle.md",
-]
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
-async-not-applicable = "finite-synchronous-foundation-transition"
-gaps = [
-  { axis = "vendor", id = "composed-clock-reset-production-trace-not-executable" },
-]
-
-[[capabilities]]
-id = "static-mac-policy"
-title = "Interrupt-masked static MAC policy"
-scope = "Checked channel CCA ACK control and primary PAN identity writes followed by one fail-closed semantic readback"
-implementation = "complete"
-host = "covered"
-async = "not-applicable"
-depends-on = ["clock-reset-foundation"]
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-dataplane.md",
-]
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
-async-not-applicable = "finite-synchronous-policy-transition"
-gaps = [
-  { axis = "vendor", id = "static-policy-composed-trace-not-executable" },
-]
-
-[[capabilities]]
-id = "polled-ed-cca"
-title = "Serialized route-detached polled ED and CCA"
-scope = "Finite raw ED or CCA command with exact event window abort evidence selected ED_DONE recovery and fail-stop owner disposition"
-implementation = "complete"
-host = "covered"
-async = "incomplete"
-depends-on = ["static-mac-policy"]
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-control.md",
-]
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
-gaps = [
-  { axis = "vendor", id = "complete-polled-ed-cca-production-trace-not-executable" },
-  { axis = "hil", id = "cca-busy-operation-cell-missing" },
-  { axis = "async", id = "public-operation-runs-the-finite-poll-budget-synchronously" },
-]
-
-[[capabilities]]
-id = "rf-channel-readiness"
-title = "IEEE 802.15.4 RF and channel readiness"
-scope = "Registered common PHY RFPLL BTBB and protocol-specific channel transition required for calibrated ED or on-air operation"
-implementation = "incomplete"
-host = "covered"
-async = "incomplete"
-depends-on = ["clock-reset-foundation"]
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-lifecycle.md",
-]
-gaps = [
-  { axis = "implementation", id = "shared-pll-rf-retune-and-tracking-lifetime-composition-missing" },
-  { axis = "vendor", id = "rf-client-btbb-and-channel-composed-trace-missing" },
-  { axis = "hil", id = "calibrated-ed-and-channel-retune-cell-missing" },
-  { axis = "async", id = "rf-transition-executor-contract-missing" },
-]
-
-[[capabilities.source-contracts]]
-id = "ieee802154-registered-timing-entry"
-composition = "production"
-scope = "Dedicated target registration and client tracking retain the IEEE radio owner through common BTBB and protocol timing into foundation and static MAC policy"
-limits = "This lower target entry is not a public RF-ready service; shared PLL ownership RF retune and the IRQ/DMA operational lifetime remain incomplete as stated in the PHY consumer matrix"
-source-paths = [
-  "crates/hardware/esp32s31/phy/src/registered_ieee802154.rs",
-  "crates/hardware/esp32s31/phy/src/target_executor.rs",
-]
-
-[[capabilities]]
-id = "active-interrupt-runtime"
-title = "Active source-132 interrupt runtime"
-scope = "Affine CPU route event acknowledgement bounded ISR classification task wake and route teardown"
-implementation = "incomplete"
-host = "covered"
-async = "incomplete"
-depends-on = ["clock-reset-foundation"]
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-control.md",
-]
-gaps = [
-  { axis = "implementation", id = "whole-radio-route-runtime-composition-missing" },
-  { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
-  { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
-  { axis = "async", id = "bounded-async-evidence-missing" },
-]
-
-[[capabilities]]
-id = "rx-tx-dataplane"
-title = "Affine IEEE 802.15.4 RX and TX dataplane"
-scope = "Frame RX TX DMA ownership state machine acknowledged IRQ batches ACK watchdog filtering and executor-neutral MAC runtime"
-implementation = "incomplete"
-host = "covered"
-async = "incomplete"
-depends-on = ["rf-channel-readiness", "active-interrupt-runtime"]
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-dataplane.md",
-]
-gaps = [
-  { axis = "implementation", id = "phy-ready-whole-radio-mac-composition-missing" },
-  { axis = "implementation", id = "public-operational-mac-service-missing" },
-  { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
-  { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
-  { axis = "async", id = "bounded-async-evidence-missing" },
-]
-
-[[capabilities.source-contracts]]
-id = "ieee802154-mac-operation-subset"
-composition = "production"
-scope = "The lower MAC actor and executor own RX without automatic ACK direct or CCA-gated TX ACK reception and DMA completion transitions"
-limits = "Lower operation ownership does not compose the RF-ready public service; automatic ACK generation CSMA/CA source matching timed operations and security are not implied"
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
-  "crates/hardware/esp32s31/driver/ieee802154/runtime/src/pac_command_executor.rs",
-  "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
-]

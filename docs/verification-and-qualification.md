@@ -42,6 +42,13 @@ it. This reference is not a readiness dependency: narrower implemented facts
 do not close broader incomplete capabilities, and related scopes remain
 separate assertions.
 
+A source-only catalog may own such a fact without creating a qualification
+target. Every static or program input that consumes the fact names its owner
+catalog explicitly. For example, the coexistence catalog owns the diagnostic
+timer bridge used by the Bluetooth declaration and the coexistence and
+whole-radio views. Its validation-only MMIO composition remains distinct from
+a production RF grant or joint-radio lifecycle.
+
 ## Agreement with feature inventories
 
 `FEATURES.md` and qualification describe the same implementation. For an

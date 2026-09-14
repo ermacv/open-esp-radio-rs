@@ -1,0 +1,398 @@
+schema = 2
+id = "esp32s31-whole-radio"
+
+[validation]
+verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+hil-catalog = "hil/scenarios"
+
+[[sections]]
+id = "whole-radio-overview"
+domain = "whole-radio"
+title = "ESP32-S31 radio subsystem source capabilities"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+overview = "This is the entry point for radio coverage and the shared ownership, clock and\npower lifecycle. Detailed PHY algorithms and protocol capabilities have one\ncanonical inventory each, linked below. HAL and PAC are implementation and\nownership layers, not additional feature inventories.\n\nThe current source supports bounded single-protocol operation and substantial\nshared primitives. It does not compose a complete multi-protocol lifetime:\nconcurrent owners, arbitration, sleep/wake, final shutdown and reconstruction\nremain incomplete. Cold initialization alone does not establish those stages."
+
+[[sections]]
+id = "whole-radio-coverage-index"
+domain = "whole-radio"
+title = "Coverage index"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+overview = "`IMPLEMENTED` denotes a complete source path only for the exact row scope.\n`PARTIAL` denotes a lower or narrower implementation with missing composition.\n`FAIL-CLOSED` denotes an explicit guard against activation/reuse; `ABSENT`\ndenotes no production owner for the named operation. None is a hardware\nqualification result. A register setter, host test or successful cold-start\ntransition cannot grant readiness to a different protocol or lifecycle stage."
+
+[[sections]]
+id = "whole-radio-exclusive-ownership-and-client-handoff"
+domain = "whole-radio"
+title = "Exclusive ownership and client handoff"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+
+[[sections]]
+id = "whole-radio-cold-power-and-clocks"
+domain = "whole-radio"
+title = "Cold power and clocks"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+overview = "`power::execute_owned` performs its ordered writes, then samples platform,\nmodem and shared semantic observations and checks the required postconditions.\nIt does not read back every intermediate write. Failure retains the owner for\nits supported retry path; a powered type is issued only after successful checks.\nProtocol-specific MAC clocks, RF calibration and IRQ/DMA activation retain their\nown owners and prerequisites."
+
+[[sections]]
+id = "whole-radio-active-operation-power-saving-and-shutdown"
+domain = "whole-radio"
+title = "Active operation, power saving and shutdown"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+overview = "Power saving has both shared and protocol-specific requirements. The shared\nsleep/wake transaction cannot substitute for TIM/TWT, Bluetooth link timing,\nIEEE receive windows or coexistence deadline policy. Conversely, implementing\nthose protocol policies does not establish shared RF shutdown or retention.\nChildren retain their precise statuses and link here for this common boundary."
+
+[[sections]]
+id = "whole-radio-concurrent-ownership-and-arbitration"
+domain = "whole-radio"
+title = "Concurrent ownership and arbitration"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+
+[[sections]]
+id = "whole-radio-evidence-and-implementation-ownership"
+domain = "whole-radio"
+title = "Evidence and implementation ownership"
+source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
+overview = "[HAL](../hal/src/owner.rs) defines semantic access and transitions. The\n[PAC ownership contract](../pac/README.md) and\n[reviewed register model](../../../../registers/esp32s31/model/device.toml) define\nwhich hardware words those transitions may access. DMA, IRQ and Embassy\nadapters provide implementation evidence for the capabilities above rather\nthan independent capability inventories.\n\n[Qualification](../../../../qualification/README.md) is the readiness authority.\nIts existing protocol manifests retain their current proof states; this map\ncreates no PHY, coex or whole-radio qualification target and makes no new HIL\nclaim. Complete concurrency and restart readiness require composed ownership\nand hardware evidence, not the union of individually implemented primitives."
+source-paths = [
+  "crates/hardware/esp32s31/hal/src/owner.rs",
+  "crates/hardware/esp32s31/pac/README.md",
+  "registers/esp32s31/model/device.toml",
+  "qualification/README.md",
+]
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-exclusive-radio-root-ownership"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Exclusive radio-root ownership"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[HAL ownership](../hal/src/owner.rs) and PAC root leases prevent a second safe hardware claim. This is exclusivity, not concurrent radio sharing."
+source-paths = [
+  "crates/hardware/esp32s31/hal/src/owner.rs",
+]
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-inactive-route-release-reselection"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Inactive route release/reselection"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Cold owners can return the protocol-neutral root and platform witness. Outstanding calibration restore state rejects release and retains the owner. This does not stop an active radio."
+source-paths = []
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-shared-rf-analog-borrow"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Shared RF/analog borrow"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "`PhyHal` / `SharedPhyHal` provide narrow access bounded by an owning protocol route. A borrow cannot acquire, release or recover its underlying PAC owner."
+source-paths = []
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-phy-client-acquire-release-state"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "PHY client acquire/release state"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[PHY ownership](../phy/FEATURES.md#lifecycle-boundaries) has typed acquisition, tracking and release bookkeeping. The production supervisor quiesces an idle Wi-Fi frontier, checks stopped MAC/RX hardware, releases the client and drives the final-client RF-close/cold-release chain. Multi-protocol client release remains uncomposed."
+source-paths = [
+  "crates/hardware/esp32s31/phy/FEATURES.md",
+]
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-protocol-specific-phy-handoff"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Protocol-specific PHY handoff"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "[PHY consumer matrix](../phy/FEATURES.md#protocol-consumer-composition) distinguishes Wi-Fi cold state, settled Bluetooth acquisition and incomplete IEEE timing/operational composition. Shared types do not make these paths equivalent."
+source-paths = [
+  "crates/hardware/esp32s31/phy/FEATURES.md",
+]
+
+[[items]]
+id = "whole-radio-exclusive-ownership-and-client-handoff-active-protocol-switch"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Active protocol switch"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No complete active-radio stop, RF/client release and transfer to another operational protocol is composed. Inactive root reselection is a narrower operation."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-cold-modem-phy-power-prerequisites"
+section = "whole-radio-cold-power-and-clocks"
+title = "Cold modem/PHY power prerequisites"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[HAL power sequence](../hal/src/power.rs) owns reset, PMU/ICG selection, bus/source clocks, shared clock maps and PHY/I2C prerequisites. Wi-Fi cold registers and IEEE task registers implement its backend. This does not assert that every protocol calls the same sequence."
+source-paths = [
+  "crates/hardware/esp32s31/hal/src/power.rs",
+]
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-modem-bus-clock-setup"
+section = "whole-radio-cold-power-and-clocks"
+title = "Modem bus clock setup"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "The finite power sequence enables register access and validates semantic state before issuing the powered owner."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-shared-modem-clock-map"
+section = "whole-radio-cold-power-and-clocks"
+title = "Shared modem clock map"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "The power sequence configures and checks the shared map. A cold sleep-state clock map is not a working sleep/wake policy."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-modem-source-clock-setup"
+section = "whole-radio-cold-power-and-clocks"
+title = "Modem source-clock setup"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Reviewed source selection is included in the cold transaction and checked in final readback. This is not live clock switching under multiple clients."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-baseband-reset-prerequisites"
+section = "whole-radio-cold-power-and-clocks"
+title = "Baseband reset prerequisites"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Reviewed cold reset pulses and released-state checks are source-owned. Complete runtime reset/quiescence across all radio clients is separate."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-phy-calibration-and-analog-i2c-clocks"
+section = "whole-radio-cold-power-and-clocks"
+title = "PHY calibration and analog-I2C clocks"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Cold setup establishes calibration clocks, the I2C source and retained master clock before PHY registration."
+source-paths = []
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-shared-clock-lifetime"
+section = "whole-radio-cold-power-and-clocks"
+title = "Shared clock lifetime"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[Platform ownership](../../../adapters/esp-hal/esp32s31/radio/README.md) uses route-owned dependencies and narrow reservations. Production adapters do not compose a general concurrent-client clock/power lifetime."
+source-paths = [
+  "crates/adapters/esp-hal/esp32s31/radio/README.md",
+]
+
+[[items]]
+id = "whole-radio-cold-power-and-clocks-cold-phy-registration"
+section = "whole-radio-cold-power-and-clocks"
+title = "Cold PHY registration"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "[PHY target runners](../phy/FEATURES.md) execute the bounded registration/calibration graph. Registration is not per-event RF readiness or proof of PLL lock."
+source-paths = [
+  "crates/hardware/esp32s31/phy/FEATURES.md",
+]
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Protocol active operation"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The linked protocol inventories define the supported subsets. Wi-Fi operation does not establish a reliable Bluetooth ACL link or a public IEEE 802.15.4 RF-ready service."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-shared-phy-tracking"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Shared PHY tracking"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "PHY has bounded target tracking invocations and client/deadline models. Complete periodic scheduling and final tracking teardown are not composed across protocols."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-calibration-state-cache"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Calibration state/cache"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "PHY owns schema- and identity-validated snapshots, cache export and cold partial replay. Cold release regenerates the cache from the final post-tracking state instead of returning the potentially stale cold-start snapshot. The cold graph restores semantic calibration products, rebuilds hardware-resident frequency/RX gain state and falls back to full calibration for invalid input. Retained RF wake keeps the same registered calibration epoch."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-shared-rf-powered-idle-frontier"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Shared RF powered-idle frontier"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "Final client release produces an affine owner proving an empty client set while retaining the physically powered radio and calibration state. Only this owner can enter the source-owned RF close transaction."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-rf-sleep-modem-power-down"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "RF sleep / modem power-down"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "PHY exposes exact RF close. The production Wi-Fi supervisor can either wake that closed RF domain while retaining registration, or continue through temperature-sensor shutdown, route-clock release, captured Wi-Fi clock/reset restoration and cold-owner reconstruction. These explicit idle transactions do not implement timed modem sleep or protocol power-save signaling."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-rf-wake-resume"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "RF wake / resume"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "PHY implements a fail-stop retained RF wake transaction and the production Wi-Fi supervisor composes it from a fully stopped, final-client frontier through Wi-Fi client reacquisition and RX restoration. Bluetooth and IEEE 802.15.4 resume, scheduled sleep, cancellation policy above the owner actor and hardware qualification remain incomplete."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-full-powered-shutdown"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Full powered shutdown"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The Wi-Fi production supervisor composes runtime/IRQ quiescence, last-client release, exact RF/analog shutdown, route-owned clock/reset restoration and cold-owner return. Bluetooth, IEEE 802.15.4 and shared-protocol shutdown remain uncomposed."
+source-paths = []
+
+[[items]]
+id = "whole-radio-active-operation-power-saving-and-shutdown-cold-reconstruction-after-shutdown"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Cold reconstruction after shutdown"
+status = "implemented"
+level = "composed-product"
+scope-and-limitations = "The idle control path invokes the source-owned shutdown and `restart_esp32s31_radio`, which captures the final post-tracking cache and feeds it directly into validated cold registration. Repeated hardware lifecycle evidence covers this Wi-Fi boundary."
+source-paths = []
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-wifi-bluetooth-concurrent-composition"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Wi-Fi + Bluetooth concurrent composition"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Current platform adapters independently own overlapping singleton types; the Bluetooth coordinator does not make a simultaneous Wi-Fi claim safe."
+source-paths = []
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-wifi-ieee-802-15-4-concurrent-composition"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Wi-Fi + IEEE 802.15.4 concurrent composition"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No complete joint platform ownership and RF arbitration lifecycle exists."
+source-paths = []
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-bluetooth-ieee-802-15-4-concurrent-composition"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Bluetooth + IEEE 802.15.4 concurrent composition"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No complete paired-radio owner and arbitration runtime exists."
+source-paths = []
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-triple-radio-composition"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Triple-radio composition"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Shared primitives and separate protocol paths do not compose all three clients."
+source-paths = []
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-coexistence-hardware-core-infrastructure"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Coexistence hardware/core infrastructure"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "[Coex inventory](coex/FEATURES.md) separates recovered tables/timers, validation-only HAL access and the absent live request/grant/release integration."
+source-paths = [
+  "crates/hardware/esp32s31/driver/coex/FEATURES.md",
+]
+
+[[items]]
+id = "whole-radio-concurrent-ownership-and-arbitration-external-rf-arbitration-boundary"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "External RF arbitration boundary"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "External coexistence transactions are investigated, but their platform-owned register/pin and activation lifetime is not published. This does not claim a generic antenna-switch API."
+source-paths = []
+
+[[items]]
+id = "whole-radio-bounded-bluetooth-initial-phy-handoff"
+section = "whole-radio-exclusive-ownership-and-client-handoff"
+title = "Bounded Bluetooth initial PHY handoff"
+source-fact = "bluetooth-initial-phy-handoff"
+
+[[items]]
+id = "whole-radio-diagnostic-coexistence-timer-bridge"
+section = "whole-radio-concurrent-ownership-and-arbitration"
+title = "Validation-only coexistence timer bridge"
+source-fact = "coex-timer-validation-bridge"
+
+[[references]]
+id = "whole-radio-coverage-index-whole-radio"
+section = "whole-radio-coverage-index"
+title = "Whole radio"
+kind = "source-reference"
+details = "Inventory: This document\n\nCurrent qualification authority: No standalone radio target; protocol requirements below apply to their exact scopes"
+source-paths = []
+
+[[references]]
+id = "whole-radio-coverage-index-shared-phy"
+section = "whole-radio-coverage-index"
+title = "Shared PHY"
+kind = "source-reference"
+details = "Inventory: [RF, analog and calibration](../phy/FEATURES.md)\n\nCurrent qualification authority: No standalone PHY target; protocol targets contain shared-PHY requirements"
+source-paths = [
+  "crates/hardware/esp32s31/phy/FEATURES.md",
+]
+
+[[references]]
+id = "whole-radio-coverage-index-coexistence"
+section = "whole-radio-coverage-index"
+title = "Coexistence"
+kind = "source-reference"
+details = "Inventory: [Arbitration and integration](coex/FEATURES.md)\n\nCurrent qualification authority: No standalone coex target; Bluetooth includes an incomplete coexistence capability"
+source-paths = [
+  "crates/hardware/esp32s31/driver/coex/FEATURES.md",
+]
+
+[[references]]
+id = "whole-radio-coverage-index-wifi"
+section = "whole-radio-coverage-index"
+title = "Wi-Fi"
+kind = "source-reference"
+details = "Inventory: [IEEE 802.11](ieee80211/FEATURES.md)\n\nCurrent qualification authority: [wifi-sta.toml](../../../../qualification/targets/esp32s31/wifi-sta.toml)"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md",
+  "qualification/targets/esp32s31/wifi-sta.toml",
+]
+
+[[references]]
+id = "whole-radio-coverage-index-bluetooth"
+section = "whole-radio-coverage-index"
+title = "Bluetooth"
+kind = "source-reference"
+details = "Inventory: [LE and Classic](bluetooth/FEATURES.md)\n\nCurrent qualification authority: [bluetooth-le.toml](../../../../qualification/targets/esp32s31/bluetooth-le.toml); no Classic qualification claim"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md",
+  "qualification/targets/esp32s31/bluetooth-le.toml",
+]
+
+[[references]]
+id = "whole-radio-coverage-index-ieee-802-15-4"
+section = "whole-radio-coverage-index"
+title = "IEEE 802.15.4"
+kind = "source-reference"
+details = "Inventory: [Radio/MAC](ieee802154/FEATURES.md)\n\nCurrent qualification authority: [ieee802154.toml](../../../../qualification/targets/esp32s31/ieee802154.toml)"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md",
+  "qualification/targets/esp32s31/ieee802154.toml",
+]

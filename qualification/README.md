@@ -32,9 +32,25 @@ axes; unselected inventory entries have no readiness value.
 
 The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 68 existing
 Bluetooth LE qualification declarations and the wider LE, Classic and Host-only
-source inventory. The LE program loads it together with the Wi-Fi/PHY catalog
-only to reuse the exact `bluetooth-initial-phy-handoff` source fact; that lower
-implemented handoff does not promote the incomplete common-PHY lifetime.
+source inventory. The LE program loads it together with the Wi-Fi/PHY and
+[coexistence](catalog/esp32s31/coex.toml) catalogs to reuse the exact
+`bluetooth-initial-phy-handoff` and diagnostic
+`coex-timer-validation-bridge` source facts. Neither lower fact promotes the
+incomplete common-PHY or coexistence lifetime.
+
+The coexistence catalog and the
+[whole-radio catalog](catalog/esp32s31/whole-radio.toml) are source-inventory
+owners, not qualification programs. They add no capability declaration or
+readiness authority. Whole-radio views load the Wi-Fi/PHY and coexistence
+catalogs explicitly because they project facts owned there; a missing fact
+owner is an error rather than an omitted row.
+
+The [IEEE 802.15.4 catalog](catalog/esp32s31/ieee802154.toml) owns the existing
+six-capability radio/MAC program and its wider PHY, CCA, dataplane, filtering,
+timing, security, power, coexistence and Host-only source inventory. Its
+`ieee802154-registered-timing-entry` and
+`ieee802154-mac-operation-subset` facts expose implemented lower operations
+without promoting their incomplete RF-ready and public-dataplane parents.
 
 Static catalog validation checks every declaration, dependency graph, source
 contract, disposition mapping, HIL scenario reference and inventory path
@@ -54,11 +70,37 @@ cargo qualification catalog render \
 
 cargo qualification catalog check \
   --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --catalog qualification/catalog/esp32s31/coex.toml \
   --catalog qualification/catalog/esp32s31/bluetooth.toml
 
 cargo qualification catalog render \
   --manifest qualification/targets/esp32s31/bluetooth-le.toml \
   --out target/qualification/catalog/bluetooth-le
+
+cargo qualification catalog check \
+  --catalog qualification/catalog/esp32s31/ieee802154.toml
+
+cargo qualification catalog render \
+  --manifest qualification/targets/esp32s31/ieee802154.toml \
+  --out target/qualification/catalog/ieee802154
+
+cargo qualification catalog render \
+  --catalog qualification/catalog/esp32s31/coex.toml \
+  --out target/qualification/catalog/coex-static
+
+cargo qualification catalog render \
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --catalog qualification/catalog/esp32s31/coex.toml \
+  --catalog qualification/catalog/esp32s31/whole-radio.toml \
+  --out target/qualification/catalog/whole-radio-static
+
+cargo qualification catalog render \
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --catalog qualification/catalog/esp32s31/coex.toml \
+  --catalog qualification/catalog/esp32s31/bluetooth.toml \
+  --catalog qualification/catalog/esp32s31/whole-radio.toml \
+  --catalog qualification/catalog/esp32s31/ieee802154.toml \
+  --out target/qualification/catalog/esp32s31-radio-static
 ```
 
 Static render writes `domain-inventory.md`, `capability-catalog.md`, and
@@ -138,7 +180,7 @@ evaluator also derives a gap whenever required machine evidence is absent.
 
 A capability may attach `[[capabilities.source-contracts]]` reference entries
 to describe its hardware-facing implementation paths. The ESP32-S31 Wi-Fi
-manifest keeps SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache
+catalog keeps SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache
 handoff boundaries under `rx-tx-dma`. Cold calibration/cache, Bluetooth DTM and
 PHY lifetime, coexistence, and IEEE 802.15.4 lower operation contracts likewise
 make implemented subsets visible without promoting their broader parents.

@@ -816,6 +816,84 @@ scope-and-limitations = "No composition"
     }
 
     #[test]
+    fn migrated_coex_and_whole_radio_views_keep_references_separate_from_status() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let paths = [
+            "qualification/catalog/esp32s31/wifi-phy.toml",
+            "qualification/catalog/esp32s31/coex.toml",
+            "qualification/catalog/esp32s31/bluetooth.toml",
+            "qualification/catalog/esp32s31/whole-radio.toml",
+        ]
+        .map(PathBuf::from);
+        let catalog = CatalogView::load(&root, &paths).unwrap();
+        let reversed =
+            CatalogView::load(&root, &paths.into_iter().rev().collect::<Vec<_>>()).unwrap();
+        let output = root.join("target/qualification/catalog/test-whole-radio-render");
+        let rendered = render_domain(&catalog, &output, &root).unwrap();
+        assert_eq!(rendered, render_domain(&reversed, &output, &root).unwrap());
+        assert!(rendered.contains("## Domain: `coexistence`"));
+        assert!(rendered.contains("## Domain: `whole-radio`"));
+        assert!(
+            rendered.contains(
+                "Displayed rows: 347. Unique source facts: 344. Explicit projections: 5."
+            )
+        );
+        assert!(rendered.contains("- Canonical source fact: `coex-timer-validation-bridge`"));
+        assert!(rendered.contains("- Canonical source fact: `bluetooth-initial-phy-handoff`"));
+
+        let reference_id = "coex-official-coexistence-scenario-scope-wifi-sta-scan-connecting-connected-ble-scan-advertising-connected";
+        let reference_start = rendered.find(&format!("#### {reference_id}\n")).unwrap();
+        let reference_tail = &rendered[reference_start..];
+        let reference_end = reference_tail[5..]
+            .find("\n#### ")
+            .map_or(reference_tail.len(), |index| index + 5);
+        let reference = &reference_tail[..reference_end];
+        assert!(reference.contains("- Reference kind: `source-reference`"));
+        assert!(reference.contains("Vendor classification: `Y`"));
+        assert!(!reference.contains("Source status"));
+    }
+
+    #[test]
+    fn migrated_ieee802154_view_keeps_host_and_reference_boundaries() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let catalog = CatalogView::load(
+            &root,
+            &[PathBuf::from(
+                "qualification/catalog/esp32s31/ieee802154.toml",
+            )],
+        )
+        .unwrap();
+        let output = root.join("target/qualification/catalog/test-ieee802154-render");
+        let rendered = render_domain(&catalog, &output, &root).unwrap();
+        assert!(rendered.contains("## Domain: `ieee802154`"));
+        assert!(rendered.contains("| ieee802154 | HOST-ONLY | 3 |"));
+        assert!(
+            rendered
+                .contains("Displayed rows: 44. Unique source facts: 44. Explicit projections: 2.")
+        );
+        assert!(rendered.contains("- Canonical source fact: `ieee802154-registered-timing-entry`"));
+        assert!(rendered.contains("- Canonical source fact: `ieee802154-mac-operation-subset`"));
+
+        let mapping_id =
+            "ieee802154-qualification-scope-mapping-clocks-reset-and-masked-foundation";
+        let mapping_start = rendered.find(&format!("#### {mapping_id}\n")).unwrap();
+        let mapping_tail = &rendered[mapping_start..];
+        let mapping_end = mapping_tail[5..]
+            .find("\n#### ")
+            .map_or(mapping_tail.len(), |index| index + 5);
+        let mapping = &mapping_tail[..mapping_end];
+        assert!(mapping.contains("- Reference kind: `qualification-mapping`"));
+        assert!(mapping.contains("`clock-reset-foundation`"));
+        assert!(!mapping.contains("Source status"));
+    }
+
+    #[test]
     fn static_capability_view_preserves_explicit_evidence_and_na_reasons() {
         let root = RenderRoot::new("obligations");
         fs::write(

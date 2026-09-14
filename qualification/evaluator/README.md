@@ -41,7 +41,9 @@ Catalog source facts provide a narrow reuse mechanism for exact matching source
 scopes. A fact owns one status, level and source contract; inventory projections
 and catalog capability `source-fact-refs` cannot override it. Related or broader
 scopes remain independent declarations, and an implemented fact does not
-promote a parent capability or any readiness axis.
+promote a parent capability or any readiness axis. Source-only domain catalogs
+may own facts without adding qualification capabilities; consumers must load
+those catalogs explicitly.
 
 HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the current clean repository, and the recorded

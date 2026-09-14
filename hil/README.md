@@ -12,6 +12,7 @@ decision.
 | Understand execution, cleanup and bundle integrity | [Execution and evidence architecture](host/architecture.md) | Reading only |
 | Inspect scenario definitions | [Scenario catalog](scenarios/README.md) | Reading only |
 | Configure the lab and run commands | [Host setup and operations](host/README.md) | The guide labels build, fixture and DUT effects |
+| Preview or install Linux fixture software | [Canonical fixture installation](host/README.md#linux-fixture-software-installation) | Dry-run is offline; installation uses interactive privilege but no RF |
 | Build or understand target firmware | [ESP32-S31 target](targets/esp32s31/README.md) | Build-only sections are separate from flash/run sections |
 | Install or operate the Linux network fixture | [`linux-net`](host/linux-net/) and its checked helper interface | Requires explicit host setup and, for installation, privileges |
 | Install or operate the Bluetooth fixture | [Linux Bluetooth setup](host/linux-bluetooth/README.md) | May reset or reconfigure the selected adapter |

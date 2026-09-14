@@ -64,6 +64,14 @@ fn main() {
         println!("{}", model::HELPER_CAPABILITIES);
         return;
     }
+    #[cfg(target_os = "linux")]
+    let _software = match acquire_software_lease() {
+        Ok(lease) => lease,
+        Err(error) => {
+            eprintln!("Bluetooth fixture software lease: {error}");
+            std::process::exit(1);
+        }
+    };
     if let Command::ConnectReset {
         adapter,
         peer,
@@ -121,6 +129,27 @@ fn main() {
     if !report.passed(adapter) {
         std::process::exit(1);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_software_lease() -> Result<std::fs::File> {
+    use std::os::unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _};
+
+    let path = "/run/open-radio-fixture/linux-bluetooth.session.lock";
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.file_type().is_file()
+        || metadata.uid() != 0
+        || metadata.gid() != 0
+        || metadata.mode() & 0o777 != 0o644
+    {
+        return Err("installation lease has unsafe ownership or mode".into());
+    }
+    fs2::FileExt::try_lock_shared(&file)?;
+    Ok(file)
 }
 
 #[cfg(test)]

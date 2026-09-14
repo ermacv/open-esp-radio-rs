@@ -1,20 +1,28 @@
 # Linux Bluetooth fixture
 
-On Linux, build and install the narrow helper from the repository root:
+Use the canonical [Linux fixture software installation](../README.md#linux-fixture-software-installation)
+route from the repository root:
 
 ```console
-cargo build -p open-esp-radio-hil-runner --bin open-radio-bluetooth
-sudo hil/host/linux-bluetooth/install.sh
+cargo hil fixture install --provider linux-bluetooth --dry-run
+cargo hil fixture install --provider linux-bluetooth
 cargo hil fixture bluetooth-check --adapter hci0
 ```
 
-Installation grants the invoking operator passwordless access only to the
-helper's finite `check --adapter hciN` and `connect-reset --adapter hciN`
-operations. The unprivileged `capabilities` command lets `cargo hil doctor`
-reject a stale helper before it accesses hardware. It does not grant root access
-to the general HIL runner. Reinstall after changing the helper. The adapter
-must be dedicated to the test: existing connections and a hardware rfkill
-block cause rejection before changing its state.
+Installation builds the helper without privileges, then uses one interactive
+sudo handoff for versioned activation. The policy defaults to the dedicated
+`hci0`; pass a repeated explicit `--adapter hciN` to admit other locally chosen
+controllers. The old wildcard adapter grant is not retained. The helper's
+finite parser remains the final boundary for peer addresses, hold duration and
+termination mode. The unprivileged `capabilities` operation lets the installer
+and `cargo hil doctor` reject a stale helper without opening an adapter.
+
+The adapter must be dedicated to the test. Existing connections and a hardware
+rfkill block cause an operational check to reject or restore state; installation
+itself does not discover, reset or exercise the adapter and performs no RF test.
+The required runtime tools are Linux Bluetooth management/HCI interfaces,
+`rfkill`, ordinary interactive `sudo` and `visudo`. The installer grants no
+access to Cargo, the general HIL runner, itself or a shell.
 
 The helper locks the adapter, snapshots power and soft rfkill, unblocks it,
 powers down the kernel controller and acquires the exclusive HCI user channel.

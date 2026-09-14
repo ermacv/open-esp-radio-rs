@@ -75,7 +75,7 @@ pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
 
 fn checked_report(success: bool, adapter: Adapter, bytes: &[u8]) -> crate::Result<Check> {
     let report: Check = serde_json::from_slice(bytes).map_err(|error| {
-        format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with sudo hil/host/linux-bluetooth/install.sh after building open-radio-bluetooth")
+        format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with cargo hil fixture install --provider linux-bluetooth")
     })?;
     if !success || !report.passed(adapter) {
         return Err(format!(
@@ -91,7 +91,7 @@ pub(crate) fn preflight(adapter: Adapter) -> crate::Result<()> {
     const HELPER: &str = "/usr/local/libexec/open-radio-bluetooth";
     if !Path::new(HELPER).is_file() {
         return Err(
-            "install the Bluetooth helper with sudo hil/host/linux-bluetooth/install.sh".into(),
+            "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
         );
     }
     let mut capabilities = Command::new(HELPER);
@@ -111,7 +111,7 @@ pub(crate) fn preflight(adapter: Adapter) -> crate::Result<()> {
     let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
     if !output.status.success() {
         return Err(
-            "install the Bluetooth helper with sudo hil/host/linux-bluetooth/install.sh".into(),
+            "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
         );
     }
     if !Path::new("/sys/class/bluetooth")
@@ -127,7 +127,7 @@ fn require_helper_capabilities(success: bool, stdout: &[u8]) -> crate::Result<()
     if success && stdout == format!("{}\n", model::HELPER_CAPABILITIES).as_bytes() {
         return Ok(());
     }
-    Err("installed Bluetooth helper is incompatible; rebuild open-radio-bluetooth and rerun sudo hil/host/linux-bluetooth/install.sh".into())
+    Err("installed Bluetooth helper is incompatible; rerun cargo hil fixture install --provider linux-bluetooth".into())
 }
 
 pub(crate) fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
@@ -149,7 +149,7 @@ pub(crate) fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
     ]);
     let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
     if !output.status.success() {
-        return Err("installed Bluetooth helper lacks connect-reset permission; rerun sudo hil/host/linux-bluetooth/install.sh".into());
+        return Err("installed Bluetooth helper lacks connect-reset permission; rerun cargo hil fixture install --provider linux-bluetooth with the selected --adapter".into());
     }
     Ok(())
 }
@@ -225,7 +225,7 @@ pub(crate) fn connect_reset_in(
         )?;
         let status = child.wait_timeout(Some(Duration::from_secs(45)))?;
         let report: model::ConnectionReset = serde_json::from_slice(&fs::read(output.join("helper.json"))?)
-            .map_err(|error| format!("invalid connect-reset report ({error}); rebuild open-radio-bluetooth and run sudo hil/host/linux-bluetooth/install.sh"))?;
+            .map_err(|error| format!("invalid connect-reset report ({error}); rerun cargo hil fixture install --provider linux-bluetooth"))?;
         if !status.success() || !report.passed(adapter, peer, hold_ms, termination) {
             return Err(format!(
                 "connect-reset failed or incomplete: {}",

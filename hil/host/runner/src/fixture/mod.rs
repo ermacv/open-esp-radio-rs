@@ -12,6 +12,7 @@ pub(crate) mod openwrt_ap;
 mod openwrt_capture;
 pub(crate) mod openwrt_fixture;
 pub(crate) mod openwrt_tx_monitor;
+pub(crate) mod software;
 pub(crate) mod station_fixture;
 
 #[cfg(all(test, unix))]

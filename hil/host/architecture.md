@@ -10,6 +10,19 @@ UART evidence. `linux-net/` contains only privileged fixture operations.
 adapter checker; its Rust
 implementation belongs to the runner's `fixture/bluetooth/` module.
 
+Fixture installation has a separate ownership boundary. The general runner
+owns the offline provider plan, unprivileged locked build, content-addressed
+bundle and foreground sudo handoff. The narrow `open-radio-fixture-install`
+binary owns only fixed Linux destinations, root-owned import, candidate/effective
+policy validation, generation activation, recovery and the installation
+receipt. It cannot select an arbitrary root, output path or command. A single
+persisted journal covers policy and stable links; the atomic `current` symlink
+switch is the commit point. Previous generations remain available for rollback.
+One root-owned lock serializes all applies. Shared provider software leases span
+HIL fixture/run ownership, while apply requires the selected provider's
+exclusive lease. These locks never acquire a device or replace the physical
+fixture leases below.
+
 The runner entry point in `runner/src/main.rs` only wires modules and maps the
 top-level result to the process exit status. `runner/src/command.rs` owns CLI
 startup and command-specific dispatch. Run selection and the suite/scenario/
@@ -56,6 +69,10 @@ Public commands:
 
 ```console
 cargo hil doctor
+cargo hil fixture install --provider linux-net --dry-run
+cargo hil fixture install --provider linux-bluetooth --dry-run
+cargo hil fixture install --provider linux-net
+cargo hil fixture install --provider linux-bluetooth
 cargo hil fixture bluetooth-check --adapter hci0
 cargo hil doctor timebase
 cargo hil plan udp-rx-ht40-ceiling
@@ -311,8 +328,10 @@ The laptop helper contract is schema 6. Its `client` action returns status 10
 only when a prepared client exhausts the association wait; command failures
 and malformed supplicant status are infrastructure errors. `doctor` and the
 selected run preflight reject older helpers before flashing or resetting the DUT.
-Provision it with `sudo hil/host/linux-net/install.sh`
-from the repository root before using laptop client scenarios.
+Provision it with `cargo hil fixture install --provider linux-net`
+from the repository root before using laptop client scenarios. Installation
+performs software-only verification; it never substitutes for this helper
+preflight or a fixture/hardware check.
 
 `oer-process` owns local child process groups, drains captured stdout/stderr
 concurrently and stops descendants on cancellation, deadlines or owner drop.

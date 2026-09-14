@@ -1,7 +1,7 @@
 # Linux fixture hostapd
 
 `cargo xtask build hostapd` owns downloading, SHA-256 verification, patching,
-configuration, compilation and parser verification. `cargo hil fixture install-host`
+configuration, compilation and parser verification. `cargo hil fixture install --provider linux-net`
 invokes that build before handing the terminal to sudo. No prebuilt binary from
 `/tmp` or an unrelated system package is used.
 
@@ -18,7 +18,9 @@ The provenance records source/config/patch/builder hashes, compiler and library
 versions, and the resulting binary hash. Reuse requires matching inputs and
 binary hash. Build outputs use the current Linux compiler and system libraries;
 this does not promise identical binaries across different host toolchains.
-The installer copies provenance beside `/usr/local/libexec/open-radio-hostapd`.
+The installer copies provenance and hostapd into the same active root-owned
+generation as the network helper; the stable path resolves through that
+generation.
 
 The runner selects `noscan=0` for normal coexistence. Explicit `force-ht40`
 selects `noscan=1` for HT40 only. In this patch, `noscan` skips both the initial

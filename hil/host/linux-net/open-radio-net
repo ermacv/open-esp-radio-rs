@@ -5,7 +5,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 LC_ALL=C
 export LC_ALL
 
-HOSTAPD=/usr/local/libexec/open-radio-hostapd
 HOSTAPD_PID=/run/open-radio-hostapd.pid
 DNSMASQ_PID=/run/open-radio-dnsmasq.pid
 CTRL_DIR=/run/open-radio-hostapd
@@ -336,6 +335,26 @@ restore_managed() {
     /usr/bin/nmcli device set wlan0 managed yes
     restore_wifi_rfkill
 }
+
+if test "$1" != capabilities; then
+    exec 9</run/open-radio-fixture/linux-net.session.lock
+    if ! /usr/bin/flock -n -s 9; then
+        echo "linux-net fixture software is being updated" >&2
+        exit 75
+    fi
+
+    SELF=$(/usr/bin/readlink -f -- "$0")
+    GENERATION_DIR=$(/usr/bin/dirname -- "$SELF")
+    case "$GENERATION_DIR" in
+        /var/lib/open-radio/fixture/linux-net/generations/*) ;;
+        *)
+            echo "open-radio-net is not running from an installed generation" >&2
+            exit 70
+            ;;
+    esac
+    HOSTAPD="$GENERATION_DIR/open-radio-hostapd"
+    test -x "$HOSTAPD"
+fi
 
 case "$1" in
     capabilities)

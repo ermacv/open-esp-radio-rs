@@ -27,9 +27,10 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     }
     if required.probe_load {
         if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
-            return Err(
-                super::Error::new("probe load requires cargo hil fixture install-host").into(),
-            );
+            return Err(super::Error::new(
+                "probe load requires cargo hil fixture install --provider linux-net",
+            )
+            .into());
         }
         crate::image::require_program(std::ffi::OsStr::new("tshark"))?;
     }

@@ -9,6 +9,7 @@ use std::{
         unix::{fs::PermissionsExt, process::CommandExt},
     },
     process::{Child, Command, Stdio},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -24,6 +25,75 @@ impl Drop for Session {
         unsafe { libc::kill(-(self.0.id() as i32), libc::SIGKILL) };
         let _ = self.0.wait();
     }
+}
+
+#[test]
+fn cancellation_during_unprivileged_build_never_reaches_sudo_apply() {
+    let directory = tempfile::tempdir().unwrap();
+    let cargo = directory.path().join("cargo");
+    let started = directory.path().join("build-started");
+    let sudo_called = directory.path().join("sudo-called");
+    fs::write(
+        &cargo,
+        format!(
+            "#!/bin/sh\n: >'{}'\nwhile :; do /bin/sleep 1; done\n",
+            started.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700)).unwrap();
+    let sudo = directory.path().join("sudo");
+    fs::write(
+        &sudo,
+        format!("#!/bin/sh\n: >'{}'\nexit 99\n", sudo_called.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&sudo, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
+    command
+        .args(["fixture", "install", "--provider", "linux-net"])
+        .env("CARGO", cargo)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", directory.path().display()),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // SAFETY: the child performs only setsid before exec and becomes the sole
+    // leader of a private process group owned by this test.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut session = Session(command.spawn().unwrap());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !started.exists() {
+        assert!(Instant::now() < deadline, "installer build did not start");
+        thread::sleep(Duration::from_millis(10));
+    }
+    // SAFETY: session still owns this live child PID; signal only that process.
+    assert_eq!(
+        unsafe { libc::kill(session.0.id() as i32, libc::SIGTERM) },
+        0
+    );
+    let status = loop {
+        if let Some(status) = session.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "cancelled installer did not exit"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(status.code(), Some(130));
+    assert!(!sudo_called.exists());
 }
 
 fn terminal() -> (File, File) {
@@ -55,7 +125,7 @@ fn terminal() -> (File, File) {
 }
 
 fn read_until(master: &mut File, transcript: &mut Vec<u8>, marker: &[u8]) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(60);
     while !transcript
         .windows(marker.len())
         .any(|window| window == marker)
@@ -95,15 +165,16 @@ fn read_until(master: &mut File, transcript: &mut Vec<u8>, marker: &[u8]) {
 fn installer_keeps_terminal_control_hides_input_and_preserves_exit_status() {
     let directory = tempfile::tempdir().unwrap();
     let sudo = directory.path().join("sudo");
-    let cargo = directory.path().join("cargo");
-    fs::write(&cargo, "#!/bin/sh\ncase \"$*\" in 'xtask build hostapd'|'build --locked -p open-esp-radio-hil-runner --bin open-radio-probe --target-dir target/hil/fixture-build') exit 0;; *) exit 98;; esac\n").unwrap();
-    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         &sudo,
         r#"#!/bin/sh
 set -eu
-test "$#" -eq 1
-case "$1" in */hil/host/linux-net/install.sh) ;; *) exit 98;; esac
+test "$#" -eq 5
+case "$1" in */target/hil/fixture-build/debug/open-radio-fixture-install) ;; *) exit 98;; esac
+test "$2" = --provider
+test "$3" = linux-bluetooth
+test "$4" = --bundle
+test -f "$5/bundle.json"
 stty -echo
 printf 'fixture-password:'
 IFS= read -r token
@@ -118,14 +189,13 @@ exit 23
     let (mut master, slave) = terminal();
     let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
     command
-        .args(["fixture", "install-host"])
-        .env("CARGO", &cargo)
+        .args(["fixture", "install", "--provider", "linux-bluetooth"])
         .env(
             "PATH",
             format!("{}:/usr/bin:/bin", directory.path().display()),
         )
         .stdin(Stdio::from(slave.try_clone().unwrap()))
-        .stdout(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::piped())
         .stderr(Stdio::from(slave));
     // SAFETY: the child performs only async-signal-safe syscalls before exec.
     // It becomes the session leader and foreground owner of its private PTY.
@@ -145,4 +215,13 @@ exit 23
     read_until(&mut master, &mut transcript, b"fixture-authenticated");
     assert!(!String::from_utf8_lossy(&transcript).contains("fixture-test-token"));
     assert_eq!(session.0.wait().unwrap().code(), Some(23));
+    let mut machine_output = Vec::new();
+    session
+        .0
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_end(&mut machine_output)
+        .unwrap();
+    assert!(machine_output.is_empty());
 }

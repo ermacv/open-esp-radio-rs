@@ -12,7 +12,8 @@ hil/
 ├── scenarios/         versioned, non-secret host workloads and criteria
 ├── host/
 │   ├── runner/        build, flash and scenario orchestration
-│   └── linux-net/     privileged Linux AP/monitor fixture
+│   ├── linux-net/     privileged Linux AP/monitor fixture
+│   └── linux-bluetooth/ privileged Linux Bluetooth fixture
 └── targets/
     └── esp32s31/      current embedded target workspace
 ```
@@ -153,24 +154,111 @@ Diagnostic image features can change scheduling and linked code placement.
 Compare performance only with the recorded image/configuration identity; a
 more instrumented image is a separate experiment, not interchangeable evidence.
 
-The Linux helper is installed separately because its narrowly scoped AP,
-managed-client, monitor and USB-reset operations require root privileges:
+## Linux fixture software installation
+
+Linux network and Bluetooth fixtures share one provisioning workflow. Preview
+the exact provider plan first; these commands do not execute any listed build,
+capability, sudo or hardware step and do not load `hil/local.toml`:
+
+```console
+cargo hil fixture install --provider linux-net --dry-run
+cargo hil fixture install --provider linux-bluetooth --dry-run
+```
+
+Like every Cargo alias, `cargo hil` may compile the runner before it can print
+the plan. That Cargo startup is not an installer plan step. Missing helper
+binaries appear as `missing`, while present files remain `present-unverified`.
+
+Install exactly one provider with interactive authorization:
+
+```console
+cargo hil fixture install --provider linux-net
+cargo hil fixture install --provider linux-bluetooth
+```
+
+Bluetooth policy admits only named adapters. It defaults to the dedicated
+`hci0`; repeat `--adapter hciN` to install a sorted finite allow-list. This
+replaces the old broad `hci*` sudo rule. Reinstall with the adapters selected by
+the private lab configuration before using another controller. `install-host`
+remains an exact compatibility alias for `install --provider linux-net` only:
 
 ```console
 cargo hil fixture install-host
 ```
 
-`cargo hil doctor` also verifies the installed helper schema and its
-non-interactive sudo capability before a scenario takes ownership of WLAN.
+The tracked `linux-net/install.sh` and `linux-bluetooth/install.sh` entry points
+delegate to these Cargo commands when run unprivileged and reject a legacy
+`sudo install.sh` invocation. Linux is required; the installer does not claim
+support for another Unix host.
 
-The installer needs interactive sudo authorization. Routine scenarios use the
-installed narrow helper without prompting. Local Linux AP profiles are generated
-from the station credentials and `station_fixture.country`, `channel` and CIDR
-`address`; HT/HE mode comes from the scenario. The DHCP range excludes the AP
-address and stays inside its subnet. Static station addresses must agree with
-that subnet and gateway. The helper receives these values on stdin and keeps the
-temporary hostapd configuration under root-owned `/run` with private permissions;
-stop/cleanup removes it. No installed credential profiles are consumed.
+Preparation runs as the operator. Network preparation retains the pinned
+hostapd build, patch and provenance plus the locked probe build. Bluetooth
+preparation builds only the finite helper and installer with the same locked
+`target/hil/fixture-build` output; it does not build or download hostapd. The
+runner rejects an invocation already running as root before starting either
+build. It then transfers the foreground terminal to ordinary `sudo`; no
+password pipe or askpass path exists, and the general HIL runner never runs as
+root.
+
+The privileged apply owner imports the content-addressed bundle into
+`/var/lib/open-radio/fixture/<provider>/generations/`. It validates artifact
+bytes, root ownership/modes, the exact helper contract and a candidate policy
+against the effective sudoers policy before publication. Stable commands under
+`/usr/local` resolve through one root-owned `current` selector. Switching that
+selector is the commit point. The network helper resolves hostapd beside its own
+executable, so one invocation cannot select helper and daemon bytes from
+different generations.
+
+One persisted transaction journal covers stable links, policy and generation
+selection. Pre-commit failure restores the prior files and sudoers policy.
+Post-commit software verification failure rolls back; a receipt-write failure
+keeps the activated generation and leaves an explicit recovery-required journal.
+The next authorized install recovers that journal before considering a new
+bundle. The prior generation, including a copied legacy installation, is
+retained. Reinstalling the same bundle verifies it and refreshes its fixed-path
+receipt without switching generations. Generations are not automatically
+deleted while their lifetime is unknown.
+
+Every runner operation that may use a provider holds its shared software lease
+for the complete fixture/run boundary. All applies serialize through one
+root-owned installation lock, then installation requires the selected
+provider's exclusive lease and fails while such a session is active; it never
+stops hostapd, an adapter or another service to force an upgrade. A directly
+started network AP is also detected through its root-owned pid file. The lease
+is software-update ownership only and never acquires the DUT, opens SSH or
+discovers fixture hardware.
+
+After activation the installer checks installed bytes, policy and only the
+helper's non-hardware `capabilities` operation. It does not run `doctor`,
+`fixture check`, Bluetooth DTM/connect-reset, identity discovery, serial, HCI,
+SSH, network mutation, flashing or RF checks. The fixed root-owned receipt at
+`/var/lib/open-radio/fixture/<provider>/receipt.json` reports the generation,
+source dirty/content identity, artifact and policy hashes, previous generation,
+checks and terminal/recovery state. It contains no lab credentials and is not
+HIL evidence or qualification input. A successful receipt means software is
+installed consistently; privileged platform behavior and hardware acceptance
+remain separate operator checks.
+
+| Operation | Software/filesystem writes or privilege | Host network mutation | Adapter reset/rfkill | RF transmission | DUT required |
+| --- | --- | --- | --- | --- | --- |
+| `fixture install … --dry-run` | No installer step; Cargo may build the runner | No | No | No | No |
+| `fixture install --provider …` | Builds as user, then interactive privileged system writes | No | No | No | No |
+| installed helper `capabilities` | Read-only software inspection; network helper uses its existing finite sudo grant | No | No | No | No |
+| `fixture bluetooth-check` | Writes a local report and uses the finite helper grant | No | Yes, with restoration | Yes, bounded DTM TX | No |
+| `fixture check <scenario>` | Writes a local report and may use finite helper grants | Depends on scenario | Depends on scenario | Depends on scenario | No |
+| `run` / `run-all` | Builds and writes evidence; uses selected fixture grants | Depends on scenario | Depends on scenario | Yes for radio scenarios | Yes |
+
+`cargo hil doctor` verifies installed helper schemas and non-interactive finite
+sudo availability before a selected scenario takes ownership. It remains a
+separate readiness inspection, not post-install verification. Local Linux AP
+profiles are generated from station credentials and
+`station_fixture.country`, `channel` and CIDR `address`; HT/HE mode comes from
+the scenario. The DHCP range excludes the AP address and stays inside its
+subnet. Static station addresses must agree with that subnet and gateway. The
+helper receives these values on stdin and keeps the temporary hostapd
+configuration under root-owned `/run` with private permissions; stop/cleanup
+removes it. No installed credential profiles are consumed. The dedicated
+network provider continues to own only `wlan0`.
 
 The runner subscribes to hostapd control events, confirms ENABLED and actual
 HT/HE mode, WPA2, channel geometry and IPv4 address before workload execution.
@@ -233,7 +321,7 @@ packet. These are supplemental UART diagnostics, not MAC completion or host
 reception evidence. The current per-flow records do not correlate individual
 packets with hardware publication and completion.
 
-`cargo hil fixture install-host` first runs `cargo xtask build hostapd` without
+`cargo hil fixture install --provider linux-net` first runs `cargo xtask build hostapd` without
 root, then installs the resulting binary, build provenance and helper through
 interactive sudo. The build uses the pinned hostapd release and reviewed
 [coexistence patch](linux-net/hostapd/README.md). It requires a C compiler,
@@ -263,7 +351,7 @@ and 200 requests from distinct locally administered MACs at 6–6.995 s.
 The source uses event/deadline waits, rejects pacing lateness above 4 ms,
 and stops on controller EOF or cancellation.
 
-`cargo hil fixture install-host` builds and installs the bounded Rust helper
+`cargo hil fixture install --provider linux-net` builds and installs the bounded Rust helper
 `open-radio-probe`. The helper accepts no command-line arguments or arbitrary
 frame input. It checks the controlled `wlan0` association SSID/channel, owns
 a temporary monitor interface on the same PHY, and removes it before reporting

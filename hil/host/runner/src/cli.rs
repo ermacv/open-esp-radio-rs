@@ -193,8 +193,24 @@ pub(crate) enum FixtureCommand {
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
         hold_ms: u16,
     },
-    /// Install the repository-owned Linux fixture helper and its sudo policy.
-    InstallHost,
+    /// Prepare and install one versioned Linux fixture software bundle.
+    Install {
+        /// Finite Linux fixture provider to provision.
+        #[arg(long, value_enum)]
+        provider: open_esp_radio_hil_runner::fixture_install::Provider,
+        /// Print the offline plan without executing any installer step.
+        #[arg(long)]
+        dry_run: bool,
+        /// Bluetooth adapter admitted by the installed policy; defaults to hci0.
+        #[arg(long, value_name = "hciN")]
+        adapter: Vec<String>,
+    },
+    /// Compatibility alias for `install --provider linux-net`.
+    InstallHost {
+        /// Print the offline plan without executing any installer step.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
     Check { scenario: String },
 }

@@ -18,12 +18,38 @@ pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     output::reserve_machine_stdout()?;
     let _signals = oer_process::install_signal_handlers()?;
+    let command = match cli.command {
+        CliCommand::Fixture {
+            command:
+                crate::cli::FixtureCommand::Install {
+                    provider,
+                    dry_run,
+                    adapter,
+                },
+        } => return fixture::install::run(&root, provider, dry_run, &adapter),
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::InstallHost { dry_run },
+        } => {
+            return fixture::install::run(
+                &root,
+                open_esp_radio_hil_runner::fixture_install::Provider::LinuxNet,
+                dry_run,
+                &[],
+            );
+        }
+        command => command,
+    };
     let lab_path = cli
         .lab_config
         .unwrap_or(lab::config::LabConfig::default_path()?);
     let catalog_path = root.join("hil/scenarios");
 
-    match cli.command {
+    match command {
+        CliCommand::Fixture {
+            command:
+                crate::cli::FixtureCommand::Install { .. }
+                | crate::cli::FixtureCommand::InstallHost { .. },
+        } => unreachable!("install commands return before lab configuration is resolved"),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::ProbePlan,
         } => {
@@ -34,7 +60,12 @@ pub(crate) fn run() -> Result<()> {
         }
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::BluetoothCheck { adapter },
-        } => fixture::bluetooth::check(&root, adapter),
+        } => {
+            let _software = fixture::software::SoftwareLease::acquire_one(
+                open_esp_radio_hil_runner::fixture_install::Provider::LinuxBluetooth,
+            )?;
+            fixture::bluetooth::check(&root, adapter)
+        }
         CliCommand::Fixture {
             command:
                 crate::cli::FixtureCommand::BluetoothConnectReset {
@@ -42,23 +73,30 @@ pub(crate) fn run() -> Result<()> {
                     peer,
                     hold_ms,
                 },
-        } => fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms),
+        } => {
+            let _software = fixture::software::SoftwareLease::acquire_one(
+                open_esp_radio_hil_runner::fixture_install::Provider::LinuxBluetooth,
+            )?;
+            fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
+        }
         CliCommand::Archive { command } => crate::archive::run(&root, command),
-        CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::InstallHost,
-        } => fixture::install::run(&root),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id },
         } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
+            let required = lab::requirements::Requirements::for_scenario(selected);
+            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             fixture::prepared::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
-            lab::doctor::run(&root, &lab::config::LabConfig::load(&lab_path)?, &selected)
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let required = lab::requirements::Requirements::union(&selected);
+            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            lab::doctor::run(&root, &lab, &selected)
         }
         CliCommand::Plan(selection) => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
@@ -181,6 +219,7 @@ pub(crate) fn run() -> Result<()> {
             };
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::for_scenario(&selected);
+            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             fixture::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_one(&root, &lab, &catalog, &selected, firmware, invocation)
@@ -194,6 +233,7 @@ pub(crate) fn run() -> Result<()> {
             }
             .resolve(&catalog)?;
             let required = lab::requirements::Requirements::union(&selected);
+            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             fixture::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_all(

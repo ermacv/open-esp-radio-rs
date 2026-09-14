@@ -17,6 +17,10 @@ path = "src/fixture/bluetooth/helper.rs"
 name = "open-radio-probe"
 path = "src/fixture/probe_load/helper.rs"
 
+[[bin]]
+name = "open-radio-fixture-install"
+path = "src/fixture_install/main.rs"
+
 [dependencies]
 bt-hci = "=0.10.1"
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }

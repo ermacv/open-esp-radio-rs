@@ -225,7 +225,7 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
     assert!(matches!(
         cli.command,
         CliCommand::Fixture {
-            command: FixtureCommand::InstallHost
+            command: FixtureCommand::InstallHost { dry_run: false }
         }
     ));
     let cli =
@@ -235,6 +235,50 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         CliCommand::Fixture { command: FixtureCommand::Check { scenario } }
             if scenario == "station-udp-tx-he20"
     ));
+}
+
+#[test]
+fn fixture_install_requires_a_finite_provider_and_preserves_the_net_alias() {
+    use open_esp_radio_hil_runner::fixture_install::Provider;
+
+    for (name, expected) in [
+        ("linux-net", Provider::LinuxNet),
+        ("linux-bluetooth", Provider::LinuxBluetooth),
+    ] {
+        let cli = Cli::try_parse_from([
+            "cargo-hil",
+            "fixture",
+            "install",
+            "--provider",
+            name,
+            "--dry-run",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            CliCommand::Fixture {
+                command: FixtureCommand::Install {
+                    provider,
+                    dry_run: true,
+                    ..
+                }
+            } if provider == expected
+        ));
+    }
+    assert!(Cli::try_parse_from(["cargo-hil", "fixture", "install", "--dry-run"]).is_err());
+    assert!(
+        Cli::try_parse_from(["cargo-hil", "fixture", "install", "--provider", "auto"]).is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "fixture",
+            "install-host",
+            "--provider",
+            "linux-bluetooth"
+        ])
+        .is_err()
+    );
 }
 
 #[test]

@@ -171,20 +171,20 @@ max_bytes = 13568
 reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
-function_contains = "::runtime::embassy::run_embassy_wifi_supervisor_actor"
-source_ends_with = ["crates/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+function_contains = "::runtime::embassy::actor::run_embassy_wifi_supervisor_actor"
+source_ends_with = ["crates/radio/src/runtime/embassy/actor.rs", "open-esp-radio-0.1.0/src/runtime/embassy/actor.rs"]
 max_bytes = 10496
 reason = "the generic actor retains one optional stopped owner across commands and transfers it in place through the cold-restart transaction; the correctness response union adds value-only observation state, its caller polls it through an opaque stack boundary and the concrete HIL runtime independently paints the 192-KiB PSRAM execution stack"
 
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
-source_ends_with = ["crates/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+source_ends_with = ["crates/radio/src/runtime/embassy/actor.rs", "open-esp-radio-0.1.0/src/runtime/embassy/actor.rs"]
 max_bytes = 12288
 reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded dual-VIF network, service-epoch, rate-control and AP retry-report state"
 
 [[reviewed_frames]]
-function_contains = "::runtime::embassy::finish_embassy_wifi_active_role"
-source_ends_with = ["crates/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+function_contains = "::runtime::embassy::active::finish_embassy_wifi_active_role"
+source_ends_with = ["crates/radio/src/runtime/embassy/active.rs", "open-esp-radio-0.1.0/src/runtime/embassy/active.rs"]
 max_bytes = 10752
 reason = "generic terminal transaction retains the exact expanded stopped-or-faulted role frontier until the application response is acknowledged; it runs on the PSRAM task stack and cannot expose a partial owner graph"
 

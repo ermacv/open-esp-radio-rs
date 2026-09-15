@@ -7,6 +7,17 @@ fn wifi_facade_preserves_implementation_type_identity() {
     let _: fn(radio::wifi::WifiConfig) -> radio::wifi::WifiConfig = through_facade;
 }
 
+#[cfg(feature = "upstream-xarxa")]
+#[test]
+fn embassy_radio_facade_preserves_supervisor_reexport_type_identity() {
+    let _: fn(
+        radio::runtime::embassy::EmbassyWifiSupervisorCommand,
+    ) -> oer::radio::runtime::embassy::EmbassyWifiSupervisorCommand = |command| command;
+    let _: fn(
+        oer::radio::runtime::embassy::EmbassyWifiSupervisorResponse<()>,
+    ) -> radio::runtime::embassy::EmbassyWifiSupervisorResponse<()> = |response| response;
+}
+
 #[cfg(feature = "wifi")]
 #[test]
 fn association_policy_and_wire_codec_share_the_same_types() {

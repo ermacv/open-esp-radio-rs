@@ -10,6 +10,17 @@ before stop completion; failure retains the faulted owner. Executor bindings
 depend on the public contracts within this crate, avoiding a dependency cycle
 with the generic Embassy Wi-Fi service crate.
 
+The stable `oer_radio::runtime::embassy` entry reexports declarations from
+private message, transport, stopped-dispatch, active-role and actor modules.
+The one-slot mailbox carries bounded value requests and reports, never physical
+owners. A caller cancelled after publication does not cancel the owner actor:
+the port consumes that stale completion before publishing another command.
+If the supervisor disappears during this reconciliation, the next unpublished
+request is returned as a typed rejection; disappearance after publication is
+reported as a faulted operation. The actor retains stopped, active-faulted and
+lifecycle-faulted owners separately, and acknowledges cooperative Stop only
+after classifying the returned owner frontier.
+
 Internal components use `oer_radio::wifi` and
 `oer_radio::runtime::embassy`. Applications use the separate
 [public facade](../oer/README.md), which exposes these same types without

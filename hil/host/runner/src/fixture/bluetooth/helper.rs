@@ -65,7 +65,18 @@ fn main() {
         return;
     }
     #[cfg(target_os = "linux")]
-    let _software = match acquire_software_lease() {
+    if std::env::var("OPEN_RADIO_GENERATION_BOUND").as_deref() != Ok("linux-bluetooth") {
+        use std::os::unix::process::CommandExt as _;
+        let error = std::process::Command::new("/usr/local/libexec/open-radio-bluetooth-launcher")
+            .args(std::env::args_os().skip(1))
+            .exec();
+        eprintln!("Bluetooth fixture launcher: {error}");
+        std::process::exit(1);
+    }
+    #[cfg(target_os = "linux")]
+    let _software = match open_esp_radio_hil_runner::fixture_install::launcher::adopt_lease(
+        "linux-bluetooth",
+    ) {
         Ok(lease) => lease,
         Err(error) => {
             eprintln!("Bluetooth fixture software lease: {error}");
@@ -129,27 +140,6 @@ fn main() {
     if !report.passed(adapter) {
         std::process::exit(1);
     }
-}
-
-#[cfg(target_os = "linux")]
-fn acquire_software_lease() -> Result<std::fs::File> {
-    use std::os::unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _};
-
-    let path = "/run/open-radio-fixture/linux-bluetooth.session.lock";
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-        .open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.file_type().is_file()
-        || metadata.uid() != 0
-        || metadata.gid() != 0
-        || metadata.mode() & 0o777 != 0o644
-    {
-        return Err("installation lease has unsafe ownership or mode".into());
-    }
-    fs2::FileExt::try_lock_shared(&file)?;
-    Ok(file)
 }
 
 #[cfg(test)]

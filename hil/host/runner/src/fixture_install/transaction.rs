@@ -4,11 +4,13 @@ use super::{InstallResult, Provider};
 use crate::Result;
 
 // Installation uses one persisted journal and immutable, root-owned generations.
-// Publishing `current` is the commit point: stable entry points already resolve
-// through it. Failures before that point restore the previous links and policy;
-// failures after it either verify the new generation, roll back, or retain the
-// journal as an explicit recovery-required state. The next apply recovers that
-// journal before starting new work, and the previous generation is not removed.
+// Publishing `current` is the commit point. Stable operational entry points
+// trampoline through fixed launchers, which select `current` only after shared
+// admission; auxiliary stable paths still resolve through it. Failures before
+// the commit restore the previous entries and policy; failures after it either
+// verify the new generation, roll back, or retain the journal as an explicit
+// recovery-required state. The next apply recovers that journal before starting
+// new work, and the previous generation is not removed.
 #[cfg(target_os = "linux")]
 mod linux {
     use std::{
@@ -185,7 +187,7 @@ mod linux {
         root: PathBuf,
         state_root: PathBuf,
         install_lock: PathBuf,
-        session_root: PathBuf,
+        legacy_session_root: PathBuf,
         sudoers_main: PathBuf,
         visudo: PathBuf,
         expected_uid: u32,
@@ -212,7 +214,7 @@ mod linux {
                 root: PathBuf::from("/"),
                 state_root: PathBuf::from("/var/lib/open-radio/fixture").join(provider.as_str()),
                 install_lock: PathBuf::from("/var/lib/open-radio/fixture/install.lock"),
-                session_root: PathBuf::from("/run/open-radio-fixture"),
+                legacy_session_root: PathBuf::from("/run/open-radio-fixture"),
                 sudoers_main: PathBuf::from("/etc/sudoers"),
                 visudo,
                 expected_uid: 0,
@@ -227,7 +229,6 @@ mod linux {
             for directory in [
                 root.join("var/lib/open-radio/fixture")
                     .join(provider.as_str()),
-                root.join("run/open-radio-fixture"),
                 root.join("etc/sudoers.d"),
                 root.join("usr/local/libexec"),
                 root.join("usr/local/sbin"),
@@ -246,7 +247,7 @@ mod linux {
                     .join("var/lib/open-radio/fixture")
                     .join(provider.as_str()),
                 install_lock: root.join("var/lib/open-radio/fixture/install.lock"),
-                session_root: root.join("run/open-radio-fixture"),
+                legacy_session_root: root.join("run/open-radio-fixture"),
                 sudoers_main,
                 visudo: PathBuf::from("/usr/bin/false"),
                 expected_uid: uid,
@@ -272,6 +273,15 @@ mod linux {
 
         fn journal(&self) -> PathBuf {
             self.state_root.join("transaction.json")
+        }
+
+        fn session_lock(&self) -> PathBuf {
+            self.state_root.join("session.lock")
+        }
+
+        fn legacy_session_lock(&self, provider: Provider) -> PathBuf {
+            self.legacy_session_root
+                .join(format!("{}.session.lock", provider.as_str()))
         }
 
         fn policy(&self, provider: Provider) -> PathBuf {
@@ -316,9 +326,7 @@ mod linux {
         })?;
         let _install_lock = ExclusiveLock(install_lock);
         let session_lock = open_lock(
-            &layout
-                .session_root
-                .join(format!("{}.session.lock", provider.as_str())),
+            &layout.session_lock(),
             0o644,
             layout.expected_uid,
             layout.expected_gid,
@@ -327,6 +335,7 @@ mod linux {
             format!("provider {provider} is in use by an active HIL session: {error}")
         })?;
         let _session_lock = ExclusiveLock(session_lock);
+        let _legacy_session_lock = acquire_legacy_session_lock(layout, provider)?;
         effects.require_provider_idle(provider)?;
 
         recover_if_needed(layout, provider, effects)?;
@@ -431,7 +440,7 @@ mod linux {
 
         let result = (|| -> Result<()> {
             effects.checkpoint(Stage::Imported)?;
-            prepare_stable_links(layout, &journal)?;
+            prepare_stable_entries(layout, &journal)?;
             journal.phase = Phase::LinksPrepared;
             write_journal(layout, &journal)?;
             effects.checkpoint(Stage::LinksPrepared)?;
@@ -496,7 +505,6 @@ mod linux {
             (&layout.generations(), 0o755),
             (&layout.transactions(), 0o700),
             (&layout.receipts(), 0o755),
-            (&layout.session_root, 0o755),
         ] {
             create_secure_directory(layout, directory, mode)?;
         }
@@ -517,6 +525,45 @@ mod linux {
                 .ok_or("policy target has no parent")?,
         )?;
         Ok(())
+    }
+
+    fn acquire_legacy_session_lock(
+        layout: &Layout,
+        provider: Provider,
+    ) -> Result<Option<ExclusiveLock>> {
+        let path = layout.legacy_session_lock(provider);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+            Ok(_) => {}
+        }
+        require_secure_directory(layout, &layout.legacy_session_root, 0o755)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+            .open(&path)
+            .map_err(|error| {
+                format!(
+                    "cannot safely open legacy provider lease {}: {error}",
+                    path.display()
+                )
+            })?;
+        let metadata = file.metadata()?;
+        if !metadata.file_type().is_file()
+            || metadata.uid() != layout.expected_uid
+            || metadata.gid() != layout.expected_gid
+            || metadata.mode() & 0o777 != 0o644
+        {
+            return Err(format!(
+                "legacy provider lease has unsafe ownership or mode: {}",
+                path.display()
+            )
+            .into());
+        }
+        fs2::FileExt::try_lock_exclusive(&file).map_err(|error| {
+            format!("provider {provider} is in use by a legacy active HIL session: {error}")
+        })?;
+        Ok(Some(ExclusiveLock(file)))
     }
 
     fn ensure_destination_parent(layout: &Layout, directory: &Path) -> Result<()> {
@@ -604,22 +651,40 @@ mod linux {
     }
 
     fn open_lock(path: &Path, mode: u32, uid: u32, gid: u32) -> Result<File> {
-        let file = OpenOptions::new()
-            .create(true)
+        let (file, created) = match OpenOptions::new()
+            .create_new(true)
             .read(true)
             .write(true)
             .mode(mode)
             .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-            .open(path)?;
+            .open(path)
+        {
+            Ok(file) => (file, true),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+                    .open(path)?,
+                false,
+            ),
+            Err(error) => return Err(error.into()),
+        };
+        if created {
+            fs::set_permissions(path, permissions(mode))?;
+        }
         let metadata = file.metadata()?;
-        if !metadata.file_type().is_file() || metadata.uid() != uid || metadata.gid() != gid {
+        if !metadata.file_type().is_file()
+            || metadata.uid() != uid
+            || metadata.gid() != gid
+            || metadata.mode() & 0o777 != mode
+        {
             return Err(format!(
                 "installation lock has unsafe ownership or mode: {}",
                 path.display()
             )
             .into());
         }
-        fs::set_permissions(path, permissions(mode))?;
         Ok(file)
     }
 
@@ -832,18 +897,34 @@ mod linux {
     fn classify_existing(layout: &Layout, provider: Provider) -> Result<ExistingInstallation> {
         let current = read_current(layout)?;
         let specs = provider.artifact_specs();
-        let mut absent = 0;
-        let mut regular = 0;
-        let mut expected_links = 0;
+        let mut launcher_absent = 0;
+        let mut launcher_regular = 0;
+        let mut payload_absent = 0;
+        let mut payload_regular = 0;
+        let mut payload_links = 0;
         for spec in specs {
             let target = layout.map_absolute(Path::new(spec.target));
             match fs::symlink_metadata(&target) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => absent += 1,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if spec.role.is_launcher() {
+                        launcher_absent += 1;
+                    } else {
+                        payload_absent += 1;
+                    }
+                }
                 Err(error) => return Err(error.into()),
-                Ok(metadata) if metadata.file_type().is_file() => regular += 1,
+                Ok(metadata) if metadata.file_type().is_file() => {
+                    if spec.role.is_launcher() {
+                        launcher_regular += 1;
+                    } else {
+                        payload_regular += 1;
+                    }
+                }
                 Ok(metadata) if metadata.file_type().is_symlink() => {
-                    if fs::read_link(&target)? == layout.current().join(spec.name) {
-                        expected_links += 1;
+                    if !spec.role.is_launcher()
+                        && fs::read_link(&target)? == layout.current().join(spec.name)
+                    {
+                        payload_links += 1;
                     } else {
                         return Err(format!(
                             "fixture stable path has an unexpected symlink target: {}",
@@ -867,12 +948,28 @@ mod linux {
             Ok(metadata) if metadata.file_type().is_file() => true,
             Ok(_) => return Err("fixture sudoers policy is not a regular file".into()),
         };
+        let launcher_count = specs.iter().filter(|spec| spec.role.is_launcher()).count();
+        let payload_count = specs.len() - launcher_count;
         match current {
-            Some(generation) if expected_links == specs.len() && policy_exists => {
+            Some(generation)
+                if payload_links == payload_count
+                    && launcher_regular + launcher_absent == launcher_count
+                    && policy_exists =>
+            {
                 Ok(ExistingInstallation::Versioned(generation))
             }
-            None if absent == specs.len() && !policy_exists => Ok(ExistingInstallation::Fresh),
-            None if regular == specs.len() && policy_exists => Ok(ExistingInstallation::Legacy),
+            None if payload_absent == payload_count
+                && launcher_absent == launcher_count
+                && !policy_exists =>
+            {
+                Ok(ExistingInstallation::Fresh)
+            }
+            None if payload_regular == payload_count
+                && launcher_absent == launcher_count
+                && policy_exists =>
+            {
+                Ok(ExistingInstallation::Legacy)
+            }
             _ => {
                 Err("partial or inconsistent fixture installation requires manual recovery".into())
             }
@@ -887,11 +984,16 @@ mod linux {
         policy_backup: &FileBackup,
     ) -> Result<String> {
         let mut digest = Sha256::new();
-        for backup in stable_backups {
-            let FileBackup::Regular { name, .. } = backup else {
-                return Err("legacy installation contains a non-regular artifact".into());
-            };
-            digest.update(fs::read(transaction.join(name))?);
+        for (artifact, backup) in bundle.artifacts.iter().zip(stable_backups) {
+            match backup {
+                FileBackup::Regular { name, .. } => {
+                    digest.update(fs::read(transaction.join(name))?);
+                }
+                FileBackup::Absent if artifact.role.is_launcher() => {}
+                _ => {
+                    return Err("legacy installation contains an unexpected artifact".into());
+                }
+            }
         }
         let FileBackup::Regular {
             name: policy_name, ..
@@ -910,7 +1012,8 @@ mod linux {
         fs::set_permissions(&staging, permissions(0o700))?;
         for (artifact, backup) in bundle.artifacts.iter().zip(stable_backups) {
             let FileBackup::Regular { name, mode } = backup else {
-                unreachable!("legacy classification requires regular artifacts")
+                debug_assert!(artifact.role.is_launcher());
+                continue;
             };
             let target = staging.join(&artifact.file_name);
             fs::copy(transaction.join(name), &target)?;
@@ -938,15 +1041,6 @@ mod linux {
                 transaction,
                 &format!("stable-{index}"),
             )?);
-        }
-        let populated = states
-            .iter()
-            .filter(|state| !matches!(state, FileBackup::Absent))
-            .count();
-        if populated != 0 && populated != states.len() {
-            return Err(
-                "partial legacy fixture installation must be recovered before upgrade".into(),
-            );
         }
         Ok(states)
     }
@@ -988,13 +1082,35 @@ mod linux {
         })
     }
 
-    fn prepare_stable_links(layout: &Layout, journal: &Journal) -> Result<()> {
+    fn prepare_stable_entries(layout: &Layout, journal: &Journal) -> Result<()> {
         for artifact in &journal.bundle.artifacts {
             let target = layout.stable_target(artifact);
             let parent = target.parent().ok_or("stable target has no parent")?;
             require_existing_secure_parent(layout, parent)?;
-            let link_target = layout.current().join(&artifact.file_name);
-            atomic_symlink(&link_target, &target, &journal.transaction)?;
+            if artifact.role.is_launcher() {
+                let bytes = fs::read(
+                    layout
+                        .generations()
+                        .join(&journal.bundle.generation)
+                        .join(&artifact.file_name),
+                )?;
+                let temporary = parent.join(format!(
+                    ".open-radio-launcher-{}.{}",
+                    journal.provider, journal.transaction
+                ));
+                atomic_write(
+                    &temporary,
+                    &bytes,
+                    artifact.mode,
+                    layout.expected_uid,
+                    layout.expected_gid,
+                )?;
+                fs::rename(&temporary, &target)?;
+                sync_parent(&target)?;
+            } else {
+                let link_target = layout.current().join(&artifact.file_name);
+                atomic_symlink(&link_target, &target, &journal.transaction)?;
+            }
         }
         Ok(())
     }
@@ -1040,7 +1156,20 @@ mod linux {
         for artifact in &bundle.artifacts {
             let target = layout.stable_target(artifact);
             let metadata = fs::symlink_metadata(&target)?;
-            if !metadata.file_type().is_symlink()
+            if artifact.role.is_launcher() {
+                if !metadata.file_type().is_file()
+                    || metadata.uid() != layout.expected_uid
+                    || metadata.gid() != layout.expected_gid
+                    || metadata.mode() & 0o777 != artifact.mode
+                    || sha256(&fs::read(&target)?) != artifact.sha256
+                {
+                    return Err(format!(
+                        "stable fixture launcher differs from the committed artifact: {}",
+                        target.display()
+                    )
+                    .into());
+                }
+            } else if !metadata.file_type().is_symlink()
                 || fs::read_link(&target)? != layout.current().join(&artifact.file_name)
             {
                 return Err(format!(
@@ -1069,8 +1198,10 @@ mod linux {
         effects: &mut impl Effects,
     ) -> Result<()> {
         let journal_path = layout.journal();
-        if !journal_path.exists() {
-            return Ok(());
+        match fs::symlink_metadata(&journal_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+            Ok(_) => require_secure_file(layout, &journal_path, 0o600)?,
         }
         let bytes = fs::read(&journal_path)?;
         let journal: Journal = serde_json::from_slice(&bytes)?;
@@ -1264,9 +1395,13 @@ mod linux {
     }
 
     fn clear_journal(layout: &Layout, journal: &Journal) -> Result<()> {
-        if layout.journal().exists() {
-            fs::remove_file(layout.journal())?;
-            sync_parent(&layout.journal())?;
+        match fs::symlink_metadata(layout.journal()) {
+            Ok(_) => {
+                fs::remove_file(layout.journal())?;
+                sync_parent(&layout.journal())?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         let transaction = layout.transactions().join(&journal.transaction);
         if transaction.exists() {

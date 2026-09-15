@@ -192,22 +192,27 @@ delegate to these Cargo commands when run unprivileged and reject a legacy
 support for another Unix host.
 
 Preparation runs as the operator. Network preparation retains the pinned
-hostapd build, patch and provenance plus the locked probe build. Bluetooth
-preparation builds only the finite helper and installer with the same locked
-`target/hil/fixture-build` output; it does not build or download hostapd. The
-runner rejects an invocation already running as root before starting either
-build. It then transfers the foreground terminal to ordinary `sudo`; no
-password pipe or askpass path exists, and the general HIL runner never runs as
-root.
+hostapd build, patch and provenance plus the locked probe and fixed-launcher
+builds. Bluetooth preparation builds only its finite helper, fixed launcher and
+installer with the same locked `target/hil/fixture-build` output; it does not
+build or download hostapd. The runner rejects an invocation already running as
+root before starting either build. It then transfers the foreground terminal
+to ordinary `sudo`; no password pipe or askpass path exists, and the general
+HIL runner never runs as root.
 
 The privileged apply owner imports the content-addressed bundle into
 `/var/lib/open-radio/fixture/<provider>/generations/`. It validates artifact
 bytes, root ownership/modes, the exact helper contract and a candidate policy
 against the effective sudoers policy before publication. Stable commands under
-`/usr/local` resolve through one root-owned `current` selector. Switching that
-selector is the commit point. The network helper resolves hostapd beside its own
-executable, so one invocation cannot select helper and daemon bytes from
-different generations.
+`/usr/local` enter finite provider launchers. For an operational command the
+launcher first acquires the provider software lease, rejects unfinished or
+unprovable installation state, resolves one committed `current` generation and
+then executes that generation's root-owned helper. The lease remains live for
+the helper call. Switching `current` is the commit point. The network helper
+uses hostapd from the selected generation, so one invocation cannot combine
+helper and daemon bytes from different generations. The read-only
+`capabilities` operation remains available to installation verification without
+operational admission or hardware effects.
 
 One persisted transaction journal covers stable links, policy and generation
 selection. Pre-commit failure restores the prior files and sudoers policy.
@@ -220,13 +225,32 @@ receipt without switching generations. Generations are not automatically
 deleted while their lifetime is unknown.
 
 Every runner operation that may use a provider holds its shared software lease
-for the complete fixture/run boundary. All applies serialize through one
-root-owned installation lock, then installation requires the selected
-provider's exclusive lease and fails while such a session is active; it never
+for the complete fixture/run boundary. The empty root-owned lease file is
+`/var/lib/open-radio/fixture/<provider>/session.lock`; it is persistent,
+read-only to the operator and is never replaced by repeat installation or
+upgrade. Kernel `flock` ownership, not file contents, identifies a live owner,
+so clearing `/run` or rebooting does not require reinstallation. All applies
+serialize through one root-owned installation lock, then installation requires
+the selected provider's exclusive lease and fails while such a session is
+active. An upgrade from the previous volatile-lock layout also takes the old
+`/run/open-radio-fixture/<provider>.session.lock` when that file still exists;
+an active old consumer therefore cannot be bypassed with the new inode. A
+missing old file after reboot is not recreated or required. Installation never
 stops hostapd, an adapter or another service to force an upgrade. A directly
 started network AP is also detected through its root-owned pid file. The lease
 is software-update ownership only and never acquires the DUT, opens SSH or
 discovers fixture hardware.
+
+Operational admission checks the existing transaction journal, `current`
+selector, successful receipt and selected artifact identity after taking the
+same shared lease that conflicts with apply. A pending/corrupt journal, missing
+or unsafe selector, invalid receipt, writable state path or artifact mismatch
+returns `recovery-required` before a hardware-touching helper runs. Only the
+installer performs recovery. Its direct generation `capabilities` check does
+not recursively acquire the operational lease. Launcher descriptors are closed
+by long-lived network daemons; direct AP lifetime remains protected by the
+existing pid-file check, while foreground helper and runner leases retain their
+original lifetimes.
 
 After activation the installer checks installed bytes, policy and only the
 helper's non-hardware `capabilities` operation. It does not run `doctor`,

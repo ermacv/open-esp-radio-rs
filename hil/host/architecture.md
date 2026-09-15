@@ -20,8 +20,14 @@ persisted journal covers policy and stable links; the atomic `current` symlink
 switch is the commit point. Previous generations remain available for rollback.
 One root-owned lock serializes all applies. Shared provider software leases span
 HIL fixture/run ownership, while apply requires the selected provider's
-exclusive lease. These locks never acquire a device or replace the physical
-fixture leases below.
+exclusive lease. Each persistent provider lease is a stable inode under that
+provider's installation state. Operational admission checks the journal,
+selector, receipt and selected artifact under the shared lease. Fixed finite
+launchers perform this admission and bind a concrete generation before direct
+network, probe or Bluetooth helper execution; they neither recover nor install.
+During transition, apply also conflicts with a still-present active lease from
+the former volatile `/run` layout. These locks never acquire a device or replace
+the physical fixture leases below.
 
 The runner entry point in `runner/src/main.rs` only wires modules and maps the
 top-level result to the process exit status. `runner/src/command.rs` owns CLI

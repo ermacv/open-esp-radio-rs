@@ -21,6 +21,18 @@ path = "src/fixture/probe_load/helper.rs"
 name = "open-radio-fixture-install"
 path = "src/fixture_install/main.rs"
 
+[[bin]]
+name = "open-radio-net-launcher"
+path = "src/fixture_install/network_launcher.rs"
+
+[[bin]]
+name = "open-radio-probe-launcher"
+path = "src/fixture_install/probe_launcher.rs"
+
+[[bin]]
+name = "open-radio-bluetooth-launcher"
+path = "src/fixture_install/bluetooth_launcher.rs"
+
 [dependencies]
 bt-hci = "=0.10.1"
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }

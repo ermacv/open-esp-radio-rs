@@ -228,17 +228,17 @@ start_ap() {
     /bin/chmod 0640 "$CTRL_DIR/hostapd.log"
     # The installed hostapd can omit CONFIG_DEBUG_FILE. Capture its foreground
     # output instead of relying on -f (which can silently do nothing).
-    /usr/bin/setsid /usr/bin/stdbuf -oL -eL "$HOSTAPD" -d "$AP_CONFIG" \
+    (exec 9<&-; exec /usr/bin/setsid /usr/bin/stdbuf -oL -eL "$HOSTAPD" -d "$AP_CONFIG") \
         </dev/null >"$CTRL_DIR/hostapd.log" 2>&1 &
     printf '%s\n' "$!" >"$HOSTAPD_PID"
     # The Rust owner attaches to hostapd's control socket and waits for ENABLED.
     /usr/bin/ip address add "$ap_address" dev wlan0
-    /usr/bin/dnsmasq \
+    (exec 9<&-; /usr/bin/dnsmasq \
         --conf-file=/dev/null \
         --interface=wlan0 \
         --bind-interfaces \
         --dhcp-range="$ap_dhcp,1h" \
-        --pid-file="$DNSMASQ_PID"
+        --pid-file="$DNSMASQ_PID")
 }
 
 start_monitor() {
@@ -321,7 +321,7 @@ start_client() {
         /usr/bin/printf '}\n'
     } >"$WPA_CONFIG"
     /bin/chmod 0600 "$WPA_CONFIG"
-    /usr/bin/wpa_supplicant -B -P "$WPA_PID" -i wlan0 -c "$WPA_CONFIG"
+    (exec 9<&-; /usr/bin/wpa_supplicant -B -P "$WPA_PID" -i wlan0 -c "$WPA_CONFIG")
     # The Rust owner subscribes before ENABLE_NETWORK and waits on events.
     /usr/bin/iw dev wlan0 set power_save off
     /usr/bin/ip address add "$address" dev wlan0
@@ -337,22 +337,27 @@ restore_managed() {
 }
 
 if test "$1" != capabilities; then
-    exec 9</run/open-radio-fixture/linux-net.session.lock
-    if ! /usr/bin/flock -n -s 9; then
-        echo "linux-net fixture software is being updated" >&2
-        exit 75
+    if test "${OPEN_RADIO_GENERATION_BOUND-}" != linux-net; then
+        exec /usr/local/libexec/open-radio-net-launcher "$@"
     fi
-
-    SELF=$(/usr/bin/readlink -f -- "$0")
-    GENERATION_DIR=$(/usr/bin/dirname -- "$SELF")
-    case "$GENERATION_DIR" in
+    BOUND_GENERATION_DIR=${OPEN_RADIO_GENERATION_DIR-}
+    case "$BOUND_GENERATION_DIR" in
         /var/lib/open-radio/fixture/linux-net/generations/*) ;;
         *)
             echo "open-radio-net is not running from an installed generation" >&2
             exit 70
             ;;
     esac
-    HOSTAPD="$GENERATION_DIR/open-radio-hostapd"
+    unset OPEN_RADIO_GENERATION_BOUND OPEN_RADIO_GENERATION_DIR
+    if ! /usr/bin/flock -n -s 9; then
+        echo "linux-net fixture software lease was not inherited" >&2
+        exit 75
+    fi
+    if test "$(/usr/bin/readlink /proc/self/fd/9)" != /var/lib/open-radio/fixture/linux-net/session.lock; then
+        echo "linux-net fixture software lease has an unexpected identity" >&2
+        exit 75
+    fi
+    HOSTAPD="$BOUND_GENERATION_DIR/open-radio-hostapd"
     test -x "$HOSTAPD"
 fi
 

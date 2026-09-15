@@ -71,11 +71,23 @@ impl FromStr for Provider {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ArtifactRole {
+    NetworkLauncher,
     NetworkHelper,
+    ProbeLauncher,
     ProbeHelper,
     Hostapd,
     HostapdProvenance,
+    BluetoothLauncher,
     BluetoothHelper,
+}
+
+impl ArtifactRole {
+    pub(crate) fn is_launcher(self) -> bool {
+        matches!(
+            self,
+            Self::NetworkLauncher | Self::ProbeLauncher | Self::BluetoothLauncher
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -87,12 +99,26 @@ pub(crate) struct ArtifactSpec {
     pub(crate) mode: u32,
 }
 
-const LINUX_NET_ARTIFACTS: [ArtifactSpec; 4] = [
+const LINUX_NET_ARTIFACTS: [ArtifactSpec; 6] = [
+    ArtifactSpec {
+        role: ArtifactRole::NetworkLauncher,
+        source: "target/hil/fixture-build/debug/open-radio-net-launcher",
+        name: "open-radio-net-launcher",
+        target: "/usr/local/libexec/open-radio-net-launcher",
+        mode: 0o555,
+    },
     ArtifactSpec {
         role: ArtifactRole::NetworkHelper,
         source: "hil/host/linux-net/open-radio-net",
         name: "open-radio-net",
         target: "/usr/local/sbin/open-radio-net",
+        mode: 0o555,
+    },
+    ArtifactSpec {
+        role: ArtifactRole::ProbeLauncher,
+        source: "target/hil/fixture-build/debug/open-radio-probe-launcher",
+        name: "open-radio-probe-launcher",
+        target: "/usr/local/libexec/open-radio-probe-launcher",
         mode: 0o555,
     },
     ArtifactSpec {
@@ -118,13 +144,22 @@ const LINUX_NET_ARTIFACTS: [ArtifactSpec; 4] = [
     },
 ];
 
-const LINUX_BLUETOOTH_ARTIFACTS: [ArtifactSpec; 1] = [ArtifactSpec {
-    role: ArtifactRole::BluetoothHelper,
-    source: "target/hil/fixture-build/debug/open-radio-bluetooth",
-    name: "open-radio-bluetooth",
-    target: "/usr/local/libexec/open-radio-bluetooth",
-    mode: 0o555,
-}];
+const LINUX_BLUETOOTH_ARTIFACTS: [ArtifactSpec; 2] = [
+    ArtifactSpec {
+        role: ArtifactRole::BluetoothLauncher,
+        source: "target/hil/fixture-build/debug/open-radio-bluetooth-launcher",
+        name: "open-radio-bluetooth-launcher",
+        target: "/usr/local/libexec/open-radio-bluetooth-launcher",
+        mode: 0o555,
+    },
+    ArtifactSpec {
+        role: ArtifactRole::BluetoothHelper,
+        source: "target/hil/fixture-build/debug/open-radio-bluetooth",
+        name: "open-radio-bluetooth",
+        target: "/usr/local/libexec/open-radio-bluetooth",
+        mode: 0o555,
+    },
+];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]

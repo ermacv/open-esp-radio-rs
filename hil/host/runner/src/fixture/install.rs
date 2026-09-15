@@ -30,26 +30,28 @@ pub(crate) fn run(
             )?;
         }
 
-        let provider_binary = match provider {
-            Provider::LinuxNet => "open-radio-probe",
-            Provider::LinuxBluetooth => "open-radio-bluetooth",
+        let provider_binaries: &[&str] = match provider {
+            Provider::LinuxNet => &[
+                "open-radio-net-launcher",
+                "open-radio-probe-launcher",
+                "open-radio-probe",
+            ],
+            Provider::LinuxBluetooth => &["open-radio-bluetooth-launcher", "open-radio-bluetooth"],
         };
-        oer_process::run(
-            Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-                .current_dir(root)
-                .args([
-                    "build",
-                    "--locked",
-                    "-p",
-                    "open-esp-radio-hil-runner",
-                    "--bin",
-                    provider_binary,
-                    "--bin",
-                    INSTALLER_BINARY,
-                    "--target-dir",
-                    "target/hil/fixture-build",
-                ]),
-        )?;
+        let mut build = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+        build
+            .current_dir(root)
+            .args(["build", "--locked", "-p", "open-esp-radio-hil-runner"]);
+        for binary in provider_binaries {
+            build.args(["--bin", binary]);
+        }
+        build.args([
+            "--bin",
+            INSTALLER_BINARY,
+            "--target-dir",
+            "target/hil/fixture-build",
+        ]);
+        oer_process::run(&mut build)?;
         let operator = current_operator()?;
         let bundle = prepare(root, provider, &operator, &plan.allowed_bluetooth_adapters)?;
         // This is a terminal handoff, not a supervised background workload.

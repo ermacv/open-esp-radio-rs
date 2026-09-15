@@ -40,6 +40,7 @@ fn config() -> SessionConfig {
                     offered_rate_bps: None,
                     pacing_group_datagrams: None,
                 }),
+                payload_identity: None,
             })
         }),
     }

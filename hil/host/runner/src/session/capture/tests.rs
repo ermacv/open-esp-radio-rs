@@ -1,6 +1,9 @@
 use super::*;
 use crate::session::{error::ErrorKind, tests::hello};
-use std::io;
+use std::{
+    io,
+    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+};
 
 #[test]
 fn rx_delivery_wait_ignores_other_sessions_and_requires_actual_data() {
@@ -559,14 +562,22 @@ fn lifecycle_cursor_advances_and_does_not_repeat_events() {
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected { generation: 4 }),
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 4,
+                association_bandwidth_mhz: None,
+                security: None,
+            }),
         ))))
         .unwrap();
     assert_eq!(
         capture
             .wait_station_lifecycle_event(&mut cursor, Duration::from_secs(2))
             .unwrap(),
-        StationLifecycleEvent::Connected { generation: 4 }
+        StationLifecycleEvent::Connected {
+            generation: 4,
+            association_bandwidth_mhz: None,
+            security: None,
+        }
     );
     assert_eq!(
         capture
@@ -574,6 +585,312 @@ fn lifecycle_cursor_advances_and_does_not_repeat_events() {
             .unwrap(),
         None
     );
+}
+
+#[test]
+fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
+    use open_esp_radio_hil_protocol::{NetworkInfo, WifiNetworkInterface};
+
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            1,
+            0,
+            0,
+            Event::NetworkReady(NetworkInfo {
+                network_interface: WifiNetworkInterface::Station,
+                address: [127, 0, 0, 1],
+                prefix_length: 8,
+                gateway: None,
+            }),
+        ))))
+        .unwrap();
+    capture
+        .wait_for_protocol_after(1, Duration::from_secs(2), |message| {
+            matches!(message.body, Event::NetworkReady(_))
+        })
+        .unwrap()
+        .unwrap();
+    let next_stage = capture.station_lifecycle_cursor();
+    assert!(next_stage > 1);
+    assert_eq!(
+        capture.observed_protocol_ipv4(WifiNetworkInterface::Station),
+        Some(Ipv4Addr::LOCALHOST),
+        "the boot-scoped getter alone cannot prove a new network stage"
+    );
+    assert!(
+        capture
+            .wait_for_network_ready_after(
+                next_stage,
+                WifiNetworkInterface::Station,
+                Duration::ZERO,
+            )
+            .is_err()
+    );
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            2,
+            0,
+            0,
+            Event::NetworkReady(NetworkInfo {
+                network_interface: WifiNetworkInterface::Station,
+                address: [127, 0, 0, 2],
+                prefix_length: 8,
+                gateway: None,
+            }),
+        ))))
+        .unwrap();
+    assert_eq!(
+        capture
+            .wait_for_network_ready_after(
+                next_stage,
+                WifiNetworkInterface::Station,
+                Duration::from_secs(2),
+            )
+            .unwrap(),
+        Ipv4Addr::new(127, 0, 0, 2),
+    );
+}
+
+#[test]
+fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link() {
+    use open_esp_radio_hil_protocol::StationLinkSecurity;
+
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            1,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 4,
+                association_bandwidth_mhz: Some(40),
+                security: Some(StationLinkSecurity::Wpa2Personal),
+            }),
+        ))))
+        .unwrap();
+    capture
+        .wait_for_connected_station_link_after(1, Duration::from_secs(2))
+        .unwrap();
+    let next_stage = capture.station_lifecycle_cursor();
+    assert!(
+        capture
+            .wait_for_connected_station_link_after(next_stage, Duration::ZERO)
+            .is_err(),
+        "the previous connection cannot satisfy a new stage cursor"
+    );
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            2,
+            9,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 5,
+                association_bandwidth_mhz: Some(40),
+                security: Some(StationLinkSecurity::Wpa2Personal),
+            }),
+        ))))
+        .unwrap();
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            3,
+            0,
+            77,
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 5,
+                association_bandwidth_mhz: Some(40),
+                security: Some(StationLinkSecurity::Wpa2Personal),
+            }),
+        ))))
+        .unwrap();
+    assert!(
+        capture
+            .wait_for_connected_station_link_after(next_stage, Duration::ZERO)
+            .is_err(),
+        "session-owned or command-owned lifecycle events cannot replace an unsolicited link edge"
+    );
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            4,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 5,
+                association_bandwidth_mhz: Some(20),
+                security: Some(StationLinkSecurity::Open),
+            }),
+        ))))
+        .unwrap();
+    let next = capture
+        .wait_for_connected_station_link_after(next_stage, Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(next.generation, 5);
+    assert_eq!(next.association_bandwidth_mhz, Some(20));
+    assert_eq!(next.security, Some(StationLinkSecurity::Open));
+}
+
+#[test]
+fn network_recovery_requires_readiness_after_the_new_connected_edge() {
+    use open_esp_radio_hil_protocol::{NetworkInfo, StationLinkSecurity};
+
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    let network = |address| {
+        Event::NetworkReady(NetworkInfo {
+            network_interface: WifiNetworkInterface::Station,
+            address,
+            prefix_length: 8,
+            gateway: None,
+        })
+    };
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            1,
+            0,
+            0,
+            network([127, 0, 0, 1]),
+        ))))
+        .unwrap();
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            2,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 5,
+                association_bandwidth_mhz: Some(40),
+                security: Some(StationLinkSecurity::Wpa2Personal),
+            }),
+        ))))
+        .unwrap();
+    let connected = capture
+        .wait_for_connected_station_link_after(1, Duration::from_secs(2))
+        .unwrap();
+    assert!(
+        capture
+            .wait_for_network_ready_after(
+                connected.event_cursor_after,
+                WifiNetworkInterface::Station,
+                Duration::ZERO,
+            )
+            .is_err(),
+        "a delayed old NetworkReady before new Connected cannot prove recovery"
+    );
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            3,
+            0,
+            0,
+            network([127, 0, 0, 2]),
+        ))))
+        .unwrap();
+    assert_eq!(
+        capture
+            .wait_for_network_ready_after(
+                connected.event_cursor_after,
+                WifiNetworkInterface::Station,
+                Duration::from_secs(2),
+            )
+            .unwrap(),
+        Ipv4Addr::new(127, 0, 0, 2),
+    );
+}
+
+#[test]
+fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
+    use open_esp_radio_hil_protocol::{
+        Direction, NetworkInfo, ServiceInfo, Transport, WifiNetworkInterface,
+    };
+
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    let receiver = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let rx_port = receiver.local_addr().unwrap().port();
+    for (sequence, event) in [
+        (
+            1,
+            Event::NetworkReady(NetworkInfo {
+                network_interface: WifiNetworkInterface::Station,
+                address: Ipv4Addr::LOCALHOST.octets(),
+                prefix_length: 8,
+                gateway: None,
+            }),
+        ),
+        (
+            2,
+            Event::ServiceReady(ServiceInfo {
+                network_interface: WifiNetworkInterface::Station,
+                transport: Transport::Udp,
+                direction: Direction::Rx,
+                local_port: rx_port,
+                maximum_payload_bytes: 64,
+            }),
+        ),
+        (
+            3,
+            Event::ServiceReady(ServiceInfo {
+                network_interface: WifiNetworkInterface::Station,
+                transport: Transport::Udp,
+                direction: Direction::Tx,
+                local_port: 4_324,
+                maximum_payload_bytes: 64,
+            }),
+        ),
+    ] {
+        input
+            .send(Ok(frame(Envelope::new(7, sequence, 0, 0, event))))
+            .unwrap();
+    }
+    let target_input = input.clone();
+    let target = thread::spawn(move || {
+        let mut buffer = [0; 64];
+        let (length, _) = receiver.recv_from(&mut buffer).unwrap();
+        assert_eq!(length, 64);
+        assert_eq!(&buffer[..4], &(-1_i32).to_be_bytes());
+        target_input
+            .send(Ok(frame(Envelope::new(
+                7,
+                4,
+                0,
+                0,
+                Event::ServiceReady(ServiceInfo {
+                    network_interface: WifiNetworkInterface::Station,
+                    transport: Transport::Udp,
+                    direction: Direction::Rx,
+                    local_port: rx_port,
+                    maximum_payload_bytes: 64,
+                }),
+            ))))
+            .unwrap();
+    });
+    let ready = crate::session::probe_udp_rx_ready(
+        &capture,
+        Ipv4Addr::LOCALHOST,
+        rx_port,
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    assert_eq!(ready.address, Ipv4Addr::LOCALHOST);
+    target.join().unwrap();
+    // There was no reverse UDP payload, session identity, or TX completion.
 }
 
 #[test]
@@ -648,6 +965,7 @@ fn monitor_failure_is_correlated_and_terminal() {
         ))))
         .unwrap();
     let handle = WifiCommandHandle {
+        boot_id: 7,
         request_id: 22,
         first_event: 1,
     };
@@ -679,6 +997,7 @@ fn retained_radio_failure_is_correlated_and_terminal() {
         ))))
         .unwrap();
     let handle = WifiCommandHandle {
+        boot_id: 7,
         request_id: 23,
         first_event: 1,
     };
@@ -687,6 +1006,174 @@ fn retained_radio_failure_is_correlated_and_terminal() {
         .unwrap_err();
     assert!(error.to_string().contains("RetainedCycle"));
     assert!(error.to_string().contains("HardwareFault"));
+}
+
+#[test]
+fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
+    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+
+    let output = Output::new();
+    let (input, rx) = serial_pair();
+    let (writes, commands) = mpsc::channel();
+    let capture = SerialCapture::start_transport(&output.0, move || {
+        Ok(Serial {
+            input: rx,
+            fail_write: false,
+            writes: Some(writes),
+        })
+    })
+    .unwrap();
+    activate(&capture, &input);
+    let input_guard = input.clone();
+    let evidence = WifiRoleTransitionEvidence {
+        previous: WifiRole::Station,
+        current: WifiRole::Idle,
+        generation: 7,
+    };
+    let target = thread::spawn(move || {
+        let request = receive_command(&commands);
+        assert!(matches!(request.body, Command::StopStation));
+        for (sequence, session, request_id, event) in [
+            (
+                1,
+                0,
+                request.request_id.wrapping_add(1),
+                Event::WifiRoleTransitioned(evidence),
+            ),
+            (
+                2,
+                9,
+                request.request_id,
+                Event::WifiRoleTransitioned(evidence),
+            ),
+            (3, 0, request.request_id, Event::Accepted),
+            (
+                4,
+                0,
+                request.request_id,
+                Event::WifiRoleTransitioned(evidence),
+            ),
+        ] {
+            input
+                .send(Ok(frame(Envelope::new(
+                    7, sequence, session, request_id, event,
+                ))))
+                .unwrap();
+        }
+    });
+    let handle = capture.request_station_stop().unwrap();
+    assert_eq!(handle.boot_id, 7);
+    assert_eq!(
+        capture
+            .wait_wifi_role_transition(handle, Duration::from_secs(2))
+            .unwrap(),
+        evidence
+    );
+    target.join().unwrap();
+    drop(input_guard);
+}
+
+#[test]
+fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
+    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+
+    let output = Output::new();
+    let (input, rx) = serial_pair();
+    let (writes, commands) = mpsc::channel();
+    let capture = SerialCapture::start_transport(&output.0, move || {
+        Ok(Serial {
+            input: rx,
+            fail_write: false,
+            writes: Some(writes),
+        })
+    })
+    .unwrap();
+    activate(&capture, &input);
+    let input_guard = input.clone();
+    let target = thread::spawn(move || {
+        let request = receive_command(&commands);
+        let event = Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+            previous: WifiRole::Station,
+            current: WifiRole::Idle,
+            generation: 7,
+        });
+        input
+            .send(Ok(frame(Envelope::new(7, 1, 0, request.request_id, event))))
+            .unwrap();
+        input
+            .send(Ok(frame(Envelope::new(
+                7,
+                2,
+                0,
+                request.request_id,
+                Event::Accepted,
+            ))))
+            .unwrap();
+    });
+    let error = capture.request_station_stop().unwrap_err();
+    assert!(error.to_string().contains("invalid station stop response"));
+    target.join().unwrap();
+    drop(input_guard);
+}
+
+#[test]
+fn late_and_duplicate_wifi_completions_do_not_close_a_successor_request() {
+    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+
+    let output = Output::new();
+    let (capture, input) = capture(&output, false);
+    activate(&capture, &input);
+    let first = WifiCommandHandle {
+        boot_id: 7,
+        request_id: 22,
+        first_event: 1,
+    };
+    assert!(
+        capture
+            .wait_wifi_role_transition(first, Duration::ZERO)
+            .is_err()
+    );
+    let old = Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+        previous: WifiRole::Station,
+        current: WifiRole::Idle,
+        generation: 7,
+    });
+    input
+        .send(Ok(frame(Envelope::new(7, 1, 0, 22, old.clone()))))
+        .unwrap();
+    let successor = WifiCommandHandle {
+        boot_id: 7,
+        request_id: 23,
+        first_event: 1,
+    };
+    assert!(
+        capture
+            .wait_wifi_role_transition(successor, Duration::ZERO)
+            .is_err()
+    );
+    input
+        .send(Ok(frame(Envelope::new(7, 2, 0, 22, old))))
+        .unwrap();
+    let current = WifiRoleTransitionEvidence {
+        previous: WifiRole::Idle,
+        current: WifiRole::Station,
+        generation: 8,
+    };
+    input
+        .send(Ok(frame(Envelope::new(
+            7,
+            3,
+            0,
+            23,
+            Event::WifiRoleTransitioned(current),
+        ))))
+        .unwrap();
+    assert_eq!(
+        capture
+            .wait_wifi_role_transition(successor, Duration::from_secs(2))
+            .unwrap(),
+        current,
+    );
 }
 
 #[test]

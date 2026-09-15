@@ -5,7 +5,7 @@ mod station;
 
 pub use access_point::{AccessPointStatus, AccessPointStatusSnapshot};
 
-pub use station::{StationLinkState, StationStatus, StationStatusSnapshot};
+pub use station::{StationLinkSecurity, StationLinkState, StationStatus, StationStatusSnapshot};
 
 pub(crate) use access_point::{publish_access_point_status, publish_access_point_stopped};
 

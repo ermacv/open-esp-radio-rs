@@ -188,7 +188,7 @@ fn require_both_endpoints(capture: &SerialCapture, timeout: Duration) -> Result<
 fn expect_connected(capture: &SerialCapture, cursor: &mut usize, timeout: Duration) -> Result<u32> {
     let event = capture.wait_station_lifecycle_event(cursor, timeout)?;
     match event {
-        StationLifecycleEvent::Connected { generation } => Ok(generation),
+        StationLifecycleEvent::Connected { generation, .. } => Ok(generation),
         other => Err(format!("paired start reported {other:?} instead of Connected").into()),
     }
 }

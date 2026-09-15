@@ -253,8 +253,17 @@ pub(crate) struct StationEpochHandle {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WifiCommandHandle {
+    boot_id: u64,
     request_id: u32,
     first_event: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StationConnectionObservation {
+    pub(crate) generation: u32,
+    pub(crate) association_bandwidth_mhz: Option<u16>,
+    pub(crate) security: Option<open_esp_radio_hil_protocol::StationLinkSecurity>,
+    pub(crate) event_cursor_after: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

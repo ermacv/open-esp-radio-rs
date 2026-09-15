@@ -93,6 +93,7 @@ pub(crate) fn run(
                     offered_rate_bps: Some(rate),
                     pacing_group_datagrams: None,
                 }),
+                payload_identity: None,
             }),
             None,
         ],

@@ -47,7 +47,15 @@ fn cycle_requires_ordered_disconnect_and_next_generation_connect() {
     let mut progress = CycleProgress::default();
     assert!(
         progress
-            .observe_lifecycle(StationLifecycleEvent::Connected { generation: 2 }, 1, 1,)
+            .observe_lifecycle(
+                StationLifecycleEvent::Connected {
+                    generation: 2,
+                    association_bandwidth_mhz: None,
+                    security: None,
+                },
+                1,
+                1,
+            )
             .is_err()
     );
 
@@ -62,7 +70,15 @@ fn cycle_requires_ordered_disconnect_and_next_generation_connect() {
         )
         .unwrap();
     progress
-        .observe_lifecycle(StationLifecycleEvent::Connected { generation: 2 }, 1, 1)
+        .observe_lifecycle(
+            StationLifecycleEvent::Connected {
+                generation: 2,
+                association_bandwidth_mhz: None,
+                security: None,
+            },
+            1,
+            1,
+        )
         .unwrap();
     assert!(!progress.complete());
     progress.owners_complete = true;

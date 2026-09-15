@@ -396,7 +396,11 @@ fn beacon_loss_qualification_ignores_previous_boots() {
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected { generation: 0 }),
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation: 0,
+                association_bandwidth_mhz: None,
+                security: None,
+            }),
         ),
     ];
     assert_eq!(beacon_loss_count_in(&messages), 0);
@@ -468,7 +472,11 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
             sequence,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected { generation }),
+            Event::StationLifecycle(StationLifecycleEvent::Connected {
+                generation,
+                association_bandwidth_mhz: None,
+                security: None,
+            }),
         )
     };
     let mut events = vec![hello(7, 0), connected(1, 3)];

@@ -1267,14 +1267,14 @@ async fn station_lifecycle_task(mut status: StationStatus) {
     let mut generation = 0_u32;
     let mut connected = false;
     loop {
-        let edge = match select(status.changed(), STATION_LIFECYCLE.receive()).await {
+        let (edge, negotiated) = match select(status.changed(), STATION_LIFECYCLE.receive()).await {
             Either::First(snapshot) => {
                 STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS
                     .sender()
                     .send(u32::from(snapshot.tx_block_ack_operational_tids));
-                station_status_edge(snapshot.state)
+                (station_status_edge(snapshot.state), Some(snapshot))
             }
-            Either::Second(edge) => Some(edge),
+            Either::Second(edge) => (Some(edge), None),
         };
         let Some(edge) = edge else {
             continue;
@@ -1282,8 +1282,24 @@ async fn station_lifecycle_task(mut status: StationStatus) {
         match edge {
             StationLinkEdge::Connected => {
                 if !connected {
-                    publish_station_lifecycle(StationLifecycleEvent::Connected { generation })
-                        .await;
+                    let link = negotiated.filter(|snapshot| {
+                        matches!(snapshot.state, StationLinkState::Connected)
+                    });
+                    let security = link.and_then(|snapshot| snapshot.link_security).map(|security| {
+                        match security {
+                            oer_esp32s31_embassy_wifi::StationLinkSecurity::Open => {
+                                open_esp_radio_hil_protocol::StationLinkSecurity::Open
+                            }
+                            oer_esp32s31_embassy_wifi::StationLinkSecurity::Wpa2Personal => {
+                                open_esp_radio_hil_protocol::StationLinkSecurity::Wpa2Personal
+                            }
+                        }
+                    });
+                    publish_station_lifecycle(StationLifecycleEvent::Connected {
+                        generation,
+                        association_bandwidth_mhz: link.and_then(|snapshot| snapshot.association_bandwidth_mhz),
+                        security,
+                    }).await;
                     connected = true;
                 }
             }
@@ -2147,6 +2163,9 @@ async fn wifi_role_task(
                                 request_id,
                                 WifiRadioRestartEvidence {
                                     generation,
+                                    previous_phy_registration_generation: report
+                                        .previous_phy_registration_generation()
+                                        .value(),
                                     phy_registration_generation: report
                                         .phy_registration_generation()
                                         .value(),
@@ -2181,6 +2200,9 @@ async fn wifi_role_task(
                                 request_id,
                                 WifiRadioRetainedCycleEvidence {
                                     generation,
+                                    previous_phy_registration_generation: report
+                                        .previous_phy_registration_generation()
+                                        .value(),
                                     phy_registration_generation: report
                                         .phy_registration_generation()
                                         .value(),

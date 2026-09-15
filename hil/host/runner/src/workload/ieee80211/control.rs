@@ -1,24 +1,24 @@
 //! Host qualification for explicit Wi-Fi role ownership transitions.
 
 use crate::execution::context::Context;
-use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
+use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
-    WifiMonitorRequest, WifiNetworkInterface, WifiRadioCalibrationPath, WifiRadioRestartEvidence,
-    WifiRadioRetainedCycleEvidence, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiScanRequest, WifiStationAccessPointRequest,
+    StationDisconnectReason, StationLifecycleEvent, WifiMonitorRequest, WifiNetworkInterface,
+    WifiRadioCalibrationPath, WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence, WifiRole,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
 };
 
 use crate::{
     Result,
     scenario::{PhyExpectation, WifiOperation as Operation},
-    session::{SerialCapture, probe_udp_rx_ready},
+    session::{SerialCapture, StationConnectionObservation},
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);
 const DEFAULT_SCAN_DWELL_MILLIS: u16 = 200;
-const DATA_PATH_PROBE_PORT: u16 = 4_323;
+mod data_path;
 
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
@@ -33,13 +33,13 @@ pub(crate) fn run(
     options: Config,
     output: &Path,
     context: &Context<'_>,
-    _phy: PhyExpectation,
+    phy: PhyExpectation,
 ) -> Result<()> {
     let options = options.validate()?;
 
     fs::create_dir_all(output)?;
     context.with_capture(output, |capture| {
-        qualify(capture, context, operation, &options)
+        qualify(capture, context, operation, &options, phy)
     })?;
     eprintln!("wifi_{}=PASS", operation.id());
     eprintln!("uart_log={}", output.join("uart.log").display());
@@ -51,6 +51,7 @@ fn qualify(
     context: &Context<'_>,
     operation: Operation,
     options: &Config,
+    phy: PhyExpectation,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context, options.timeout)?;
     if !capabilities.features.wifi_role_control {
@@ -59,10 +60,26 @@ fn qualify(
     report_stack(capture, options.timeout, "connected")?;
 
     if matches!(operation, Operation::Restart | Operation::Retained) {
-        prove_station_data_path(capture, options.timeout, "before-restart")?;
-        let mut stopped = stop_station(capture, options.timeout)?;
+        context.lab.station_fixture.require_phy(phy)?;
+        if context.settings.data_plane
+            != open_esp_radio_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
+        {
+            return Err("radio lifecycle requires split radio/network data-plane ownership".into());
+        }
+        let initial = capture.wait_for_connected_station_link_after(0, options.timeout)?;
+        require_station_link(initial, phy)?;
+        data_path::prove_station_data_path(
+            capture,
+            context,
+            options.timeout,
+            "before-cycle",
+            initial.event_cursor_after,
+        )?;
+        let mut station_link_generation = initial.generation;
+        let mut stopped =
+            stop_station_for_lifecycle(capture, options.timeout, station_link_generation)?;
         report_stack(capture, options.timeout, "station-stopped")?;
-        let mut retained_phy_registration_generation = None;
+        let mut last_phy_registration_generation = None;
         for cycle in 1..=options.restart_cycles {
             let lifecycle_generation = match operation {
                 Operation::Restart => {
@@ -70,7 +87,8 @@ fn qualify(
                         capture.request_radio_restart()?,
                         options.timeout,
                     )?;
-                    require_radio_restart(stopped, restarted)?;
+                    require_radio_restart(stopped, restarted, last_phy_registration_generation)?;
+                    last_phy_registration_generation = Some(restarted.phy_registration_generation);
                     eprintln!(
                         "wifi_radio_restart_cycle={cycle} generation={} calibration_path={:?}",
                         restarted.generation, restarted.calibration_path,
@@ -85,10 +103,9 @@ fn qualify(
                     require_retained_radio_cycle(
                         stopped,
                         retained,
-                        retained_phy_registration_generation,
+                        last_phy_registration_generation,
                     )?;
-                    retained_phy_registration_generation =
-                        Some(retained.phy_registration_generation);
+                    last_phy_registration_generation = Some(retained.phy_registration_generation);
                     eprintln!(
                         "wifi_radio_retained_cycle={cycle} generation={} phy_registration_generation={}",
                         retained.generation, retained.phy_registration_generation,
@@ -98,11 +115,27 @@ fn qualify(
                 _ => unreachable!(),
             };
             report_stack(capture, options.timeout, "radio-restarted")?;
-            let started = start_connected_station(capture, context, options.timeout)?;
+            let (started, connected) =
+                start_connected_station(capture, context, options.timeout, phy)?;
             require_station_after_lifecycle(lifecycle_generation, started)?;
-            prove_station_data_path(capture, options.timeout, "after-restart")?;
+            let expected_link_generation = station_link_generation.wrapping_add(1);
+            if connected.generation != expected_link_generation {
+                return Err(format!(
+                    "station connected generation {} after lifecycle stop of generation {}, expected {}",
+                    connected.generation, station_link_generation, expected_link_generation,
+                ).into());
+            }
+            station_link_generation = connected.generation;
+            data_path::prove_station_data_path(
+                capture,
+                context,
+                options.timeout,
+                "after-cycle",
+                connected.event_cursor_after,
+            )?;
             if cycle < options.restart_cycles {
-                stopped = stop_station(capture, options.timeout)?;
+                stopped =
+                    stop_station_for_lifecycle(capture, options.timeout, station_link_generation)?;
             }
         }
         report_stack(
@@ -365,6 +398,33 @@ pub(crate) fn stop_station(
     Ok(evidence)
 }
 
+fn stop_station_for_lifecycle(
+    capture: &SerialCapture,
+    timeout: Duration,
+    connected_generation: u32,
+) -> Result<WifiRoleTransitionEvidence> {
+    let lifecycle_cursor = capture.station_lifecycle_cursor();
+    let stopped = stop_station(capture, timeout)?;
+    let mut cursor = lifecycle_cursor;
+    let disconnected = capture.wait_station_lifecycle_event(&mut cursor, timeout)?;
+    require_lifecycle_disconnect(disconnected, connected_generation)?;
+    Ok(stopped)
+}
+
+fn require_lifecycle_disconnect(event: StationLifecycleEvent, generation: u32) -> Result<()> {
+    if event
+        != (StationLifecycleEvent::Disconnected {
+            generation,
+            reason: StationDisconnectReason::LinkPolicy,
+        })
+    {
+        return Err(format!(
+            "station stop did not publish LinkPolicy disconnect for connected generation {generation}: {event:?}"
+        ).into());
+    }
+    Ok(())
+}
+
 pub(crate) fn start_station(
     capture: &SerialCapture,
     context: &Context<'_>,
@@ -388,22 +448,35 @@ fn start_connected_station(
     capture: &SerialCapture,
     context: &Context<'_>,
     timeout: Duration,
-) -> Result<WifiRoleTransitionEvidence> {
+    phy: PhyExpectation,
+) -> Result<(WifiRoleTransitionEvidence, StationConnectionObservation)> {
     let lifecycle_cursor = capture.station_lifecycle_cursor();
     let evidence = start_station_evidence(capture, context, timeout)?;
-    capture.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
-    Ok(evidence)
+    let connected = capture.wait_for_connected_station_link_after(lifecycle_cursor, timeout)?;
+    require_station_link(connected, phy)?;
+    Ok((evidence, connected))
 }
 
-fn prove_station_data_path(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
-    let address = capture
-        .observed_protocol_ipv4(WifiNetworkInterface::Station)
-        .unwrap_or(Ipv4Addr::UNSPECIFIED);
-    let ready = probe_udp_rx_ready(capture, address, DATA_PATH_PROBE_PORT, timeout)?;
-    eprintln!(
-        "wifi_radio_restart_data_path={stage} address={}",
-        ready.address
-    );
+fn require_station_link(
+    connected: StationConnectionObservation,
+    phy: PhyExpectation,
+) -> Result<()> {
+    let expected_bandwidth = match phy {
+        PhyExpectation::Ht40 => 40,
+        PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
+    };
+    if connected.association_bandwidth_mhz != Some(expected_bandwidth)
+        || connected.security
+            != Some(open_esp_radio_hil_protocol::StationLinkSecurity::Wpa2Personal)
+    {
+        return Err(format!(
+            "station connected generation {} with negotiated width {:?} MHz/security {:?}, expected {} MHz/WPA2-Personal",
+            connected.generation,
+            connected.association_bandwidth_mhz,
+            connected.security,
+            expected_bandwidth,
+        ).into());
+    }
     Ok(())
 }
 
@@ -458,6 +531,7 @@ pub(crate) fn require_transition(
 fn require_radio_restart(
     stopped: WifiRoleTransitionEvidence,
     restarted: WifiRadioRestartEvidence,
+    previous_phy_registration_generation: Option<u32>,
 ) -> Result<()> {
     let expected_generation = stopped.generation.wrapping_add(1);
     if restarted.generation != expected_generation {
@@ -471,6 +545,26 @@ fn require_radio_restart(
         return Err(format!(
             "idle radio restart selected {:?}, expected restored calibration cache",
             restarted.calibration_path,
+        )
+        .into());
+    }
+    if restarted.phy_registration_generation
+        != restarted
+            .previous_phy_registration_generation
+            .wrapping_add(1)
+    {
+        return Err(format!(
+            "cold restart did not advance the PHY registration epoch from {} to {}",
+            restarted.previous_phy_registration_generation, restarted.phy_registration_generation,
+        )
+        .into());
+    }
+    if previous_phy_registration_generation
+        .is_some_and(|previous| previous != restarted.previous_phy_registration_generation)
+    {
+        return Err(format!(
+            "cold restart PHY baseline {} differs from preceding lifecycle epoch {:?}",
+            restarted.previous_phy_registration_generation, previous_phy_registration_generation,
         )
         .into());
     }
@@ -490,13 +584,19 @@ fn require_retained_radio_cycle(
         )
         .into());
     }
-    if previous_phy_registration_generation
-        .is_some_and(|previous| previous != retained.phy_registration_generation)
-    {
+    if retained.previous_phy_registration_generation != retained.phy_registration_generation {
         return Err(format!(
             "retained cycle changed PHY registration generation from {} to {}",
-            previous_phy_registration_generation.unwrap(),
-            retained.phy_registration_generation,
+            retained.previous_phy_registration_generation, retained.phy_registration_generation,
+        )
+        .into());
+    }
+    if previous_phy_registration_generation
+        .is_some_and(|previous| previous != retained.previous_phy_registration_generation)
+    {
+        return Err(format!(
+            "retained cycle PHY baseline {} differs from preceding lifecycle epoch {:?}",
+            retained.previous_phy_registration_generation, previous_phy_registration_generation,
         )
         .into());
     }

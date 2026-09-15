@@ -1636,10 +1636,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::StartStationAccessPoint(request) => {
-                        let response = if !capabilities.features.simultaneous_station_access_point {
-                            Event::Rejected(RejectReason::Unsupported)
-                        } else if ap_scheduler
-                            != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+                        let response = if !capabilities.features.simultaneous_station_access_point
+                            || ap_scheduler
+                                != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
                         {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if request.validate().is_err() {
@@ -2184,6 +2183,7 @@ mod tests {
         assert!(confirms_wifi_serialization(&Event::WifiRadioRestarted(
             WifiRadioRestartEvidence {
                 generation: 2,
+                previous_phy_registration_generation: 0,
                 phy_registration_generation: 1,
                 calibration_path: WifiRadioCalibrationPath::RestoredCache,
             },

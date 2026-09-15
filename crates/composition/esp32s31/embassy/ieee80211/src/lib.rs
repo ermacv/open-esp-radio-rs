@@ -209,8 +209,8 @@ pub use radio_resources::{
 pub use radio_resources::{WifiDevice, WifiDevices, WifiNetworkDevice};
 #[cfg(target_arch = "riscv32")]
 pub use status::{
-    AccessPointStatus, AccessPointStatusSnapshot, StationLinkState, StationStatus,
-    StationStatusSnapshot,
+    AccessPointStatus, AccessPointStatusSnapshot, StationLinkSecurity, StationLinkState,
+    StationStatus, StationStatusSnapshot,
 };
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]

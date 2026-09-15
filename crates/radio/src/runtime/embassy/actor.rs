@@ -207,6 +207,7 @@ where
                 EmbassyWifiStoppedDispatch::Handled => {}
                 EmbassyWifiStoppedDispatch::RestartRadio => {
                     let next_generation = generation.next();
+                    let previous_phy_registration_generation = phy_registration_generation;
                     match await_stack_boundary!(runner.restart_radio(&mut stopped)) {
                         Ok(calibration_path) => {
                             generation = next_generation;
@@ -215,6 +216,7 @@ where
                                 .respond(EmbassyWifiSupervisorResponse::RestartRadio(Ok(
                                     WifiRadioRestartReport::new(
                                         generation,
+                                        previous_phy_registration_generation,
                                         phy_registration_generation,
                                         calibration_path,
                                     ),
@@ -238,6 +240,7 @@ where
                 }
                 EmbassyWifiStoppedDispatch::CycleRetainedRadio => {
                     let next_generation = generation.next();
+                    let previous_phy_registration_generation = phy_registration_generation;
                     match await_stack_boundary!(runner.cycle_retained_radio(&mut stopped)) {
                         Ok(()) => {
                             generation = next_generation;
@@ -245,6 +248,7 @@ where
                                 .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Ok(
                                     WifiRadioRetainedCycleReport::new(
                                         generation,
+                                        previous_phy_registration_generation,
                                         phy_registration_generation,
                                     ),
                                 )))

@@ -135,10 +135,7 @@ fn wait_for_connected_generation(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         let event = capture.wait_station_lifecycle_event(cursor, remaining)?;
-        if event
-            == (StationLifecycleEvent::Connected {
-                generation: expected_generation,
-            })
+        if matches!(event, StationLifecycleEvent::Connected { generation, .. } if generation == expected_generation)
         {
             return Ok(());
         }
@@ -212,6 +209,7 @@ impl CycleProgress {
             }
             StationLifecycleEvent::Connected {
                 generation: observed,
+                ..
             } if self.disconnected && observed == generation.wrapping_add(1) => {
                 self.connected = true;
                 Ok(())

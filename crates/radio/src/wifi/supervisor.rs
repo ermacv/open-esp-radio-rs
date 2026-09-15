@@ -231,6 +231,7 @@ pub enum WifiRadioCalibrationPath {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiRadioRestartReport {
     generation: RadioSubsystemGeneration,
+    previous_phy_registration_generation: PhyRegistrationGeneration,
     phy_registration_generation: PhyRegistrationGeneration,
     calibration_path: WifiRadioCalibrationPath,
 }
@@ -239,16 +240,19 @@ pub struct WifiRadioRestartReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiRadioRetainedCycleReport {
     generation: RadioSubsystemGeneration,
+    previous_phy_registration_generation: PhyRegistrationGeneration,
     phy_registration_generation: PhyRegistrationGeneration,
 }
 
 impl WifiRadioRetainedCycleReport {
     pub const fn new(
         generation: RadioSubsystemGeneration,
+        previous_phy_registration_generation: PhyRegistrationGeneration,
         phy_registration_generation: PhyRegistrationGeneration,
     ) -> Self {
         Self {
             generation,
+            previous_phy_registration_generation,
             phy_registration_generation,
         }
     }
@@ -260,16 +264,22 @@ impl WifiRadioRetainedCycleReport {
     pub const fn phy_registration_generation(self) -> PhyRegistrationGeneration {
         self.phy_registration_generation
     }
+
+    pub const fn previous_phy_registration_generation(self) -> PhyRegistrationGeneration {
+        self.previous_phy_registration_generation
+    }
 }
 
 impl WifiRadioRestartReport {
     pub const fn new(
         generation: RadioSubsystemGeneration,
+        previous_phy_registration_generation: PhyRegistrationGeneration,
         phy_registration_generation: PhyRegistrationGeneration,
         calibration_path: WifiRadioCalibrationPath,
     ) -> Self {
         Self {
             generation,
+            previous_phy_registration_generation,
             phy_registration_generation,
             calibration_path,
         }
@@ -285,6 +295,10 @@ impl WifiRadioRestartReport {
 
     pub const fn phy_registration_generation(self) -> PhyRegistrationGeneration {
         self.phy_registration_generation
+    }
+
+    pub const fn previous_phy_registration_generation(self) -> PhyRegistrationGeneration {
+        self.previous_phy_registration_generation
     }
 }
 

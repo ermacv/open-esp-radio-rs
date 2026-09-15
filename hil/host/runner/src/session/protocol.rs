@@ -332,6 +332,34 @@ impl SerialCapture {
 
     pub(crate) fn start_session(&self, config: SessionConfig) -> Result<SessionHandle> {
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        self.start_session_with_id(session_id, config)
+    }
+
+    /// Reserve one exact current-boot/session identity before Configure so
+    /// both UDP payload directions can be correlated to this lifecycle stage.
+    pub(crate) fn start_identified_udp_session(
+        &self,
+        build: impl FnOnce(open_esp_radio_hil_protocol::UdpSessionPayloadIdentity) -> SessionConfig,
+    ) -> Result<(
+        SessionHandle,
+        open_esp_radio_hil_protocol::UdpSessionPayloadIdentity,
+    )> {
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("device omitted the current boot identity")?;
+        let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        let identity = open_esp_radio_hil_protocol::UdpSessionPayloadIdentity::new(
+            boot_id.rotate_left(32).wrapping_add(session_id),
+        );
+        let session = self.start_session_with_id(session_id, build(identity))?;
+        Ok((session, identity))
+    }
+
+    fn start_session_with_id(
+        &self,
+        session_id: u64,
+        config: SessionConfig,
+    ) -> Result<SessionHandle> {
         let first_event = self.protocol_event_count();
         let direction = config.direction;
         let link_requirements = config.link_requirements;
@@ -758,10 +786,27 @@ impl SerialCapture {
         let first_event = self.protocol_event_count();
         let response = self.send_command(0, command, PROTOCOL_READY_TIMEOUT)?;
         match response.body {
-            Event::Accepted => Ok(WifiCommandHandle {
-                request_id: response.request_id,
-                first_event,
-            }),
+            Event::Accepted => {
+                let state = self
+                    .protocol
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let accepted_offset = state.messages[first_event..]
+                    .iter()
+                    .position(|message| {
+                        message.boot_id == response.boot_id
+                            && message.session_id == 0
+                            && message.request_id == response.request_id
+                            && message.message_sequence == response.message_sequence
+                    })
+                    .ok_or("accepted Wi-Fi command disappeared from the capture")?;
+                Ok(WifiCommandHandle {
+                    boot_id: response.boot_id,
+                    request_id: response.request_id,
+                    first_event: first_event + accepted_offset + 1,
+                })
+            }
             Event::Rejected(reason) => {
                 Err(format!("device rejected {operation}: {reason:?}").into())
             }
@@ -967,7 +1012,9 @@ impl SerialCapture {
         predicate: impl Fn(&Envelope<Event>) -> bool,
     ) -> Result<Option<Envelope<Event>>> {
         let event = self.wait_for_protocol_after(handle.first_event, timeout, |message| {
-            message.request_id == handle.request_id
+            message.boot_id == handle.boot_id
+                && message.session_id == 0
+                && message.request_id == handle.request_id
                 && (predicate(message)
                     || matches!(message.body, Event::WifiRoleFailed(_) | Event::Failed(_)))
         })?;
@@ -1236,23 +1283,69 @@ impl SerialCapture {
         first_event: usize,
         timeout: Duration,
     ) -> Result<u32> {
+        Ok(self
+            .wait_for_connected_station_link_after(first_event, timeout)?
+            .generation)
+    }
+
+    pub(crate) fn wait_for_connected_station_link_after(
+        &self,
+        first_event: usize,
+        timeout: Duration,
+    ) -> Result<StationConnectionObservation> {
+        let deadline = Instant::now() + timeout;
+        let mut cursor = first_event;
+        loop {
+            let event = self
+                .wait_station_lifecycle_event_optional(
+                    &mut cursor,
+                    deadline.saturating_duration_since(Instant::now()),
+                )?
+                .ok_or("device did not publish connected station readiness")?;
+            match event {
+                StationLifecycleEvent::Connected {
+                    generation,
+                    association_bandwidth_mhz,
+                    security,
+                } => {
+                    return Ok(StationConnectionObservation {
+                        generation,
+                        association_bandwidth_mhz,
+                        security,
+                        event_cursor_after: cursor,
+                    });
+                }
+                StationLifecycleEvent::AttemptFailed { .. } => {}
+                other => {
+                    return Err(format!(
+                        "station published {other:?} before the new connected frontier"
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+
+    /// A lifecycle stage needs a newly published network endpoint; the last
+    /// boot-scoped address is not proof that its successor has configured IP.
+    pub(crate) fn wait_for_network_ready_after(
+        &self,
+        first_event: usize,
+        interface: WifiNetworkInterface,
+        timeout: Duration,
+    ) -> Result<Ipv4Addr> {
         let boot_id = self
             .latest_boot_id()
-            .ok_or("device did not publish a current HIL boot identity")?;
-        let event = self
-            .wait_for_protocol_after(first_event, timeout, |message| {
-                message.boot_id == boot_id
-                    && matches!(
-                        message.body,
-                        Event::StationLifecycle(StationLifecycleEvent::Connected { .. })
-                    )
-            })?
-            .ok_or("device did not publish connected station readiness")?;
+            .ok_or("device omitted the current boot identity")?;
+        let event = self.wait_for_protocol_after(first_event, timeout, |message| {
+            message.boot_id == boot_id
+                && message.session_id == 0
+                && message.request_id == 0
+                && matches!(message.body, Event::NetworkReady(info) if info.network_interface == interface)
+        })?.ok_or("new station stage did not publish a fresh network endpoint")?;
         match event.body {
-            Event::StationLifecycle(StationLifecycleEvent::Connected { generation }) => {
-                Ok(generation)
-            }
-            _ => unreachable!("connected predicate accepted only a connected lifecycle event"),
+            Event::NetworkReady(info) => Ok(Ipv4Addr::from(info.address)),
+            _ => unreachable!("network predicate accepted only a network endpoint"),
         }
     }
 
@@ -1281,7 +1374,10 @@ impl SerialCapture {
             .ok_or("device did not publish a current HIL boot identity")?;
         Ok(self
             .wait_for_protocol_cursor(cursor, timeout, |message| {
-                message.boot_id == boot_id && matches!(message.body, Event::StationLifecycle(_))
+                message.boot_id == boot_id
+                    && message.session_id == 0
+                    && message.request_id == 0
+                    && matches!(message.body, Event::StationLifecycle(_))
             })?
             .map(|message| match message.body {
                 Event::StationLifecycle(event) => event,

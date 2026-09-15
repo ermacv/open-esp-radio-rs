@@ -57,7 +57,11 @@ fn qualify(
         capture,
         cursor,
         timeout,
-        StationLifecycleEvent::Connected { generation: 0 },
+        StationLifecycleEvent::Connected {
+            generation: 0,
+            association_bandwidth_mhz: None,
+            security: None,
+        },
         "initial connection",
     )?;
     eprintln!(
@@ -88,7 +92,11 @@ fn qualify(
         capture,
         cursor,
         timeout,
-        StationLifecycleEvent::Connected { generation: 1 },
+        StationLifecycleEvent::Connected {
+            generation: 1,
+            association_bandwidth_mhz: None,
+            security: None,
+        },
         "generation-one recovery",
     )?;
     eprintln!(
@@ -116,7 +124,14 @@ fn validate_event(
     expected: StationLifecycleEvent,
     transition: &str,
 ) -> Result<()> {
-    if actual != expected {
+    let same_connection = matches!(
+        (actual, expected),
+        (
+            StationLifecycleEvent::Connected { generation: observed, .. },
+            StationLifecycleEvent::Connected { generation: required, .. }
+        ) if observed == required
+    );
+    if !same_connection && actual != expected {
         return Err(
             format!("station {transition} reported {actual:?}, expected {expected:?}").into(),
         );

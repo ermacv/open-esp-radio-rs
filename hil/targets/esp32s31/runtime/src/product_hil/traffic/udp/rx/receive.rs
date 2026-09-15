@@ -4,7 +4,9 @@ use embassy_futures::yield_now;
 use embassy_time::{Duration, Instant, with_timeout};
 use open_esp_radio_hil_esp32s31_telemetry::task_poll::{TaskPollSet, TaskPollSetSnapshot};
 use open_esp_radio_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
-use open_esp_radio_hil_protocol::{Completion, FlowTransportEvidence, SESSION_FLOW_CAPACITY};
+use open_esp_radio_hil_protocol::{
+    Completion, FlowTransportEvidence, SESSION_FLOW_CAPACITY, UdpSessionPayloadIdentity,
+};
 
 use crate::{
     console::{ActiveSession, runtime_log_reliably},
@@ -30,6 +32,7 @@ pub(super) struct Outcome {
 
 struct Flow {
     peer: Option<IpEndpoint>,
+    payload_identity: Option<UdpSessionPayloadIdentity>,
     payload: usize,
     terminal: bool,
     evidence: FlowTransportEvidence,
@@ -56,6 +59,7 @@ pub(super) async fn run(
                 let peer = flow.peer.expect("validated multi-flow peer");
                 (Ipv4Address::from_octets(peer.address), peer.port).into()
             }),
+            payload_identity: flow.payload_identity,
             payload: usize::from(flow.target_rx.expect("validated RX flow").payload_bytes),
             terminal: false,
             evidence: FlowTransportEvidence {
@@ -111,14 +115,20 @@ pub(super) async fn run(
         let received = with_timeout(
             Duration::from_micros(deadline.saturating_sub(now)),
             recv_from_with(socket, |packet, metadata| {
-                (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
+                (
+                    packet.len(),
+                    iperf2_udp_sequence(packet),
+                    metadata.endpoint,
+                    UdpSessionPayloadIdentity::from_payload(packet),
+                    UdpSessionPayloadIdentity::fill_matches(packet),
+                )
             }),
         )
         .await;
         let received_at = Instant::now().as_micros();
         maximum_deadline_lateness =
             maximum_deadline_lateness.max(received_at.saturating_sub(deadline));
-        let (length, packet_sequence, endpoint) = match received {
+        let (length, packet_sequence, endpoint, packet_identity, payload_fill_matches) = match received {
             Ok(Ok(packet)) => packet,
             Ok(Err(error)) => {
                 socket_errors = socket_errors.saturating_add(1);
@@ -138,6 +148,12 @@ pub(super) async fn run(
             unknown_packets = unknown_packets.saturating_add(1);
             continue;
         };
+        if flow.payload_identity.is_some_and(|expected| {
+            packet_identity != Some(expected) || !payload_fill_matches
+        }) {
+            unknown_packets = unknown_packets.saturating_add(1);
+            continue;
+        }
         #[cfg(feature = "rx-delivery-telemetry")]
         if single_flow && let Some(sequence) = packet_sequence {
             crate::product_hil::rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
@@ -149,6 +165,17 @@ pub(super) async fn run(
             // Readiness probes use the same negative wire marker outside a
             // session. A marker before this flow's first data is not completion.
             flow.terminal |= flow.evidence.rx_units != 0;
+            continue;
+        }
+        if flow.payload_identity.is_some_and(|expected| {
+            !expected.accepts_next_data(
+                packet_identity,
+                payload_fill_matches,
+                packet_sequence,
+                flow.evidence.rx_units,
+            )
+        }) {
+            unknown_packets = unknown_packets.saturating_add(1);
             continue;
         }
         if !window.data(received_at) {

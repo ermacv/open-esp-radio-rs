@@ -1666,6 +1666,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             );
         }
     };
+    let negotiated_security = tx_security.mode();
     let mut group_security = Some(group_security);
     #[cfg(feature = "diagnostics")]
     log_rx_ring_topology("started", &rx);
@@ -1842,7 +1843,10 @@ pub(crate) async fn run_connected<'state, 'security>(
         "open-radio: connected RX DMA: {:?}",
         radio_runner.services().hardware().mac_rx_dma_snapshot(),
     );
-    crate::status::publish_station_connected();
+    crate::status::publish_station_connected(
+        u16::from(report.link.association_phy.bandwidth_mhz()),
+        negotiated_security,
+    );
     #[cfg(feature = "diagnostics")]
     {
         DIAGNOSTIC_DATA_RATE_KBPS.store(report.data_tx_rate.nominal_kbps(), Ordering::Relaxed);

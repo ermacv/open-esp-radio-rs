@@ -1,6 +1,6 @@
-# HIL protocol v136
+# HIL protocol v137
 
-Host and firmware must both use version 136. Other versions are rejected
+Host and firmware must both use version 137. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
@@ -171,6 +171,30 @@ only while the link remains healthy.
 Wi-Fi commands admit only operations valid for the current `WifiIdle`,
 `WifiStation`, `WifiAccessPoint` or `WifiMonitor` owner. Admission, successful
 completion and terminal role failure are distinct request-correlated events.
+
+The cold-restart and retained-cycle reports carry the radio actor's PHY
+registration generation immediately before and after the operation. Cold
+restart requires wrapping increment by one and `RestoredCache`; retained wake
+requires exact equality, including its first cycle. Both also require the next
+radio-role generation after station stop. These logical generations do not by
+themselves prove physical RF restoration or quiescence. Station lifecycle
+generation is a separate link-epoch counter: a stopped connected STA must
+publish a fresh `LinkPolicy` disconnect for the previous link epoch, then a
+new `Connected` edge in the next link epoch. A connected edge includes the
+actually negotiated association width and security from the production station
+status snapshot. Missing metadata cannot establish HT40/WPA2-Personal.
+
+The lifecycle scenarios require fresh station `NetworkReady` after each
+reconnection, then a bounded bidirectional UDP application session before and
+after each radio cycle. Its optional `SessionFlowConfig.payload_identity`
+binds the payload to the current boot and session ID. The target counts only
+consumed RX datagrams with matching identity and fill; the Host checks each
+received target TX datagram's source, length, identity, fill and sequence, and
+reconciles both directions with retained session evidence. `ServiceReady`,
+`SessionReady`, a probe response or a previous network address cannot replace
+that payload proof. Other sessions leave `payload_identity` unset and retain
+their existing traffic format. Hardware execution and dated link evidence are
+still required for radio-cycle qualification.
 
 Read-only attachment discovers a running runtime with `GetCapabilities` in an
 envelope whose boot ID and session ID are zero. The reply is a correlated

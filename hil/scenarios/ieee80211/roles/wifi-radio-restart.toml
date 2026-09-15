@@ -1,6 +1,6 @@
 schema = 4
 id = "wifi-radio-restart"
-description = "Final-client PHY release, RF close and cold radio restart from idle ownership"
+description = "Connected HT40/WPA2 STA to stopped link and cold cache-backed RF restart, with fresh bidirectional session-identified UDP recovery before and after each cycle"
 repetitions = 3
 image = "correctness"
 isolation = "reset"

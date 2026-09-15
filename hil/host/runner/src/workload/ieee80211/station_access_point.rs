@@ -421,6 +421,7 @@ fn start_session(
                 }),
                 target_rx,
                 target_tx,
+                payload_identity: None,
             }),
             None,
         ],

@@ -112,6 +112,13 @@ async fn transmit_multi_flow(
                     ),
                     |payload| {
                         payload[..4].copy_from_slice(&publication.sequence.to_be_bytes());
+                        if let Some(identity) = session_config.flows[index]
+                            .expect("validated TX session retains its flow")
+                            .payload_identity
+                        {
+                            assert!(identity.write_to(payload));
+                            assert!(open_esp_radio_hil_protocol::UdpSessionPayloadIdentity::fill_after_header(payload));
+                        }
                         (publication.payload_bytes, ())
                     },
                 );
@@ -335,6 +342,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                     let publication =
                         socket.send_to_with(payload_bytes, (server, server_port), |packet| {
                             packet[..sequence.len()].copy_from_slice(&sequence);
+                            if let Some(identity) = session_flow.payload_identity {
+                                assert!(identity.write_to(packet));
+                                assert!(open_esp_radio_hil_protocol::UdpSessionPayloadIdentity::fill_after_header(packet));
+                            }
                             (payload_bytes, ())
                         });
                     #[cfg(feature = "task-poll-telemetry")]

@@ -1,10 +1,15 @@
 use core::cell::Cell;
+use core::future::Future;
+use core::pin::pin;
+use core::task::{Context, Poll, Waker};
 use std::rc::Rc;
-
-use embassy_futures::{
-    block_on,
-    select::{Either, select},
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
 };
+use std::task::Wake;
+
+use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_hci::{
     BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerCommandReadyClaim,
@@ -36,6 +41,19 @@ fn resources() -> Resources {
 struct LocalOwner {
     id: u32,
     dropped: Rc<Cell<usize>>,
+}
+
+#[derive(Default)]
+struct WakeCount(AtomicUsize);
+
+impl Wake for WakeCount {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 impl Drop for LocalOwner {
@@ -98,11 +116,13 @@ fn pending_response_cancel_mismatch_and_backpressure_retain_one_local_owner() {
     assert_eq!(pending.owner().id, 41);
 
     let pending = pending.map_owner(|owner| owner);
-    let cancelled = block_on(select(
-        async {},
-        pending.wait_response_capacity(&first.controller),
-    ));
-    assert!(matches!(cancelled, Either::First(())));
+    let wake_count = Arc::new(WakeCount::default());
+    let waker = Waker::from(Arc::clone(&wake_count));
+    let mut context = Context::from_waker(&waker);
+    {
+        let mut wait = pin!(pending.wait_response_capacity(&first.controller));
+        assert!(matches!(wait.as_mut().poll(&mut context), Poll::Pending));
+    }
     let Publication::Pending(pending) = pending.try_publish_response(&first.controller) else {
         panic!("full output storage must return the same pending owner");
     };
@@ -114,6 +134,7 @@ fn pending_response_cancel_mismatch_and_backpressure_retain_one_local_owner() {
     let first_response: ControllerToHostPacket<'_> =
         block_on(first.host.read(&mut buffer)).expect("the Host drains the older response");
     assert_eq!(first_response.kind(), PacketKind::Event);
+    assert!(wake_count.0.load(Ordering::SeqCst) > 0);
     assert_eq!(
         block_on(pending.wait_response_capacity(&first.controller)),
         Ok(ResponseWait::CapacityAvailable)
@@ -126,13 +147,57 @@ fn pending_response_cancel_mismatch_and_backpressure_retain_one_local_owner() {
     let second_response: ControllerToHostPacket<'_> =
         block_on(first.host.read(&mut buffer)).expect("the Host receives the retried response");
     assert_eq!(second_response.kind(), PacketKind::Event);
-    let no_third_response = block_on(select(
-        async {},
-        first.host.read::<ControllerToHostPacket<'_>>(&mut buffer),
-    ));
-    assert!(matches!(no_third_response, Either::First(())));
+    {
+        let mut no_third_response =
+            pin!(first.host.read::<ControllerToHostPacket<'_>>(&mut buffer));
+        assert!(matches!(
+            no_third_response.as_mut().poll(&mut context),
+            Poll::Pending
+        ));
+    }
     drop(ready);
     assert_eq!(dropped.get(), 1);
+}
+
+#[test]
+fn host_read_poll_distinguishes_a_real_queued_response_from_empty_output() {
+    let mut storage = resources();
+    let mut endpoints = storage.split();
+    let LeControllerCommandReadyClaim::Ready(ready) =
+        endpoints.controller.claim_initial_command_ready(())
+    else {
+        panic!("the sole initial authority is unclaimed");
+    };
+    let Publication::Published(_ready) =
+        Order::ResponsePending(ready.begin_host_completed_packets_error(
+            LeHostCompletedPacketsErrorEvent::invalid_parameters(),
+        ))
+        .try_publish_response(&endpoints.controller)
+    else {
+        panic!("the output queue accepts the response");
+    };
+    let mut buffer = [0; 80];
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    {
+        let mut read = pin!(
+            endpoints
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut buffer)
+        );
+        let Poll::Ready(Ok(packet)) = read.as_mut().poll(&mut context) else {
+            panic!("a real queued response must make Host read ready");
+        };
+        assert_eq!(packet.kind(), PacketKind::Event);
+    }
+    {
+        let mut read = pin!(
+            endpoints
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut buffer)
+        );
+        assert!(matches!(read.as_mut().poll(&mut context), Poll::Pending));
+    }
 }
 
 #[test]

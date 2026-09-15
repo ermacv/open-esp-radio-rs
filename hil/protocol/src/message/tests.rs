@@ -40,6 +40,7 @@ fn flow(flow_id: u8, address: [u8; 4], port: u16) -> SessionFlowConfig {
         peer: Some(Ipv4Endpoint { address, port }),
         target_rx: Some(traffic),
         target_tx: Some(traffic),
+        payload_identity: None,
     }
 }
 
@@ -62,6 +63,36 @@ fn multi_flow_structure_requires_the_explicit_capability() {
     let session = two_flow_session();
     assert!(!session.structurally_valid(1_472, false));
     assert!(session.structurally_valid(1_472, true));
+}
+
+#[test]
+fn udp_stage_payload_identity_rejects_stale_or_short_application_payload() {
+    let identity = UdpSessionPayloadIdentity::new(0x7a45_0123_fedc_9001);
+    let stale = UdpSessionPayloadIdentity::new(0x7a45_0123_fedc_9002);
+    let mut payload = [0x5a; 64];
+    payload[..4].copy_from_slice(&3_u32.to_be_bytes());
+    assert!(identity.write_to(&mut payload));
+    assert!(identity.matches(&payload));
+    assert!(!stale.matches(&payload));
+    assert_eq!(
+        UdpSessionPayloadIdentity::from_payload(&payload),
+        Some(identity)
+    );
+    assert!(!identity.matches(&payload[..11]));
+    assert!(!identity.write_to(&mut payload[..11]));
+    assert!(identity.accepts_next_data(Some(identity), true, Some(3), 3));
+    assert!(!identity.accepts_next_data(Some(stale), true, Some(3), 3));
+    assert!(!identity.accepts_next_data(Some(identity), false, Some(3), 3));
+    assert!(!identity.accepts_next_data(Some(identity), true, Some(2), 3));
+    assert!(!identity.accepts_next_data(Some(identity), true, None, 3));
+    payload[12] = 0;
+    assert!(!identity.matches(&payload));
+
+    let mut session = two_flow_session();
+    session.flows[0].as_mut().unwrap().payload_identity = Some(identity);
+    assert!(session.structurally_valid(1_472, true));
+    session.transport = Transport::Tcp;
+    assert!(!session.structurally_valid(1_472, true));
 }
 
 #[test]

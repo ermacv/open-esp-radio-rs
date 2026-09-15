@@ -492,9 +492,11 @@ fn retained_cycle_after_cold_restart_keeps_phy_registration_generation() {
         let mut port = radio.into_wifi().into_port();
         let restart = port.restart_radio().await.unwrap();
         assert_eq!(restart.generation().value(), 1);
+        assert_eq!(restart.previous_phy_registration_generation().value(), 0);
         assert_eq!(restart.phy_registration_generation().value(), 1);
         let retained = port.cycle_retained_radio().await.unwrap();
         assert_eq!(retained.generation().value(), 2);
+        assert_eq!(retained.previous_phy_registration_generation().value(), 1);
         assert_eq!(retained.phy_registration_generation().value(), 1);
         assert_eq!(observed_owner.get(), 30);
     };

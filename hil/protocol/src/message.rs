@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 136;
+pub const PROTOCOL_VERSION: u16 = 137;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -135,6 +135,71 @@ pub struct SessionFlowConfig {
     pub peer: Option<Ipv4Endpoint>,
     pub target_rx: Option<FlowConfig>,
     pub target_tx: Option<FlowConfig>,
+    /// Optional exact identity in both application-payload directions of a
+    /// bounded UDP session. Old packets from an earlier lifecycle stage must
+    /// not be counted as recovery of the newly configured station session.
+    pub payload_identity: Option<UdpSessionPayloadIdentity>,
+}
+
+/// Eight-byte stage identity following the four-byte benchmark UDP sequence.
+/// Identified payloads retain the existing `0x5a` benchmark fill after that
+/// header so either consumer can reject altered application content.
+/// It is an application-payload contract, not a radio generation or a source
+/// of independent HIL traffic evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UdpSessionPayloadIdentity(u64);
+
+impl UdpSessionPayloadIdentity {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+
+    pub fn write_to(self, payload: &mut [u8]) -> bool {
+        let Some(bytes) = payload.get_mut(4..12) else {
+            return false;
+        };
+        bytes.copy_from_slice(&self.0.to_be_bytes());
+        true
+    }
+
+    pub fn matches(self, payload: &[u8]) -> bool {
+        Self::from_payload(payload) == Some(self) && Self::fill_matches(payload)
+    }
+
+    /// Accept only the next measured data packet in an identified RX flow.
+    /// Terminal negative markers are handled separately by the receiver.
+    pub fn accepts_next_data(
+        self,
+        observed: Option<Self>,
+        fill_matches: bool,
+        sequence: Option<i32>,
+        accepted_units: u64,
+    ) -> bool {
+        observed == Some(self) && fill_matches && sequence == i32::try_from(accepted_units).ok()
+    }
+
+    pub fn fill_matches(payload: &[u8]) -> bool {
+        payload
+            .get(12..)
+            .is_some_and(|tail| tail.iter().all(|byte| *byte == 0x5a))
+    }
+
+    pub fn fill_after_header(payload: &mut [u8]) -> bool {
+        let Some(tail) = payload.get_mut(12..) else {
+            return false;
+        };
+        tail.fill(0x5a);
+        true
+    }
+
+    pub fn from_payload(payload: &[u8]) -> Option<Self> {
+        let bytes: [u8; 8] = payload.get(4..12)?.try_into().ok()?;
+        Some(Self(u64::from_be_bytes(bytes)))
+    }
 }
 
 /// Link properties that must be true before a measured transport session may
@@ -246,6 +311,11 @@ impl SessionConfig {
                     tx.pacing_group_datagrams.is_none() || self.transport == Transport::Udp
                 })
         });
+        let payload_identities_valid = self
+            .flows
+            .iter()
+            .flatten()
+            .all(|flow| flow.payload_identity.is_none() || self.transport == Transport::Udp);
         let peers_valid = match (self.transport, self.direction) {
             (Transport::Tcp, _) => {
                 flow_count == 1 && self.flows.iter().flatten().all(|flow| flow.peer.is_none())
@@ -290,6 +360,7 @@ impl SessionConfig {
 
         identities_valid
             && pacing_valid
+            && payload_identities_valid
             && peers_valid
             && direction_valid
             && link_requirements_valid
@@ -1547,6 +1618,9 @@ pub enum WifiRadioCalibrationPath {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiRadioRestartEvidence {
     pub generation: u32,
+    /// Actor-owned registered PHY epoch immediately before the accepted cold
+    /// operation moved the stopped radio owner.
+    pub previous_phy_registration_generation: u32,
     pub phy_registration_generation: u32,
     pub calibration_path: WifiRadioCalibrationPath,
 }
@@ -1555,6 +1629,8 @@ pub struct WifiRadioRestartEvidence {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiRadioRetainedCycleEvidence {
     pub generation: u32,
+    /// Actor-owned registered PHY epoch immediately before retained close/wake.
+    pub previous_phy_registration_generation: u32,
     pub phy_registration_generation: u32,
 }
 
@@ -1877,6 +1953,11 @@ pub enum StationAttemptFailureReason {
 pub enum StationLifecycleEvent {
     Connected {
         generation: u32,
+        /// Association geometry from the production connected report, not the
+        /// requested TOML channel or a last-packet PHY sample.
+        association_bandwidth_mhz: Option<u16>,
+        /// Installed connected security owner, if the image can observe it.
+        security: Option<StationLinkSecurity>,
     },
     Disconnected {
         generation: u32,
@@ -1897,6 +1978,12 @@ pub enum StationLifecycleEvent {
         stage: StationFailureStage,
         reason: StationAttemptFailureReason,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StationLinkSecurity {
+    Open,
+    Wpa2Personal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

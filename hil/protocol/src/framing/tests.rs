@@ -723,6 +723,7 @@ fn asymmetric_bidirectional_session_round_trips() {
                         offered_rate_bps: None,
                         pacing_group_datagrams: None,
                     }),
+                    payload_identity: None,
                 }),
                 None,
             ],
@@ -756,6 +757,7 @@ fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
                 offered_rate_bps: Some(60_000_000),
                 pacing_group_datagrams: None,
             }),
+            payload_identity: None,
         })
     };
     let expected = Envelope::new(
@@ -838,6 +840,27 @@ fn station_beacon_loss_generation_round_trips() {
 }
 
 #[test]
+fn connected_station_negotiated_link_round_trips_on_current_version() {
+    let expected = Envelope::new(
+        7,
+        4,
+        0,
+        0,
+        Event::StationLifecycle(StationLifecycleEvent::Connected {
+            generation: 5,
+            association_bandwidth_mhz: Some(40),
+            security: Some(crate::StationLinkSecurity::Wpa2Personal),
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
 fn station_retry_exhaustion_round_trips_without_text_markers() {
     let expected = Envelope::new(
         7,
@@ -889,6 +912,7 @@ fn radio_restart_round_trips_cache_path_with_request_identity() {
         43,
         Event::WifiRadioRestarted(WifiRadioRestartEvidence {
             generation: 10,
+            previous_phy_registration_generation: 3,
             phy_registration_generation: 4,
             calibration_path: WifiRadioCalibrationPath::RestoredCache,
         }),
@@ -910,6 +934,7 @@ fn retained_radio_cycle_round_trips_phy_epoch_with_request_identity() {
         44,
         Event::WifiRadioRetainedCycled(crate::WifiRadioRetainedCycleEvidence {
             generation: 11,
+            previous_phy_registration_generation: 4,
             phy_registration_generation: 4,
         }),
     );

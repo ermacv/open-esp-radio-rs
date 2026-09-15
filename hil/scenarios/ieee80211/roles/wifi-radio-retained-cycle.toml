@@ -1,6 +1,6 @@
 schema = 4
 id = "wifi-radio-retained-cycle"
-description = "Final-client RF close and retained wake without retiring the registered PHY epoch"
+description = "Connected HT40/WPA2 STA to stopped link and retained RF wake with pre-operation PHY epoch preserved, plus fresh bidirectional session-identified UDP recovery before and after each cycle"
 repetitions = 3
 image = "correctness"
 isolation = "reset"

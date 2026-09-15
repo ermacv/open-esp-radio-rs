@@ -227,6 +227,7 @@ pub(super) fn qualify_multi_client_udp(
                         .then_some(secondary_tx_pacing_group_datagrams)
                         .flatten(),
                 }),
+                payload_identity: None,
             })
         }),
         link_requirements: SessionLinkRequirements::NONE,

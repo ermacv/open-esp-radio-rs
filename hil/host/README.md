@@ -53,6 +53,13 @@ scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
 is available for station and access-point examples through `cargo xtask build
 firmware <example> --network …`; see the
 [implementation guide](../../docs/network-implementations.md).
+`cargo hil image build performance` and `cargo hil image build correctness`
+perform the same final stack/move, placement, source-graph and packed-image
+checks without flashing or loading private lab configuration. Each successful
+build emits one JSON report on stdout with class, target, profile, network,
+class-owned artifact paths and build-audit verdicts; diagnostics stay on stderr.
+An ELF or `application.bin` left beside a failed build is not a successful
+image report.
 `cargo hil run-all` reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
 `target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit

@@ -28,7 +28,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
 | `cargo xtask check docs --list` | List resolved documentation configurations and genuine inapplicable actions without running doc builds, doctests or qualification evaluation |
 | `cargo xtask check docs` | Build separate public/private rustdoc, run applicable host doctests, compile MCU example consumers, check owned Markdown links and render static qualification views |
-| `cargo xtask check source-only` | Compose repository suites, including the docs gate, Cargo/Clippy, publication and final-image analysis |
+| `cargo xtask check source-only` | Compose repository suites once, including the docs gate, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
@@ -57,8 +57,15 @@ made. Static catalog checking and rendering neither load runtime evidence nor
 evaluate readiness, and the command performs no hardware operations.
 Rustdoc type-checking of the bootstrap uses an owned empty compile input for
 its required `PSRAM_RUNTIME_BIN`; it is never linked, packed or presented as a
-firmware image. The source-only image owner continues to provide the real
-packed stage-two runtime for final-image analysis.
+firmware image. The source-only image owner builds the real performance and
+correctness application images through the HIL builder, checks each class's
+fresh stack, placement and packed-image artifacts, and runs the final radio
+target audit on each reported runtime ELF. Successful builds emit separate
+machine-readable image reports with class, target, profile, network, artifact
+paths and builder/final-audit verdicts. A failed or incomplete correctness
+build cannot be replaced by a previous application image or a successful
+performance build. This gate does not run on hardware or measure runtime stack
+high-water.
 
 Network dependency checks distinguish released compatibility, original upstream,
 maintained owned and research contracts. Compatibility products

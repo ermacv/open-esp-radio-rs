@@ -316,80 +316,76 @@ where
                 attempt: generation_attempt,
                 refresh_candidate,
             };
-            let outcome = loop {
+            loop {
                 match poll_with_stack_boundary(self.backend.run_attempt(owner, context)).await {
                     StaAttemptOutcome::Advanced { owner: advanced } => owner = advanced,
-                    outcome => break outcome,
-                }
-            };
-            match outcome {
-                StaAttemptOutcome::Advanced { .. } => {
-                    unreachable!("advanced phases are consumed by the inner attempt loop")
-                }
-                StaAttemptOutcome::Stopped { owner } => {
-                    return StaLifecycleExit::Stopped { owner, progress };
-                }
-                StaAttemptOutcome::Disconnected {
-                    owner: returned,
-                    next_candidate,
-                } => {
-                    progress.connected_epochs = progress.connected_epochs.saturating_add(1);
-                    progress.last_failure_stage = None;
-                    generation_attempt = 1;
-                    refresh_candidate = next_candidate == StaNextCandidate::Refresh;
-                    owner = match poll_with_stack_boundary(self.backend.wait_backoff(
-                        returned,
-                        self.policy.disconnect_backoff_millis(),
-                        StaBackoffReason::Disconnected,
-                    ))
-                    .await
-                    {
-                        StaBackoffOutcome::Elapsed { owner } => owner,
-                        StaBackoffOutcome::Stopped { owner } => {
-                            return StaLifecycleExit::Stopped { owner, progress };
-                        }
-                    };
-                }
-                StaAttemptOutcome::Failed {
-                    owner: returned,
-                    failure,
-                } => {
-                    progress.last_failure_stage = Some(failure.stage);
-                    if failure.disposition == StaFailureDisposition::Terminal {
-                        return StaLifecycleExit::Terminal {
-                            owner: returned,
-                            progress,
-                            failure,
-                        };
+                    StaAttemptOutcome::Stopped { owner } => {
+                        return StaLifecycleExit::Stopped { owner, progress };
                     }
-                    if generation_attempt >= self.policy.attempt_limit() {
-                        return StaLifecycleExit::Exhausted {
-                            owner: returned,
-                            progress,
-                            failure,
+                    StaAttemptOutcome::Disconnected {
+                        owner: returned,
+                        next_candidate,
+                    } => {
+                        progress.connected_epochs = progress.connected_epochs.saturating_add(1);
+                        progress.last_failure_stage = None;
+                        generation_attempt = 1;
+                        refresh_candidate = next_candidate == StaNextCandidate::Refresh;
+                        owner = match poll_with_stack_boundary(self.backend.wait_backoff(
+                            returned,
+                            self.policy.disconnect_backoff_millis(),
+                            StaBackoffReason::Disconnected,
+                        ))
+                        .await
+                        {
+                            StaBackoffOutcome::Elapsed { owner } => owner,
+                            StaBackoffOutcome::Stopped { owner } => {
+                                return StaLifecycleExit::Stopped { owner, progress };
+                            }
                         };
+                        break;
                     }
-                    refresh_candidate =
-                        failure.disposition == StaFailureDisposition::RefreshCandidate;
-                    owner = match poll_with_stack_boundary(self.backend.wait_backoff(
-                        returned,
-                        self.policy.retry_backoff_millis(generation_attempt),
-                        StaBackoffReason::AttemptFailed {
-                            stage: failure.stage,
-                            attempt: generation_attempt,
-                        },
-                    ))
-                    .await
-                    {
-                        StaBackoffOutcome::Elapsed { owner } => owner,
-                        StaBackoffOutcome::Stopped { owner } => {
-                            return StaLifecycleExit::Stopped { owner, progress };
+                    StaAttemptOutcome::Failed {
+                        owner: returned,
+                        failure,
+                    } => {
+                        progress.last_failure_stage = Some(failure.stage);
+                        if failure.disposition == StaFailureDisposition::Terminal {
+                            return StaLifecycleExit::Terminal {
+                                owner: returned,
+                                progress,
+                                failure,
+                            };
                         }
-                    };
-                    generation_attempt += 1;
-                }
-                StaAttemptOutcome::Faulted { fault } => {
-                    return StaLifecycleExit::Faulted { fault, progress };
+                        if generation_attempt >= self.policy.attempt_limit() {
+                            return StaLifecycleExit::Exhausted {
+                                owner: returned,
+                                progress,
+                                failure,
+                            };
+                        }
+                        refresh_candidate =
+                            failure.disposition == StaFailureDisposition::RefreshCandidate;
+                        owner = match poll_with_stack_boundary(self.backend.wait_backoff(
+                            returned,
+                            self.policy.retry_backoff_millis(generation_attempt),
+                            StaBackoffReason::AttemptFailed {
+                                stage: failure.stage,
+                                attempt: generation_attempt,
+                            },
+                        ))
+                        .await
+                        {
+                            StaBackoffOutcome::Elapsed { owner } => owner,
+                            StaBackoffOutcome::Stopped { owner } => {
+                                return StaLifecycleExit::Stopped { owner, progress };
+                            }
+                        };
+                        generation_attempt += 1;
+                        break;
+                    }
+                    StaAttemptOutcome::Faulted { fault } => {
+                        return StaLifecycleExit::Faulted { fault, progress };
+                    }
                 }
             }
         }

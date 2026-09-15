@@ -253,15 +253,24 @@ fn classify_image_signature(
 struct ArtifactReport<'a> {
     schema: u16,
     image_class: &'a str,
+    target: &'a str,
     network: &'a str,
     profile: &'a str,
     runtime_elf: String,
     runtime_bin: String,
+    runtime_stack_report: String,
+    placement_report: String,
     bootstrap_elf: String,
+    bootstrap_stack_report: String,
     effective_embedded_lock: String,
     effective_bootstrap_lock: String,
     application_image: String,
     application_sha256: String,
+    stack_frame_audit: &'a str,
+    move_size_audit: &'a str,
+    placement_audit: &'a str,
+    application_audit: &'a str,
+    autonomous_source_graph: &'a str,
     flashed: bool,
 }
 
@@ -273,15 +282,32 @@ pub(crate) fn print_artifacts(
     let report = ArtifactReport {
         schema: crate::evidence::run::RUN_SCHEMA,
         image_class: class.id(),
+        target: TARGET,
         network: artifacts.network.id(),
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
         runtime_bin: artifacts.runtime_bin.display().to_string(),
+        runtime_stack_report: artifacts
+            .output
+            .join("runtime-stack.txt")
+            .display()
+            .to_string(),
+        placement_report: artifacts.output.join("placement.txt").display().to_string(),
         bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
+        bootstrap_stack_report: artifacts
+            .output
+            .join("bootstrap-stack.txt")
+            .display()
+            .to_string(),
         effective_embedded_lock: artifacts.effective_embedded_lock.display().to_string(),
         effective_bootstrap_lock: artifacts.effective_bootstrap_lock.display().to_string(),
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
+        stack_frame_audit: "PASS",
+        move_size_audit: "PASS",
+        placement_audit: "PASS",
+        application_audit: "PASS",
+        autonomous_source_graph: "PASS",
         flashed,
     };
     crate::emit_json(&report, true)

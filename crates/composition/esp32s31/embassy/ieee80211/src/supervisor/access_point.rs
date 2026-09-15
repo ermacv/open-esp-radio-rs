@@ -601,6 +601,11 @@ impl ProductionWifiEpochRunner {
                 },
             });
         }
+        // No fallible AP owner transition remains after TX restoration.
+        // Park the radio frontier before constructing the independent role
+        // resource aggregates, so the live IRQ/register owner cannot overlap
+        // their terminal assembly in this machine frame.
+        let wifi = park_production_wifi(owner, registers, interrupts);
         let oer_esp32s31_wifi_ap::engine::ApEngineStop {
             service,
             beacon_storage,
@@ -630,7 +635,6 @@ impl ProductionWifiEpochRunner {
             tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
             aggregate_tx,
         };
-        let wifi = park_production_wifi(owner, registers, interrupts);
         Ok(WifiSupervisorStopped::new(
             wifi,
             physical,
@@ -1056,9 +1060,7 @@ impl ProductionWifiEpochRunner {
                 diagnostics_event!("open-radio: access-point RX scheduler stop unavailable");
             }
         }
-        if let Err(_error) = result {
-            #[cfg(not(feature = "diagnostics"))]
-            let _ = _error;
+        if result.is_err() {
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
             let error = self.fault_error(&faulted);
             let response = if started {

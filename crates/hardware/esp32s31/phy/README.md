@@ -61,7 +61,7 @@ reset or retained-sleep wakeup replay.
 | [Calibration](src/calibration/registration.rs), [analog](src/analog.rs), [RX](src/rx.rs), [TX](src/tx.rs) | Finite measurements, searches, ordered hardware actions and their results | No network sockets or protocol scheduling policy |
 | [PHY state](src/state.rs) | Configuration, calibration results, temperature references and cache values | Values do not grant register access |
 | [Client state](src/state/client.rs) and [tracking schedule](src/tracking/schedule.rs) | Active clients, source intervals and read-only demand | Wi-Fi and BT/154 are scheduling classes; BT and 154 remain distinct clients |
-| [Registered radio](src/registered_radio.rs) | Keep physical radio, registration proof and client lifetime associated | Cannot split proof from its hardware epoch |
+| [Registered radio](src/registered_radio.rs) | Keep physical radio, registration proof and client lifetime associated; the private [Wi-Fi handoff](src/registered_radio/wifi_integration.rs) holds only protocol-specific typed transfer and receive-enable methods | Cannot split proof from its hardware epoch |
 | [Tracking graphs](src/tracking.rs) and [executor](src/executor.rs) | Execute selected children and validate their completions | No independent RF arbitration |
 | [Target port](src/target_port.rs) and [HAL PHY](../hal/src/phy.rs) | Typed MMIO, analog buses, hardware completion and bounded waits | Hardware access is borrowed from the admitted owner |
 | [Wi-Fi supervisor](../../../composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs) | Role lifecycle and the connected maintenance transaction | Must collect the runtime's actual resources, not merely request a scheduler pause |

@@ -14,6 +14,8 @@ pub(crate) mod connection;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod first_hci;
 #[cfg(any(target_arch = "riscv32", test))]
+mod hci_order;
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod procedure;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod progress;

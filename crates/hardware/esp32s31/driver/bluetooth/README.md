@@ -57,7 +57,7 @@ chip-specific limits and provenance.
 | `le/advertising/legacy` | Legacy advertising preparation, timing, completion and recurring execution |
 | `le/advertising/connectable` | Connectable advertising activation, completion and recurring sequence/HCI/state |
 | `le/scanning/passive` | Passive scanning activation, recurring execution and completion |
-| `le/peripheral` | First HCI handoff, connection owner, completion and contiguous active recurrence |
+| `le/peripheral` | First HCI handoff, connection owner, completion and contiguous active recurrence; private HCI order retains the shared first/active response epoch, active HCI coordinates endpoint intake/publication, and active lifecycle steps normal/Reset radio retirement |
 | `scheduler` | Shared scheduler resources and single-item completion |
 | `controller` | Shared controller bootstrap and hardware lifecycle |
 | `phy` | Common PHY power/readback, registration, Bluetooth-client acquisition and initial tracking |

@@ -22,6 +22,9 @@ use crate::{
 
 #[path = "registered_ieee802154.rs"]
 mod ieee802154;
+#[cfg(target_arch = "riscv32")]
+#[path = "registered_radio/wifi_integration.rs"]
+mod wifi_integration;
 
 pub use ieee802154::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
@@ -112,59 +115,6 @@ impl<P> RegisteredPhyRadio<P> {
         self.radio.close_cold_interrupt_phase()
     }
 
-    /// Complete the protocol wrapper's post-wake Wi-Fi RX-enable edge.
-    ///
-    /// Retained PHY wake itself returns a protocol-neutral powered owner. The
-    /// Wi-Fi runtime calls this only after reacquiring the Wi-Fi client and
-    /// before exposing runtime register ownership again.
-    #[cfg(target_arch = "riscv32")]
-    #[doc(hidden)]
-    pub fn enable_wifi_rx_after_retained_wake(&mut self) {
-        self.radio.enable_wifi_rx();
-    }
-
-    /// Transfer the registered PHY and scheduler to the Wi-Fi runtime context
-    /// together with its matching physical and interrupt owners.
-    #[cfg(target_arch = "riscv32")]
-    pub fn into_wifi_runtime_parts(
-        self,
-    ) -> (
-        P,
-        oer_esp32s31_hal::owner::RadioRuntimeOwner,
-        oer_esp32s31_hal::owner::MacInterruptSetup,
-        crate::RegisteredWifiPhy,
-    ) {
-        let (platform, registers, interrupt) = self.radio.into_running().into_runtime_parts();
-        (
-            platform,
-            registers,
-            interrupt,
-            crate::RegisteredWifiPhy {
-                registered: self.phy,
-                clients: self.clients,
-            },
-        )
-    }
-
-    /// Select the cold Wi-Fi channel without releasing the registration owner.
-    #[cfg(target_arch = "riscv32")]
-    pub async fn initialize_wifi_channel<D: crate::PhyAsyncDelay, O: crate::PhyTargetObserver>(
-        &mut self,
-        channel: u16,
-        cbw: u8,
-        observer: &mut O,
-    ) -> Result<(), crate::PhyTargetPortError> {
-        self.radio.enable_wifi_rx();
-        let mut hardware = self.radio.channel_hal();
-        crate::select_phy_channel_with_hal::<D, _, _>(
-            self.phy.target_state_mut(),
-            channel,
-            cbw,
-            &mut hardware,
-            observer,
-        )
-        .await
-    }
     /// Inspect the calibrated state without weakening its hardware association.
     pub const fn state(&self) -> &PhyState {
         self.phy.state()

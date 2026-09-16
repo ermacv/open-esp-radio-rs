@@ -8,6 +8,8 @@ use super::{
 use serde::Deserialize;
 use sha2::Digest as _;
 
+mod imports;
+
 pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 2;
 
 #[derive(Clone, Debug, Default)]
@@ -213,6 +215,8 @@ struct CatalogValidation {
 struct CatalogDocument {
     schema: u16,
     id: String,
+    #[serde(default)]
+    imports: Vec<PathBuf>,
     validation: Option<CatalogValidation>,
     #[serde(default)]
     capabilities: Vec<CapabilityDocument>,
@@ -257,7 +261,6 @@ impl CatalogView {
             return Err("no capability catalogs were selected".into());
         }
         let mut view = Self::default();
-        let mut catalog_paths = BTreeSet::new();
         let mut catalog_ids = BTreeSet::new();
         let mut capability_owners = BTreeMap::new();
         let mut section_ids = BTreeSet::new();
@@ -265,32 +268,7 @@ impl CatalogView {
         let mut reference_ids = BTreeSet::new();
         let mut loaded_catalogs = Vec::new();
 
-        let mut ordered_paths = paths.to_vec();
-        ordered_paths.sort();
-        for relative in &ordered_paths {
-            validate_relative_path(relative)?;
-            if !catalog_paths.insert(relative.clone()) {
-                return Err(format!(
-                    "qualification program repeats catalog {}",
-                    relative.display()
-                )
-                .into());
-            }
-            let input = read_contained_file(root, relative, "capability catalog")?;
-            let mut document: CatalogDocument =
-                toml_edit::de::from_str(&input).map_err(|error| {
-                    format!(
-                        "cannot parse capability catalog {}: {error}",
-                        relative.display()
-                    )
-                })?;
-            if document.schema != CAPABILITY_CATALOG_SCHEMA {
-                return Err(format!(
-                    "unsupported capability catalog schema {} in {} (expected {CAPABILITY_CATALOG_SCHEMA})",
-                    document.schema,
-                    relative.display()
-                ).into());
-            }
+        for (relative, (input, mut document)) in imports::load(root, paths)? {
             let catalog_id = slug(&document.id, "capability catalog id")?;
             if !catalog_ids.insert(catalog_id.clone()) {
                 return Err(format!("duplicate capability catalog id {catalog_id}").into());
@@ -572,6 +550,13 @@ impl ManifestDocument {
             )
             .into());
         }
+        if self.required_capabilities_from.is_some()
+            && (!self.required_capabilities.is_empty()
+                || !self.capabilities.is_empty()
+                || self.catalog_capabilities.is_empty())
+        {
+            return Err("catalog-closure requires catalog roots without explicit required IDs or inline capabilities".into());
+        }
         self.program_source = Some(SourceIdentity {
             id: self.target.clone(),
             schema: self.schema,
@@ -637,6 +622,9 @@ impl ManifestDocument {
         let mut resolved = BTreeSet::new();
         for id in &selected {
             resolve_capability(id, &view.capabilities, &mut resolved);
+        }
+        if self.required_capabilities_from.is_some() {
+            self.required_capabilities = resolved.iter().cloned().collect();
         }
         for id in resolved {
             let capability = &view.capabilities[&id];

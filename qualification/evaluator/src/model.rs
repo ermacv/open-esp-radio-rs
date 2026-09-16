@@ -253,7 +253,10 @@ impl Qualification {
 struct ManifestDocument {
     schema: u16,
     target: String,
+    #[serde(default)]
     required_capabilities: Vec<String>,
+    #[serde(default)]
+    required_capabilities_from: Option<RequiredCapabilitiesFrom>,
     #[serde(default)]
     catalogs: Vec<PathBuf>,
     #[serde(default)]
@@ -274,6 +277,13 @@ struct ManifestDocument {
     catalog: CatalogView,
     #[serde(skip)]
     direct_catalog_capabilities: BTreeSet<String>,
+}
+
+/// An explicit selection policy, never a fallback for a missing required set.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RequiredCapabilitiesFrom {
+    CatalogClosure,
 }
 
 pub(super) struct ValidatedProgram {

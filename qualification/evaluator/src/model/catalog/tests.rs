@@ -173,6 +173,20 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     );
     assert!(!canonical.capability_origins.contains_key("unselected-phy"));
 
+    let derived_input = canonical_input.replace(
+        "required-capabilities = [\"base-phy\", \"wifi-channel\"]",
+        "required-capabilities-from = \"catalog-closure\"",
+    );
+    let derived = parse(&derived_input)
+        .resolve_catalogs(&root.path, Path::new("derived.toml"), &derived_input)
+        .unwrap();
+    derived.validate_program_structure(&root.path).unwrap();
+    assert_eq!(derived.capabilities, canonical.capabilities);
+    assert_eq!(
+        derived.required_capabilities,
+        canonical.required_capabilities
+    );
+
     let mut canonical_documents = canonical.capabilities;
     let mut legacy_documents = legacy.capabilities;
     canonical_documents.sort_by(|left, right| left.id.cmp(&right.id));
@@ -1147,6 +1161,224 @@ fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
         assert_eq!(
             parent.source_contracts.as_slice(),
             std::slice::from_ref(&fact.source_contract),
+        );
+    }
+}
+
+#[test]
+fn imported_catalogs_resolve_transitively_once_and_preserve_provenance() {
+    let root = TestRoot::new("imports");
+    let base = format!("schema = 2\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    let wifi = format!(
+        "schema = 2\nid = \"wifi\"\nimports = [\"catalog/a.toml\"]\n{WIFI_CHANNEL}{WIFI_SCOPE}"
+    );
+    root.write_named_catalog("a", &base);
+    root.write_named_catalog("b", &wifi);
+    let extra = BASE_PHY.replace("id = \"base-phy\"", "id = \"other-phy\"");
+    root.write_named_catalog("c", &format!("schema = 2\nid = \"extra\"\nimports = [\"catalog/a.toml\", \"catalog/b.toml\"]\n{extra}{BASE_SCOPE}"));
+    let program = parse(PROGRAM_PREFIX);
+    let load = |paths: &[PathBuf]| {
+        CatalogView::load_with_program(
+            &root.path,
+            paths,
+            Some((&program.verification, &program.hil)),
+            &BTreeSet::new(),
+        )
+        .unwrap()
+    };
+    let imported = load(&["catalog/c.toml".into()]);
+    let explicit = load(&[
+        "catalog/c.toml".into(),
+        "catalog/b.toml".into(),
+        "catalog/a.toml".into(),
+    ]);
+    assert_eq!(imported.capabilities.len(), 3);
+    assert_eq!(
+        imported.capabilities.keys().collect::<Vec<_>>(),
+        explicit.capabilities.keys().collect::<Vec<_>>()
+    );
+    let identities = |view: &CatalogView| {
+        view.sources
+            .iter()
+            .map(|s| (s.path.clone(), s.sha256.clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(identities(&imported), identities(&explicit));
+    assert_eq!(imported.sources.len(), 3);
+    root.write_named_catalog("a", &(base + "\n# reviewed source input changed\n"));
+    assert_ne!(
+        identities(&imported),
+        identities(&load(&["catalog/c.toml".into()]))
+    );
+}
+
+#[test]
+fn invalid_catalog_imports_fail_before_any_selection() {
+    let root = TestRoot::new("invalid-imports");
+    let base = format!("schema = 2\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    for (imports, expected) in [
+        ("[\"catalog/missing.toml\"]", "missing"),
+        ("[\"../outside.toml\"]", "relative"),
+        ("[\"catalog/b.toml\"]", "cycle"),
+        ("[\"catalog/a.toml\", \"catalog/a.toml\"]", "repeats import"),
+    ] {
+        root.write_named_catalog("a", &base);
+        root.write_named_catalog(
+            "b",
+            &format!("schema = 2\nid = \"wifi\"\nimports = {imports}\n{WIFI_CHANNEL}{WIFI_SCOPE}"),
+        );
+        let error = imports::load(&root.path, &["catalog/b.toml".into()])
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn explicit_catalog_closure_follows_new_dependencies_without_relaxing_exact_programs() {
+    let root = TestRoot::new("derived-required-set");
+    let exact_input = catalog_program("catalog/wifi.toml", "wifi-channel");
+    let derived_input = exact_input.replace(
+        "required-capabilities = [\"base-phy\", \"wifi-channel\"]",
+        "required-capabilities-from = \"catalog-closure\"",
+    );
+    let additional = BASE_PHY.replace("id = \"base-phy\"", "id = \"clock-owner\"");
+    let dependent = BASE_PHY.replace(
+        "scope = \"One base initialization\"",
+        "scope = \"One base initialization\"\ndepends-on = [\"clock-owner\"]",
+    );
+    root.write_catalog(&format!("schema = 2\nid = \"test-wifi-phy\"\n{additional}{BASE_SCOPE}{dependent}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}"));
+    let load =
+        |input: &str| parse(input).resolve_catalogs(&root.path, Path::new("program.toml"), input);
+    let derived = load(&derived_input).unwrap();
+    derived.validate_program_structure(&root.path).unwrap();
+    assert!(
+        derived
+            .required_capabilities
+            .iter()
+            .any(|id| id == "clock-owner")
+    );
+    assert_eq!(derived.required_capabilities.len(), 3);
+    assert!(
+        load(&exact_input)
+            .unwrap()
+            .validate_program_structure(&root.path)
+            .unwrap_err()
+            .to_string()
+            .contains("root mismatch")
+    );
+    let mixed = format!("required-capabilities-from = \"catalog-closure\"\n{exact_input}");
+    assert!(
+        load(&mixed)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("without explicit required IDs")
+    );
+    let inline = format!("{derived_input}{BASE_PHY}");
+    assert!(
+        load(&inline)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("inline capabilities")
+    );
+    let no_policy = exact_input.replace(
+        "required-capabilities = [\"base-phy\", \"wifi-channel\"]",
+        "",
+    );
+    assert!(
+        load(&no_policy)
+            .unwrap()
+            .validate_program_structure(&root.path)
+            .unwrap_err()
+            .to_string()
+            .contains("no required capabilities")
+    );
+    assert!(
+        toml_edit::de::from_str::<ManifestDocument>(
+            &derived_input.replace("catalog-closure", "unknown-policy")
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn peripheral_products_retain_lifecycle_and_security_without_other_radio_roles() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let load = |name: &str| {
+        ManifestDocument::load_and_validate(
+            &root.join(format!("qualification/targets/esp32s31/{name}.toml")),
+            &root,
+        )
+        .unwrap()
+        .document
+    };
+    let acl = load("bluetooth-peripheral-acl");
+    let secure = load("bluetooth-secure-gatt");
+    let ids = |program: &ManifestDocument| {
+        program
+            .required_capabilities
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    };
+    let acl_ids = ids(&acl);
+    let secure_ids = ids(&secure);
+    assert!(acl_ids.is_subset(&secure_ids));
+    for required in [
+        "cold-ownership",
+        "common-phy-baseband",
+        "ble-phy-engine",
+        "hci-controller-endpoints",
+        "peripheral-acl",
+    ] {
+        assert!(acl_ids.contains(required), "missing {required}");
+    }
+    for required in ["peripheral-link-security", "secure-peripheral-gatt"] {
+        assert!(secure_ids.contains(required), "missing {required}");
+    }
+    for unrelated in [
+        "central-initiator",
+        "coexistence",
+        "host-eatt-and-gatt",
+        "iso-dataplane",
+        "le-audio-profiles",
+    ] {
+        assert!(!secure_ids.contains(unrelated), "unexpected {unrelated}");
+    }
+    let product = acl
+        .capabilities
+        .iter()
+        .find(|c| c.id == "peripheral-acl")
+        .unwrap();
+    assert_eq!(
+        product.implementation,
+        crate::model::ImplementationProof::Incomplete
+    );
+    assert!(
+        product
+            .gaps
+            .iter()
+            .any(|g| g.axis == crate::model::Axis::Hil)
+    );
+    for scenario in [
+        "bluetooth-peripheral-recovery",
+        "bluetooth-peripheral-local-disconnect",
+        "bluetooth-peripheral-local-reset",
+        "bluetooth-peripheral-rf-loss",
+        "bluetooth-peripheral-soak",
+    ] {
+        assert!(
+            product
+                .hil_requirements
+                .iter()
+                .any(|r| r.scenario == scenario),
+            "missing {scenario}"
         );
     }
 }

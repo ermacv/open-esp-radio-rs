@@ -96,3 +96,21 @@ fn controller_reservation_remains_in_the_runtime_epoch_until_explicit_release() 
     drop((interrupt, task, modem_timer));
     assert!(resources.is_pristine());
 }
+
+#[test]
+fn stale_readiness_does_not_impersonate_work_and_is_cleared_only_after_cold_release() {
+    let mut resources = ControllerRuntimeResources::<2, 2>::new();
+    let (interrupt, task, _timer) = resources.split();
+    assert_eq!(task.retirement_ready(), Ok(()));
+    interrupt
+        .scheduler_wake()
+        .publish_from_interrupt(crate::interrupt::SchedulerWorkerWakeClass::Ordinary);
+    assert_eq!(task.retirement_ready(), Ok(()));
+    assert!(
+        task.scheduler_wake().is_pending(),
+        "admission must not discard a publication"
+    );
+    task.clear_notifications_after_cold_release();
+    assert!(!task.scheduler_wake().is_pending());
+    assert_eq!(task.retirement_ready(), Ok(()));
+}

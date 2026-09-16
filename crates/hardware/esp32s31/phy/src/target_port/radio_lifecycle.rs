@@ -26,8 +26,16 @@ pub(crate) async fn observe_temperature_before_rf_close<P, D: PhyAsyncDelay>(
     radio: &mut Radio<P, Powered>,
     state: &mut PhyState,
 ) -> Result<(), PhyRfCloseTemperatureFailure> {
-    let started = D::now_micros();
     let (platform, registers) = radio.phy_hal_parts();
+    observe_temperature_with_hal::<P, D>(platform, registers, state).await
+}
+
+pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
+    platform: &mut P,
+    registers: &mut impl SharedPhyAccess,
+    state: &mut PhyState,
+) -> Result<(), PhyRfCloseTemperatureFailure> {
+    let started = D::now_micros();
     let mut transition = PhyTemperatureTransition::new();
     for _ in 0..RF_OPERATION_LIMIT {
         match transition.action() {
@@ -67,6 +75,12 @@ pub(crate) fn execute_rf_close<P, D: PhyAsyncDelay>(
     radio: &mut Radio<P, Powered>,
 ) -> Result<(), PhyTargetPortError> {
     let registers = radio.phy_hal_mut();
+    execute_rf_close_with_hal::<D>(registers)
+}
+
+pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), PhyTargetPortError> {
     drive_rf_close(|operation| {
         match operation {
             // The current ESP32-S31 library installs empty critical-section

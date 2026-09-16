@@ -1,0 +1,144 @@
+schema = 2
+id = "esp32s31-bluetooth-products"
+imports = ["qualification/catalog/esp32s31/bluetooth.toml"]
+
+[validation]
+verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+hil-catalog = "hil/scenarios"
+
+[[capabilities]]
+id = "peripheral-acl"
+title = "One LE 1M peripheral with a complete ACL lifecycle"
+scope = "One standalone always-awake LE 1M peripheral: legacy connectable advertising, one connection, bidirectional HCI ACL fragmentation and credits, retransmission and duplicate suppression, bounded control procedures, resource admission, reconnect, periodic PHY maintenance and terminal powered release back to the cold radio owner"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = [
+  "cold-ownership",
+  "controller-timebase",
+  "ble-phy-engine",
+  "hci-controller-endpoints",
+  "portable-legacy-advertising",
+  "portable-connectable-advertising",
+  "portable-peripheral-connection",
+]
+vendor-anchors = ["verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+hil-requirements = [
+  { scenario = "bluetooth-peripheral-recovery", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-local-disconnect", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-local-reset", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-rf-loss", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-soak", minimum-repetitions = 1 },
+  { scenario = "bluetooth-peripheral-retirement", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-powered-restart", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-phy-maintenance", minimum-repetitions = 3 },
+]
+gaps = [
+  { axis = "implementation", id = "peripheral-event-deadlines-and-autonomous-phy-maintenance-incomplete" },
+  { axis = "host", id = "peripheral-virtual-time-irq-list-admission-backpressure-and-recovery-regressions-incomplete" },
+  { axis = "vendor", id = "peripheral-scheduler-packet-and-powered-release-production-traces-missing" },
+  { axis = "hil", id = "peripheral-abrupt-rf-loss-stimulus-not-established-by-soft-rfkill" },
+  { axis = "async", id = "peripheral-active-role-phy-maintenance-window-integration-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "peripheral-acl-current-composition"
+composition = "production"
+scope = "The Controller owner slot, legacy connectable role, recurring peripheral session and HCI endpoints retain one physical owner while handling connection commands and packet progress"
+limits = "The product also requires bounded ISR and timer work, exclusive packet-list publication, rejection of a second connection or exhausted queue before mutation, retention of cancelled-command obligations, and complete fault/stop cleanup. Logical Disconnect or HCI Reset is not powered release. Existing ACL HIL does not exercise encrypted traffic"
+source-paths = [
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/owner.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/connectable.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/peripheral/active.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/connection.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/deadlines.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/maintenance.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs",
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "peripheral"
+phy = "le-1m"
+security = ["plaintext-acl"]
+composition = "standalone-peripheral-acl"
+level = "composed-product"
+activation-boundary = "Cold radio acquisition through one HCI/Controller epoch to physical quiescence and cold-owner return"
+limitations = "One connection and one legacy advertising role. Wider multi-role IRQ/list, DTM, Central, extended PHY, EATT and concurrent-radio capabilities remain independent. Their broad declarations are not treated as prerequisites for this narrower product; all required single-peripheral obligations are stated here. Source coverage alone is not readiness"
+
+[[capabilities]]
+id = "peripheral-link-security"
+title = "Encrypted LE 1M peripheral ACL lifecycle"
+scope = "Encryption start, pause and restart on the selected peripheral connection; typed HCI key delivery and rejection, fresh session inputs, packet-counter and nonce ownership, authenticated decryption, retransmission without nonce reuse and terminal MIC failure with key retirement"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["peripheral-acl"]
+vendor-anchors = ["verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+gaps = [
+  { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
+  { axis = "host", id = "encrypted-peripheral-key-counter-backpressure-and-retransmission-boundary-tests-missing" },
+  { axis = "vendor", id = "encrypted-peripheral-production-contract-evidence-missing" },
+  { axis = "hil", id = "encrypted-peripheral-mic-failure-reconnect-and-counter-scenarios-missing" },
+  { axis = "async", id = "encrypted-peripheral-cancellation-and-key-retirement-lifecycle-incomplete" },
+]
+
+[[capabilities.source-contracts]]
+id = "peripheral-security-current-primitives"
+composition = "production"
+scope = "Portable LL security and HCI security procedures supply the existing key, encryption and packet-authentication primitives"
+limits = "This product-scoped criterion requires their composed peripheral boundary and RF evidence. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
+source-paths = [
+  "crates/protocols/bluetooth/le/ll/src/security.rs",
+  "crates/protocols/bluetooth/hci/src/lib.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/session/peripheral/active.rs",
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "peripheral"
+phy = "le-1m"
+security = ["encrypted-acl"]
+composition = "standalone-encrypted-peripheral"
+level = "composed-product"
+activation-boundary = "Key admission for the live peripheral epoch through encrypted traffic, errors and complete key retirement"
+limitations = "One peripheral connection. No Central role, PHY update or data-length extension is required to qualify this scope. Pairing, bonding and ATT access control belong to secure-peripheral-gatt"
+
+[[capabilities]]
+id = "secure-peripheral-gatt"
+title = "Secure peripheral GATT server over the open Controller"
+scope = "Released Trouble Host with the selected encrypted peripheral Controller: LE Secure Connections pairing, explicit authenticated or unauthenticated security policy, encryption/key-size/MITM checks before protected ATT access, bond storage and key restoration for encrypted reconnect, characteristic reads/writes/notifications, security failures and coordinated Host/Controller shutdown"
+implementation = "incomplete"
+host = "incomplete"
+async = "incomplete"
+depends-on = ["peripheral-link-security"]
+vendor-not-applicable = "host-security-and-gatt-application-policy-over-independently-qualified-controller"
+gaps = [
+  { axis = "implementation", id = "secure-trouble-peripheral-gatt-and-bond-store-composition-missing" },
+  { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
+  { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-scenarios-missing" },
+  { axis = "async", id = "trouble-host-controller-coordinated-shutdown-and-cancellation-incomplete" },
+]
+
+[[capabilities.source-contracts]]
+id = "secure-gatt-current-host-boundary"
+composition = "production"
+scope = "The Trouble composition retains the Host stack and hardware runner for the same Controller epoch using caller-owned bounded storage"
+limits = "Pairing policy and persistent bond storage remain application obligations to compose and test. Authenticated characteristics must reject unauthenticated pairing; missing key material or failed restoration cannot silently downgrade protected access. Existing Host construction tests are not a secure GATT demonstration"
+source-paths = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs"]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "peripheral-gatt-server"
+phy = "le-1m"
+security = ["le-secure-connections", "encrypted-att", "mitm-when-required"]
+composition = "standalone-secure-peripheral-gatt"
+level = "composed-product"
+activation-boundary = "Host and Controller construction through pairing, protected ATT traffic, bonded reconnect and coordinated shutdown"
+limitations = "One GATT server/peripheral connection using ordinary ATT. EATT, GATT client/caching, privacy role combinations, Central, legacy pairing, Audio and concurrent Wi-Fi/BLE remain separate scopes. A failed or unavailable secure path is incomplete, not a plaintext fallback"

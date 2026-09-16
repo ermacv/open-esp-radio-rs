@@ -1,13 +1,12 @@
 //! Stable full-service Bluetooth interrupt composition for ESP32-S31.
 
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicBool, Ordering},
+use core::future::poll_fn;
+
+use crate::{
+    interrupt_fault::DurableFirstFault,
+    interrupt_publication::{InterruptPublication, InterruptPublicationSlot},
 };
-
-use crate::interrupt_fault::DurableFirstFault;
-
-use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_esp32s31_bluetooth::controller::ControllerPublishedInterruptService;
 
@@ -19,8 +18,6 @@ use oer_esp32s31_radio_platform_esp_hal::{
     EspHalBluetoothModemLpTimerStorageError, EspHalBluetoothSharedInterruptDispatchError,
     PublishedEspHalBluetoothInterruptOwners,
 };
-
-use static_cell::StaticCell;
 
 type PublishedInterruptService =
     ControllerPublishedInterruptService<'static, PublishedEspHalBluetoothInterruptOwners>;
@@ -41,7 +38,7 @@ pub enum BluetoothInterruptFault {
 }
 
 struct BluetoothInterruptDispatch {
-    service: &'static PublishedInterruptService,
+    service: PublishedInterruptService,
     wakers: &'static RuntimeWakers,
     fault: DurableFirstFault<CriticalSectionRawMutex, BluetoothInterruptFault>,
 }
@@ -91,90 +88,34 @@ impl BluetoothInterruptDispatch {
     }
 }
 
-static LIVE_INTERRUPT_DISPATCH: Mutex<
+static INTERRUPT_PUBLICATION: InterruptPublicationSlot<
     CriticalSectionRawMutex,
-    RefCell<Option<&'static BluetoothInterruptDispatch>>,
-> = Mutex::new(RefCell::new(None));
+    BluetoothInterruptDispatch,
+> = InterruptPublicationSlot::new();
+
+type LivePublication = InterruptPublication<
+    'static,
+    CriticalSectionRawMutex,
+    BluetoothInterruptDispatch,
+    BoundEspHalBluetoothInterruptEpoch<'static>,
+>;
 
 fn dispatch_bluetooth_interrupt(
     source: EspHalBluetoothInterruptSource,
 ) -> EspHalBluetoothInterruptDisposition {
-    let dispatch = LIVE_INTERRUPT_DISPATCH.lock(|slot| *slot.borrow());
-    dispatch.map_or(
-        EspHalBluetoothInterruptDisposition::Quarantine,
-        |dispatch| dispatch.service(source),
-    )
+    INTERRUPT_PUBLICATION.with(|dispatch| {
+        dispatch.map_or(
+            EspHalBluetoothInterruptDisposition::Quarantine,
+            |dispatch| dispatch.service(source),
+        )
+    })
 }
-
-struct BluetoothInterruptRuntimeStorage {
-    claimed: AtomicBool,
-    service: StaticCell<PublishedInterruptService>,
-    dispatch: StaticCell<BluetoothInterruptDispatch>,
-}
-
-impl BluetoothInterruptRuntimeStorage {
-    const fn new() -> Self {
-        Self {
-            claimed: AtomicBool::new(false),
-            service: StaticCell::new(),
-            dispatch: StaticCell::new(),
-        }
-    }
-
-    fn bind(
-        &'static self,
-        service: PublishedInterruptService,
-        wakers: &'static RuntimeWakers,
-    ) -> Result<BluetoothInterruptRuntime, BluetoothInterruptBindError> {
-        if self
-            .claimed
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(BluetoothInterruptBindError::InUse);
-        }
-
-        let service = self.service.init(service);
-        let dispatch = self.dispatch.init(BluetoothInterruptDispatch {
-            service,
-            wakers,
-            fault: DurableFirstFault::new(),
-        });
-
-        let installed = LIVE_INTERRUPT_DISPATCH.lock(|slot| {
-            let mut slot = slot.borrow_mut();
-            if slot.is_some() {
-                false
-            } else {
-                *slot = Some(dispatch);
-                true
-            }
-        });
-        if !installed {
-            return Err(BluetoothInterruptBindError::DispatcherInUse);
-        }
-
-        // The complete service, its executor notifications and its durable
-        // fault sink are all reachable before the first CPU route can enter.
-        let routes = service
-            .storage()
-            .bind_routes(dispatch_bluetooth_interrupt)
-            .map_err(BluetoothInterruptBindError::Route)?;
-
-        Ok(BluetoothInterruptRuntime { routes, dispatch })
-    }
-}
-
-static PRODUCTION_INTERRUPT_RUNTIME: BluetoothInterruptRuntimeStorage =
-    BluetoothInterruptRuntimeStorage::new();
 
 /// Why final stable ISR composition could not activate all three CPU routes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothInterruptBindError {
-    /// The sole production interrupt composition was already consumed.
+    /// The production interrupt publication is still occupied.
     InUse,
-    /// Another dispatcher already occupies the process-wide callback slot.
-    DispatcherInUse,
     /// ESP-HAL rejected the complete three-route activation.
     Route(EspHalBluetoothInterruptRouteError),
 }
@@ -187,8 +128,74 @@ pub enum BluetoothInterruptBindError {
 /// the sole outer Controller runner.
 #[must_use = "the live Bluetooth interrupt epoch must remain owned by its Controller runner"]
 pub struct BluetoothInterruptRuntime {
-    routes: BoundEspHalBluetoothInterruptEpoch<'static>,
-    dispatch: &'static BluetoothInterruptDispatch,
+    publication: LivePublication,
+}
+
+/// Rejected activation returns the unpublished service and its notifications.
+#[must_use = "a rejected bind retains the exact interrupt service"]
+pub struct BluetoothInterruptBindFailure {
+    error: BluetoothInterruptBindError,
+    disabled: BluetoothInterruptDisabled,
+}
+
+impl BluetoothInterruptBindFailure {
+    /// Exact rejection before any new live route ownership was returned.
+    pub const fn error(&self) -> BluetoothInterruptBindError {
+        self.error
+    }
+
+    /// Recover the inactive service for retention or an explicit retry.
+    pub fn into_parts(self) -> (BluetoothInterruptBindError, BluetoothInterruptDisabled) {
+        (self.error, self.disabled)
+    }
+}
+
+/// Complete service after its three CPU routes are inactive and unpublished.
+///
+/// This is an IRQ boundary only. BTBB, DMA, modem-timer work and HCI may still
+/// be live; this owner does not authorize PHY release or cold-owner recovery.
+/// A sticky ISR fault travels with the service through an explicit rebind.
+#[must_use = "retain the disabled service until complete Controller teardown"]
+pub struct BluetoothInterruptDisabled {
+    dispatch: BluetoothInterruptDispatch,
+}
+
+impl BluetoothInterruptDisabled {
+    /// Controller retirement supplies the drained task/HCI/timer boundary.
+    pub(crate) fn retire_registers(
+        &self,
+    ) -> Result<
+        oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters,
+        oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothInterruptRetirementError,
+    > {
+        self.dispatch
+            .service
+            .storage()
+            .retire_interrupt_registers_after_routes_disabled()
+    }
+
+    /// First fault retained from the preceding live route epoch.
+    pub fn fault(&self) -> Option<BluetoothInterruptFault> {
+        self.dispatch.fault.get()
+    }
+
+    /// Reactivate the same service without clearing its first-fault evidence.
+    /// Rejection returns this exact inactive owner for retention or retry.
+    pub fn bind(self) -> Result<BluetoothInterruptRuntime, BluetoothInterruptBindFailure> {
+        let storage = self.dispatch.service.storage();
+        match INTERRUPT_PUBLICATION.bind(self.dispatch, || {
+            storage.bind_routes(dispatch_bluetooth_interrupt)
+        }) {
+            Ok(publication) => Ok(BluetoothInterruptRuntime { publication }),
+            Err((error, dispatch)) => Err(BluetoothInterruptBindFailure {
+                error: error.map_or(
+                    BluetoothInterruptBindError::InUse,
+                    BluetoothInterruptBindError::Route,
+                ),
+                disabled: Self { dispatch },
+            }),
+        }
+    }
 }
 
 /// Failed full-route shutdown retaining the unchanged live interrupt runtime.
@@ -218,7 +225,7 @@ impl BluetoothInterruptDisableFailure {
 impl BluetoothInterruptRuntime {
     /// Observe the first fatal ISR storage error without consuming it.
     pub fn fault(&self) -> Option<BluetoothInterruptFault> {
-        self.dispatch.fault.get()
+        self.publication.with(|dispatch| dispatch.fault.get())
     }
 
     /// Wait cancellation-safely for the first fatal ISR storage error.
@@ -226,25 +233,29 @@ impl BluetoothInterruptRuntime {
     /// The fault remains stored after completion, so cancelling this future or
     /// polling it from a replacement outer-runner wait cannot lose the cause.
     pub async fn wait_fault(&self) -> BluetoothInterruptFault {
-        self.dispatch.fault.wait().await
+        poll_fn(|cx| {
+            self.publication
+                .with(|dispatch| dispatch.fault.poll_wait(cx))
+        })
+        .await
     }
 
     /// Disable the complete source-124/source-127/source-133 route set.
     ///
     /// A rejected ESP-HAL transition reconstructs this exact runtime, so a
     /// terminal quarantine can retain or retry shutdown without reminting any
-    /// handler owner.
-    pub fn disable(self) -> Result<(), BluetoothInterruptDisableFailure> {
-        let Self { routes, dispatch } = self;
-        match routes.disable() {
-            Ok(()) => Ok(()),
-            Err(failure) => {
-                let (error, routes) = failure.into_parts();
-                Err(BluetoothInterruptDisableFailure {
-                    error,
-                    runtime: Self { routes, dispatch },
-                })
-            }
+    /// handler owner. Success removes the publication only after same-core
+    /// route shutdown; no reference into the replaceable slot escapes the ISR.
+    pub fn disable(self) -> Result<BluetoothInterruptDisabled, BluetoothInterruptDisableFailure> {
+        match self
+            .publication
+            .disable(|routes| routes.disable().map_err(|failure| failure.into_parts()))
+        {
+            Ok(dispatch) => Ok(BluetoothInterruptDisabled { dispatch }),
+            Err((error, publication)) => Err(BluetoothInterruptDisableFailure {
+                error,
+                runtime: Self { publication },
+            }),
         }
     }
 }
@@ -257,6 +268,13 @@ impl BluetoothInterruptRuntime {
 pub fn bind_production_bluetooth_interrupt_runtime(
     service: PublishedInterruptService,
     wakers: &'static RuntimeWakers,
-) -> Result<BluetoothInterruptRuntime, BluetoothInterruptBindError> {
-    PRODUCTION_INTERRUPT_RUNTIME.bind(service, wakers)
+) -> Result<BluetoothInterruptRuntime, BluetoothInterruptBindFailure> {
+    BluetoothInterruptDisabled {
+        dispatch: BluetoothInterruptDispatch {
+            service,
+            wakers,
+            fault: DurableFirstFault::new(),
+        },
+    }
+    .bind()
 }

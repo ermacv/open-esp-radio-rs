@@ -80,6 +80,23 @@ impl<
 where
     M: RawMutex,
 {
+    /// Permanently close this epoch's HCI transport for terminal shutdown.
+    ///
+    /// Both directions reject further publications with [`crate::HciChannelError::Closed`],
+    /// including the separate Host ACL credit sender. Registered packet and
+    /// capacity waiters are woken. Already queued packets remain readable in
+    /// FIFO order; reads return `Closed` after draining them. Readiness waits
+    /// become ready so their subsequent intake/publication observes closure.
+    ///
+    /// This is an idempotent transport barrier, not evidence of command, DMA,
+    /// timer or radio quiescence. Active command tokens and owners remain with
+    /// the caller. A supervisor must first finish any graceful shutdown which
+    /// needs Host credits or command responses, or retain unfinished owners in
+    /// terminal quarantine. Reset cannot reopen this epoch.
+    pub fn close_transport(&mut self) {
+        self.transport.close();
+    }
+
     /// Crate-internal access to the raw transport behind this combined endpoint.
     ///
     /// Public command intake and response publication deliberately stay on the

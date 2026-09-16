@@ -865,6 +865,19 @@ impl BluetoothModemLpTimerCounterStarted {
 }
 
 impl BluetoothModemLpTimerInterruptReady {
+    /// The outer retired Controller owns inactive CPU routes and a drained
+    /// software queue. Disable compare before resetting the timer domain;
+    /// physical counter shutdown follows from reset and clock-lease release.
+    pub(super) fn disable_for_shutdown(&mut self) {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.timer.peripherals.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_compare_disable(&mut transaction);
+    }
+
+    pub(super) fn into_shutdown_registers(self) -> BluetoothModemLpTimerRegisters {
+        self.timer
+    }
     /// Execute exactly one source-127 register-classification prefix.
     ///
     /// The method never waits, loops, allocates or calls software. A zero

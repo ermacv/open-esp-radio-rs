@@ -38,11 +38,13 @@ pub use bluetooth_interrupt::{
     EspHalBluetoothModemLpTimerRestoreFailure, EspHalBluetoothModemLpTimerStorageError,
     EspHalBluetoothNrtInterruptStep, EspHalBluetoothPrimaryInterruptStep,
     EspHalBluetoothSchedulerRunInterruptError, EspHalBluetoothSharedInterruptDispatchError,
-    PublishedEspHalBluetoothInterruptOwners,
+    PublishedEspHalBluetoothInterruptOwners, ReleasedEspHalBluetoothInterruptRegisters,
+    RetiredEspHalBluetoothInterruptRegisters,
 };
 #[cfg(feature = "esp32s31")]
 pub use bluetooth_route_policy::{
-    EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
+    EspHalBluetoothInterruptRetirementError, EspHalBluetoothInterruptRouteError,
+    EspHalBluetoothInterruptStorageError, EspHalBluetoothModemLpTimerRetirementError,
 };
 
 #[cfg(feature = "esp32s31")]

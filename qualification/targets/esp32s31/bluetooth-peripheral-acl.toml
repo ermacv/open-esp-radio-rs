@@ -1,0 +1,14 @@
+schema = 4
+target = "esp32s31-bluetooth-peripheral-acl"
+required-capabilities-from = "catalog-closure"
+catalogs = ["qualification/catalog/esp32s31/bluetooth-products.toml"]
+catalog-capabilities = ["peripheral-acl"]
+
+[verification]
+project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
+
+[hil]
+target = "esp32s31"
+catalog = "hil/scenarios"
+runs = "target/hil/esp32s31/runs"

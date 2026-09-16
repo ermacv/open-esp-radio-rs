@@ -1,4 +1,4 @@
-//! Stable one-shot placement for the final powered Bluetooth Controller.
+//! Stable one-shot placement for software and retained boot owners.
 
 use core::mem::MaybeUninit;
 
@@ -37,10 +37,32 @@ pub type BluetoothPublishedController<
     PACKET_CAPACITY,
 >;
 
+/// Runnable Bluetooth system and its separately retained platform reservation.
+///
+/// Keep `platform` beside the runner until its matching hardware retirement.
+/// Dropping the lease leaves the actual platform claimed in static storage.
+pub struct BluetoothSystemReady<
+    P: 'static,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> {
+    /// Host facade and hardware runner for the same HCI epoch.
+    pub system: BluetoothSystem<MT, SC, H2C, C2H, PC>,
+    /// Independent platform lease, joined only after this Controller retires.
+    pub platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<
+        'static,
+        P,
+    >,
+}
+
 /// Stable process-lifetime storage for one final Bluetooth Controller epoch.
 ///
-/// Final composition lends `&'static` references to interrupt dispatch and the
-/// executor runners. The owner therefore cannot live on an application task
+/// Final composition returns the platform lease beside the system, transfers
+/// task HAL and PHY graph leases into the actor, and lends `&'static` software references to interrupt dispatch and the
+/// executor runners. Backing storage therefore cannot live on an application task
 /// stack. A cold-start attempt must reserve the slot before claiming global
 /// memory or touching MMIO; failed cold start deliberately leaves it consumed
 /// because no complete Controller rollback has been proven.
@@ -194,7 +216,8 @@ impl<
         >,
         recheck: DtmAbsoluteRecheck,
     ) -> Result<
-        BluetoothSystem<
+        BluetoothSystemReady<
+            P,
             MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,

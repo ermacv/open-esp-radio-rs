@@ -13,7 +13,15 @@ pub use construction::{
     compose_esp32s31_bluetooth_system,
 };
 
-pub use runner::BluetoothHardwareRunner;
+pub use runner::{
+    BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,
+    BluetoothHardwareMaintenanceError, BluetoothHardwareMaintenanceFailure,
+    BluetoothHardwareOutputReleased, BluetoothHardwareRestartError,
+    BluetoothHardwareRestartFailure, BluetoothHardwareRetired,
+    BluetoothHardwareRetiredWithPlatform, BluetoothHardwareRouteCycleFailure,
+    BluetoothHardwareRunner, BluetoothHardwareShutdownFailure, BluetoothHardwareTimerError,
+    BluetoothHardwareTimerFailure, BluetoothHardwareTimerRetired, BluetoothPlatformJoin,
+};
 
 use bt_hci::controller::ExternalController;
 

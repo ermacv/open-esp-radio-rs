@@ -15,9 +15,10 @@ use core::cell::RefCell;
 use crate::bluetooth_route_policy::{
     BluetoothInterruptRouteState, BluetoothModemLpTimerInterruptAdmission,
     BluetoothModemLpTimerStoragePhase, BluetoothModemLpTimerTaskTakeAdmission,
-    EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
+    EspHalBluetoothInterruptRetirementError, EspHalBluetoothInterruptRouteError,
+    EspHalBluetoothInterruptStorageError, InterruptStorageReservation,
     classify_modem_lp_timer_interrupt, classify_modem_lp_timer_task_take,
-    ready_owner_restore_is_admitted, service_stable_owner, validate_interrupt_storage,
+    ready_owner_restore_is_admitted, retire_interrupt_owner, service_stable_owner,
 };
 
 use critical_section::Mutex;
@@ -30,7 +31,7 @@ use esp_hal::{
 
 use oer_esp32s31_bluetooth::{
     controller::{
-        InterruptOwnerStorage, ModemLpTimerInterruptDispatchStorage,
+        InterruptOwnerStorage, ModemLpTimerInterruptDispatchStorage, ModemLpTimerRetirementStorage,
         ModemLpTimerSoftwareOwnerStorage, SchedulerRunInterruptStorage,
         SharedInterruptDispatchStorage,
     },
@@ -59,6 +60,8 @@ static MODEM_LP_TIMER: Mutex<RefCell<Option<StoredBluetoothModemLpTimerOwner>>> 
     Mutex::new(RefCell::new(None));
 static BOUND_ROUTE_DISPATCH: Mutex<RefCell<Option<BoundRouteDispatch>>> =
     Mutex::new(RefCell::new(None));
+static STORAGE_RESERVATION: Mutex<RefCell<InterruptStorageReservation>> =
+    Mutex::new(RefCell::new(InterruptStorageReservation::new()));
 
 /// Exact semantic role of the adapter-owned handler that entered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,24 +144,15 @@ const MODEM_LP_TIMER_HANDLER: InterruptHandler =
 const NRT_HANDLER: InterruptHandler =
     InterruptHandler::new(bluetooth_nrt_default_interrupt_handler, ROUTE_PRIORITY);
 
-enum StoredBluetoothModemLpTimerOwner {
-    Ready(ModemLpTimerInterruptReadyOwner),
-    SoftwarePending(ModemLpTimerSoftwarePendingOwner),
-}
-
-impl StoredBluetoothModemLpTimerOwner {
-    const fn phase(&self) -> BluetoothModemLpTimerStoragePhase {
-        match self {
-            Self::Ready(_) => BluetoothModemLpTimerStoragePhase::Ready,
-            Self::SoftwarePending(_) => BluetoothModemLpTimerStoragePhase::SoftwarePending,
-        }
-    }
-}
+type StoredBluetoothModemLpTimerOwner = crate::bluetooth_route_policy::StoredModemTimerOwner<
+    ModemLpTimerInterruptReadyOwner,
+    ModemLpTimerSoftwarePendingOwner,
+>;
 
 /// Stable process-wide slots for both Bluetooth ISR register owners.
 ///
 /// Constructing this value performs no claim. Publication rejects any second
-/// value while either process-wide slot is occupied.
+/// value after the first publication, including after both owners are retired.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EspHalBluetoothInterruptStorage;
 
@@ -169,13 +163,158 @@ impl EspHalBluetoothInterruptStorage {
     }
 }
 
-/// Affine proof that both Bluetooth owners remain in stable ISR storage.
+/// Affine proof of one reserved Bluetooth ISR storage epoch.
 ///
-/// Dropping the lease is fail-stop: the owners remain published because no
-/// verified live-route shutdown and Controller teardown path exists yet.
-#[must_use = "published Bluetooth ISR owners remain process-wide until verified teardown"]
+/// Dropping the lease leaves its owners retained. Explicit retirement may
+/// remove the owners, but the reservation remains claimed because old static
+/// Controller borrows cannot yet be reclaimed. Only board reset clears it.
+#[must_use = "retain the ISR storage reservation through Controller teardown"]
 pub struct PublishedEspHalBluetoothInterruptOwners {
     _private: (),
+}
+
+/// Actual shared register partition after removal from inactive ISR storage.
+///
+/// The retired task joins this owner for checked output release; no raw
+/// register access or route reactivation is exposed.
+#[must_use = "retain the recovered interrupt registers through physical shutdown"]
+pub struct RetiredEspHalBluetoothInterruptRegisters {
+    _registers: oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
+}
+
+/// Actual interrupt bank after idle Controller output release.
+/// The setup owner remains non-pristine until the complete powered shutdown.
+#[must_use = "retain the released output bank through physical shutdown"]
+pub struct ReleasedEspHalBluetoothInterruptRegisters {
+    _registers: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
+}
+
+impl ReleasedEspHalBluetoothInterruptRegisters {
+    /// Complete RF close and cold release with the retired task and timer.
+    /// The platform must be the reservation joined to this exact HCI epoch.
+    /// Once polled, the future must reach a terminal result; failure retains all
+    /// hardware, memory and the platform reservation without releasing it.
+    pub async fn release_physical<
+        'runtime,
+        P,
+        S,
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        const SC: usize,
+        const MT: usize,
+    >(
+        self,
+        task: oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired<'runtime, S, SC>,
+        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'runtime, S, MT>,
+        platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRetiredPlatform<
+            'runtime,
+            P,
+        >,
+    ) -> Result<
+        oer_esp32s31_bluetooth::controller::ControllerColdReleased<'runtime, P, S, SC, MT>,
+        oer_esp32s31_bluetooth::controller::ControllerPhysicalShutdownFailure<
+            'runtime,
+            P,
+            S,
+            SC,
+            MT,
+        >,
+    > {
+        task.release_physical::<P, D, MT>(timer, self._registers, platform)
+            .await
+    }
+}
+
+impl RetiredEspHalBluetoothInterruptRegisters {
+    /// Lend the recovered bank to the same idle Controller's PHY maintenance.
+    /// Failure retains the bank, timer and command authority without routing.
+    pub async fn maintain_phy<
+        'a,
+        P,
+        S,
+        D,
+        M,
+        const SC: usize,
+        const MT: usize,
+        const H2C: usize,
+        const C2H: usize,
+        const PC: usize,
+    >(
+        self,
+        task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'a, S, SC>,
+        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'a, S, MT>,
+        platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
+        controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
+        clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
+    ) -> Result<
+        oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<'a, S, SC, MT>,
+        oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<'a, S, SC, MT>,
+    >
+    where
+        S: oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
+            + oer_esp32s31_bluetooth::controller::ModemLpTimerSoftwareOwnerStorage,
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        M: embassy_sync::blocking_mutex::raw::RawMutex,
+    {
+        task.maintain_phy::<P, D, _, M, MT, H2C, C2H, PC>(
+            timer,
+            self._registers,
+            platform,
+            controller,
+            clock,
+            oer_esp32s31_phy::NoopPhyTargetObserver,
+        )
+        .await
+    }
+
+    /// Join the retired task to its post-route register bank for terminal output
+    /// release. Rejection preserves both owners and never restores CPU routing.
+    pub fn try_release_controller_output<S, const SC: usize>(
+        self,
+        task: &mut oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired<'_, S, SC>,
+    ) -> Result<
+        ReleasedEspHalBluetoothInterruptRegisters,
+        (
+            oer_esp32s31_hal::bluetooth::BluetoothControllerOutputReleaseError,
+            Self,
+        ),
+    > {
+        match task.try_release_controller_output(self._registers) {
+            Ok(registers) => Ok(ReleasedEspHalBluetoothInterruptRegisters {
+                _registers: registers,
+            }),
+            Err((error, registers)) => Err((
+                error,
+                Self {
+                    _registers: registers,
+                },
+            )),
+        }
+    }
+}
+
+impl PublishedEspHalBluetoothInterruptOwners {
+    /// Take the actual primary/NRT register partition after route removal.
+    ///
+    /// The timer slot must already be empty. This excludes ISR service under
+    /// the same critical section as binding and extraction; it does not prove
+    /// task, timer-worker or dynamic-source quiescence. The Controller shutdown
+    /// composition must retain its retired task/HCI and drained timer owners.
+    /// No register is accessed and the process-wide reservation stays claimed.
+    pub fn retire_interrupt_registers_after_routes_disabled(
+        &self,
+    ) -> Result<RetiredEspHalBluetoothInterruptRegisters, EspHalBluetoothInterruptRetirementError>
+    {
+        critical_section::with(|cs| {
+            retire_interrupt_owner(
+                &mut INTERRUPT_REGISTERS.borrow_ref_mut(cs),
+                BOUND_ROUTE_DISPATCH.borrow_ref(cs).is_some(),
+                MODEM_LP_TIMER.borrow_ref(cs).is_some(),
+            )
+            .map(|registers| RetiredEspHalBluetoothInterruptRegisters {
+                _registers: registers.deactivate(),
+            })
+        })
+    }
 }
 
 /// Result of one finite source-127 register-only hard-handler entry.
@@ -521,7 +660,10 @@ impl InterruptOwnerStorage for EspHalBluetoothInterruptStorage {
         critical_section::with(|critical_section| {
             let mut interrupt_slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
             let mut timer_slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
-            match validate_interrupt_storage(interrupt_slot.is_some(), timer_slot.is_some()) {
+            match STORAGE_RESERVATION
+                .borrow_ref_mut(critical_section)
+                .claim(interrupt_slot.is_some(), timer_slot.is_some())
+            {
                 Ok(()) => {
                     *interrupt_slot = Some(interrupts);
                     *timer_slot = Some(StoredBluetoothModemLpTimerOwner::Ready(timer));
@@ -529,6 +671,24 @@ impl InterruptOwnerStorage for EspHalBluetoothInterruptStorage {
                 }
                 Err(error) => Err((error, self, interrupts, timer)),
             }
+        })
+    }
+}
+
+impl ModemLpTimerRetirementStorage for PublishedEspHalBluetoothInterruptOwners {
+    type RetireError = crate::bluetooth_route_policy::EspHalBluetoothModemLpTimerRetirementError;
+
+    fn take_modem_lp_timer_ready_after_routes_disabled(
+        &self,
+    ) -> Result<ModemLpTimerInterruptReadyOwner, Self::RetireError> {
+        critical_section::with(|cs| {
+            // A retained (even quarantined) dispatch prevents extraction. Full
+            // same-core disable removes it only after every route is inactive.
+            let routes_bound = BOUND_ROUTE_DISPATCH.borrow_ref(cs).is_some();
+            crate::bluetooth_route_policy::retire_ready_timer(
+                &mut MODEM_LP_TIMER.borrow_ref_mut(cs),
+                routes_bound,
+            )
         })
     }
 }
@@ -653,6 +813,8 @@ impl PublishedEspHalBluetoothInterruptOwners {
     /// live marker are published before the first CPU route is enabled, so an
     /// interrupt observed immediately after binding always sees the complete
     /// dispatcher. A rejected bind leaves this borrowed publication unchanged.
+    /// Both register owners must be in stable storage; a timer held by task
+    /// work or retirement must be restored before reactivation.
     pub fn bind_routes(
         &self,
         dispatch: fn(EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptDisposition,
@@ -664,6 +826,10 @@ impl PublishedEspHalBluetoothInterruptOwners {
                 live_route.as_ref().map(|route| route.core),
             );
             state.bind(core)?;
+            crate::bluetooth_route_policy::validate_route_owners(
+                INTERRUPT_REGISTERS.borrow_ref(critical_section).is_some(),
+                MODEM_LP_TIMER.borrow_ref(critical_section).is_some(),
+            )?;
             *live_route = Some(BoundRouteDispatch {
                 core,
                 dispatch,
@@ -837,5 +1003,38 @@ impl SharedInterruptDispatchStorage for BoundEspHalBluetoothInterruptEpoch<'_> {
 
     fn service_nrt_default_interrupt(&self) -> Result<NrtDefaultInterruptEpoch, Self::Error> {
         SharedInterruptDispatchStorage::service_nrt_default_interrupt(self.published)
+    }
+}
+
+impl oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
+    for PublishedEspHalBluetoothInterruptOwners
+{
+    type RestartError = EspHalBluetoothInterruptStorageError;
+    fn restore_initialized_interrupt_owners(
+        &self,
+        interrupts: InterruptRegistersOwner,
+        timer: ModemLpTimerInterruptReadyOwner,
+    ) -> Result<
+        (),
+        (
+            Self::RestartError,
+            InterruptRegistersOwner,
+            ModemLpTimerInterruptReadyOwner,
+        ),
+    > {
+        critical_section::with(|cs| {
+            let mut irq_slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            let mut timer_slot = MODEM_LP_TIMER.borrow_ref_mut(cs);
+            if let Err(error) = STORAGE_RESERVATION.borrow_ref(cs).admit_restore(
+                BOUND_ROUTE_DISPATCH.borrow_ref(cs).is_some(),
+                irq_slot.is_some(),
+                timer_slot.is_some(),
+            ) {
+                return Err((error, interrupts, timer));
+            }
+            *irq_slot = Some(interrupts);
+            *timer_slot = Some(StoredBluetoothModemLpTimerOwner::Ready(timer));
+            Ok(())
+        })
     }
 }

@@ -22,9 +22,7 @@ impl Provider {
             Self::LinuxNet => {
                 "schema=12 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1 rfkill=restore"
             }
-            Self::LinuxBluetooth => {
-                "schema=9 termination=peer-reset,peer-rfkill,target-disconnect,target-reset"
-            }
+            Self::LinuxBluetooth => crate::bluetooth_fixture_contract::HELPER_CAPABILITIES,
         }
     }
 

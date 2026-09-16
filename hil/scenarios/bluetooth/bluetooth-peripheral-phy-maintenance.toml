@@ -1,0 +1,16 @@
+schema = 4
+id = "bluetooth-peripheral-phy-maintenance"
+description = "Three real BLE peripheral ACL/update/peer-Reset cycles in one board boot, with due shared-PHY maintenance between connections, Reset through the same HCI and final cold retirement"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "lifecycle", "phy-maintenance"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 3
+hold_millis = 100
+termination = "peer-reset"
+maintain_between_connections = true
+retire_after = true

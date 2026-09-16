@@ -199,6 +199,7 @@ pub struct LegacyConnectablePeripheralFirstHeadPublished<
     origin: LegacyConnectablePeripheralOrigin,
     packet: LeReceivedPdu,
     head: PeripheralConnectionSchedulerHeadPublished,
+    progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
 }
 
 /// RUN publication of one already-published first-event head.
@@ -450,6 +451,7 @@ where
 /// Advertising completion and causal packet retained beside first peripheral RUN.
 #[must_use = "retain the accepted-packet evidence with the first peripheral event"]
 pub struct LegacyConnectablePeripheralFirstRunningEvidence {
+    progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
     origin: LegacyConnectablePeripheralOrigin,
     packet: LeReceivedPdu,
 }
@@ -494,8 +496,10 @@ where
             PeripheralConnectionCompletionRole,
         >,
         event_counter: u16,
-        evidence: LegacyConnectablePeripheralFirstRunningEvidence,
+        mut evidence: LegacyConnectablePeripheralFirstRunningEvidence,
+        progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
     ) -> Self {
+        evidence.progress_deadline = progress_deadline;
         Self {
             task,
             phase: LegacyConnectablePeripheralFirstRunningPhase::Completion(
@@ -504,6 +508,12 @@ where
             event_counter,
             evidence,
         }
+    }
+
+    pub(super) const fn progress_deadline(
+        &self,
+    ) -> super::progress::PeripheralConnectionProgressDeadline {
+        self.evidence.progress_deadline
     }
 
     pub const fn event_counter(&self) -> u16 {
@@ -1021,6 +1031,7 @@ where
         origin: LegacyConnectablePeripheralOrigin,
         packet: LeReceivedPdu,
         head: PeripheralConnectionSchedulerHeadPublished,
+        progress_deadline: super::progress::PeripheralConnectionProgressDeadline,
         error: S::Error,
     },
 }
@@ -1102,6 +1113,7 @@ where
                 origin,
                 packet,
                 head,
+                progress_deadline,
                 ..
             } => {
                 ControlFlow::Continue(LegacyConnectablePeripheralFirstRetryStep::InterruptStorage(
@@ -1110,6 +1122,7 @@ where
                         origin,
                         packet,
                         head,
+                        progress_deadline,
                     }
                     .start(),
                 ))
@@ -1324,7 +1337,11 @@ where
             origin,
             prepared,
         } = self;
-        let PeripheralConnectionControllerPrepared { merged, packet } = prepared;
+        let PeripheralConnectionControllerPrepared {
+            merged,
+            packet,
+            progress_deadline,
+        } = prepared;
         match task.publish_peripheral_connection_scheduler_head(merged) {
             Ok(head) => ControlFlow::Continue(
                 LegacyConnectablePeripheralFirstPublicationStep::HeadPublished(
@@ -1333,6 +1350,7 @@ where
                         origin,
                         packet,
                         head,
+                        progress_deadline,
                     },
                 ),
             ),
@@ -1344,7 +1362,11 @@ where
                             phase: LegacyConnectablePeripheralFirstRetryPhase::HeadPublication {
                                 task,
                                 origin,
-                                prepared: PeripheralConnectionControllerPrepared { merged, packet },
+                                prepared: PeripheralConnectionControllerPrepared {
+                                    merged,
+                                    packet,
+                                    progress_deadline,
+                                },
                                 error,
                             },
                         };
@@ -1378,6 +1400,7 @@ where
             origin,
             packet,
             head,
+            progress_deadline,
         } = self;
         let event_counter = head.event_counter();
         match task.start_peripheral_connection_scheduler(head) {
@@ -1388,7 +1411,11 @@ where
                         SingleItemCompletion::new(running),
                     ),
                     event_counter,
-                    evidence: LegacyConnectablePeripheralFirstRunningEvidence { origin, packet },
+                    evidence: LegacyConnectablePeripheralFirstRunningEvidence {
+                        origin,
+                        packet,
+                        progress_deadline,
+                    },
                 },
             ),
             Err(failure) => {
@@ -1400,6 +1427,7 @@ where
                             origin,
                             packet,
                             head,
+                            progress_deadline,
                             error,
                         },
                     },

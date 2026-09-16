@@ -274,9 +274,16 @@ mod tests {
             assert_eq!(server.recv(&mut bytes).unwrap(), 6);
             assert_eq!(&bytes[..6], &[1, 0x16, 0x20, 2, 1, 0]);
             server.send(&[4, 0x0f, 4, 0, 1, 0x16, 0x20]).unwrap();
-            server
-                .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x18, 0x40, 0, 0, 0, 0, 0, 0])
+            // Exercise the production LL response against the independent helper
+            // profile, so adding an advertised procedure cannot silently drift.
+            let mut control = oer_bluetooth_ll::control::LePeripheralControl::new();
+            control
+                .receive(&[3, 9, 8, 255, 255, 255, 255, 255, 255, 255, 255], None)
                 .unwrap();
+            let response = control.pending_response().unwrap();
+            let mut features_complete = vec![4, 0x3e, 12, 4, 0, 1, 0];
+            features_complete.extend_from_slice(&response.as_bytes()[1..]);
+            server.send(&features_complete).unwrap();
             assert_eq!(server.recv(&mut bytes).unwrap(), 6);
             assert_eq!(&bytes[..6], &[1, 0x1d, 0x04, 2, 1, 0]);
             server.send(&[4, 0x0f, 4, 0, 1, 0x1d, 0x04]).unwrap();
@@ -379,7 +386,7 @@ mod tests {
         worker.join().unwrap();
         assert!(report.connection_complete && report.reset_completed);
         assert!(report.remote_features_command_status && report.remote_features_complete);
-        assert_eq!(report.remote_features, Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]));
+        assert_eq!(report.remote_features, Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]));
         assert!(report.remote_features_after_micros.is_some());
         assert!(report.remote_version_command_status && report.remote_version_complete);
         assert_eq!(report.remote_version, Some(0x0d));

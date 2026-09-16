@@ -2,8 +2,47 @@
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod connectable_advertising;
+#[cfg(any(target_arch = "riscv32", test))]
+mod publication;
+#[cfg(target_arch = "riscv32")]
+pub use publication::{
+    ControllerInterruptOwnerPublicationFailure, ControllerInterruptOwnersPublished,
+    ControllerInterruptOwnersReady, ControllerOutputTimerStarted,
+    ControllerPublishedInterruptService, ControllerPublishedRuntimeEndpoints,
+    ControllerPublishedRuntimeSplit, ControllerPublishedRuntimeSplitFailure,
+    InterruptOwnerRestartStorage, InterruptOwnerStorage, SharedInterruptDispatchStorage,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+mod modem_timer_retirement;
+#[cfg(target_arch = "riscv32")]
+pub use modem_timer_retirement::ControllerModemTimerRetirementError;
+#[cfg(target_arch = "riscv32")]
+mod maintenance;
+#[cfg(target_arch = "riscv32")]
+mod modem_timer;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod peripheral_connection;
+#[cfg(target_arch = "riscv32")]
+mod retirement;
+#[cfg(target_arch = "riscv32")]
+pub use maintenance::{
+    ControllerPhyMaintained, ControllerPhyMaintenanceError, ControllerPhyMaintenanceFailure,
+};
+mod role_retirement;
+#[cfg(target_arch = "riscv32")]
+pub use modem_timer::{
+    ControllerModemTimerBegin, ControllerModemTimerReadiness, ControllerModemTimerReadinessClass,
+    ControllerModemTimerRearm, ControllerModemTimerRetired, ControllerModemTimerStep,
+    ControllerModemTimerTask, ModemLpTimerInterruptDispatchStorage, ModemLpTimerRetirementStorage,
+    ModemLpTimerSoftwareOwnerStorage,
+};
+#[cfg(target_arch = "riscv32")]
+pub use retirement::{
+    ControllerColdReleased, ControllerPhysicalShutdownError, ControllerPhysicalShutdownFailure,
+    ControllerRestartError, ControllerRestartFailure, ControllerRestarted,
+    ControllerRetiredStorage, ControllerTaskHciRetired,
+};
+pub use role_retirement::{ControllerRoleRetirementError, ControllerTaskRetirementError};
 #[cfg(target_arch = "riscv32")]
 mod scheduler_service;
 #[cfg(target_arch = "riscv32")]
@@ -21,161 +60,25 @@ pub(crate) use scheduler_service::connectable_advertising::{
 
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    ble_phy::ControllerBlePhyEngineInitialized,
     controller::time::{
         ControllerTimeEventError, ControllerTimeEventStep, ControllerTimePendingCore,
         ControllerTimePendingCoreStep, ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
         ControllerTimePendingOwnerStep, ControllerTimeRequest, ControllerTimeRequestError,
         drain_controller_time_orphan,
     },
-    interrupt::{NrtDefaultInterruptEpoch, PrimaryInterruptStep, PrimaryPublishedInterruptStep},
+    interrupt::PrimaryPublishedInterruptStep,
     le::dtm::post_unlink::{
         DtmPostUnlinkArmError, DtmPostUnlinkMailbox, PostUnlinkRearm, PostUnlinkTake,
     },
-    low_power::ControllerRuntimeEndpoints,
-    modem_lp_timer_queue::{
-        ModemLpTimerEventCell, ModemLpTimerEventPublication, ModemLpTimerExpiration,
-        ModemLpTimerExpirationState, ModemLpTimerPublishedInterruptStep, ModemLpTimerSoftwareState,
-        ModemLpTimerSoftwareStateStep, ModemLpTimerStableInterruptStep,
-    },
-    runtime_resources::{
-        ControllerInterruptRuntime, ControllerModemTimerRuntime, ControllerPoweredTaskRuntime,
-    },
+    runtime_resources::ControllerPoweredTaskRuntime,
 };
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothLowPowerRuntimeControlObservation, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalJoin,
-    ControllerHal, InterruptOutputPreparedOwner, InterruptRegistersOwner,
-    ModemLpTimerCounterStartedOwner, ModemLpTimerInterruptReadyOwner,
-    ModemLpTimerSoftwarePendingOwner,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothSchedulerSoftwareListRemovalJoin, ControllerHal,
 };
-
-/// Powered Controller after address readiness, IRQ-output preparation and
-/// runtime-timer start.
-///
-/// This state retains the complete BLE PHY epoch, the prepared-but-unrouted
-/// interrupt partition and the uniquely started low-power timer. It does not
-/// claim stable ISR storage, a CPU route, scheduler activation or operational
-/// Link-Layer work.
-#[must_use = "the started Bluetooth Controller retains every hardware owner"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerOutputTimerStarted<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    pub(crate) initialized:
-        ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-    _interrupt_output: InterruptOutputPreparedOwner,
-    pub(crate) timer: ModemLpTimerCounterStartedOwner,
-}
-
-/// Powered Controller with both register owners ready for ISR publication.
-///
-/// The controller interrupt partition and source-127 timer partition have
-/// crossed their final no-MMIO ownership transitions. They remain movable and
-/// no CPU route is active; the next platform composition must publish both in
-/// stable ISR storage before it enables any of the three routes.
-#[must_use = "the prepared Bluetooth interrupt owners must be published before routing"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerInterruptOwnersReady<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    initialized: ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-    _interrupts: InterruptRegistersOwner,
-    _timer: ModemLpTimerInterruptReadyOwner,
-    runtime_control: BluetoothLowPowerRuntimeControlObservation,
-}
-
-/// Platform boundary that publishes both disjoint owners in stable ISR slots.
-///
-/// Implementations must either publish both owners atomically and return one
-/// affine lease, or return the storage value and both unchanged owners. This
-/// transition must not enable a CPU route; routing is a later lifecycle edge.
-#[cfg(target_arch = "riscv32")]
-pub trait InterruptOwnerStorage: Sized {
-    /// Affine proof that both owners remain in the implementation's storage.
-    type Published;
-    /// Exact pre-publication rejection reason.
-    type Error;
-
-    /// Publish both owners without enabling any interrupt source.
-    fn publish(
-        self,
-        interrupts: InterruptRegistersOwner,
-        timer: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<
-        Self::Published,
-        (
-            Self::Error,
-            Self,
-            InterruptRegistersOwner,
-            ModemLpTimerInterruptReadyOwner,
-        ),
-    >;
-}
-
-/// Stable-storage boundary for source-127 task ownership.
-///
-/// The interrupt platform implements this trait for the same affine lease
-/// returned by [`InterruptOwnerStorage`]. Taking an owner leaves the
-/// stable ISR slot empty, so repeated interrupt entry cannot touch MMIO while
-/// task work owns the timer. Only a fully rearmed owner may be restored.
-#[cfg(target_arch = "riscv32")]
-pub trait ModemLpTimerSoftwareOwnerStorage {
-    /// Exact reason task context could not acquire pending work.
-    type TakeError;
-    /// Exact reason the fully rearmed owner could not return to ISR storage.
-    type RestoreError;
-
-    /// Move software-pending ownership out of stable ISR storage.
-    fn take_modem_lp_timer_software_pending(
-        &self,
-    ) -> Result<ModemLpTimerSoftwarePendingOwner, Self::TakeError>;
-
-    /// Restore only a fully rearmed owner, retaining it on rejection.
-    fn restore_modem_lp_timer_ready(
-        &self,
-        owner: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<(), (Self::RestoreError, ModemLpTimerInterruptReadyOwner)>;
-}
-
-/// Stable platform dispatch over the published source-127 interrupt owner.
-///
-/// Implementations retain either the ready or software-pending affine owner
-/// in process-wide storage and perform no executor notification themselves.
-#[cfg(target_arch = "riscv32")]
-pub trait ModemLpTimerInterruptDispatchStorage {
-    /// Exact reason the stable owner could not service this entry.
-    type Error;
-
-    /// Execute one finite register entry and return its semantic disposition.
-    fn service_modem_lp_timer_interrupt(
-        &self,
-    ) -> Result<ModemLpTimerStableInterruptStep, Self::Error>;
-}
-
-/// Stable platform dispatch over the published shared interrupt owner.
-///
-/// Implementations must retain the unique primary/NRT register owner in
-/// stable storage across every call. Both methods execute exactly one finite
-/// Controller disposition and enable no CPU route themselves.
-#[cfg(target_arch = "riscv32")]
-pub trait SharedInterruptDispatchStorage {
-    /// Exact reason the shared owner could not service an entry.
-    type Error;
-
-    /// Capture, acknowledge and classify one primary source-124 epoch.
-    fn service_primary_interrupt(&self) -> Result<PrimaryInterruptStep, Self::Error>;
-
-    /// Capture and acknowledge one default-profile NRT source-133 epoch.
-    fn service_nrt_default_interrupt(&self) -> Result<NrtDefaultInterruptEpoch, Self::Error>;
-}
 
 /// Stable task-side access to the shared interrupt owner for scheduler start.
 ///
@@ -410,450 +313,6 @@ pub enum DtmPostUnlinkArmStep<Role> {
             crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     ),
-}
-
-/// Stable state retained inside the disjoint source-127 task endpoint.
-#[cfg(target_arch = "riscv32")]
-enum ControllerModemTimerTaskPhase {
-    Idle,
-    Work(ModemLpTimerSoftwareState),
-    Expiration(ModemLpTimerExpirationState),
-    Rearm(ModemLpTimerInterruptReadyOwner),
-}
-
-/// Borrowed readiness class for the source-127 task endpoint.
-///
-/// The value carries no timer owner and may be held by an executor wait future.
-/// The affine queue, epoch and HAL phase remain inside
-/// [`ControllerModemTimerTask`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(target_arch = "riscv32")]
-pub enum ControllerModemTimerReadinessClass {
-    /// No interrupt-owned software work is known to be pending.
-    Interrupt,
-    /// One finite software transition can run immediately.
-    Step,
-    /// Expiration publication is waiting for the one-event cell to become empty.
-    EventCapacity,
-    /// A fully rearmed owner is ready for stable-storage restoration.
-    Rearm,
-}
-
-/// Owner-free borrowed readiness observation for source 127.
-#[must_use = "readiness must be checked before polling again"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerModemTimerReadiness<'task> {
-    class: ControllerModemTimerReadinessClass,
-    worker_wake: &'task crate::modem_lp_timer_queue::ModemLpTimerWorkerWakeCell,
-    events: &'task ModemLpTimerEventCell,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl ControllerModemTimerReadiness<'_> {
-    /// Exact state an executor wait is observing.
-    pub const fn class(&self) -> ControllerModemTimerReadinessClass {
-        self.class
-    }
-
-    /// Recheck readiness after registering the executor's own waker.
-    ///
-    /// This operation is borrowed and value-only. It neither acquires stable
-    /// ownership nor advances queue or register state.
-    pub fn is_ready(&self) -> bool {
-        match self.class {
-            ControllerModemTimerReadinessClass::Interrupt => self.worker_wake.is_pending(),
-            ControllerModemTimerReadinessClass::Step
-            | ControllerModemTimerReadinessClass::Rearm => true,
-            ControllerModemTimerReadinessClass::EventCapacity => !self.events.is_pending(),
-        }
-    }
-}
-
-/// Result of acquiring one durable source-127 software-pending owner.
-#[must_use = "a begin result must be handled without losing stable readiness"]
-#[cfg(target_arch = "riscv32")]
-pub enum ControllerModemTimerBegin<E> {
-    /// No durable interrupt publication currently requests task work.
-    NotReady,
-    /// The owner entered the endpoint and one finite software step is ready.
-    Started,
-    /// Stable storage rejected acquisition; the endpoint remains idle.
-    StorageRejected(E),
-    /// A software or rearm phase is already retained by this endpoint.
-    AlreadyActive,
-}
-
-/// Result of one finite source-127 task transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the next source-127 readiness class must be observed"]
-#[cfg(target_arch = "riscv32")]
-pub enum ControllerModemTimerStep {
-    /// No software owner has been acquired.
-    Idle,
-    /// One expiration now owns the durable publication edge.
-    ExpirationPending(ModemLpTimerExpiration),
-    /// The expiration was published and later work remains retained.
-    Published(ModemLpTimerEventPublication),
-    /// The expiration cell is occupied and the unchanged publication remains retained.
-    Backpressured(ModemLpTimerExpiration),
-    /// Immediate compare disposition requires a later fresh finite recheck.
-    Recheck,
-    /// Queue processing produced a fully rearmed owner retained inside the endpoint.
-    RearmPending,
-}
-
-/// Result of restoring the fully rearmed owner to stable ISR storage.
-#[must_use = "a rejected rearm remains retained by the timer task"]
-#[cfg(target_arch = "riscv32")]
-pub enum ControllerModemTimerRearm<E> {
-    /// The ready owner is back in stable interrupt storage.
-    Rearmed,
-    /// Stable storage rejected restoration; the exact ready owner remains private.
-    StorageRejected(E),
-    /// No fully rearmed owner is currently retained.
-    NotReady,
-}
-
-/// Disjoint task-context source-127 owner for one final Controller runtime.
-///
-/// This endpoint exclusively owns the mutable timer queue and positional epoch.
-/// Stable storage is shared only as the platform exchange boundary with the
-/// interrupt service. All affine HAL states remain private across borrowed
-/// readiness and finite `begin`, `step`, and `rearm` calls, so an executor
-/// future never needs to own them.
-#[must_use = "the modem timer task retains source-127 queue and hardware ownership"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerModemTimerTask<'runtime, S, const CAPACITY: usize> {
-    storage: &'runtime S,
-    runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>,
-    phase: ControllerModemTimerTaskPhase,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerTask<'runtime, S, CAPACITY>
-where
-    S: ModemLpTimerSoftwareOwnerStorage,
-{
-    fn new(storage: &'runtime S, runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>) -> Self {
-        Self {
-            storage,
-            runtime,
-            phase: ControllerModemTimerTaskPhase::Idle,
-        }
-    }
-
-    /// Borrow the current owner-free readiness predicate.
-    pub fn readiness(&self) -> ControllerModemTimerReadiness<'_> {
-        let class = match &self.phase {
-            ControllerModemTimerTaskPhase::Idle => ControllerModemTimerReadinessClass::Interrupt,
-            ControllerModemTimerTaskPhase::Work(_) => ControllerModemTimerReadinessClass::Step,
-            ControllerModemTimerTaskPhase::Expiration(_) => {
-                ControllerModemTimerReadinessClass::EventCapacity
-            }
-            ControllerModemTimerTaskPhase::Rearm(_) => ControllerModemTimerReadinessClass::Rearm,
-        };
-        ControllerModemTimerReadiness {
-            class,
-            worker_wake: self.runtime.worker_wake(),
-            events: self.runtime.events(),
-        }
-    }
-
-    /// Acquire exactly one software-pending owner after borrowed readiness.
-    pub fn begin(&mut self) -> ControllerModemTimerBegin<S::TakeError> {
-        if !matches!(self.phase, ControllerModemTimerTaskPhase::Idle) {
-            return ControllerModemTimerBegin::AlreadyActive;
-        }
-        if !self.runtime.worker_wake().is_pending() {
-            return ControllerModemTimerBegin::NotReady;
-        }
-        match self.storage.take_modem_lp_timer_software_pending() {
-            Ok(owner) => {
-                self.runtime.worker_wake.take();
-                self.phase = ControllerModemTimerTaskPhase::Work(ModemLpTimerSoftwareState::begin(
-                    owner,
-                    self.runtime.epoch,
-                ));
-                ControllerModemTimerBegin::Started
-            }
-            Err(error) => ControllerModemTimerBegin::StorageRejected(error),
-        }
-    }
-
-    /// Advance exactly one queue, publication or compare transition.
-    pub fn step(&mut self) -> ControllerModemTimerStep {
-        let phase = core::mem::replace(&mut self.phase, ControllerModemTimerTaskPhase::Idle);
-        match phase {
-            ControllerModemTimerTaskPhase::Idle => ControllerModemTimerStep::Idle,
-            ControllerModemTimerTaskPhase::Work(work) => {
-                match work.step(self.runtime.queue, self.runtime.epoch) {
-                    ModemLpTimerSoftwareStateStep::Expiration(pending) => {
-                        let event = pending.event();
-                        self.phase = ControllerModemTimerTaskPhase::Expiration(pending);
-                        ControllerModemTimerStep::ExpirationPending(event)
-                    }
-                    ModemLpTimerSoftwareStateStep::Recheck(work) => {
-                        self.phase = ControllerModemTimerTaskPhase::Work(work);
-                        ControllerModemTimerStep::Recheck
-                    }
-                    ModemLpTimerSoftwareStateStep::Rearmed(owner) => {
-                        self.phase = ControllerModemTimerTaskPhase::Rearm(owner);
-                        ControllerModemTimerStep::RearmPending
-                    }
-                }
-            }
-            ControllerModemTimerTaskPhase::Expiration(pending) => {
-                let event = pending.event();
-                match pending.publish(self.runtime.events()) {
-                    Ok((work, publication)) => {
-                        self.phase = ControllerModemTimerTaskPhase::Work(work);
-                        ControllerModemTimerStep::Published(publication)
-                    }
-                    Err(pending) => {
-                        self.phase = ControllerModemTimerTaskPhase::Expiration(pending);
-                        ControllerModemTimerStep::Backpressured(event)
-                    }
-                }
-            }
-            ControllerModemTimerTaskPhase::Rearm(owner) => {
-                self.phase = ControllerModemTimerTaskPhase::Rearm(owner);
-                ControllerModemTimerStep::RearmPending
-            }
-        }
-    }
-
-    /// Restore one fully rearmed owner to stable source-127 interrupt storage.
-    pub fn rearm(&mut self) -> ControllerModemTimerRearm<S::RestoreError> {
-        let phase = core::mem::replace(&mut self.phase, ControllerModemTimerTaskPhase::Idle);
-        let ControllerModemTimerTaskPhase::Rearm(owner) = phase else {
-            self.phase = phase;
-            return ControllerModemTimerRearm::NotReady;
-        };
-        self.runtime.worker_wake.take();
-        match self.storage.restore_modem_lp_timer_ready(owner) {
-            Ok(()) => ControllerModemTimerRearm::Rearmed,
-            Err((error, owner)) => {
-                self.phase = ControllerModemTimerTaskPhase::Rearm(owner);
-                ControllerModemTimerRearm::StorageRejected(error)
-            }
-        }
-    }
-
-    /// Consume one durably published expiration, if present.
-    pub fn take_expiration(&mut self) -> Option<ModemLpTimerExpiration> {
-        self.runtime.events().take()
-    }
-}
-
-/// Powered Controller after atomic stable publication of both ISR owners.
-///
-/// The platform lease retains stable placement, but no CPU route is active and
-/// no hard-handler entry is possible from this state. The nested Controller
-/// also retains the affine standalone always-awake profile selection; that
-/// marker performs no RF MMIO and supplies neither RF-ready nor time-pending
-/// authority.
-#[must_use = "published Bluetooth interrupt owners must remain retained through route setup"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerInterruptOwnersPublished<
-    P,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    initialized: ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-    _storage: S,
-    post_unlink_mailbox: DtmPostUnlinkMailbox,
-    runtime_control: BluetoothLowPowerRuntimeControlObservation,
-    scheduler_epoch: Option<crate::ControllerSchedulerEpoch>,
-    dtm_resources: crate::le::dtm::DtmRuntimeResources,
-    legacy_advertising_resources: crate::le::advertising::LegacyAdvertisingRuntimeResources,
-    passive_scan_resources: crate::le::scanning::PassiveScanRuntimeResources,
-    peripheral_connection_resources: crate::le::peripheral::PeripheralConnectionRuntimeResources,
-    legacy_connectable_advertising_resources:
-        crate::le::advertising::LegacyConnectableAdvertisingRuntimeResources,
-}
-
-/// Hardware/task endpoints prepared after stable interrupt-owner publication.
-///
-/// HCI is intentionally absent: protocol resources are bound only after this
-/// hardware ownership graph has reached its final movable state.
-#[must_use = "published hardware endpoints must remain in one live runtime epoch"]
-#[cfg(target_arch = "riscv32")]
-pub(crate) struct ControllerPublishedHardwareRuntimeEndpoints<
-    'runtime,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    pub(crate) interrupt: ControllerPublishedInterruptService<'runtime, S>,
-    pub(crate) task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    pub(crate) modem_timer: ControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerPublishedHardwareRuntimeEndpoints<
-        'runtime,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-    >
-{
-    pub(crate) fn bind_hci<M, const H2C: usize, const C2H: usize, const PC: usize>(
-        self,
-        mut hci: oer_bluetooth_hci::LeControllerHciEndpoints<'runtime, M, H2C, C2H, PC>,
-    ) -> ControllerPublishedRuntimeSplit<
-        'runtime,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        H2C,
-        C2H,
-        PC,
-    >
-    where
-        M: RawMutex,
-    {
-        let Self {
-            interrupt,
-            task,
-            modem_timer,
-        } = self;
-        match hci.controller.claim_initial_command_ready(task) {
-            oer_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
-                ControllerPublishedRuntimeSplit::Ready(ControllerPublishedRuntimeEndpoints {
-                    interrupt,
-                    task: ControllerIdleCommandTask::from_ready(ready),
-                    modem_timer,
-                    hci,
-                })
-            }
-            oer_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
-                ControllerPublishedRuntimeSplit::CommandReadyUnavailable(
-                    ControllerPublishedRuntimeSplitFailure {
-                        _interrupt: interrupt,
-                        _task: task,
-                        _modem_timer: modem_timer,
-                        _hci: hci,
-                    },
-                )
-            }
-        }
-    }
-}
-
-/// Disjoint runtime endpoints borrowed from one statically placed final
-/// Controller owner.
-///
-/// The task endpoint owns all mutable scheduler workers, the interrupt service
-/// owns only stable platform dispatch plus shared publication cells, and HCI
-/// exposes the Host transport and combined Controller command endpoint. Keeping
-/// the backing final owner in caller-owned stable storage prevents a
-/// self-referential runtime object.
-#[must_use = "the final Controller endpoints must remain in one live runtime epoch"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerPublishedRuntimeEndpoints<
-    'runtime,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    /// Finite hard-handler service over the stable PAC/HAL owners.
-    pub interrupt: ControllerPublishedInterruptService<'runtime, S>,
-    /// Sole idle task carrying this epoch's affine next-command authority.
-    pub task: ControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
-    /// Disjoint source-127 queue, epoch and stable-storage task endpoint.
-    pub modem_timer: ControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
-    /// Disjoint Host transport and combined Controller command endpoint.
-    pub hci: oer_bluetooth_hci::LeControllerHciEndpoints<
-        'runtime,
-        M,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
-}
-
-/// Result of borrowing one final Controller runtime epoch.
-///
-/// A successful split claims the HCI epoch's initial command-ready authority
-/// exactly once. Every later split fails closed without releasing the powered
-/// task, interrupt service, or combined HCI endpoint as independently usable
-/// values.
-#[must_use = "retain the ready runtime or its opaque fail-stop owner"]
-#[cfg(target_arch = "riscv32")]
-pub enum ControllerPublishedRuntimeSplit<
-    'runtime,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    /// The only idle command task for this Controller epoch was claimed.
-    Ready(
-        ControllerPublishedRuntimeEndpoints<
-            'runtime,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ),
-    /// The epoch's initial command authority had already been consumed.
-    CommandReadyUnavailable(
-        ControllerPublishedRuntimeSplitFailure<
-            'runtime,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ),
-}
-
-/// Opaque fail-stop owner for a final runtime whose command authority was gone.
-#[must_use = "the complete unavailable runtime remains intentionally fail-stopped"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerPublishedRuntimeSplitFailure<
-    'runtime,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    _interrupt: ControllerPublishedInterruptService<'runtime, S>,
-    _task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    _modem_timer: ControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
-    _hci: oer_bluetooth_hci::LeControllerHciEndpoints<
-        'runtime,
-        M,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
 }
 
 /// Idle powered task paired with the sole affine next-command authority.
@@ -1354,25 +813,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-/// Stable interrupt service for a materialized final Controller epoch.
-///
-/// This value cannot prepare DTM descriptors or mutate task-owned scheduler
-/// state. It can only execute the three bounded hardware dispositions and
-/// publish their durable events into the matching runtime resources.
-#[must_use = "interrupt service must remain paired with its task runtime"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerPublishedInterruptService<'runtime, S> {
-    storage: &'runtime S,
-    runtime: ControllerInterruptRuntime<'runtime>,
-    mailbox: &'runtime DtmPostUnlinkMailbox,
-}
-
 /// Task-side hardware service for one published Controller epoch.
 ///
 /// The service owns the mutable scheduler workers, the task-side HAL owner and
-/// the exclusive scheduler-list identity. It also holds the unique mutable
-/// borrow of the composition-owned DTM graph and physical default-power
-/// profile. Stable interrupt storage is borrowed only for finite task-context
+/// the exclusive scheduler-list identity. A separate exclusive lease retains the
+/// registered PHY client and BLE PHY/DF memory until the same HCI retirement
+/// barrier extracts both hardware owners. A third lease retains all five role
+/// graphs and their physical policies; retirement returns them together only
+/// after every allocation and portable generation reaches its idle boundary.
+/// Stable interrupt storage is borrowed only for finite task-context
 /// preparations; hard-handler dispatch remains in the disjoint interrupt
 /// service.
 #[must_use = "the DTM task service owns the powered scheduler epoch"]
@@ -1381,16 +830,16 @@ pub struct ControllerPublishedTaskService<'runtime, S, const SCHEDULER_CAPACITY:
     storage: &'runtime S,
     runtime: ControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime DtmPostUnlinkMailbox,
-    dtm_resources: &'runtime mut crate::le::dtm::DtmRuntimeResources,
-    legacy_advertising_resources:
-        &'runtime mut crate::le::advertising::LegacyAdvertisingRuntimeResources,
-    passive_scan_resources: &'runtime mut crate::le::scanning::PassiveScanRuntimeResources,
-    peripheral_connection_resources:
-        &'runtime mut crate::le::peripheral::PeripheralConnectionRuntimeResources,
-    legacy_connectable_advertising_resources:
-        &'runtime mut crate::le::advertising::LegacyConnectableAdvertisingRuntimeResources,
+    roles: crate::resources::runtime_owner::RuntimeOwnerLease<
+        'runtime,
+        role_retirement::ControllerRoleResources,
+    >,
     direction_finding_workspace: oer_esp32s31_bluetooth_memory::DirectionFindingWorkspaceLink,
     ble_phy_timing: crate::ble_phy::BlePhyTimingAuthority,
+    ble_phy_owners: crate::resources::runtime_owner::RuntimeOwnerLease<
+        'runtime,
+        crate::ble_phy::BlePhyRetainedOwners,
+    >,
     scheduler_epoch: &'runtime mut Option<crate::ControllerSchedulerEpoch>,
 }
 
@@ -3275,6 +2724,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::le::advertising::LegacyAdvertisingCancelled<'static>,
     > {
         match self
+            .roles
             .legacy_advertising_resources
             .restore_cancelled(cancelled)
         {
@@ -3331,7 +2781,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ) -> timed_preparation::TimedPreparationRollbackOutcome<
         oer_esp32s31_bluetooth_memory::PassiveScanMemoryGraphCpuOwned,
     > {
-        match self.passive_scan_resources.restore_idle(graph) {
+        match self.roles.passive_scan_resources.restore_idle(graph) {
             Ok(()) => timed_preparation::TimedPreparationRollbackOutcome::Restored,
             Err(graph) => timed_preparation::TimedPreparationRollbackOutcome::FailStop(graph),
         }
@@ -3385,7 +2835,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         idle: crate::le::dtm::DtmSessionIdle,
     ) -> Result<(), crate::le::dtm::DtmSessionIdle> {
-        self.dtm_resources.restore_idle(idle)
+        self.roles.dtm_resources.restore_idle(idle)
     }
 
     #[expect(
@@ -3396,12 +2846,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         completed: crate::le::advertising::LegacyAdvertisingEventCompleted<'static>,
     ) -> Result<(), crate::le::advertising::LegacyAdvertisingEventCompleted<'static>> {
-        self.legacy_advertising_resources
+        self.roles
+            .legacy_advertising_resources
             .restore_completed_disabled(completed)
     }
 
     fn new_dtm_link_state_reset(&self, role: crate::le::dtm::DtmRole) -> crate::DtmLinkStateReset {
-        crate::DtmLinkStateReset::new(self.dtm_resources.default_tx_power_dbm(), role)
+        crate::DtmLinkStateReset::new(self.roles.dtm_resources.default_tx_power_dbm(), role)
     }
 
     fn cancel_dtm_preparation_phase(
@@ -3783,6 +3234,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let mut current = self;
         let event = match current
             .controller
+            .roles
             .legacy_advertising_resources
             .begin_event(set)
         {
@@ -3851,8 +3303,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         PassiveScanControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
         PassiveScanControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let current = self;
-        let graph = match current.controller.passive_scan_resources.begin_event() {
+        let mut current = self;
+        let graph = match current
+            .controller
+            .roles
+            .passive_scan_resources
+            .begin_event()
+        {
             Ok(graph) => graph,
             Err(error) => {
                 return Err(PassiveScanControllerInitialPreparationFailure::Rejected {
@@ -3886,7 +3343,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         reason = "no-alloc begin failure retains the Controller and complete TX retry owner"
     )]
     pub(crate) fn begin_dtm_transmitter_first_item(
-        self,
+        mut self,
         pattern: crate::le::dtm::DtmPayloadPattern,
         length: crate::le::dtm::DtmPayloadLength,
         channel: crate::le::dtm::DtmChannel,
@@ -3896,7 +3353,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         DtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
         DtmControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let graph = match self.controller.dtm_resources.begin_session_epoch() {
+        let graph = match self.controller.roles.dtm_resources.begin_session_epoch() {
             Ok(graph) => graph,
             Err(crate::le::dtm::DtmRuntimeSessionBeginError::SessionActive) => {
                 return Err(DtmControllerInitialPreparationFailure::SessionActive(self));
@@ -3935,14 +3392,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         reason = "no-alloc begin failure retains the Controller and complete RX retry owner"
     )]
     pub(crate) fn begin_dtm_receiver_first_item(
-        self,
+        mut self,
         channel: crate::le::dtm::DtmChannel,
         phy: crate::le::dtm::DtmPhy,
     ) -> Result<
         DtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
         DtmControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let graph = match self.controller.dtm_resources.begin_session_epoch() {
+        let graph = match self.controller.roles.dtm_resources.begin_session_epoch() {
             Ok(graph) => graph,
             Err(crate::le::dtm::DtmRuntimeSessionBeginError::SessionActive) => {
                 return Err(DtmControllerInitialPreparationFailure::SessionActive(self));
@@ -4009,140 +3466,6 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         controller.begin_dtm_preparation_time(
             DtmControllerPreparationPhase::TransmitterRecurringSequence(pre_sequence),
         )
-    }
-}
-
-/// Failed stable publication retaining the Controller, storage and role runtimes.
-#[must_use = "failed ISR publication returns every affine owner for inspection or retry"]
-#[cfg(target_arch = "riscv32")]
-pub struct ControllerInterruptOwnerPublicationFailure<
-    P,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> where
-    S: InterruptOwnerStorage,
-{
-    controller: ControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-    storage: S,
-    dtm_resources: crate::le::dtm::DtmRuntimeResources,
-    legacy_advertising_resources: crate::le::advertising::LegacyAdvertisingRuntimeResources,
-    passive_scan_resources: crate::le::scanning::PassiveScanRuntimeResources,
-    peripheral_connection_resources: crate::le::peripheral::PeripheralConnectionRuntimeResources,
-    legacy_connectable_advertising_resources:
-        crate::le::advertising::LegacyConnectableAdvertisingRuntimeResources,
-    error: S::Error,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
-    /// Inspect the BLE PHY input retained by this exact powered epoch.
-    pub const fn ble_phy_report(&self) -> crate::ble_phy::BlePhyInitializationReport {
-        self.initialized.report()
-    }
-
-    /// Inspect the preceding finite BTBB transition.
-    pub const fn baseband_report(&self) -> crate::baseband::BasebandInitializationReport {
-        self.initialized.baseband_report()
-    }
-
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(&self) -> crate::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
-    }
-
-    /// Conditional runtime-control branch retained across the timer start.
-    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.timer.runtime_control_observation()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerInterruptOwnersPublished<P, S, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-where
-    S: ModemLpTimerSoftwareOwnerStorage,
-{
-    /// Borrow the published hardware graph as disjoint interrupt and task endpoints.
-    ///
-    /// The caller must retain this owner in stable storage for the complete
-    /// routed lifetime. HCI remains a separate protocol resource until the
-    /// post-publication binding transition.
-    pub(crate) fn split_hardware_runtime<'runtime>(
-        &'runtime mut self,
-    ) -> ControllerPublishedHardwareRuntimeEndpoints<
-        'runtime,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-    > {
-        let Self {
-            initialized,
-            _storage,
-            post_unlink_mailbox,
-            scheduler_epoch,
-            dtm_resources,
-            legacy_advertising_resources,
-            passive_scan_resources,
-            peripheral_connection_resources,
-            legacy_connectable_advertising_resources,
-            ..
-        } = self;
-        let direction_finding_workspace = initialized.direction_finding_workspace_link();
-        let (
-            ControllerRuntimeEndpoints {
-                interrupt,
-                task,
-                modem_timer,
-            },
-            ble_phy_timing,
-        ) = initialized.split_runtime();
-        let interrupt = ControllerPublishedInterruptService {
-            storage: _storage,
-            runtime: interrupt,
-            mailbox: post_unlink_mailbox,
-        };
-        let task = ControllerPublishedTaskService {
-            storage: _storage,
-            runtime: task,
-            mailbox: post_unlink_mailbox,
-            dtm_resources,
-            legacy_advertising_resources,
-            passive_scan_resources,
-            peripheral_connection_resources,
-            legacy_connectable_advertising_resources,
-            direction_finding_workspace,
-            ble_phy_timing,
-            scheduler_epoch,
-        };
-        let modem_timer = ControllerModemTimerTask::new(_storage, modem_timer);
-        ControllerPublishedHardwareRuntimeEndpoints {
-            interrupt,
-            task,
-            modem_timer,
-        }
-    }
-
-    /// Inspect the BLE PHY input retained by this exact powered epoch.
-    pub const fn ble_phy_report(&self) -> crate::ble_phy::BlePhyInitializationReport {
-        self.initialized.report()
-    }
-
-    /// Inspect the preceding finite BTBB transition.
-    pub const fn baseband_report(&self) -> crate::baseband::BasebandInitializationReport {
-        self.initialized.baseband_report()
-    }
-
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(&self) -> crate::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
-    }
-
-    /// Conditional runtime-control branch retained across publication.
-    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.runtime_control
     }
 }
 
@@ -4387,276 +3710,3 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self.runtime.publish_passive_scan_scheduler_head(merged)
     }
 }
-
-#[cfg(target_arch = "riscv32")]
-impl<S> ControllerPublishedInterruptService<'_, S> {
-    /// Borrow the exact stable-storage publication backing this interrupt
-    /// service.
-    ///
-    /// Platform integration uses this only after the complete service and its
-    /// executor notifications have reached stable storage, then binds the CPU
-    /// routes as the final activation edge. The borrow cannot duplicate or
-    /// recover the affine publication owner.
-    pub const fn storage(&self) -> &S {
-        self.storage
-    }
-
-    /// Service, durably publish and route one primary source-124 epoch through
-    /// the Controller-owned post-unlink mailbox.
-    ///
-    /// Capture/acknowledge, both ordinary cell publications and the capacity-one
-    /// mailbox transition are serialized by one critical section. An armed
-    /// mailbox stores exactly the first eligible event; a full mailbox returns
-    /// the newer event without replacing the retained one.
-    pub fn service_primary_interrupt(
-        &self,
-    ) -> Result<crate::le::dtm::PrimarySerializedServiceStep, S::Error>
-    where
-        S: SharedInterruptDispatchStorage,
-    {
-        critical_section::with(|critical_section| {
-            let step = self.storage.service_primary_interrupt()?;
-            let published = step.publish(
-                self.runtime.scheduler_wake(),
-                self.runtime.scheduler_lock_modify_events(),
-            );
-            Ok(self.mailbox.publish(critical_section, published))
-        })
-    }
-
-    /// Service and durably publish one modem-timer source-127 epoch.
-    ///
-    /// A software-pending owner remains affine in stable platform storage.
-    /// Its matching Controller wake cell is published before this method
-    /// returns, so later task registration cannot lose the work request.
-    pub fn service_modem_lp_timer_interrupt(
-        &self,
-    ) -> Result<ModemLpTimerPublishedInterruptStep, S::Error>
-    where
-        S: ModemLpTimerInterruptDispatchStorage,
-    {
-        let step = self.storage.service_modem_lp_timer_interrupt()?;
-        Ok(step.publish(self.runtime.modem_lp_timer_worker_wake()))
-    }
-
-    /// Service one opaque default-profile NRT source-133 epoch.
-    ///
-    /// The reviewed default path intentionally publishes no scheduler or
-    /// Link-Layer work and keeps the shared owner in stable platform storage.
-    pub fn service_nrt_default_interrupt(&self) -> Result<NrtDefaultInterruptEpoch, S::Error>
-    where
-        S: SharedInterruptDispatchStorage,
-    {
-        self.storage.service_nrt_default_interrupt()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerInterruptOwnerPublicationFailure<P, S, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-where
-    S: InterruptOwnerStorage,
-{
-    /// Inspect the exact platform rejection.
-    pub const fn error(&self) -> &S::Error {
-        &self.error
-    }
-
-    /// Recover the complete pre-publication Controller, storage and role runtimes.
-    pub fn into_parts(
-        self,
-    ) -> (
-        ControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-        S,
-        crate::le::dtm::DtmRuntimeResources,
-        crate::le::advertising::LegacyAdvertisingRuntimeResources,
-        crate::le::scanning::PassiveScanRuntimeResources,
-        crate::le::peripheral::PeripheralConnectionRuntimeResources,
-        crate::le::advertising::LegacyConnectableAdvertisingRuntimeResources,
-        S::Error,
-    ) {
-        (
-            self.controller,
-            self.storage,
-            self.dtm_resources,
-            self.legacy_advertising_resources,
-            self.passive_scan_resources,
-            self.peripheral_connection_resources,
-            self.legacy_connectable_advertising_resources,
-            self.error,
-        )
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
-    /// Inspect the BLE PHY input retained by this exact powered epoch.
-    pub const fn ble_phy_report(&self) -> crate::ble_phy::BlePhyInitializationReport {
-        self.initialized.report()
-    }
-
-    /// Inspect the preceding finite BTBB transition.
-    pub const fn baseband_report(&self) -> crate::baseband::BasebandInitializationReport {
-        self.initialized.baseband_report()
-    }
-
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(&self) -> crate::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
-    }
-
-    /// Conditional runtime-control branch retained by the ISR-ready timer.
-    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.runtime_control
-    }
-
-    /// Atomically publish both owners in caller-selected stable ISR storage.
-    ///
-    /// Rejection occurs before publication and returns this exact state plus
-    /// the storage capability and unmodified role runtimes. Success still leaves
-    /// every CPU route inactive.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc failure must return every affine powered owner"
-    )]
-    pub fn publish_interrupt_owners<S>(
-        self,
-        storage: S,
-        dtm_resources: crate::le::dtm::DtmRuntimeResources,
-        legacy_advertising_resources: crate::le::advertising::LegacyAdvertisingRuntimeResources,
-        passive_scan_resources: crate::le::scanning::PassiveScanRuntimeResources,
-        peripheral_connection_resources: crate::le::peripheral::PeripheralConnectionRuntimeResources,
-        legacy_connectable_advertising_resources:
-            crate::le::advertising::LegacyConnectableAdvertisingRuntimeResources,
-    ) -> Result<
-        ControllerInterruptOwnersPublished<
-            P,
-            S::Published,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-        >,
-        ControllerInterruptOwnerPublicationFailure<P, S, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-    >
-    where
-        S: InterruptOwnerStorage,
-    {
-        let Self {
-            initialized,
-            _interrupts: interrupts,
-            _timer: timer,
-            runtime_control,
-        } = self;
-        match storage.publish(interrupts, timer) {
-            Ok(published) => Ok(ControllerInterruptOwnersPublished {
-                initialized,
-                _storage: published,
-                post_unlink_mailbox: DtmPostUnlinkMailbox::new(),
-                runtime_control,
-                scheduler_epoch: None,
-                dtm_resources,
-                legacy_advertising_resources,
-                passive_scan_resources,
-                peripheral_connection_resources,
-                legacy_connectable_advertising_resources,
-            }),
-            Err((error, storage, interrupts, timer)) => {
-                Err(ControllerInterruptOwnerPublicationFailure {
-                    controller: ControllerInterruptOwnersReady {
-                        initialized,
-                        _interrupts: interrupts,
-                        _timer: timer,
-                        runtime_control,
-                    },
-                    storage,
-                    dtm_resources,
-                    legacy_advertising_resources,
-                    passive_scan_resources,
-                    peripheral_connection_resources,
-                    legacy_connectable_advertising_resources,
-                    error,
-                })
-            }
-        }
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
-    /// Transfer both disjoint register owners into their pre-route states.
-    ///
-    /// This is an ownership-only transition. It performs no MMIO and does not
-    /// claim stable placement or a live interrupt epoch.
-    pub fn stage_interrupt_owners(
-        self,
-    ) -> ControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        let Self {
-            initialized,
-            _interrupt_output: interrupt_output,
-            timer,
-        } = self;
-        let runtime_control = timer.runtime_control_observation();
-        ControllerInterruptOwnersReady {
-            initialized,
-            _interrupts: interrupt_output.stage_for_cpu_routes(),
-            _timer: timer.stage_for_interrupt(),
-            runtime_control,
-        }
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
-    /// Prepare Controller IRQ output and then start the runtime timer once.
-    ///
-    /// The consuming BLE-PHY state proves that controller HAL, scheduler,
-    /// low-power hardware, common PHY, BTBB, BLE PHY initialization and public
-    /// Controller-address publication all belong to this epoch. CPU routes
-    /// remain inaccessible, so the lower unsafe interrupt prerequisite is
-    /// discharged here and never exported.
-    #[allow(
-        unsafe_code,
-        reason = "the complete Controller typestate proves the HAL interrupt prerequisites"
-    )]
-    pub fn prepare_controller_output_and_start_runtime_timer(
-        mut self,
-    ) -> ControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        let (interrupts, timer) = self.take_activation_owners();
-        let (interrupt_output, timer) = prepare_output_then_start_timer(
-            interrupts,
-            timer,
-            |interrupts| {
-                // SAFETY: `self` retains the matching complete powered
-                // Controller epoch and no CPU-route owner has been exposed.
-                unsafe { interrupts.prepare_controller_output() }
-            },
-            |timer| timer.start_runtime_timer(),
-        );
-
-        ControllerOutputTimerStarted {
-            initialized: self,
-            _interrupt_output: interrupt_output,
-            timer,
-        }
-    }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-fn prepare_output_then_start_timer<Interrupt, Timer, Output, Started>(
-    interrupt: Interrupt,
-    timer: Timer,
-    prepare_output: impl FnOnce(Interrupt) -> Output,
-    start_timer: impl FnOnce(Timer) -> Started,
-) -> (Output, Started) {
-    let output = prepare_output(interrupt);
-    let timer = start_timer(timer);
-    (output, timer)
-}
-
-#[cfg(test)]
-mod tests;

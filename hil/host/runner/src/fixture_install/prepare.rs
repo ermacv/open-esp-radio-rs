@@ -172,7 +172,15 @@ fn validate_prepared_contract(
 }
 
 fn require_capabilities(helper: &Path, expected: &str) -> Result<()> {
-    let output = Command::new(helper).arg("capabilities").output()?;
+    require_capabilities_with_timeout(helper, expected, std::time::Duration::from_secs(5))
+}
+
+fn require_capabilities_with_timeout(
+    helper: &Path,
+    expected: &str,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let output = oer_process::output(Command::new(helper).arg("capabilities"), Some(timeout))?;
     if !output.status.success() || String::from_utf8(output.stdout)?.trim() != expected {
         return Err(format!(
             "prepared helper has an incompatible runtime contract: {}",
@@ -304,4 +312,27 @@ pub(crate) fn validate_operator(operator: &str) -> Result<()> {
         return Err("operator must be a non-root Linux account name".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn helper_capabilities_cannot_hold_preparation_open_indefinitely() {
+        let directory = tempfile::tempdir().unwrap();
+        let helper = directory.path().join("helper");
+        fs::write(&helper, "#!/bin/sh\nexec sleep 60\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let error = require_capabilities_with_timeout(
+            &helper,
+            "expected",
+            std::time::Duration::from_millis(30),
+        )
+        .unwrap_err();
+        assert!(
+            error.is::<oer_process::owned::DeadlineExceeded>(),
+            "{error}"
+        );
+    }
 }

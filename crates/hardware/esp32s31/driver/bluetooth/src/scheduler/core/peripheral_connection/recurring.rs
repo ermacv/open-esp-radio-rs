@@ -75,6 +75,15 @@ pub struct PeripheralConnectionRecurringPreSequence {
 }
 
 impl PeripheralConnectionRecurringPreSequence {
+    /// End of the same sequencer interval installed after authorization.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn sequence_end_ticks(&self) -> u32 {
+        self.reservation
+            .window()
+            .end()
+            .wrapping_add(self.reservation.timing_policy().sequence_lead_raw_delta())
+    }
+
     pub(crate) const fn raw_window(&self) -> SchedulerRawWindow {
         self.candidate.raw_window()
     }

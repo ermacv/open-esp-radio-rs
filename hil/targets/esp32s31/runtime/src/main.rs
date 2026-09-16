@@ -94,11 +94,11 @@ const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
 #[cfg(not(feature = "psram-task-stack"))]
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
 const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 // CPU1 runs the Embassy network executor in split images. Its nested async call
@@ -604,11 +604,6 @@ fn paint_app_core_stack() {
 
 #[cfg(feature = "open-radio-hil")]
 pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage {
-    let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
-    let cpu0_top = symbol(ptr::addr_of!(_stack_start));
-    let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
-    let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
-
     #[cfg(feature = "psram-task-stack")]
     let cpu1_bottom = psram_task_stack::cpu1_task_stack_bottom();
     #[cfg(not(feature = "psram-task-stack"))]
@@ -617,13 +612,7 @@ pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage 
     let cpu1_paint_end = APP_STACK_PAINT_END.load(Ordering::Acquire);
 
     open_esp_radio_hil_protocol::StackUsage {
-        cpu0: measure_stack(
-            cpu0_bottom,
-            cpu0_paint_start,
-            cpu0_paint_end,
-            cpu0_top,
-            stack_minimum_free_bytes(0),
-        ),
+        cpu0: cpu0_stack_usage_snapshot(),
         cpu1: measure_stack(
             cpu1_bottom,
             cpu1_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES,
@@ -634,7 +623,23 @@ pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage 
     }
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
+pub(crate) fn cpu0_stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackWatermark {
+    let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
+    let cpu0_top = symbol(ptr::addr_of!(_stack_start));
+    let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
+    let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
+
+    measure_stack(
+        cpu0_bottom,
+        cpu0_paint_start,
+        cpu0_paint_end,
+        cpu0_top,
+        stack_minimum_free_bytes(0),
+    )
+}
+
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
 fn measure_stack(
     bottom: u32,
     paint_start: u32,
@@ -663,7 +668,7 @@ fn measure_stack(
     }
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-hil"))]
 fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     let value = match cpu {
         0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),

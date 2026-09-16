@@ -176,6 +176,15 @@ pub enum Workload {
         hold_millis: u16,
         #[serde(default)]
         termination: BluetoothPeripheralTermination,
+        /// Terminal software/ownership retirement after all real connection cycles.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        retire_after: bool,
+        /// Powered cold restart between real peripheral connections in one boot.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        restart_between_connections: bool,
+        /// Due PHY maintenance preserving HCI and the powered epoch between connections.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        maintain_between_connections: bool,
     },
     BootSmoke,
     MemoryBenchmark {

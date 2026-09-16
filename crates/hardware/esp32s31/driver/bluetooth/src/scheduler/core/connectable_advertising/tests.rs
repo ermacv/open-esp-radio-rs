@@ -194,7 +194,9 @@ fn overlapping_candidate_rejection_retains_both_events_and_releases_cleanly() {
     );
     let first_start = first.raw_window().start();
     let second_start = second.raw_window().start();
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let first = match task.admit_legacy_connectable_advertising_first_event(
         first,
         LegacyConnectableAdvertisingAdmissionObservation {
@@ -253,7 +255,9 @@ fn rejected_sequence_sample_releases_timeline_and_all_graph_owners() {
         10_000,
     );
     let start = candidate.raw_window().start();
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let admitted = match task.admit_legacy_connectable_advertising_first_event(
         candidate,
         LegacyConnectableAdvertisingAdmissionObservation {
@@ -325,7 +329,9 @@ fn phase_locked_connectable_recurrence_reserves_and_cancels_losslessly() {
             let _prepared = failure.into_prepared();
             panic!("one selected-channel successor fits the retained epoch")
         });
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let admitted = task
         .admit_legacy_connectable_advertising_recurring_event(recurring)
         .unwrap_or_else(|failure| {
@@ -419,7 +425,9 @@ fn colliding_connectable_recurrence_keeps_both_role_graphs_and_nominal_phase() {
     let recurring_phase = first.phase();
     assert_eq!(second.phase(), recurring_phase);
 
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let first = task
         .admit_legacy_connectable_advertising_recurring_event(first)
         .unwrap_or_else(|failure| {
@@ -480,7 +488,9 @@ fn occupied_list_rejects_second_item_without_losing_either_owner() {
         definition(LeDeviceAddressKind::Public),
         30_000,
     );
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let first = prepare(&mut task, first);
     let second = prepare(&mut task, second);
     let first = match task.prepare_legacy_connectable_advertising_empty_list_merge(first) {

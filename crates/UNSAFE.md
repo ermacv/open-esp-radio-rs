@@ -30,11 +30,11 @@ transactions. Its Cargo package is `oer-esp32s31-soc`; its implementation
 is handwritten code.
 
 The executable policy permits scoped unsafe exceptions in these handwritten
-packages. Prefixes below omit `open-esp-radio-` only to keep the mapping readable.
+packages. Prefixes below omit `oer-` only to keep the mapping readable.
 
 | Package suffix | Source path |
 | --- | --- |
-| `dma` | `memory/` |
+| `memory` | `memory/` |
 | `esp32s31-bluetooth` | `hardware/esp32s31/driver/bluetooth/` |
 | `esp32s31-hal` | `hardware/esp32s31/hal/` |
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |
@@ -56,9 +56,10 @@ smallest operation; a safe state machine in an audited crate remains safe.
 ## PAC dependency authority
 
 Direct dependencies on the semantic radio PAC are restricted independently
-of unsafe syntax. The current allowed paths are `pac/raw`, `pac`, `hal`,
-`protocols/bluetooth`, `ieee802154/irq` and `ieee802154/runtime` under
-`hardware/esp32s31/driver/`, plus `adapters/esp-hal/esp32s31/{soc,ieee802154}/`.
+of unsafe syntax. The current allowed paths are `pac/raw`, `pac` and `hal`
+under `hardware/esp32s31/`; `bluetooth`, `ieee802154/irq` and
+`ieee802154/runtime` under `hardware/esp32s31/driver/`; and
+`adapters/esp-hal/esp32s31/{soc,ieee802154}/`.
 In particular, the IEEE 802.15.4 IRQ crate's dependency permission does not
 permit unsafe code. Check the executable lists when changing these boundaries.
 

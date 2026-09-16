@@ -63,7 +63,7 @@ pub use bluetooth::{
     interrupt::{
         BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
         BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
-        BluetoothSchedulerRunInterruptsPrepared,
+        BluetoothSchedulerRunInterruptsPrepared, retirement::BluetoothControllerOutputReleaseError,
     },
     memory_lists::{
         BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
@@ -116,6 +116,7 @@ pub use bluetooth::{
             BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
         },
     },
+    shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure},
 };
 
 pub use cfr::CfrValue;

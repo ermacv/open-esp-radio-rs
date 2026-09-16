@@ -240,9 +240,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 );
             }
         };
-        match self
+        let roles = &mut *self.roles;
+        match roles
             .legacy_connectable_advertising_resources
-            .restore_cancelled(cancelled, self.peripheral_connection_resources)
+            .restore_cancelled(cancelled, &mut roles.peripheral_connection_resources)
         {
             Ok(_definition) => timed_preparation::TimedPreparationRollbackOutcome::Restored,
             Err(owner) => timed_preparation::TimedPreparationRollbackOutcome::FailStop(
@@ -564,14 +565,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             >,
         ) -> R,
     ) -> R {
-        let current = self;
-        let prepared = match current
-            .controller
+        let mut current = self;
+        let roles = &mut *current.controller.roles;
+        let prepared = match roles
             .legacy_connectable_advertising_resources
-            .begin_event(
-                definition,
-                current.controller.peripheral_connection_resources,
-            ) {
+            .begin_event(definition, &mut roles.peripheral_connection_resources)
+        {
             Ok(prepared) => prepared,
             Err(LegacyConnectableAdvertisingRuntimeBeginFailure::GenerationExhausted) => {
                 return recovered(

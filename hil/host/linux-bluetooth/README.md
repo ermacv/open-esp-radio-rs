@@ -96,6 +96,14 @@ established-link supervision was exercised. Only peer-rfkill mode sets
 `rf_loss_verified`; HCI Reset remains a logical command. This fixture does not
 start, flash or reset the ESP.
 
+`rf_loss_verified` proves the helper's observed adapter block and hold, not
+an abrupt over-the-air outage. Closing the exclusive user channel first lets
+Linux close the controller, which may terminate the link before rfkill.
+The target can therefore receive remote termination `0x13` instead of
+supervision timeout `0x08`. The RF-loss scenario still requires `0x08` and
+fails in that case. This software-only stimulus is not sufficient to qualify
+abrupt RF loss on an adapter that terminates gracefully during close.
+
 ## ESP and adapter RF scenario
 
 Add the selected adapter to the private `hil/local.toml` configuration:
@@ -135,10 +143,11 @@ responses whose encoded length is an exact USB packet multiple.
 The peripheral recovery scenario starts the target's public `ADV_IND`, asks
 the same finite helper to connect as a central, send the exact ACL packet,
 validate its echo and reset its local Controller. It then waits for the target's
-2-second supervision timeout. Each cycle requires the external central's
+connection retirement and advertising recovery. Each cycle requires the external central's
 Connection Complete, successful LE Read Remote Features and Read Remote Version
 Information Command Status events followed by their correlated completions,
-the exact feature mask `18:40:00:00:00:00:00:00`, Core version 5.4, company
+the exact negotiated feature mask `19:40:00:00:00:00:00:00` (Encryption,
+Peripheral Feature Exchange, LE Ping and CSA #2), Core version 5.4, company
 value `0xffff` and subversion 1, two distinct exact 251-byte ACL echoes separated
 by an exact 120-ms Connection Update and applied two-channel map, and a
 restoration report. It also requires exactly twenty target Host ACL fragments,
@@ -148,7 +157,12 @@ target-side peripheral
 retirement, and ordered standard LE Connection Complete, Connection Update
 Complete and Disconnection Complete events. The
 disconnect status must be successful, the sole profile handle must be `0x0001`,
-and the reason must be `0x08`. The catalog runs two cycles per boot and three
+and this fixture profile accepts reason `0x13` (remote-user termination) or
+`0x08` (supervision timeout), retaining the actual reason in the target evidence.
+HCI Reset can optionally transmit `LL_TERMINATE_IND`; see Bluetooth SIG
+[HCI Test Suite HCI/DSU/BV-06-C, Figure 4.9](https://files.bluetooth.com/wp-content/uploads/dlm_uploads/2025/05/HCI.TS_.p37.pdf#page=36).
+Timeout itself is qualified only by the separate RF-loss scenario.
+The catalog runs two cycles per boot and three
 fresh repetitions, proving that advertising can restart after the first idle
 restoration. A passing physical run establishes the tested bounded RX
 backpressure and bidirectional legacy fragmentation path. Concurrent logical
@@ -195,3 +209,9 @@ ESP Reset and adapter restoration are checked independently of RF acceptance;
 the peer identity must match across directions. The catalog scenario requests
 two boots and stops at the first failure. It establishes
 only the tested LE 1M DTM link; general BLE readiness remains with qualification.
+
+The connection helper report uses schema 10. The installer and runner require
+the same advertised helper contract; reinstall the Linux Bluetooth fixture when
+that contract changes. Advertising Encryption in this exchange does not qualify
+encrypted traffic: key exchange, MIC/counter handling and encrypted interoperability
+require their own evidence.

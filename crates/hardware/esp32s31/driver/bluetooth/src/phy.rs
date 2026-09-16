@@ -366,28 +366,55 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         let result = {
             let (task, platform) = self.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
-            run_target_bluetooth_phy_register::<P, D, O>(
+            let mut registration = core::pin::pin!(run_target_bluetooth_phy_register::<P, D, O>(
                 platform,
                 &mut shared_phy,
                 config.into_target(),
                 observer,
-            )
-            .await
+            ));
+            core::future::poll_fn(|cx| poll_registration(registration.as_mut(), cx)).await
         };
-        match result {
-            Ok(success) => {
-                let (phy, calibration_cache, registration, counters) = success.into_parts();
-                Ok(ControllerPhyRegistered {
-                    controller: self,
-                    phy,
-                    calibration_cache,
-                    report: PhyInitializationReport::from_target(registration, counters),
-                })
-            }
-            Err(failure) => Err(ControllerPhyInitializationFailure {
-                _controller: self,
-                failure: PhyInitializationFailure::Registration(failure),
-            }),
-        }
+        finish_registration(self, result)
     }
+}
+
+#[inline(never)]
+#[allow(
+    clippy::result_large_err,
+    reason = "registration failure retains the actual Controller"
+)]
+fn finish_registration<P, const MT: usize, const SC: usize>(
+    controller: Controller<P, MT, SC>,
+    result: Result<
+        oer_esp32s31_phy::TargetBluetoothPhyRegisterSuccess,
+        TargetBluetoothPhyRegisterFailure,
+    >,
+) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyInitializationFailure<P, MT, SC>> {
+    match result {
+        Ok(success) => {
+            let (phy, calibration_cache, registration, counters) = success.into_parts();
+            Ok(ControllerPhyRegistered {
+                controller,
+                phy,
+                calibration_cache,
+                report: PhyInitializationReport::from_target(registration, counters),
+            })
+        }
+        Err(failure) => Err(ControllerPhyInitializationFailure {
+            _controller: controller,
+            failure: PhyInitializationFailure::Registration(failure),
+        }),
+    }
+}
+
+#[inline(never)]
+fn poll_registration<F: core::future::Future>(
+    future: core::pin::Pin<&mut F>,
+    cx: &mut core::task::Context<'_>,
+) -> core::task::Poll<F::Output> {
+    let poll: fn(
+        core::pin::Pin<&mut F>,
+        &mut core::task::Context<'_>,
+    ) -> core::task::Poll<F::Output> = F::poll;
+    core::hint::black_box(poll)(future, cx)
 }

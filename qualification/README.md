@@ -6,7 +6,20 @@ evidence and known blockers. The evaluator lives in `evaluator/`. Programs
 explicitly declare implementation, host and async states; vendor and HIL
 states are derived from independent evidence.
 
-The ESP32-S31 Wi-Fi, Bluetooth LE and IEEE 802.15.4 programs are independent.
+The focused product programs are Wi-Fi STA and BLE peripheral/ACL, followed by
+secure peripheral GATT. Their definitions share canonical capability declarations:
+
+| Program | Required product boundary |
+| --- | --- |
+| [Wi-Fi STA](targets/esp32s31/wifi-sta.toml) | Station association/WPA2, datapath, recovery and PHY/power lifecycle |
+| [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
+| [Secure peripheral GATT](targets/esp32s31/bluetooth-secure-gatt.toml) | The complete peripheral/ACL boundary plus encrypted traffic, Secure Connections, protected ATT access and bonded reconnect |
+
+The [full Bluetooth LE program](targets/esp32s31/bluetooth-le.toml) retains its
+wider role and feature requirements. [IEEE 802.15.4](targets/esp32s31/ieee802154.toml)
+is an independent program. Product selection does not change source coverage or
+make any hardware evidence current.
+
 
 ## Capability catalogs and program resolution
 
@@ -16,6 +29,21 @@ with `catalog-capabilities`. Resolution adds the selected declaration and its
 catalog-owned dependency closure to the program before the schema-4 evaluator
 runs. Inline capabilities remain supported while domains migrate; a capability
 ID cannot be declared both inline and in a loaded catalog.
+
+Catalogs declare shared inputs with `imports = ["qualification/catalog/…"]`.
+Paths are relative to the repository root. Imports resolve transitively; a shared
+catalog is loaded once even when also explicitly selected. Missing inputs,
+import cycles and repeated imports within one catalog are errors. Every imported
+source retains its own identity and hash in the rendered/evaluated provenance.
+Importing a catalog does not select all of its capabilities for a product.
+
+A program normally supplies an exact `required-capabilities` list. Alternatively,
+`required-capabilities-from = "catalog-closure"` explicitly derives the full set
+from `catalog-capabilities` and transitive dependencies. That mode cannot mix
+explicit required IDs or inline capabilities. Missing policy is not permission
+to derive a set: the existing exact-set checks still apply. Added dependencies
+become mandatory automatically in closure mode and retain all their evidence
+requirements. The evaluator report lists the resolved membership and provenance.
 
 Every catalog declaration keeps the existing reviewed/evidence axes and may
 carry the existing source contracts. Its required `catalog-scope` identifies
@@ -32,7 +60,7 @@ axes; unselected inventory entries have no readiness value.
 
 The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 68 existing
 Bluetooth LE qualification declarations and the wider LE, Classic and Host-only
-source inventory. The LE program loads it together with the Wi-Fi/PHY and
+source inventory. It imports the Wi-Fi/PHY and
 [coexistence](catalog/esp32s31/coex.toml) catalogs to reuse the exact
 `bluetooth-initial-phy-handoff` and diagnostic
 `coex-timer-validation-bridge` source facts. Neither lower fact promotes the
@@ -116,7 +144,8 @@ to check deterministic presentation. It uses `catalog check --catalog`,
 `catalog check --manifest`, and `catalog render --catalog`; it does not use
 manifest rendering, `validate`, `evaluate`, or `gate`, and it does not read
 vendor evidence or HIL runs. Its ignored static views live below
-`target/docs/gate/catalogs/` and carry no readiness verdict.
+`target/docs/static/catalogs/` for the ordinary command (`target/docs/gate/catalogs/`
+for `--full`) and carry no readiness verdict.
 
 The Bluetooth LE program includes legacy and extended roles, connected PHY and
 control procedures, security/privacy, periodic advertising and PAwR, Direction
@@ -153,9 +182,39 @@ Three commands have deliberately different contracts:
 `catalog check --catalog` and `catalog render --catalog` are static operations
 over the complete explicitly loaded catalog set. The `--manifest` check form
 also resolves selected IDs and dependencies and enforces the program's exact
-`required-capabilities` set, still without reading vendor evidence or HIL runs.
+`required-capabilities` set or explicitly selected `catalog-closure` policy, still
+without reading vendor evidence or HIL runs.
 Manifest render then evaluates that same statically validated program and
 writes the separate readiness view.
+
+## Focused Bluetooth products
+
+[The product catalog](catalog/esp32s31/bluetooth-products.toml) defines the exact
+single-peripheral criteria. It imports the existing cold-start, common-PHY,
+HCI and portable protocol prerequisites. Broad multi-role capabilities are
+separate; the product criteria explicitly retain single-role IRQ, timer, list,
+capacity, cancellation and powered-cleanup obligations. Passing an ACL exchange
+or logical HCI Reset does not establish the complete product lifecycle.
+
+The peripheral program selects the existing recovery, local Disconnect, local
+Reset, RF-loss and soak scenarios, plus physical retirement, same-storage
+powered restart and quiescent PHY maintenance. Automatic maintenance during
+continuous ACL/DTM remains an explicit implementation and async gap. The secure program additionally requires
+key/counter/MIC handling, Secure Connections pairing, ATT security enforcement,
+bond restoration and coordinated Host/Controller shutdown. Existing plaintext
+ACL scenarios do not supply encrypted or GATT evidence.
+
+Check the selected programs without scanning the evidence archive:
+
+```console
+cargo qualification catalog check --manifest qualification/targets/esp32s31/bluetooth-peripheral-acl.toml
+cargo qualification catalog check --manifest qualification/targets/esp32s31/bluetooth-secure-gatt.toml
+```
+
+Use `evaluate --manifest PATH --json-report PATH` for a current evidence-backed
+assessment, or `gate --manifest PATH` when every selected capability must be ready.
+The catalog-check summary counts all loaded catalog declarations, including
+unselected ones; the evaluator report describes only the resolved product set.
 
 ## Declared and derived axes
 

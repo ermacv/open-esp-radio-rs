@@ -19,6 +19,47 @@ use super::{
     drain_controller_time_orphan,
 };
 
+#[test]
+fn retirement_preserves_live_and_orphan_requests_until_their_actual_completion() {
+    use super::ControllerTimeRetirementError as Error;
+    let mut worker = ControllerTimeWorker::new_idle();
+    let mut hardware = ModelHardware::new([
+        BluetoothControllerTimeLatchStep::Waiting,
+        BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(19)),
+        BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(23)),
+    ]);
+    assert_eq!(worker.retirement_ready(), Ok(()));
+    let request = worker.request(&mut hardware).unwrap();
+    assert_eq!(worker.retirement_ready(), Err(Error::Requested));
+    assert_eq!(hardware.operations, [Operation::Begin]);
+    worker.cancel_owned(request).unwrap();
+    assert_eq!(worker.retirement_ready(), Err(Error::OrphanPending));
+    assert_eq!(hardware.operations, [Operation::Begin]);
+    assert_eq!(
+        worker.drain_orphan(&mut hardware),
+        Ok(ControllerTimeEventStep::Waiting)
+    );
+    assert_eq!(worker.retirement_ready(), Err(Error::OrphanPending));
+    assert_eq!(
+        worker.drain_orphan(&mut hardware),
+        Ok(ControllerTimeEventStep::OrphanDrained)
+    );
+    assert_eq!(worker.retirement_ready(), Ok(()));
+    let fresh = worker.request(&mut hardware).unwrap();
+    assert_ne!(fresh, request);
+    assert!(matches!(
+        worker.recheck_owned(fresh, &mut hardware),
+        Ok(ControllerTimeEventStep::Sample { request: owned, .. }) if owned == fresh
+    ));
+    assert_eq!(worker.retirement_ready(), Ok(()));
+    // A late cancellation must not turn an ownership fault into idle retirement.
+    assert_eq!(
+        worker.cancel_owned(request),
+        Err(ControllerTimeEventError::RequestMismatch)
+    );
+    assert_eq!(worker.retirement_ready(), Err(Error::Faulted));
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
     Begin,

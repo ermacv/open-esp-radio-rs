@@ -248,7 +248,9 @@ fn passive_scanner_merge_cancellation_restores_both_cpu_owned_lists() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let admitted = task
         .admit_passive_scan_first_event(
             passive_scan_candidate(),
@@ -300,7 +302,9 @@ fn passive_scanner_pre_sequence_cancellation_releases_the_timeline() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let admitted = task
         .admit_passive_scan_first_event(
             passive_scan_candidate(),
@@ -327,7 +331,9 @@ fn connection_pre_sequence_cancellation_releases_the_timeline() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let (mut connection_runtime, candidate, _) = peripheral_connection_candidate();
     let admission_sample = candidate.requested_window().start().wrapping_sub(1_000);
     let admitted = task
@@ -362,7 +368,9 @@ fn connection_merge_cancellation_restores_private_and_common_lists() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let (mut connection_runtime, candidate, workspace) = peripheral_connection_candidate();
     let requested = candidate.requested_window();
     let admitted = task
@@ -426,7 +434,9 @@ fn connection_admission_failure_returns_the_unchanged_candidate() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let (mut connection_runtime, candidate, _) = peripheral_connection_candidate();
     let requested = candidate.requested_window();
     let blocker = task
@@ -479,7 +489,9 @@ fn connection_merge_failure_preserves_the_prepared_event() {
     let initialized = clocked.initialize_controller_hal_with(|_, _| {});
     let mut scheduler =
         initialized.initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let (mut connection_runtime, candidate, workspace) = peripheral_connection_candidate();
     let requested = candidate.requested_window();
     let admitted = task
@@ -597,7 +609,9 @@ fn powered_task_split_retains_the_same_running_list_identity() {
         ._scheduler_list
         .retain_published_first_item(address);
 
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     task.retain_running_first_item(address);
     drop((interrupt, task, modem_timer));
 
@@ -640,7 +654,9 @@ fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
     assert_eq!(scheduler.modem_timer_capacity(), 4);
     assert_eq!(scheduler.scheduler_capacity(), 3);
     assert!(scheduler.runtime_is_pristine());
-    let (interrupt, task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     assert!(core::ptr::eq(
         interrupt.scheduler_wake(),
         task.scheduler_wake()
@@ -688,7 +704,9 @@ fn rejected_initial_sequence_gate_releases_the_controller_owned_reservation() {
         SchedulerInstant::from_image(1_000)
     );
 
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let reservation = task
         .admit_initial_dtm_event(event, &now, ControllerTimeSample::for_validation(92))
         .expect("the fresh admission sample keeps the initial deadline open");
@@ -756,7 +774,9 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
     let identity = candidate.identity();
     let raw_start = candidate.raw_window().start();
 
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let admitted = task
         .admit_legacy_advertising_first_event(
             candidate,
@@ -866,7 +886,9 @@ fn rejected_recurring_sequence_gate_releases_the_controller_owned_reservation() 
         SchedulerInstant::from_image(1_000)
     );
 
-    let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+    let (interrupt, mut task, modem_timer, _platform) = scheduler
+        .split_runtime()
+        .expect("first task owner transfer");
     let reservation = task
         .reserve_recurring_dtm_event(event, &now)
         .expect("the exact recurring window is initially free");

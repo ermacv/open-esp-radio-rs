@@ -57,7 +57,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-/// All borrowed hardware runtime endpoints from one powered Controller epoch.
+/// Exclusive task HAL lease and borrowed software endpoints from one epoch.
 ///
 /// Named fields keep interrupt, task and modem-timer roles explicit. HCI is not
 /// part of this hardware-only split and is joined only after stable interrupt
@@ -65,15 +65,18 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 #[must_use = "all runtime endpoints belong to one powered Controller epoch"]
 pub struct ControllerRuntimeEndpoints<
     'runtime,
+    P,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
 > {
     /// Interrupt-side scheduler publications.
     pub interrupt: ControllerInterruptRuntime<'runtime>,
-    /// Task-side scheduler workers.
+    /// Exclusive task-side HAL lease and borrowed scheduler workers.
     pub task: ControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     /// Unique mutable source-127 queue and epoch runtime.
     pub modem_timer: ControllerModemTimerRuntime<'runtime, MODEM_TIMER_CAPACITY>,
+    /// Exclusive powered platform reservation; independent of command states.
+    pub platform: crate::resources::platform_retirement::ControllerPlatformLease<'runtime, P>,
 }
 
 impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
@@ -163,17 +166,19 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self.scheduler.runtime_is_pristine()
     }
 
-    /// Borrow all matching hardware endpoints without releasing the
-    /// retained timer-hardware owner.
+    /// Claim the task HAL slot once and borrow matching software endpoints.
+    /// The timer-hardware owner remains retained. `None` means the task was
+    /// already claimed; no second runtime is created.
     pub fn split_runtime(
         &mut self,
-    ) -> ControllerRuntimeEndpoints<'_, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        let (interrupt, task, modem_timer) = self.scheduler.split_runtime();
-        ControllerRuntimeEndpoints {
+    ) -> Option<ControllerRuntimeEndpoints<'_, P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>> {
+        let (interrupt, task, modem_timer, platform) = self.scheduler.split_runtime()?;
+        Some(ControllerRuntimeEndpoints {
             interrupt,
             task,
             modem_timer,
-        }
+            platform,
+        })
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -212,3 +217,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(target_arch = "riscv32")]
+impl<P, const MT: usize, const SC: usize> ControllerLowPowerHardwareInitialized<P, MT, SC> {
+    pub(crate) fn into_restart_parts(
+        self,
+    ) -> crate::scheduler::core::SchedulerRestartParts<P, MT, SC> {
+        assert!(
+            self.timer_hardware.is_none(),
+            "timer partition already staged"
+        );
+        self.scheduler.into_restart_parts()
+    }
+}

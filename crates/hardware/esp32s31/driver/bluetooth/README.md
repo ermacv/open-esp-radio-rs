@@ -30,6 +30,7 @@ One peripheral connection is a sequence of owner transfers, not a linear
 | Stage | Completion and retained ownership |
 | --- | --- |
 | Initialization | Composition reserves final static storage, claims all memory graphs, enables clocks, initializes/registers the shared PHY client and publishes one controller actor. Failures after reservation or a physical transition retain a fail-stop slot; HCI Reset cannot recover the cold owner. |
+| Runtime ownership | The first runtime split grants the command actor an exclusive lease of task-side HAL and its controller-time worker. Software queues remain borrowed from stable storage. Successful HCI retirement moves the actual task hardware out of its slot; rejection retains it for the same actor. A repeated split rejects before touching HCI. The same barrier extracts the registered PHY client, calibration cache and BLE PHY/DF allocation graph through a second exclusive lease. A separate platform lease leaves command states unchanged and joins only its own retired HCI epoch before extracting the reservation. A third lease groups all five role-memory owners; their complete idle state and absence of controller-time requests/orphans/faults are checked before closing HCI and extracting any owner. Extraction does not revoke hardware pointers, run platform Drop or release PHY. |
 | Connectable advertising | HCI configuration stays in the portable reset-scoped owner. Set Enable becomes a deferred start; command success waits until the chip runner proves scheduler `RUN`, rather than merely accepting the Host packet. |
 | Connection admission | An accepted `CONNECT_IND` transfers the advertising graph into the first-event peripheral owner. A handle becomes Host-visible only with LE Connection Complete; six missed initial events produce status `0x3e` without allocating a handle. |
 | Active recurrence | A scheduler reservation is only planned work. DMA-visible nodes and the IRQ/timer owner remain in the chip session through `RUN`, terminal completion, exact-head retirement and software unlink. A new event is not published when the guarded start or supervision deadline has already closed. |
@@ -37,11 +38,12 @@ One peripheral connection is a sequence of owner transfers, not a linear
 | Disconnect or Reset | Peer/local termination first reaches its protocol terminal condition, then completes hardware stop if necessary, retires the exact head, unlinks the scheduler item and restores the graph. Disconnection Complete may remain owned behind Host backpressure. Reset uses the same retirement disciplines and starts a fresh bounded HCI bootstrap; it is not powered teardown. |
 | Reuse | Idle command intake returns only after unlink/recycle and ordered Host events. The sole connection handle is not reusable until every Host-owned Controller ACL buffer for the old connection has returned its credit. |
 
-The 40-second per-event progress budget covers completion, unlink and the next
-Controller-time acquisition; it is not the Link Layer supervision timeout.
-If live hardware must be stopped, that stop has its own 100-millisecond budget.
-An expired stop/unlink budget or identity mismatch seals the owner in
-fail-stop state: protocol termination does not imply hardware recovery.
+Event completion is bounded by the admitted sequencer interval. Stop, unlink
+and each fresh Controller-time acquisition have separate 100-millisecond
+budgets, retained across rechecks and cancelled waits. Host-credit backpressure
+does not consume a future acquisition's budget. These progress bounds are
+independent of Link Layer supervision and procedure deadlines; see the
+[peripheral timing contract](#peripheral-timing-and-recovery).
 
 Dropping an Embassy wait only abandons that waiter. Durable notifications and
 the controller actor retain the response, packet, reservation or active owner
@@ -60,6 +62,8 @@ chip-specific limits and provenance.
 | `le/peripheral` | First HCI handoff, connection owner, completion and contiguous active recurrence; private HCI order retains the shared first/active response epoch, active HCI coordinates endpoint intake/publication, and active lifecycle steps normal/Reset radio retirement |
 | `scheduler` | Shared scheduler resources and single-item completion |
 | `controller` | Shared controller bootstrap and hardware lifecycle |
+| `controller/boot/publication` | Atomic IRQ-owner publication, lossless rejection, stable interrupt service and the one-time hardware/HCI endpoint split |
+| `controller/boot/modem_timer` | Source-127 task state, borrowed readiness and timer-owner exchange with stable ISR storage |
 | `phy` | Common PHY power/readback, registration, Bluetooth-client acquisition and initial tracking |
 | `controller/hci` | HCI queue binding to the published controller epoch |
 | `interrupt` | Chip interrupt state and hardware handling |
@@ -121,7 +125,7 @@ registration: reset release, power-state clock maps, frontend/calibration
 clocks and the 160 MHz PHY-I2C source are checked through semantic readback.
 The task owner retains the I2C clock lease. `PhyInitializationError` separates
 power-checkpoint failures from registration failures; both preserve fail-stop
-ownership and prevent cold reunion until physical teardown is available.
+ownership and prevent cold reunion until the physical release transition completes.
 
 See [FEATURES.md](FEATURES.md) for supported and incomplete paths; structural
 organization does not extend hardware qualification.
@@ -154,7 +158,7 @@ The HIL image uses development company value `0xffff`, Core 5.4, subversion 1;
 it does not report the vendor Controller identity.
 The source-backed peripheral HIL workload asks the Linux central to issue both
 Host commands and requires each successful Command Status before an exact
-correlated completion. It checks feature mask `18:40:00:00:00:00:00:00` and
+correlated completion. It checks feature mask `19:40:00:00:00:00:00:00` and
 the development version identity above; no hardware run has recorded this
 interoperability yet.
 Peer termination retires the connection after event completion and scheduler
@@ -174,12 +178,18 @@ Before establishment, each missed event retains the entire initial transmit
 window plus clock widening. After six events without a peer packet, the closed
 connection publishes failed LE Connection Complete with status `0x3e` and no
 allocated handle before restoring idle command intake.
+### Peripheral timing and recovery
+
 Established-link supervision uses the hardware valid-RX timestamp, seeded
 with absolute creation time. Anchor capture and delivered RX count do not
 extend this deadline. A fresh controller-time check before the next RUN
 expires the connection with reason `0x08`; a reservation starting at or beyond
-the deadline waits without publication. Retirement releases that reservation
-and restores the unlinked allocation. If executor latency closes an established
+the deadline waits without publication. The shared
+[protocol deadline gate](src/le/peripheral/deadlines.rs) checks termination,
+procedure and supervision expiry before waiting for any future deadline.
+The same gate runs while Controller-to-Host ACL delivery is backpressured.
+Retirement releases the reservation and restores the unlinked allocation.
+If executor latency closes an established
 event's guarded start before RUN publication, the unpublished reservation is
 cancelled and rebuilt directly at a later event counter with accumulated clock
 widening. Recovery cannot cross an update instant; that closes the link with
@@ -187,14 +197,23 @@ reason `0x28`. The treatment of an initial establishment window never submitted
 to radio remains an explicit policy gap. Abrupt RF-loss and CRC-error behavior
 remain unqualified on hardware.
 
-Every published peripheral event owns an absolute 40-second progress budget
-covering completion, unlink and any following Controller-time acquisition. A
-lost scheduler completion wake is covered by periodic absolute-time rechecks.
-If RUN remains live at expiry, the owner executes the common hardware stop
-sequence, validates and retires the exact head, then uses the normal software
-unlink and recycle path. The stop itself has a 100-millisecond budget; a stalled
-Controller-time request, stop/unlink expiry or identity mismatch remains a
-sealed fail-stop.
+Each peripheral event retains a platform-clock completion deadline from its
+fresh sequence sample through preparation, publication and RUN. The raw
+remaining duration ends at the reservation end plus its sequence lead, matching
+the sequencer's shifted start and full reserved duration. Conversion rounds up
+fractional microseconds and does not equate Controller and platform epochs.
+Sample-delivery and executor latency mean this watchdog is not proof of exact
+protocol-deadline enforcement; supervision and procedure admission remain
+separate checks.
+
+Periodic absolute-time rechecks cover a missing scheduler wake. At expiry the
+owner allows one final readiness observation, so an already-delivered completion
+can advance; repeated empty polls cannot renew that allowance. A still-live RUN
+then enters the common hardware stop, exact-head retirement, unlink and recycle
+path. Stop, entry into post-unlink waiting and each new Controller-time request
+start their own finite 100-millisecond budgets. Clock regression, arithmetic
+exhaustion, operation expiry or identity mismatch preserves sealed fail-stop
+ownership. Protocol termination never proves physical recovery.
 
 Central Connection Update and Channel Map Update are validated, retained and
 applied at their exact wrapping connection instants. Connection Update shapes
@@ -205,15 +224,17 @@ acknowledged protocol termination; peer protocol errors do not enter hardware
 fail-stop ownership. The source-backed peripheral recovery HIL scenario requests
 an exact 120-ms interval and an exact two-channel map, requires matching
 successful update completion at both Host boundaries, and completes a second
-fragmented ACL round trip after the map applies; hardware evidence has not yet
-been recorded. Host Disconnect and bidirectional ACL are composed.
+fragmented ACL round trip after the map applies. Peer Reset recovery accepts
+remote-user termination or supervision timeout and retains the observed reason.
+Host Disconnect and bidirectional ACL are composed.
 The local-disconnect HIL source keeps the requested `0x13` reason on air and
 requires local Host reason `0x16`; the local-reset source requires peer
-supervision timeout and a fresh bounded HCI bootstrap before reconnect. Neither
-has qualifying hardware evidence and HCI Reset is not powered teardown.
+supervision timeout and a fresh bounded HCI bootstrap before reconnect.
+HCI Reset is not powered teardown; readiness is determined by qualification.
 The RF-loss HIL source verifies that the Linux central is rfkill-blocked for at
-least 2500 ms, then requires target supervision timeout and reconnect. It has
-no recorded hardware evidence yet.
+least 2500 ms, then requires target supervision timeout and reconnect. Closing
+the Linux user channel can terminate the connection before rfkill; that outcome
+fails this strict timeout scenario and does not establish abrupt RF loss.
 Host-to-Controller packets use legacy LL fragmentation and return their credit
 after acknowledgement. Unencrypted packets carry at most 27 payload octets;
 encrypted packets carry at most 23 plaintext octets plus the four-octet MIC.
@@ -259,3 +280,49 @@ closed command inventory used by production classification. State-dependent
 commands such as Disconnect and Host Number Of Completed Packets remain in the
 bitmap because the active connection owner implements them; unsupported
 commands sharing their octets remain clear.
+
+### Physical Controller release
+
+After HCI retirement, `try_release_controller_output` consumes the adapter's
+post-route IRQ owner and checks actual scheduler inactivity, empty hardware
+heads and primary fault status. A rejected transition retains hardware and
+memory; it never clears a foreign head or fault to manufacture success.
+`release_physical` requires the released output, drained timer and platform
+reservation joined to the same HCI epoch. It releases the last Bluetooth PHY
+client, executes the common target RF-close graph, powers down temperature,
+resets the Controller/timer domains and restores clock leases and the captured
+shared cold-power baseline. The complete operation returns `ControllerColdReleased`.
+
+Keep the consuming future alive until a terminal result. Failures retain every
+physical partition, SRAM allocation and the platform reservation. Successful
+cold return keeps old software borrows in `ControllerRetiredStorage`; HCI stays
+closed. `ControllerColdReleased::restart` uses the actual returned radio, original
+BLE/DF allocations and original exclusive software leases for another powered
+initialization. It restores both ISR owners atomically under the continuous
+storage reservation; a second outer split or StaticCell claim remains forbidden.
+A new HCI generation receives fresh bootstrap authority. Old Host commands,
+event readers, ACL-credit senders and already-pending futures stay closed.
+Failure retains its exact initialization frontier. `into_parts` is the terminal
+alternative and exposes no software-storage reset.
+
+### Quiescent PHY maintenance
+
+`ControllerIdleCommandTask::maintain_phy` consumes the idle task, retired timer
+and recovered unrouted IRQ bank, and borrows the matching platform and HCI
+endpoint. Runtime workers, controller time, all five role allocations and
+hardware BUSY/heads/faults must admit the window before shared-PHY access.
+It evaluates the registered client's real deadline and runs the existing target
+tracking executor only when due. A not-due result is explicit; inhibited
+tracking remains visible in the returned outcome.
+
+Successful maintenance restores the same PHY owner and both original ISR
+owners. HCI stays open, and counter epoch, software borrows, role generations
+and memory publications remain unchanged. Host packets queued during the
+window wait for the returned task. Failures retain an unrouted, non-runnable
+frontier; cancellation requires external reset. The composition reanchors its
+absolute recheck and binds routes only after this join succeeds.
+
+The caller requests maintenance after returning the runner to idle. Automatic
+maintenance windows during active ACL or DTM execution are not implemented.
+Source implementation and diagnostic scenarios do not by themselves qualify
+RF behavior; qualification consumes independent evidence.

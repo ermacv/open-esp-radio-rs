@@ -9,7 +9,22 @@
 //! Its crate-private channel carries HCI packet bodies with a separate typed
 //! packet kind, so no UART/H4 framing exists inside the process. Both
 //! directions have statically bounded storage, wake-driven backpressure and
-//! cancellation-safe waits.
+//! cancellation-safe waits. The supervisor can permanently close both directions
+//! through [`LeControllerCommandEndpoint::close_transport`]: queued packets remain
+//! readable, further publications fail, and transport waiters wake. Closure
+//! retains outstanding command authority and does not prove radio quiescence.
+//! Graceful [`LeControllerCommandEndpoint::try_retire_transport`] instead requires
+//! the next-command token and empty queues, atomically closes admission, and
+//! returns [`LeControllerHciRetired`]. Rejected retirement preserves normal
+//! traffic and ACL credit return so the caller can finish draining the epoch.
+//!
+//! Graceful retirement can also authorize `restart_transport` on its exact
+//! endpoint. Both empty closed queues advance atomically to the next checked
+//! generation; bootstrap and initial command authority are renewed. Old Host
+//! handles and pending futures reject inside the queue lock before reading,
+//! publishing or registering wakers for the new generation. Physical radio
+//! readiness is the outer Controller's responsibility, not a transport claim.
+//!
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
 //! subset for Host initialization and reports the complete production command
 //! inventory through the standard 64-octet Supported Commands bitmap;
@@ -162,7 +177,8 @@ pub use controller::response::{
 };
 pub use controller::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
-    LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
+    LeControllerHciResources, LeControllerHciResourcesError, LeControllerHciRestartError,
+    LeControllerHciRetired, LeControllerHciRetirementError, LeLegacyAdvertisingReportPublication,
     LePeripheralConnectionEventPublication,
 };
 pub(crate) use transport::{

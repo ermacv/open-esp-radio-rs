@@ -1417,6 +1417,11 @@ pub struct BluetoothColdRegisters {
 }
 
 impl BluetoothColdRegisters {
+    /// Capture shared cold-power fields before the first Bluetooth clock edge.
+    #[doc(hidden)]
+    pub fn prepare_shared_power_epoch(&mut self) {
+        self.task.radio_phy.prepare_wifi_power_epoch();
+    }
     /// Separate the ordinary task owner from the inactive interrupt owner.
     ///
     /// This conversion performs no MMIO and does not claim that the hardware
@@ -1433,7 +1438,7 @@ impl BluetoothColdRegisters {
     /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
     /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
     /// first.
-    pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
+    pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
         if self.task.radio_phy.txdc_pwdet_restore_pending() {
             return Err(RadioPhyReleaseFailure {
                 owner: self,
@@ -1460,6 +1465,13 @@ impl BluetoothColdRegisters {
             return Err(RadioPhyReleaseFailure {
                 owner: self,
                 error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
+            });
+        }
+        self.task.release_retained_clocks();
+        if let Err(checkpoint) = self.task.radio_phy.restore_wifi_power_epoch() {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
             });
         }
         let Self { task, interrupts } = self;
@@ -1789,7 +1801,7 @@ impl BluetoothTaskRegisters {
         )
     }
 
-    pub(crate) fn into_hardware(mut self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+    fn release_retained_clocks(&mut self) {
         if let Some(lease) = self.phy_i2c_clock.take() {
             self.radio_phy.release_shared_modem_clock(lease);
         }
@@ -1798,6 +1810,10 @@ impl BluetoothTaskRegisters {
         self.release_modem_syscon_bluetooth_apb_clocks();
         self.release_modem_syscon_bluetooth_controller_clocks();
         self.release_platform_pll_source();
+    }
+
+    pub(crate) fn into_hardware(mut self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+        self.release_retained_clocks();
         let bluetooth_modem_lp_timer = self
             .modem_lp_timer
             .take()

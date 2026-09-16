@@ -17,11 +17,14 @@
 //! Peer termination retires the unlinked graph and restores ordered idle HCI intake.
 //! An unanswered initial transmit window recurs with its full WinSize; six
 //! events without establishment retire the connection with reason `0x3e`.
-//! A running event which exceeds its absolute completion budget enters the
+//! A running event retains its sequencer-end budget from the fresh time sample.
+//! Expiry gives an already-delivered completion one final poll before entering the
 //! common hardware stop sequence, then unlinks and recycles as an aborted
-//! event; stop and post-unlink waits are independently finite.
+//! event; stop, post-unlink and each new time acquisition are independently finite.
 //! Established supervision uses the independent hardware valid-RX time and
 //! retires expired unlinked connections with reason `0x08`.
+//! The shared protocol deadline gate handles expiry before a different timer
+//! can delay candidate publication; ACL backpressure uses the same gate.
 //! A guarded recurring window missed before RUN is cancelled and rebuilt at a
 //! later established event; supervision bounds the jump, while a crossed
 //! Connection Update or Channel Map Update instant closes with reason `0x28`.
@@ -261,6 +264,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     pub fn from_first(first: FirstRunning<'a, S, N>) -> Self {
         let local_version = first.local_version_information();
         let (running, order) = first.into_parts();
+        let progress_deadline = running.progress_deadline();
         let order = match order {
             RunningOrder::CommandReady(order) => Order::CommandReady(order),
             RunningOrder::ResponsePending(order) => Order::ResponsePending(order),
@@ -273,9 +277,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             supervision: None,
             termination: None,
             procedure: None,
-            progress_deadline: super::progress::PeripheralConnectionProgressDeadline::new(
-                S::monotonic_micros(),
-            ),
+            progress_deadline,
             host_events: host_events::PeripheralConnectionHostEvents::new(),
             acl: acl::PeripheralConnectionAcl::new(),
             disconnect: None,

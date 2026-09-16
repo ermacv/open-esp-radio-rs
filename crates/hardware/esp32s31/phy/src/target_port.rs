@@ -142,6 +142,16 @@ pub(crate) use radio_lifecycle::{
     observe_temperature_before_rf_close,
 };
 
+pub(crate) async fn close_bluetooth_rf<P, D: PhyAsyncDelay>(
+    platform: &mut P,
+    registers: &mut SharedPhyHal<'_>,
+    state: &mut PhyState,
+) -> Result<(), PhyRfCloseTemperatureFailure> {
+    radio_lifecycle::observe_temperature_with_hal::<P, D>(platform, registers, state).await?;
+    radio_lifecycle::execute_rf_close_with_hal::<D>(registers)
+        .map_err(PhyRfCloseTemperatureFailure::HardwareAmbiguous)
+}
+
 use oer_esp32s31_hal::{
     ieee802154::Ieee802154Clocked,
     owner::{

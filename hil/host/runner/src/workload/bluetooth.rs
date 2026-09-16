@@ -149,6 +149,8 @@ struct PeripheralCycle {
     start: BluetoothPeripheralEvidence,
     fixture: Option<bluetooth::model::ConnectionReset>,
     completion: Option<BluetoothPeripheralEvidence>,
+    restart: Option<BluetoothPeripheralEvidence>,
+    maintenance: Option<BluetoothPeripheralEvidence>,
 }
 
 #[derive(Clone, Copy)]
@@ -192,14 +194,31 @@ impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PeripheralConfig {
+    pub boots: u8,
+    pub connections: u8,
+    pub hold_millis: u16,
+    pub termination: BluetoothPeripheralTermination,
+    pub retire_after: bool,
+    pub restart_between_connections: bool,
+    pub maintain_between_connections: bool,
+}
+
 pub(crate) fn run_peripheral(
-    boots: u8,
-    connections: u8,
-    hold_millis: u16,
-    termination: BluetoothPeripheralTermination,
+    config: PeripheralConfig,
     output: &Path,
     context: &Context<'_>,
 ) -> Result<()> {
+    let PeripheralConfig {
+        boots,
+        connections,
+        hold_millis,
+        termination,
+        retire_after,
+        restart_between_connections,
+        maintain_between_connections,
+    } = config;
     let adapter = context
         .lab
         .bluetooth_adapter
@@ -208,15 +227,16 @@ pub(crate) fn run_peripheral(
         let directory = output.join(format!("boot-{boot:03}"));
         context.with_capture(&directory, |capture| {
             let mut cycles = Vec::new();
-            let result = probe_peripheral(
-                capture,
-                adapter,
-                connections,
-                hold_millis,
-                termination,
-                &directory,
-                &mut cycles,
-            );
+            let mut retirement = None;
+            let result = probe_peripheral(capture, adapter, config, &directory, &mut cycles)
+                .and_then(|()| {
+                    if retire_after {
+                        retirement = Some(
+                            capture.bluetooth_peripheral(BluetoothPeripheralOperation::Retire)?,
+                        );
+                    }
+                    Ok(())
+                });
             crate::evidence::run::atomic_json(
                 &directory.join("bluetooth-peripheral.json"),
                 &serde_json::json!({
@@ -225,6 +245,10 @@ pub(crate) fn run_peripheral(
                     "connections": connections,
                     "hold_millis": hold_millis,
                     "termination": termination,
+                    "retire_after": retire_after,
+                    "restart_between_connections": restart_between_connections,
+                    "maintain_between_connections": maintain_between_connections,
+                    "retirement": retirement,
                     "cycles": cycles,
                     "passed": result.is_ok(),
                     "error": result.as_ref().err().map(ToString::to_string),
@@ -239,12 +263,18 @@ pub(crate) fn run_peripheral(
 fn probe_peripheral(
     capture: &SerialCapture,
     adapter: bluetooth::model::Adapter,
-    connections: u8,
-    hold_millis: u16,
-    termination: BluetoothPeripheralTermination,
+    config: PeripheralConfig,
     output: &Path,
     cycles: &mut Vec<PeripheralCycle>,
 ) -> Result<()> {
+    let PeripheralConfig {
+        connections,
+        hold_millis,
+        termination,
+        restart_between_connections,
+        maintain_between_connections,
+        ..
+    } = config;
     let caps = capture.request_capabilities(Duration::from_secs(10))?;
     if !caps.features.bluetooth_peripheral {
         return Err("firmware lacks Bluetooth peripheral control".into());
@@ -270,6 +300,8 @@ fn probe_peripheral(
             start,
             fixture: None,
             completion: None,
+            restart: None,
+            maintenance: None,
         });
         let fixture = bluetooth::connect_reset_in(
             &output.join(format!("connection-{cycle:03}")),
@@ -295,6 +327,25 @@ fn probe_peripheral(
                 .into());
             }
             oer_process::sleep(Duration::from_millis(100))?;
+        }
+        if maintain_between_connections && cycle < connections {
+            let maintained =
+                capture.bluetooth_peripheral(BluetoothPeripheralOperation::Maintain)?;
+            let expected = u32::from(cycle);
+            if !matches!(maintained.result, open_esp_radio_hil_protocol::BluetoothPeripheralResult::Maintained { cycles, .. } if cycles == expected)
+            {
+                return Err("Bluetooth maintenance counter did not advance in this boot".into());
+            }
+            cycles.last_mut().expect("cycle was inserted").maintenance = Some(maintained);
+        }
+        if restart_between_connections && cycle < connections {
+            let restarted = capture.bluetooth_peripheral(BluetoothPeripheralOperation::Restart)?;
+            let expected = u32::from(cycle);
+            if !matches!(restarted.result, open_esp_radio_hil_protocol::BluetoothPeripheralResult::Restarted { cycles, .. } if cycles == expected)
+            {
+                return Err("Bluetooth restart counter did not advance in this boot".into());
+            }
+            cycles.last_mut().expect("cycle was inserted").restart = Some(restarted);
         }
     }
     Ok(())
@@ -404,15 +455,21 @@ fn peripheral_cycle_complete(
         && current.host_acl_transmitted_packets == expected_acl_transmitted
         && current.host_acl_completed_packets == expected_acl_completed
         && current.host_acl_backpressure_holds == expected_backpressure_holds;
-    let expected_reason = match termination {
-        BluetoothPeripheralTermination::PeerReset | BluetoothPeripheralTermination::PeerRfkill => {
-            Some(0x08)
+    let reason_matches = match termination {
+        // Peer Reset may send LL_TERMINATE_IND before stopping. This profile
+        // accepts remote-user termination or timeout and records which occurred.
+        // Abrupt RF-loss evidence retains its separate strict timeout gate.
+        BluetoothPeripheralTermination::PeerReset => {
+            matches!(current.last_disconnect_reason, Some(0x08 | 0x13))
         }
-        BluetoothPeripheralTermination::TargetDisconnect => Some(0x16),
-        BluetoothPeripheralTermination::TargetReset => None,
+        BluetoothPeripheralTermination::PeerRfkill => current.last_disconnect_reason == Some(0x08),
+        BluetoothPeripheralTermination::TargetDisconnect => {
+            current.last_disconnect_reason == Some(0x16)
+        }
+        BluetoothPeripheralTermination::TargetReset => true,
         BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
     };
-    if complete && expected_reason.is_some() && current.last_disconnect_reason != expected_reason {
+    if complete && !reason_matches {
         return Err(
             "Bluetooth Host disconnection reason did not match the termination mode".into(),
         );
@@ -575,7 +632,7 @@ mod peripheral_tests {
     fn peer_rfkill_requires_supervision_timeout_recovery_without_target_commands() {
         let before = evidence();
         let baseline = PeripheralBaseline::from(&before);
-        let current = BluetoothPeripheralEvidence {
+        let mut current = BluetoothPeripheralEvidence {
             peripheral_runs: 1,
             peripheral_disconnections: 1,
             connection_complete_events: 1,
@@ -598,6 +655,21 @@ mod peripheral_tests {
             )
             .unwrap()
         );
+        for reason in [Some(0x08), Some(0x13), Some(0x16), Some(0x3d), None] {
+            current.last_disconnect_reason = reason;
+            let reset = peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerReset,
+            );
+            assert_eq!(reset.is_ok(), matches!(reason, Some(0x08 | 0x13)));
+            let rf_loss = peripheral_cycle_complete(
+                baseline,
+                &current,
+                BluetoothPeripheralTermination::PeerRfkill,
+            );
+            assert_eq!(rf_loss.is_ok(), reason == Some(0x08));
+        }
     }
 }
 

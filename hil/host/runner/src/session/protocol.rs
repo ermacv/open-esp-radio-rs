@@ -893,7 +893,10 @@ impl SerialCapture {
         {
             Event::BluetoothPeripheral(evidence)
                 if evidence.started_address(operation).is_some()
-                    || evidence.is_snapshot(operation) =>
+                    || evidence.is_snapshot(operation)
+                    || evidence.is_retired(operation)
+                    || evidence.is_restarted(operation)
+                    || evidence.is_maintained(operation) =>
             {
                 Ok(evidence)
             }

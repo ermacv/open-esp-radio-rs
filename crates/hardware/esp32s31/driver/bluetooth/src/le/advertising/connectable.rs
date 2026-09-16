@@ -322,6 +322,13 @@ impl LegacyConnectableAdvertisingRuntimeResources {
         self.idle.is_some()
     }
 
+    /// Whether both the graph and the stopped portable generation are retained.
+    /// Unlike event readiness, this rejects an advertiser parked between events.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn retirement_ready(&self) -> bool {
+        self.idle.is_some() && self.standby.is_some()
+    }
+
     /// Restore the portable generation owner after advertising stops between events.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn restore_disabled_advertiser(

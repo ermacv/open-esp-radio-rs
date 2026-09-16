@@ -50,3 +50,31 @@ The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 - [`btdm_lp.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_lp.c)
 - [`modem_clock_impl.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/esp_hw_support/modem/port/esp32s31/modem_clock_impl.c)
 - [`Kconfig.mac`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/esp_hw_support/port/esp32s31/Kconfig.mac)
+
+After complete route removal and timer extraction,
+`retire_interrupt_registers_after_routes_disabled` returns the actual shared
+primary/NRT owner in an opaque post-route state. This operation does not access
+registers or prove dynamic-source quiescence. The Bluetooth composition admits
+it after idle task handoff and drained timer retirement, then retains the result
+through platform join. Rejected extraction leaves the owner in its original
+slot. Successful extraction does not release the storage reservation: old
+static Controller borrows still exist, so another publication is rejected even
+when both slots are empty. Board reset is the only current reservation reset.
+
+The recovered post-route owner can join the retired Controller task through
+`try_release_controller_output`. Busy scheduler, published heads, an in-flight
+time latch or primary faults reject without releasing output. Success masks
+dynamic sources, disables RUN, acknowledges its residual sources and performs
+the reviewed output-release transaction. `release_physical` then composes the
+matching retired timer/task/platform with last-client RF close, temperature
+power-down, Bluetooth reset and checked clock restoration. It returns the
+actual cold radio, retaining the separate closed software epoch. Storage remains
+reserved; physical cold return alone does not authorize a second publication.
+
+`RetiredEspHalBluetoothInterruptRegisters::maintain_phy` lends the actual
+unrouted bank to the idle Controller maintenance transition. Both ISR owners
+return atomically to the original claimed storage before the same service can
+bind routes again. The same atomic restoration supports completed powered
+restart. Restoration rejects live routes or occupied slots; it never releases
+the reservation or issues another publication lease. See the
+[Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).

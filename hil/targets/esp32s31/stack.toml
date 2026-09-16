@@ -245,6 +245,13 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet, the bounded two-packet Controller ACL queue, the pre-RUN receive reservation and finite completion/controller-time stop frontiers across HCI backpressure"
 
 [[reviewed_frames]]
+function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
+source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/lifecycle.rs"]
+max_bytes = 10752
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the finite radio step retains the complete session, exact HCI order and successor/fault result while updating LL, encryption and ACL state; event and per-request progress deadlines remain with their affine owners. Radio execution and timeout retirement use separate call frames. This CPU0 path shares the fixed 192-KiB application stack with command dispatch; runtime watermark and stack guard remain required"
+
+[[reviewed_frames]]
 function_contains = "::cold_start::start_esp32s31_bluetooth"
 source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/cold_start.rs"]
 max_bytes = 33792
@@ -254,12 +261,54 @@ reason = "one-time Bluetooth cold start transfers the configured controller owne
 [[reviewed_frames]]
 function_contains = "::bluetooth::__task_task"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
-max_bytes = 12288
+max_bytes = 9216
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "the Bluetooth HIL task concurrently polls the production controller, HCI event pump and bounded framed USB command owner on the 192-KiB CPU0 stack; Wi-Fi task limits remain separate"
+reason = "the Bluetooth HIL executor task constructs cold start and the live session in static future storage; their ownership transitions are polled through separate frames on the 192-KiB CPU0 stack"
+
+[[reviewed_frames]]
+function_contains = "::bluetooth::run_session::"
+source_ends_with = ["runtime/src/bluetooth.rs", "library/core/src/future/future.rs"]
+max_bytes = 21504
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the Bluetooth HIL loop retains one live or cold epoch, the old closed Host probes and the next initialized owner across repeated powered restarts. Actor, shutdown, registration and restart have separate poll frames; the loop uses the fixed 192-KiB CPU0 stack and every connection/restart must preserve 16-KiB measured headroom"
 
 [[reviewed_frames]]
 function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 10496
 reason = "static Embassy PSRAM storage owns the Wi-Fi role dispatcher future including the explicit paired-role request; it is not allocated on either CPU stack"
+
+[[reviewed_frames]]
+function_contains = "::retirement::physical::ControllerColdReleased<"
+source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs"]
+max_bytes = 14848
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "powered restart retains the original static runtime leases, role memory and complete cold-initialization success/failure frontier. Registration, final publication and composition execute in separate frames; no command actor or radio role runs concurrently during restart. Runtime painting covers the nested CPU0 lifecycle chain"
+
+[[reviewed_frames]]
+function_contains = "::bluetooth::retirement::restart::"
+source_ends_with = ["runtime/src/bluetooth/retirement.rs", "library/core/src/future/future.rs"]
+max_bytes = 10240
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "HIL restart retains the complete initialization result and then verifies fresh HCI Reset with the restarted runner; each child is polled in a separate frame and the old Host stays retained by the outer loop. The fixed CPU0 stack and runtime watermark bound total nested use"
+
+[[reviewed_frames]]
+function_contains = "::retirement::BluetoothHardwareColdReleased<"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs", "library/core/src/future/future.rs"]
+max_bytes = 10240
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "restart composition retains old Controller bindings and the exact initialized-or-failed hardware result; opaque lower polling and synchronous final assembly separate move frontiers. It runs on CPU0 after all radio and IRQ tasks have stopped; runtime painting bounds the complete chain"
+
+[[reviewed_frames]]
+function_contains = "::target_port::run_target_bluetooth_phy_register::<"
+source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port.rs"]
+max_bytes = 9728
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "Bluetooth registration retains its actual calibration transition and registered-owner result while borrowing the stopped outer Controller; cold start and powered restart share this executor. Its caller has an opaque poll boundary and runtime painting independently bounds the full CPU0 initialization chain"
+
+[[reviewed_frames]]
+function_contains = "::bluetooth::retirement::maintain::"
+source_ends_with = ["runtime/src/bluetooth/retirement.rs", "library/core/src/future/future.rs"]
+max_bytes = 17920
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "quiescent HIL maintenance retains the complete runner success/failure frontier and verifies Reset through the same Host before returning it. The lower PHY poll and Reset runner have separate frames; no active radio task runs during tracking. Runtime painting bounds the full nested chain on the unchanged 192-KiB CPU0 stack"

@@ -126,6 +126,13 @@ impl AbsoluteRecheckSchedule {
         }
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn reanchor(&mut self, now: DtmRecheckDeadline) -> Option<()> {
+        let next = now.as_ticks().checked_add(self.period.as_ticks())?;
+        self.state = DtmRecheckScheduleState::Scheduled(DtmRecheckDeadline::from_ticks(next));
+        Some(())
+    }
+
     fn begin_wait(&mut self) -> Option<AbsoluteRecheckWaitLease<'_>> {
         let DtmRecheckScheduleState::Scheduled(deadline) = self.state else {
             return None;
@@ -187,6 +194,15 @@ impl DtmAbsoluteRecheck {
                 period,
             ),
         }
+    }
+
+    /// Start the next powered epoch one period after now, preserving its period.
+    /// Call only while the old Controller is retired and no recheck wait exists.
+    /// Overflow leaves the original schedule unchanged.
+    pub fn reanchor_after_idle(&mut self) -> Result<(), DtmRecheckStartError> {
+        self.schedule
+            .reanchor(DtmRecheckDeadline::from_instant(Instant::now()))
+            .ok_or(DtmRecheckStartError::TimelineExhausted)
     }
 
     /// Anchor the first deadline exactly one period after the current instant.

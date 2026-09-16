@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 137;
+pub const PROTOCOL_VERSION: u16 = 142;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -2361,6 +2361,16 @@ pub struct StackWatermark {
     pub free_bytes: u32,
     pub used_bytes: u32,
     pub minimum_free_bytes: u32,
+}
+
+impl StackWatermark {
+    /// Whether this measured stack retains its nonzero required reserve.
+    /// Inconsistent measurements cannot establish headroom.
+    pub const fn has_required_headroom(self) -> bool {
+        self.minimum_free_bytes > 0
+            && self.free_bytes >= self.minimum_free_bytes
+            && matches!(self.free_bytes.checked_add(self.used_bytes), Some(total) if total == self.capacity_bytes)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

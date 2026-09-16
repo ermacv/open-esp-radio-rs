@@ -233,7 +233,8 @@ enum LocalVersionRequest {
 
 /// LE feature page zero supported by this bounded Peripheral controller.
 ///
-/// Bits 3 and 4 advertise Peripheral-initiated Feature Exchange and LE Ping;
+/// Bit 0 advertises LE Encryption; bits 3 and 4 advertise
+/// Peripheral-initiated Feature Exchange and LE Ping;
 /// bit 14 advertises Channel Selection Algorithm #2.
 pub const fn le_peripheral_supported_features() -> [u8; 8] {
     [1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]

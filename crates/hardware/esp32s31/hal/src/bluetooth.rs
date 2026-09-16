@@ -27,14 +27,15 @@ use oer_esp32s31_pac::{
 
 pub use oer_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
-    BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
-    BluetoothControllerTimeLatchStepError, BluetoothLowPowerRuntimeControlObservation,
-    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
-    BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
-    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-    BluetoothPhyRegisterInitInputs, BluetoothScanStartPublished,
+    BluetoothControllerOutputReleaseError, BluetoothControllerTimeLatchBeginError,
+    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
+    BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
+    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
+    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
+    BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure, BluetoothScanStartPublished,
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
     BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
@@ -92,6 +93,11 @@ impl core::fmt::Debug for ColdOwnerReleaseFailure {
 }
 
 impl ColdOwner {
+    /// Capture the shared power baseline before Bluetooth retains any clocks.
+    #[doc(hidden)]
+    pub fn prepare_shared_power_epoch(&mut self) {
+        self.registers.prepare_shared_power_epoch();
+    }
     /// Enter the exclusive Bluetooth route without touching hardware.
     pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
         Self {
@@ -230,6 +236,19 @@ pub struct TaskOwner {
 }
 
 impl TaskOwner {
+    /// Complete the physical release after last-client RF close and temperature
+    /// power-down. The output token proves post-route scheduler quiescence; the
+    /// outer Controller retains the drained timer and every published memory
+    /// owner until reset and checked clock restoration return the neutral root.
+    #[doc(hidden)]
+    pub fn release_after_phy_close(
+        self,
+        output: InterruptOutputReleasedOwner,
+        timer: ModemLpTimerInterruptReadyOwner,
+    ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
+        self.registers
+            .release_after_phy_close(output.registers, timer.registers)
+    }
     /// Establish the shared modem/PHY power, reset and calibration clocks.
     ///
     /// Call once before common PHY registration on the exclusive cold route.
@@ -761,8 +780,8 @@ impl InterruptRegistersOwner {
     /// Return the register partition to output-prepared ownership after both
     /// CPU routes have been disabled and shared ISR access has ended.
     ///
-    /// This distinct state cannot release the controller output yet: dynamic
-    /// Link-Layer sources still need their own quiescence proof.
+    /// The returned state requires the terminal idle/head/fault preflight
+    /// before it can release Controller output.
     pub fn deactivate(self) -> InterruptOutputAfterRoutesOwner {
         InterruptOutputAfterRoutesOwner {
             _registers: self.registers.deactivate(),
@@ -773,11 +792,65 @@ impl InterruptRegistersOwner {
 /// Controller interrupt bank recovered from stable ISR storage after both CPU
 /// routes were disabled.
 ///
-/// Dynamic Link-Layer sources and output-release ordering are not yet proven,
-/// so this state deliberately has no conversion back to setup or cold owners.
+/// Checked output release requires the matching task registers and fresh
+/// scheduler/head/fault observations. No direct setup or cold conversion exists.
 #[must_use = "post-route interrupt ownership awaits dynamic-source quiescence"]
 pub struct InterruptOutputAfterRoutesOwner {
     _registers: oer_esp32s31_pac::BluetoothInterruptOutputPrepared,
+}
+
+impl InterruptOutputAfterRoutesOwner {
+    /// Observe quiescence while retaining the prepared, unrouted output bank.
+    pub fn validate_idle_controller(
+        &self,
+        task: &mut TaskOwner,
+    ) -> Result<(), BluetoothControllerOutputReleaseError> {
+        self._registers
+            .validate_idle_controller(&mut task.registers)
+    }
+
+    /// Revalidate quiescence after maintenance and return the same prepared bank.
+    /// This does not enable CPU routes or publish either ISR owner.
+    pub fn try_reactivate_idle_controller_output(
+        self,
+        task: &mut TaskOwner,
+    ) -> Result<InterruptRegistersOwner, (BluetoothControllerOutputReleaseError, Self)> {
+        if let Err(error) = self.validate_idle_controller(task) {
+            return Err((error, self));
+        }
+        Ok(InterruptRegistersOwner {
+            registers: self._registers.stage_for_cpu_routes(),
+        })
+    }
+
+    /// Mask and acknowledge the idle scheduler's dynamic sources, then release
+    /// Controller output. A busy scheduler, published head, pending time latch
+    /// or primary fault retains both owners. Rejection can leave RUN disabled;
+    /// it never authorizes reactivation, memory reclamation or cold reunion.
+    pub fn try_release_idle_controller_output(
+        self,
+        task: &mut TaskOwner,
+    ) -> Result<InterruptOutputReleasedOwner, (BluetoothControllerOutputReleaseError, Self)> {
+        match self
+            ._registers
+            .try_release_idle_controller_output(&mut task.registers)
+        {
+            Ok(registers) => Ok(InterruptOutputReleasedOwner { registers }),
+            Err((error, registers)) => Err((
+                error,
+                Self {
+                    _registers: registers,
+                },
+            )),
+        }
+    }
+}
+
+/// Output released after the post-route, idle-scheduler hardware preflight.
+/// No active IRQ or setup conversion is exposed; retain it through RF close.
+#[must_use = "released output must remain paired with its stopped Controller"]
+pub struct InterruptOutputReleasedOwner {
+    registers: PacBluetoothInterruptSetup,
 }
 
 /// Exclusive finite borrow of the Bluetooth controller task-side registers.

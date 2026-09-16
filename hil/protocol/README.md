@@ -1,6 +1,6 @@
-# HIL protocol v137
+# HIL protocol v142
 
-Host and firmware must both use version 137. Other versions are rejected
+Host and firmware must both use version 142. Other versions are rejected
 before interpreting their command and evidence layouts.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
@@ -50,6 +50,34 @@ required to establish RF delivery. The start response includes the public addres
 HCI rejection stages are Reset (0), base event mask (1), LE event mask (2),
 Host Buffer Size (3), Controller-to-Host flow control (4), address read (5),
 parameters (6), data (7) and enable (8).
+
+`Retire` ends an admitted peripheral probe: the target completes HCI Reset with
+its Host event pump running, waits for live runner handoff, then retires timer,
+IRQ and HCI ownership. It extracts the shared primary/NRT register owner,
+checks scheduler inactivity, empty hardware heads and absence of primary faults,
+and releases Controller output before joining the exact platform reservation.
+The last PHY client then closes RF, powers down temperature, resets Bluetooth
+and restores retained clocks and the shared power baseline into a cold owner.
+`Retired` requires `radio_cold` and separate closed-channel probes for Host
+commands, Controller events and Host ACL credits. Every field must be true,
+with no terminal fault, saturation or Host event/ACL fault. An incomplete
+transition produces no successful retirement response. Old HCI and static ISR
+storage remain closed/reserved in this terminal mode. The HIL console stays available for capability and link-health
+queries; further radio operations are rejected.
+
+`Restart` uses the same physical shutdown sequence, then reinitializes the
+actual returned radio and original storage without resetting the board.
+`Restarted` requires a positive cycle count, Reset through the new Host and
+closed-command/event/ACL-credit probes through the old Host.
+
+`Maintain` instead joins the idle task and retired timer with the unrouted IRQ
+bank for shared-PHY tracking. HCI and the powered epoch remain intact.
+`Maintained` requires a positive cycle count, a due completed tracking request,
+no tracking inhibition and Reset through the same Host after resumption.
+Calibration flags report the actual common/Bluetooth work selected by tracking;
+they are not forced true. A not-due window cannot satisfy this diagnostic.
+Both lifecycle operations use the same zero-fault gates as `Retired`; another
+advertising start reinitializes the bounded Host settings after Reset.
 
 The Bluetooth image advertises `bluetooth_peripheral` for this interface.
 DTM is rejected once the peripheral probe starts. Another advertising start is

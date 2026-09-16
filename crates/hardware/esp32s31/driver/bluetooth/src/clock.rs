@@ -123,6 +123,7 @@ impl<P> Drop for ClockedResources<P> {
 }
 
 trait SharedClockControl {
+    fn prepare_shared_power_epoch(&mut self);
     fn retain_platform_pll_source(&mut self);
     fn release_platform_pll_source(&mut self);
     fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation;
@@ -147,6 +148,9 @@ trait SharedClockControl {
 }
 
 impl SharedClockControl for ColdOwner {
+    fn prepare_shared_power_epoch(&mut self) {
+        ColdOwner::prepare_shared_power_epoch(self);
+    }
     fn retain_platform_pll_source(&mut self) {
         self.retain_platform_pll_source();
     }
@@ -285,6 +289,7 @@ impl<P> BluetoothStopped<P> {
 }
 
 fn enable_owned(resources: &mut impl SharedClockControl) -> Result<(), ClockError> {
+    resources.prepare_shared_power_epoch();
     resources.prepare_shared_modem_clock_map();
     resources.prepare_modem_syscon_clock_map();
     resources.retain_platform_pll_source();

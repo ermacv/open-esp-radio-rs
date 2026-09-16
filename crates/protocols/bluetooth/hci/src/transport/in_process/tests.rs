@@ -567,3 +567,152 @@ fn assert_pending<F: Future>(mut future: Pin<&mut F>) {
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
 }
+
+#[test]
+fn terminal_close_preserves_both_fifos_then_reports_closed() {
+    let mut channel = InProcessHciChannel::<NoopRawMutex, 2, 2, 16>::new();
+    let (host, controller) = channel.split();
+    block_on(host.write(&Reset::new())).unwrap();
+    block_on(host.write(&LeTestEnd::new())).unwrap();
+    controller
+        .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
+        .unwrap();
+    controller
+        .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+        .unwrap();
+    controller.close();
+    controller.close();
+    assert_eq!(
+        block_on(host.write(&Reset::new())),
+        Err(HciChannelError::Closed)
+    );
+    assert_eq!(
+        controller.try_publish(PacketKind::Event, &HARDWARE_ERROR),
+        Err(HciChannelError::Closed)
+    );
+    let mut buffer = [0; 16];
+    for opcode in [Reset::OPCODE, LeTestEnd::OPCODE] {
+        let HostToControllerFrame::Command(command) = controller.try_receive(&mut buffer).unwrap()
+        else {
+            panic!("queued command changed kind");
+        };
+        assert_eq!(command.opcode(), opcode);
+    }
+    assert!(matches!(
+        controller.try_receive(&mut buffer),
+        Err(HciChannelError::Closed)
+    ));
+    let first: ControllerToHostPacket<'_> = block_on(host.read(&mut buffer)).unwrap();
+    assert!(
+        matches!(first, ControllerToHostPacket::Event(event) if event.kind == bt_hci::event::EventKind::CommandComplete)
+    );
+    assert_eq!(
+        event_parameter(block_on(host.read(&mut buffer)).unwrap()),
+        0x42
+    );
+    assert!(matches!(
+        block_on(host.read::<ControllerToHostPacket<'_>>(&mut buffer)),
+        Err(HciChannelError::Closed)
+    ));
+    assert!(channel.host_to_controller.vacant_storage_is_zeroed());
+    assert!(channel.controller_to_host.vacant_storage_is_zeroed());
+    assert!(!channel.is_pristine());
+}
+
+#[derive(Default)]
+struct CloseWake(std::sync::atomic::AtomicUsize);
+
+impl std::task::Wake for CloseWake {
+    fn wake(self: std::sync::Arc<Self>) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn terminal_close_wakes_blocked_host_write_and_read_without_accepting_write() {
+    let mut channel = TestChannel::new();
+    let (host, controller) = channel.split();
+    block_on(host.write(&Reset::new())).unwrap();
+    let write_wake = std::sync::Arc::new(CloseWake::default());
+    let read_wake = std::sync::Arc::new(CloseWake::default());
+    let write_waker = Waker::from(write_wake.clone());
+    let read_waker = Waker::from(read_wake.clone());
+    let mut write_context = Context::from_waker(&write_waker);
+    let mut read_context = Context::from_waker(&read_waker);
+    let command = LeTestEnd::new();
+    let mut buffer = [0; 16];
+    let mut write = pin!(host.write(&command));
+    let mut read = pin!(host.read::<ControllerToHostPacket<'_>>(&mut buffer));
+    assert!(write.as_mut().poll(&mut write_context).is_pending());
+    assert!(read.as_mut().poll(&mut read_context).is_pending());
+    controller.close();
+    assert!(write_wake.0.load(std::sync::atomic::Ordering::SeqCst) > 0);
+    assert!(read_wake.0.load(std::sync::atomic::Ordering::SeqCst) > 0);
+    assert_eq!(
+        write.as_mut().poll(&mut write_context),
+        Poll::Ready(Err(HciChannelError::Closed))
+    );
+    assert!(matches!(
+        read.as_mut().poll(&mut read_context),
+        Poll::Ready(Err(HciChannelError::Closed))
+    ));
+    let mut retained = [0; 16];
+    assert!(
+        matches!(controller.try_receive(&mut retained), Ok(HostToControllerFrame::Command(command)) if command.opcode() == Reset::OPCODE)
+    );
+    assert!(matches!(
+        controller.try_receive(&mut retained),
+        Err(HciChannelError::Closed)
+    ));
+}
+
+#[test]
+fn closed_readiness_and_cancelled_waits_observe_terminal_state() {
+    let mut channel = TestChannel::new();
+    let (host, controller) = channel.split();
+    controller
+        .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+        .unwrap();
+    {
+        let mut read_ready = pin!(controller.wait_receive_ready());
+        let mut write_ready = pin!(controller.wait_publish_ready());
+        assert_pending(read_ready.as_mut());
+        assert_pending(write_ready.as_mut());
+        controller.close();
+        // Cancel both readiness futures before they observe the notification.
+    }
+    block_on(controller.wait_receive_ready());
+    block_on(controller.wait_publish_ready());
+    assert_eq!(
+        controller.try_publish(PacketKind::Event, &HARDWARE_ERROR),
+        Err(HciChannelError::Closed)
+    );
+    let mut buffer = [0; 16];
+    assert!(matches!(
+        controller.try_receive_classified_command_with_buffer(&mut buffer),
+        HciClassifiedCommandIntake::Channel {
+            error: HciChannelError::Closed,
+            ..
+        }
+    ));
+    assert_eq!(
+        event_parameter(block_on(host.read(&mut buffer)).unwrap()),
+        0x42
+    );
+}
+
+#[test]
+fn closed_epoch_rejects_independent_host_acl_credit_sender() {
+    let mut channel = TestChannel::new();
+    let (host, controller) = channel.split();
+    let credits = host.acl_credit_sender();
+    block_on(host.write(&Reset::new())).unwrap();
+    let mut pending = pin!(credits.return_completed_packets(&[]));
+    assert_pending(pending.as_mut());
+    controller.close();
+    assert_eq!(block_on(pending), Err(HciChannelError::Closed));
+    assert_eq!(
+        block_on(credits.return_completed_packets(&[])),
+        Err(HciChannelError::Closed)
+    );
+}

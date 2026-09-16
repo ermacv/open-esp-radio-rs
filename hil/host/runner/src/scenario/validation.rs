@@ -473,9 +473,19 @@ impl Scenario {
                 connections,
                 hold_millis,
                 termination: _,
+                retire_after: _,
+                restart_between_connections,
+                maintain_between_connections,
             } => {
                 bounded(*boots, 1, 10, self, "boots")?;
                 bounded(*connections, 1, 100, self, "connections")?;
+                if (*restart_between_connections || *maintain_between_connections)
+                    && *connections < 2
+                {
+                    return self.criteria_error(
+                        "inter-connection lifecycle requires at least two connections in one boot",
+                    );
+                }
                 bounded(*hold_millis, 0, 5_000, self, "hold_millis")?;
                 if self.link.is_some()
                     || self.criteria != Criteria::default()

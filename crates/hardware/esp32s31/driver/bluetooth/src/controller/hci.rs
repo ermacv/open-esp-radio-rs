@@ -237,11 +237,13 @@ where
     M: RawMutex,
     S: crate::controller::ModemLpTimerSoftwareOwnerStorage,
 {
-    /// Split one stable final owner into routed runtime endpoints.
+    /// Claim the task HAL lease once and borrow stable software endpoints.
+    /// Later calls reject before splitting HCI if the task lease was claimed.
     pub fn split_runtime<'runtime>(
         &'runtime mut self,
     ) -> crate::controller::ControllerPublishedRuntimeSplit<
         'runtime,
+        P,
         M,
         S,
         MODEM_TIMER_CAPACITY,
@@ -251,7 +253,10 @@ where
         PACKET_CAPACITY,
     > {
         let Self { hardware, hci } = self;
-        hardware.split_hardware_runtime().bind_hci(hci.split())
+        match hardware.split_hardware_runtime() {
+            Some(endpoints) => endpoints.bind_hci(hci.split()),
+            None => crate::controller::ControllerPublishedRuntimeSplit::TaskOwnerUnavailable,
+        }
     }
 }
 

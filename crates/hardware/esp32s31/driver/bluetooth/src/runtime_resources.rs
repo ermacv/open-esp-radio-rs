@@ -163,15 +163,15 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerTaskRuntime<'_, SCHEDULER_CAPACI
 /// Task-side software and register ownership for one powered Controller epoch.
 ///
 /// This endpoint is produced only by the initialized scheduler lifecycle. It
-/// joins the sole software workers with the exact task-side HAL
-/// owner, so a live worker step never requires an independently recovered
+/// joins borrowed software workers with an exclusive lease of the task-side HAL
+/// slot, so a live worker step never requires an independently recovered
 /// register capability. The software-only [`ControllerTaskRuntime`]
 /// remains useful to executor adapters that do not perform hardware work.
 #[must_use = "the powered task endpoint retains the Controller task owner"]
 #[cfg(any(target_arch = "riscv32", test))]
 pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     pub(crate) runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-    pub(crate) task: &'runtime mut TaskResources,
+    pub(crate) task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
     pub(crate) time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
     pub(crate) _standalone_dtm_profile:
         &'runtime crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
@@ -183,7 +183,7 @@ pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usiz
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     pub(crate) const fn new<'runtime>(
         runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-        task: &'runtime mut TaskResources,
+        task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
         time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
         standalone_dtm_profile: &'runtime crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
         config: crate::scheduler::SchedulerSoftwareConfig,
@@ -200,14 +200,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(test)]
-    pub(crate) const fn controller_time_phase(
+    pub(crate) fn controller_time_phase(
         &self,
     ) -> crate::controller::time::ControllerTimeWorkerPhase {
         self.task.controller_time_phase()
     }
 
     #[cfg(test)]
-    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+    pub(crate) fn controller_time_needs_recheck(&self) -> bool {
         self.task.controller_time_needs_recheck()
     }
 
@@ -396,3 +396,42 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize> Default
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(target_arch = "riscv32")]
+impl<const MT: usize, const SC: usize> ControllerRuntimeResources<MT, SC> {
+    pub(crate) fn into_started_modem_epoch(self) -> BluetoothModemLpTimerEpoch {
+        self.modem_lp_timer_epoch
+    }
+}
+
+/// Actual software ownership preventing a cold restart boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerRuntimeRetirementError {
+    LockModify,
+    FinishedLists,
+    Timeline,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SC: usize> ControllerTaskRuntime<'_, SC> {
+    pub(crate) fn retirement_ready(&self) -> Result<(), ControllerRuntimeRetirementError> {
+        use ControllerRuntimeRetirementError as Error;
+        if !self.scheduler_lock_modify_worker.is_idle() {
+            return Err(Error::LockModify);
+        }
+        if self.scheduler_finished_lists.is_active() {
+            return Err(Error::FinishedLists);
+        }
+        if !self.scheduler_timeline.is_empty() {
+            return Err(Error::Timeline);
+        }
+        Ok(())
+    }
+
+    /// Coalesced readiness notifications are not work ownership. Discard only
+    /// after physical cold release, with the original IRQ routes still absent.
+    pub(crate) fn clear_notifications_after_cold_release(&self) {
+        let _ = self.scheduler_wake.take();
+        let _ = self.scheduler_lock_modify_events.take();
+    }
+}

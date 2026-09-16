@@ -2,6 +2,8 @@
 
 #![deny(unsafe_code)]
 
+pub(crate) mod retirement;
+
 use crate::{
     BluetoothInterruptRegisters, BluetoothInterruptSetup, device_fence,
     svd::{

@@ -27,7 +27,7 @@ use codec::{
     controller_slot, decode_controller_slot, encode_host_packet, require_profile_buffer,
     validate_host_packet,
 };
-use queue::AsyncPacketQueue;
+use queue::{AsyncPacketQueue, PacketQueueEpoch};
 
 use crate::{
     ControllerToHostQueueError, HostToControllerFrame, LeControllerCommandClassification,
@@ -43,12 +43,13 @@ use crate::{
 #[derive(Clone, Copy)]
 pub struct HciEpochIdentity<'epoch> {
     marker: &'epoch u8,
+    generation: u64,
 }
 
 impl HciEpochIdentity<'_> {
-    /// Whether two endpoints originate from the same live channel object.
+    /// Whether two endpoints originate from the same channel and generation.
     pub fn same_epoch(self, other: HciEpochIdentity<'_>) -> bool {
-        core::ptr::eq(self.marker, other.marker)
+        core::ptr::eq(self.marker, other.marker) && self.generation == other.generation
     }
 }
 
@@ -132,6 +133,9 @@ impl<'epoch, T> HciEpochBound<'epoch, T> {
 /// An error at the bounded in-process HCI boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HciChannelError {
+    /// The supervisor permanently closed this transport direction. Queued
+    /// packets remain readable; an empty closed queue cannot receive more.
+    Closed,
     /// A non-blocking send found no free packet slot.
     Full,
     /// A non-blocking receive found no published packet.
@@ -196,6 +200,7 @@ impl embedded_io::Error for HciChannelError {
     fn kind(&self) -> ErrorKind {
         match self {
             Self::Full | Self::Empty => ErrorKind::Other,
+            Self::Closed => ErrorKind::BrokenPipe,
             Self::InvalidDirection => ErrorKind::InvalidInput,
             Self::PacketTooLong { .. }
             | Self::DestinationTooSmall { .. }
@@ -363,20 +368,21 @@ where
     ) {
         (
             InProcessHciHostTransport {
-                host_to_controller: &self.host_to_controller,
-                controller_to_host: &self.controller_to_host,
+                host_to_controller: self.host_to_controller.epoch(),
+                controller_to_host: self.controller_to_host.epoch(),
             },
             InProcessHciControllerEndpoint {
                 identity: HciEpochIdentity {
                     marker: &self.identity,
+                    generation: self.host_to_controller.epoch().generation(),
                 },
-                host_to_controller: &self.host_to_controller,
-                controller_to_host: &self.controller_to_host,
+                host_to_controller: self.host_to_controller.epoch(),
+                controller_to_host: self.controller_to_host.epoch(),
             },
         )
     }
 
-    /// Whether no packet has ever entered either direction of this channel.
+    /// Whether the channel remains open and no packet has entered either direction.
     ///
     /// Draining a packet cannot make the channel pristine again. Lifecycle
     /// owners use this monotonic observation before binding the channel to a
@@ -404,7 +410,10 @@ where
 /// Host-facing packet transport accepted by `bt_hci::ExternalController`.
 ///
 /// Writes await bounded capacity and reads await a Controller publication.
-/// Dropping either pending future leaves both queues unchanged.
+/// Dropping either pending future leaves both queues unchanged. Terminal closure
+/// wakes transport waiters, rejects new writes and permits queued reads before
+/// returning [`HciChannelError::Closed`]. An external event loop must propagate
+/// transport errors to any higher-level command waiters it owns.
 pub struct InProcessHciHostTransport<
     'channel,
     M,
@@ -414,8 +423,8 @@ pub struct InProcessHciHostTransport<
 > where
     M: RawMutex,
 {
-    host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
-    controller_to_host: &'channel AsyncPacketQueue<M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
+    host_to_controller: PacketQueueEpoch<'channel, M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
+    controller_to_host: PacketQueueEpoch<'channel, M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
 }
 
 /// Write-only Host authority for returning Controller-to-Host ACL credits.
@@ -432,7 +441,7 @@ pub struct LeHostAclCreditSender<
 > where
     M: RawMutex,
 {
-    host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
+    host_to_controller: PacketQueueEpoch<'channel, M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
 }
 
 impl<
@@ -474,7 +483,7 @@ where
     ) -> Result<(), HciChannelError> {
         let command = HostNumberOfCompletedPackets::new(completed);
         let slot = encode_host_packet::<_, PACKET_CAPACITY>(&command)?;
-        self.host_to_controller.send(slot).await;
+        self.host_to_controller.send(slot).await?;
         Ok(())
     }
 }
@@ -519,13 +528,13 @@ where
         buffer: &'buffer mut [u8],
     ) -> Result<P, Self::Error> {
         require_profile_buffer::<PACKET_CAPACITY>(buffer.len())?;
-        let slot = self.controller_to_host.receive().await;
+        let slot = self.controller_to_host.receive().await?;
         decode_controller_slot(slot, buffer)
     }
 
     async fn write<T: PacketToController>(&self, value: &T) -> Result<(), Self::Error> {
         let slot = encode_host_packet::<T, PACKET_CAPACITY>(value)?;
-        self.host_to_controller.send(slot).await;
+        self.host_to_controller.send(slot).await?;
         Ok(())
     }
 }
@@ -545,8 +554,8 @@ pub(crate) struct InProcessHciControllerEndpoint<
     M: RawMutex,
 {
     identity: HciEpochIdentity<'channel>,
-    host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
-    controller_to_host: &'channel AsyncPacketQueue<M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
+    host_to_controller: PacketQueueEpoch<'channel, M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
+    controller_to_host: PacketQueueEpoch<'channel, M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
 }
 
 impl<
@@ -566,6 +575,55 @@ impl<
 where
     M: RawMutex,
 {
+    pub(crate) fn check_restart(&self) -> Result<(), crate::LeControllerHciRestartError> {
+        self.host_to_controller
+            .check_restart_with(self.controller_to_host)
+    }
+
+    pub(crate) fn restart(
+        &mut self,
+    ) -> Result<
+        InProcessHciHostTransport<
+            'channel,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        crate::LeControllerHciRestartError,
+    > {
+        let (incoming, outgoing) = self
+            .host_to_controller
+            .restart_with(self.controller_to_host)?;
+        self.host_to_controller = incoming;
+        self.controller_to_host = outgoing;
+        self.identity.generation = incoming.generation();
+        Ok(InProcessHciHostTransport {
+            host_to_controller: incoming,
+            controller_to_host: outgoing,
+        })
+    }
+
+    pub(crate) fn wait_retirement_ready(
+        &self,
+    ) -> impl core::future::Future<Output = Result<(), crate::LeControllerHciRetirementError>>
+    + use<'channel, M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY> {
+        self.host_to_controller
+            .wait_drained_with(self.controller_to_host)
+    }
+
+    /// Close empty FIFOs atomically after the combined endpoint validates authority.
+    pub(crate) fn try_retire(&self) -> Result<(), crate::LeControllerHciRetirementError> {
+        self.host_to_controller
+            .try_retire_with(self.controller_to_host)
+    }
+
+    /// Permanently close both packet directions without discarding their FIFOs.
+    pub(crate) fn close(&self) {
+        self.host_to_controller.close();
+        self.controller_to_host.close();
+    }
+
     /// Identity shared only by endpoints split from this exact channel epoch.
     pub(crate) const fn epoch_identity(&self) -> HciEpochIdentity<'channel> {
         self.identity
@@ -578,7 +636,7 @@ where
         buffer: &'buffer mut [u8],
     ) -> Result<HostToControllerFrame<'buffer>, HciChannelError> {
         require_profile_buffer::<PACKET_CAPACITY>(buffer.len())?;
-        let slot = self.host_to_controller.receive().await;
+        let slot = self.host_to_controller.receive().await?;
         decode_host_slot(slot, buffer)
     }
 
@@ -589,19 +647,16 @@ where
         buffer: &'buffer mut [u8],
     ) -> Result<HostToControllerFrame<'buffer>, HciChannelError> {
         require_profile_buffer::<PACKET_CAPACITY>(buffer.len())?;
-        let slot = self
-            .host_to_controller
-            .try_receive()
-            .map_err(|()| HciChannelError::Empty)?;
+        let slot = self.host_to_controller.try_receive()?;
         decode_host_slot(slot, buffer)
     }
 
-    /// Wait until Host-to-Controller storage is observed with a packet.
+    /// Wait until Host-to-Controller storage has a packet or is terminally closed.
     ///
     /// This operation neither borrows a packet buffer nor consumes or reserves
     /// the oldest packet. It is a cancellation-safe readiness hint: callers
     /// finish with [`Self::try_receive_classified_command_with_buffer`] and
-    /// handle `Empty` losslessly.
+    /// handle `Empty` or terminal `Closed` losslessly.
     /// The affine Controller endpoint is designed for one logical intake waiter
     /// at a time.
     pub(crate) async fn wait_receive_ready(&self) {
@@ -661,7 +716,8 @@ where
         }
         let mut slot = match self.host_to_controller.try_receive() {
             Ok(slot) => slot,
-            Err(()) => return HciClassifiedCommandIntake::Empty { buffer },
+            Err(HciChannelError::Empty) => return HciClassifiedCommandIntake::Empty { buffer },
+            Err(error) => return HciClassifiedCommandIntake::Channel { error, buffer },
         };
 
         if slot.kind == PacketKind::Cmd {
@@ -732,7 +788,16 @@ where
         }
         let mut slot = match self.host_to_controller.try_receive() {
             Ok(slot) => slot,
-            Err(()) => return HciActivePeripheralIntake::Empty { state, buffer },
+            Err(HciChannelError::Empty) => {
+                return HciActivePeripheralIntake::Empty { state, buffer };
+            }
+            Err(error) => {
+                return HciActivePeripheralIntake::Channel {
+                    state,
+                    error,
+                    buffer,
+                };
+            }
         };
         let bytes = &slot.bytes[..slot.length];
         if validate_host_packet(slot.kind, bytes).is_err() {
@@ -837,16 +902,16 @@ where
         bytes: &[u8],
     ) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
-        self.controller_to_host.send(slot).await;
+        self.controller_to_host.send(slot).await?;
         Ok(())
     }
 
-    /// Wait until Controller-to-Host storage is observed with free capacity.
+    /// Wait until Controller-to-Host storage has capacity or is terminally closed.
     ///
     /// This operation does not reserve a slot or retain packet bytes. It is a
     /// cancellation-safe readiness hint: after it returns, another producer
     /// may still win the slot, so callers must finish with [`Self::try_publish`]
-    /// and handle `Full` losslessly. The affine Controller endpoint is designed
+    /// and handle `Full` or terminal `Closed` losslessly. The affine Controller endpoint is designed
     /// for one logical publication waiter at a time.
     pub(crate) async fn wait_publish_ready(&self) {
         self.controller_to_host.wait_send_ready().await;
@@ -859,9 +924,7 @@ where
         bytes: &[u8],
     ) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
-        self.controller_to_host
-            .try_send(slot)
-            .map_err(|()| HciChannelError::Full)
+        self.controller_to_host.try_send(slot)
     }
 }
 

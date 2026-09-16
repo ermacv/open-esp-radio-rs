@@ -83,12 +83,15 @@ pub use lifecycle::{
     PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation, PhyRfWakeOutcome,
     PhyRfWakeTransition, PhyRfWakeTransitionError,
 };
+#[cfg(target_arch = "riscv32")]
+pub use registered_bluetooth::BluetoothPhyRfCloseFailure;
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,
     RegisteredBluetoothPhyClientReleaseFailure, RegisteredBluetoothPhyPendingTrack,
-    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackEvaluation,
-    RegisteredBluetoothPhyTrackEvaluationFailure, RegisteredBluetoothPhyTrackPoisoned,
+    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyRfClosed,
+    RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
+    RegisteredBluetoothPhyTrackPoisoned,
 };
 pub use registered_radio::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,

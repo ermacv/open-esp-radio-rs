@@ -119,7 +119,10 @@ mod linux {
         }
 
         fn verify_capabilities(&mut self, helper: &Path, expected: &str) -> Result<()> {
-            let output = Command::new(helper).arg("capabilities").output()?;
+            let output = oer_process::output(
+                Command::new(helper).arg("capabilities"),
+                Some(std::time::Duration::from_secs(5)),
+            )?;
             if !output.status.success() || String::from_utf8(output.stdout)?.trim() != expected {
                 return Err(format!(
                     "installed helper failed non-hardware capabilities verification: {}",
@@ -171,7 +174,7 @@ mod linux {
         if let Some(file) = file {
             command.arg(file);
         }
-        let output = command.output()?;
+        let output = oer_process::output(&mut command, Some(std::time::Duration::from_secs(5)))?;
         if !output.status.success() {
             return Err(format!(
                 "visudo rejected fixture policy: {}",

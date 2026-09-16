@@ -10,6 +10,49 @@
 //! service to durable Embassy notification. Controller-memory layout and
 //! address validation remain in the chip memory crate. Command/HCI ownership
 //! is composed by the outer Controller runner rather than by an IRQ callback.
+//!
+//! IRQ composition has an explicit reversible boundary: failed binding returns
+//! the unpublished service, while successful same-core three-route disable
+//! returns `BluetoothInterruptDisabled`. Callback access stays inside a critical
+//! section; the service and its durable first fault remain owned through rebind.
+//! Dropping a live route owner leaves its publication occupied. The unstarted
+//! hardware runner can cycle its routes while retaining all HCI and timer owners.
+//! `retire_modem_timer` additionally returns the drained timer's HAL owner after
+//! IRQ disable; `resume` restores it before rebind. Its idle HCI retirement join
+//! retains command, timer and inactive IRQ owners in `BluetoothHardwareRetired`.
+//! `run_until_idle(request)` also returns the runner from live command service
+//! after the request resolves, timer work drains and both HCI FIFOs are observed
+//! empty. It leaves IRQ and HCI barriers to the explicit retirement methods;
+//! concurrent producers can still cause their lossless rejection. Active roles
+//! require their normal Host stop commands. Keep the consuming future alive
+//! until it returns; dropping it does not implement ownership retirement.
+//! Terminal quarantine closes both HCI directions before disabling routes, so
+//! blocked transport operations observe closure. Queued packets and unfinished
+//! command/timer owners remain retained; graceful ACL credit drain is separate.
+//! These transitions do not stop BTBB/DMA or release the shared PHY. Exclusive
+//! task HAL, PHY/DF and role-memory leases follow the actor through handoff and quarantine.
+//! HCI retirement extracts their actual owners; rejection preserves the runnable
+//! actor. Cold start also returns `platform` beside `system`: retain it until
+//! `BluetoothHardwareRetired::try_retire_interrupts` removes the actual shared
+//! primary/NRT register owner from inactive ISR storage. Its post-route HAL state
+//! admits `try_release_controller_output` only after a hardware idle/head/fault
+//! preflight. The resulting state cannot reactivate routes. Empty
+//! ISR slots remain reserved for this epoch while static Controller borrows exist.
+//! `BluetoothHardwareOutputReleased::join_platform` checks the same HCI epoch and extracts
+//! the platform reservation. `BluetoothHardwareRetiredWithPlatform` keeps its Drop
+//! suppressed through `release_physical`: last-client RF close, temperature
+//! power-down, Bluetooth reset and checked clock restoration return
+//! `BluetoothHardwareColdReleased`. Mismatched joins return both owners.
+//! Role retirement requires all five allocation owners, including advertising
+//! generations and the peripheral RX topology, before closing HCI. Extracted
+//! owners remain private; stable software storage is still borrowed. A
+//! cold restart uses those original leases through `BluetoothHardwareColdReleased::restart`:
+//! it reinitializes the returned radio, restores the same ISR reservation and
+//! issues a new HCI generation whose old Host handles remain closed.
+//! `BluetoothHardwareTimerRetired::maintain_phy` instead executes due tracking
+//! with the same open HCI and powered counter epoch, then restores owners and
+//! routes. Maintenance requires an idle runner; active ACL/DTM windows are not
+//! automatically scheduled. Failed or cancelled physical work cannot resume.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -18,6 +61,8 @@
 mod cold_start;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod interrupt_fault;
+#[cfg(any(test, target_arch = "riscv32"))]
+mod interrupt_publication;
 #[cfg(target_arch = "riscv32")]
 mod interrupt_runtime;
 #[cfg(target_arch = "riscv32")]
@@ -42,21 +87,29 @@ pub use cold_start::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use interrupt_runtime::{
-    BluetoothInterruptBindError, BluetoothInterruptDisableFailure, BluetoothInterruptFault,
-    BluetoothInterruptRuntime, bind_production_bluetooth_interrupt_runtime,
+    BluetoothInterruptBindError, BluetoothInterruptBindFailure, BluetoothInterruptDisableFailure,
+    BluetoothInterruptDisabled, BluetoothInterruptFault, BluetoothInterruptRuntime,
+    bind_production_bluetooth_interrupt_runtime,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy_time::{EmbassyPhyTime, EmbassyPhyTimeError};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    BluetoothHardwareRunner, BluetoothHostAclCredits, BluetoothHostController,
-    BluetoothInterruptCompositionFailure, BluetoothRunners, BluetoothSystem,
-    BluetoothSystemBuildError, compose_esp32s31_bluetooth_system,
+    BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,
+    BluetoothHardwareMaintenanceError, BluetoothHardwareMaintenanceFailure,
+    BluetoothHardwareOutputReleased, BluetoothHardwareRestartError,
+    BluetoothHardwareRestartFailure, BluetoothHardwareRetired,
+    BluetoothHardwareRetiredWithPlatform, BluetoothHardwareRouteCycleFailure,
+    BluetoothHardwareRunner, BluetoothHardwareShutdownFailure, BluetoothHardwareTimerError,
+    BluetoothHardwareTimerFailure, BluetoothHardwareTimerRetired, BluetoothHostAclCredits,
+    BluetoothHostController, BluetoothInterruptCompositionFailure, BluetoothPlatformJoin,
+    BluetoothRunners, BluetoothSystem, BluetoothSystemBuildError,
+    compose_esp32s31_bluetooth_system,
 };
 #[cfg(target_arch = "riscv32")]
 pub use system_storage::{
-    BluetoothPublishedController, BluetoothSystemSlot, BluetoothSystemStorage,
-    BluetoothSystemStorageInUse,
+    BluetoothPublishedController, BluetoothSystemReady, BluetoothSystemSlot,
+    BluetoothSystemStorage, BluetoothSystemStorageInUse,
 };
 pub use trouble::BluetoothTroubleSystem;
 

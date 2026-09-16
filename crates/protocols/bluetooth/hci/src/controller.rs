@@ -30,6 +30,11 @@ use crate::{
     LeReadRemoteVersionInformationCompleteEvent, OwnedBootstrapCommand,
 };
 
+mod retirement;
+pub use retirement::{
+    LeControllerHciRestartError, LeControllerHciRetired, LeControllerHciRetirementError,
+};
+
 mod endpoint;
 pub use endpoint::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim,
@@ -164,7 +169,7 @@ where
         self.bootstrap.config()
     }
 
-    /// Whether initial command authority remains unclaimed and no packet or
+    /// Whether the transport is open, initial authority remains unclaimed and no packet or
     /// successful bootstrap command has entered this epoch.
     pub fn is_pristine(&self) -> bool {
         self.initial_ready_available && self.channel.is_pristine() && self.bootstrap.is_pristine()

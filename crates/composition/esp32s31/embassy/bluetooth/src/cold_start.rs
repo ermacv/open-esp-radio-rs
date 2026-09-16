@@ -362,8 +362,15 @@ pub struct BluetoothColdStartOutput<
     const C2H: usize,
     const PC: usize,
 > {
+    /// Source identity selected for common-PHY initialization and powered restart.
+    pub calibration_identity: oer_esp32s31_phy::PhyCalibrationIdentity,
     /// Final `bt-hci` facade and sole hardware runner.
     pub system: BluetoothSystem<MT, SC, H2C, C2H, PC>,
+    /// Retain beside the hardware runner for matching powered retirement.
+    pub platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<
+        'static,
+        Platform,
+    >,
     /// Complete common-PHY target execution report.
     pub phy: PhyInitializationReport,
     /// Finite BTBB initialization input projected from the PHY owner.
@@ -894,12 +901,14 @@ pub async fn start_esp32s31_bluetooth<
             ));
         }
     };
-    let system = slot
+    let crate::BluetoothSystemReady { system, platform } = slot
         .compose(bound, recheck)
         .map_err(BluetoothColdStartError::SystemBuild)?;
 
     Ok(BluetoothColdStartOutput {
+        calibration_identity,
         system,
+        platform,
         phy,
         baseband,
         ble_phy,

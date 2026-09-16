@@ -173,14 +173,25 @@ pub(crate) struct PeripheralConnectionEventPrepared {
     reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
 }
 
-#[cfg(test)]
+#[cfg(any(target_arch = "riscv32", test))]
 impl PeripheralConnectionEventPrepared {
+    #[cfg(test)]
     pub(crate) const fn requested_window(&self) -> crate::scheduler::SchedulerRawWindow {
         self.event.requested_window()
     }
 
+    #[cfg(test)]
     pub(crate) const fn resolved_window(&self) -> crate::scheduler::SchedulerRawWindow {
         self.event.resolved_window()
+    }
+
+    /// End of the encoded sequencer interval: shifted start plus full duration.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn sequence_end_ticks(&self) -> u32 {
+        self.reservation
+            .window()
+            .end()
+            .wrapping_add(self.reservation.timing_policy().sequence_lead_raw_delta())
     }
 }
 

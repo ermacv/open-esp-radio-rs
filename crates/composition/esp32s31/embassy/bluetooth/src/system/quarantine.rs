@@ -1,6 +1,9 @@
 //! Complete-route shutdown and indefinite retention of terminal affine owners.
 
-use crate::{BluetoothInterruptDisableFailure, BluetoothInterruptFault, BluetoothInterruptRuntime};
+use crate::{
+    BluetoothInterruptDisableFailure, BluetoothInterruptDisabled, BluetoothInterruptFault,
+    BluetoothInterruptRuntime,
+};
 
 use oer_esp32s31_bluetooth_embassy::controller::ControllerCommandTask;
 
@@ -9,7 +12,7 @@ use super::{CommandBoundary, ModemDriveStep, PublishedStorage};
 /// Result of disabling all three routes for terminal quarantine.
 pub(super) enum BluetoothRouteQuarantine {
     /// Terminal quarantine disabled source 124, 127 and 133 together.
-    Disabled,
+    Disabled { _owner: BluetoothInterruptDisabled },
     /// Full-route disable was rejected; quarantine owns the unchanged live epoch.
     DisableRejected {
         _failure: BluetoothInterruptDisableFailure,
@@ -51,7 +54,7 @@ pub(super) fn quarantine_routes(
         .take()
         .expect("terminal quarantine starts from one live route epoch");
     match runtime.disable() {
-        Ok(()) => BluetoothRouteQuarantine::Disabled,
+        Ok(owner) => BluetoothRouteQuarantine::Disabled { _owner: owner },
         Err(failure) => BluetoothRouteQuarantine::DisableRejected { _failure: failure },
     }
 }

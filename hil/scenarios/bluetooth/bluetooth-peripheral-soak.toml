@@ -1,6 +1,6 @@
 schema = 4
 id = "bluetooth-peripheral-soak"
-description = "One hundred sequential real LE peripheral connections with exact Feature and Version Exchange, bounded ACL backpressure, two bidirectional fragmented exchanges separated by exact Connection and Channel Map Updates, peer Reset, supervision-timeout retirement and handle reuse"
+description = "One hundred sequential real LE peripheral connections with exact Feature and Version Exchange, bounded ACL backpressure, two bidirectional fragmented exchanges separated by exact Connection and Channel Map Updates, peer Reset, connection retirement and handle reuse"
 image = "bluetooth-dtm"
 isolation = "reset"
 repetitions = 1

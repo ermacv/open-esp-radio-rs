@@ -11,6 +11,8 @@ mod active_host_events;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod completion;
 pub(crate) mod connection;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod deadlines;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod first_hci;
 #[cfg(any(target_arch = "riscv32", test))]

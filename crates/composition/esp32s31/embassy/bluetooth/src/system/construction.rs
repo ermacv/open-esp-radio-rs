@@ -2,7 +2,10 @@
 
 use bt_hci::controller::ExternalController;
 
-use crate::{BluetoothInterruptBindError, bind_production_bluetooth_interrupt_runtime};
+use crate::{
+    BluetoothInterruptBindError, BluetoothInterruptBindFailure, BluetoothSystemReady,
+    bind_production_bluetooth_interrupt_runtime,
+};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
@@ -36,27 +39,9 @@ type PublishedSplitFailure<
     PACKET_CAPACITY,
 >;
 
-type PublishedEndpoints<
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> = ControllerPublishedRuntimeEndpoints<
-    'static,
-    CriticalSectionRawMutex,
-    PublishedStorage,
-    MODEM_TIMER_CAPACITY,
-    SCHEDULER_CAPACITY,
-    HOST_TO_CONTROLLER_DEPTH,
-    CONTROLLER_TO_HOST_DEPTH,
-    PACKET_CAPACITY,
->;
-
 /// Opaque fail-stop result after the final split succeeded but IRQ activation
 /// failed. Every still-returnable task/HCI owner and the recheck schedule stay
-/// retained here; the interrupt service itself remains in its one-shot stable
-/// integration storage.
+/// retained here together with the unpublished interrupt service.
 #[must_use = "a failed final composition retains the remaining Controller owners"]
 pub struct BluetoothInterruptCompositionFailure<
     const MODEM_TIMER_CAPACITY: usize,
@@ -65,7 +50,7 @@ pub struct BluetoothInterruptCompositionFailure<
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 > {
-    error: BluetoothInterruptBindError,
+    failure: BluetoothInterruptBindFailure,
     _task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<
         'static,
         PublishedStorage,
@@ -99,7 +84,7 @@ impl<
 {
     /// Exact final route/dispatcher activation error.
     pub const fn error(&self) -> BluetoothInterruptBindError {
-        self.error
+        self.failure.error()
     }
 }
 
@@ -112,6 +97,8 @@ pub enum BluetoothSystemBuildError<
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 > {
+    /// The task HAL owner was already transferred; no new endpoints were made.
+    TaskOwnerUnavailable,
     /// Initial command-ready authority was already unavailable.
     RuntimeSplitUnavailable(
         PublishedSplitFailure<
@@ -161,7 +148,8 @@ pub fn compose_esp32s31_bluetooth_system<
     wakers: &'static RuntimeWakers,
     recheck: DtmAbsoluteRecheck,
 ) -> Result<
-    BluetoothSystem<
+    BluetoothSystemReady<
+        P,
         MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
@@ -176,14 +164,11 @@ pub fn compose_esp32s31_bluetooth_system<
         PACKET_CAPACITY,
     >,
 > {
-    let endpoints: PublishedEndpoints<
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > = match owner.split_runtime() {
-        ControllerPublishedRuntimeSplit::Ready(endpoints) => endpoints,
+    let (endpoints, platform) = match owner.split_runtime() {
+        ControllerPublishedRuntimeSplit::Ready(endpoints, platform) => (endpoints, platform),
+        ControllerPublishedRuntimeSplit::TaskOwnerUnavailable => {
+            return Err(BluetoothSystemBuildError::TaskOwnerUnavailable);
+        }
         ControllerPublishedRuntimeSplit::CommandReadyUnavailable(failure) => {
             return Err(BluetoothSystemBuildError::RuntimeSplitUnavailable(failure));
         }
@@ -196,10 +181,10 @@ pub fn compose_esp32s31_bluetooth_system<
     } = endpoints;
     let interrupt = match bind_production_bluetooth_interrupt_runtime(interrupt, wakers) {
         Ok(interrupt) => interrupt,
-        Err(error) => {
+        Err(failure) => {
             return Err(BluetoothSystemBuildError::InterruptComposition(
                 BluetoothInterruptCompositionFailure {
-                    error,
+                    failure,
                     _task: task,
                     _modem_timer: modem_timer,
                     _hci: hci,
@@ -211,18 +196,21 @@ pub fn compose_esp32s31_bluetooth_system<
     let LeControllerHciEndpoints { host, controller } = hci;
     let host_acl_credits = host.acl_credit_sender();
 
-    Ok(BluetoothSystem {
-        hci: ExternalController::new(host),
-        host_acl_credits,
-        runners: BluetoothRunners {
-            hardware: BluetoothHardwareRunner::new(
-                task,
-                controller,
-                modem_timer,
-                interrupt,
-                recheck,
-                wakers,
-            ),
+    Ok(BluetoothSystemReady {
+        platform,
+        system: BluetoothSystem {
+            hci: ExternalController::new(host),
+            host_acl_credits,
+            runners: BluetoothRunners {
+                hardware: BluetoothHardwareRunner::new(
+                    task,
+                    controller,
+                    modem_timer,
+                    interrupt,
+                    recheck,
+                    wakers,
+                ),
+            },
         },
     })
 }

@@ -1,5 +1,8 @@
 //! HIL owns the command lease and UART; the production composition owns RF.
 
+mod command_pump;
+mod retirement;
+
 use bt_hci::{
     ControllerToHostPacket,
     cmd::{
@@ -381,31 +384,130 @@ async fn task(
         Ok(output) => output,
         Err(_error) => super::fail(c"OPEN_RADIO_HIL Bluetooth cold start failed\r\n"),
     };
-    let BluetoothSystem {
-        hci,
-        host_acl_credits,
-        runners,
-    } = output.system;
-    let mut hardware = core::pin::pin!(runners.hardware.run());
-    let mut console = Console {
-        usb: UsbSerialJtag::new(usb).into_async(),
+    let mut session = core::pin::pin!(run_session(
+        output.system,
+        output.platform,
+        usb,
         boot_id,
-        sequence: 0,
-        decoder: FrameDecoder::new(),
-        encoder: FrameEncoder::new(),
-        peripheral_probe: false,
-        peripheral_closed_at_start: 0,
-        peripheral_reset_at_start: 0,
-    };
-    // Keep the radio actor's large ownership transitions out of the joined
-    // console poll frame, including when diagnostic formatting changes inlining.
-    let (_, _, never) = embassy_futures::join::join3(
-        console.run(&hci),
-        pump(&hci, &host_acl_credits),
-        poll_with_stack_boundary(hardware.as_mut()),
-    )
-    .await;
-    match never {}
+        output.calibration_identity
+    ));
+    poll_with_stack_boundary(session.as_mut()).await;
+}
+
+// Cold-start results and the live/terminal transition results use separate
+// poll frames. All futures are pinned in their construction slots.
+async fn run_session(
+    mut system: BluetoothSystem<4, 1, 4, 4, 258>,
+    mut platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<
+        'static,
+        EspHalBluetoothPlatform<'static>,
+    >,
+    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    boot_id: u64,
+    identity: oer_esp32s31_phy::PhyCalibrationIdentity,
+) {
+    let mut console = Console::new(usb, boot_id);
+    let mut cycles = 0u32;
+    let mut maintenance_cycles = 0u32;
+    let mut announce = true;
+    loop {
+        let BluetoothSystem {
+            hci,
+            host_acl_credits,
+            runners,
+        } = system;
+        let hardware = {
+            let mut exercise = core::pin::pin!(retirement::exercise_timer_retirement(
+                runners.hardware,
+                &hci
+            ));
+            poll_with_stack_boundary(exercise.as_mut()).await
+        };
+        let (hardware, request, operation) = {
+            let mut active = core::pin::pin!(retirement::run_active(
+                hardware,
+                &hci,
+                &host_acl_credits,
+                &mut console,
+                announce
+            ));
+            poll_with_stack_boundary(active.as_mut()).await
+        };
+        announce = false;
+        if operation == PeripheralOperation::Maintain {
+            let (hardware, outcome) = {
+                let mut maintenance =
+                    core::pin::pin!(retirement::maintain(hardware, &mut platform, &hci));
+                poll_with_stack_boundary(maintenance.as_mut()).await
+            };
+            maintenance_cycles = maintenance_cycles
+                .checked_add(1)
+                .expect("maintenance counter");
+            console.peripheral_reinitialize = true;
+            console
+                .send_frame(
+                    None,
+                    request,
+                    peripheral_evidence(
+                        operation,
+                        PeripheralResult::Maintained {
+                            cycles: maintenance_cycles,
+                            due_tracking_completed: outcome.is_some(),
+                            tracking_inhibited: outcome
+                                .is_some_and(|result| result.tracking_inhibited),
+                            same_hci_reset_completed: true,
+                            common_calibrated: outcome
+                                .is_some_and(|result| result.calibration.common),
+                            bluetooth_calibrated: outcome
+                                .is_some_and(|result| result.calibration.bluetooth_ieee802154),
+                        },
+                    ),
+                )
+                .await;
+            system = BluetoothSystem {
+                hci,
+                host_acl_credits,
+                runners: oer_esp32s31_bluetooth_integration::BluetoothRunners { hardware },
+            };
+            continue;
+        }
+        let mut shutdown = core::pin::pin!(retirement::shutdown(hardware, platform));
+        let cold = poll_with_stack_boundary(shutdown.as_mut()).await;
+        if operation == PeripheralOperation::Retire {
+            let mut terminal = core::pin::pin!(retirement::finish(
+                cold,
+                &hci,
+                &host_acl_credits,
+                &mut console,
+                request
+            ));
+            poll_with_stack_boundary(terminal.as_mut()).await;
+        }
+        let mut restart = core::pin::pin!(retirement::restart(cold, identity));
+        let ready = poll_with_stack_boundary(restart.as_mut()).await;
+        let (old_commands_closed, old_events_closed, old_acl_credits_closed) =
+            retirement::probe_closed(&hci, &host_acl_credits).await;
+        cycles = cycles.checked_add(1).expect("restart counter");
+        console.peripheral_reinitialize = true;
+        console
+            .send_frame(
+                None,
+                request,
+                peripheral_evidence(
+                    PeripheralOperation::Restart,
+                    PeripheralResult::Restarted {
+                        cycles,
+                        new_reset_completed: true,
+                        old_commands_closed,
+                        old_events_closed,
+                        old_acl_credits_closed,
+                    },
+                ),
+            )
+            .await;
+        system = ready.system;
+        platform = ready.platform;
+    }
 }
 
 async fn pump(hci: &Host, host_acl_credits: &HostAclCredits) {
@@ -491,7 +593,7 @@ async fn pump(hci: &Host, host_acl_credits: &HostAclCredits) {
                     };
                     acl_completions_in_connection = updated;
                     if acl_completions_in_connection == 2 && echoes_in_connection == 2 {
-                        execute_peripheral_termination(hci).await;
+                        execute_peripheral_termination(hci, &mut buffer).await;
                     } else if acl_completions_in_connection > 2 {
                         PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.faults);
                     }
@@ -501,7 +603,7 @@ async fn pump(hci: &Host, host_acl_credits: &HostAclCredits) {
     }
 }
 
-async fn execute_peripheral_termination(hci: &Host) {
+async fn execute_peripheral_termination(hci: &Host, buffer: &mut <Host as Controller>::Buffer<'_>) {
     let termination = PERIPHERAL_TERMINATION.swap(0, Ordering::AcqRel);
     if termination == 0 {
         return;
@@ -510,24 +612,43 @@ async fn execute_peripheral_termination(hci: &Host) {
     if hold_millis != 0 {
         Timer::after(Duration::from_millis(u64::from(hold_millis))).await;
     }
-    let accepted = match termination {
-        1 => Disconnect::new(
-            ConnHandle::new(1),
-            DisconnectReason::RemoteUserTerminatedConn,
-        )
-        .exec(hci)
-        .await
-        .map(|()| {
-            PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.target_disconnect_commands)
-        })
-        .is_ok(),
-        2 => Reset::new()
-            .exec(hci)
-            .await
-            .map(|()| PERIPHERAL_HOST_EVENTS.observe_target_reset())
-            .is_ok(),
-        _ => false,
-    };
+    let accepted = command_pump::with_event_pump(
+        hci,
+        buffer,
+        async {
+            match termination {
+                1 => Disconnect::new(
+                    ConnHandle::new(1),
+                    DisconnectReason::RemoteUserTerminatedConn,
+                )
+                .exec(hci)
+                .await
+                .map(|()| {
+                    PeripheralHostEvents::increment(
+                        &PERIPHERAL_HOST_EVENTS.target_disconnect_commands,
+                    )
+                })
+                .is_ok(),
+                2 => Reset::new()
+                    .exec(hci)
+                    .await
+                    .map(|()| PERIPHERAL_HOST_EVENTS.observe_target_reset())
+                    .is_ok(),
+                _ => false,
+            }
+        },
+        |packet| {
+            // The two exact ACL echoes have already completed. Any further ACL
+            // packet is outside this bounded workload and must fail its evidence.
+            if matches!(packet, ControllerToHostPacket::Acl(_)) {
+                PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.acl_faults);
+            } else {
+                let _ = PERIPHERAL_HOST_EVENTS.observe(packet);
+            }
+        },
+    )
+    .await
+    .unwrap_or(false);
     if !accepted {
         PeripheralHostEvents::increment(&PERIPHERAL_HOST_EVENTS.faults);
     }
@@ -540,17 +661,42 @@ struct Console {
     decoder: FrameDecoder,
     encoder: FrameEncoder,
     peripheral_probe: bool,
+    peripheral_reinitialize: bool,
     peripheral_closed_at_start: u32,
     peripheral_reset_at_start: u32,
 }
 
 impl Console {
-    // Encode before constructing the async write future. Retaining the large
-    // Event enum across each write await inflates the joined console poll frame.
     #[inline(never)]
+    fn new(usb: esp_hal::peripherals::USB_DEVICE<'static>, boot_id: u64) -> Self {
+        Self {
+            usb: UsbSerialJtag::new(usb).into_async(),
+            boot_id,
+            sequence: 0,
+            decoder: FrameDecoder::new(),
+            encoder: FrameEncoder::new(),
+            peripheral_probe: false,
+            peripheral_reinitialize: false,
+            peripheral_closed_at_start: 0,
+            peripheral_reset_at_start: 0,
+        }
+    }
+
     fn send<'a>(
         &'a mut self,
         hci: &'a Host,
+        request_id: u32,
+        body: Event,
+    ) -> impl core::future::Future<Output = ()> + 'a {
+        self.send_frame(Some(hci), request_id, body)
+    }
+
+    // Encode before constructing the async write future. Retaining the large
+    // Event enum across each write await inflates the joined console poll frame.
+    #[inline(never)]
+    fn send_frame<'a>(
+        &'a mut self,
+        hci: Option<&'a Host>,
         request_id: u32,
         body: Event,
     ) -> impl core::future::Future<Output = ()> + 'a {
@@ -571,10 +717,10 @@ impl Console {
                 .await,
                 Ok(Ok(()))
             ) {
-                if peripheral_probe {
+                if peripheral_probe || hci.is_none() {
                     esp_hal::system::software_reset();
                 }
-                let _ = execute(hci, Operation::Reset).await;
+                let _ = execute(hci.expect("live command lease"), Operation::Reset).await;
                 core::future::pending::<()>().await;
             }
             *sequence = sequence.checked_add(1).expect("HIL sequence exhausted");
@@ -600,8 +746,8 @@ impl Console {
         received
     }
 
-    async fn run(&mut self, hci: &Host) {
-        let capabilities = Capabilities {
+    fn capabilities() -> Capabilities {
+        Capabilities {
             features: FeatureCapabilities {
                 bluetooth_dtm: true,
                 bluetooth_peripheral: true,
@@ -611,8 +757,62 @@ impl Console {
             },
             maximum_payload_bytes: 37,
             maximum_wire_frame_bytes: open_esp_radio_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
-        };
-        self.send(hci, 0, Event::Hello(capabilities)).await;
+        }
+    }
+
+    #[inline(never)]
+    fn link_health(&self) -> Event {
+        let c = self.decoder.counters();
+        Event::LinkHealth(LinkHealth {
+            rx_frames: c.frames,
+            rx_cobs_errors: c.cobs_errors,
+            rx_checksum_errors: c.checksum_errors,
+            rx_decode_errors: c.deserialize_errors
+                + c.header_errors
+                + c.protocol_version_errors
+                + c.framing_version_errors
+                + c.message_kind_errors
+                + c.payload_length_errors
+                + c.too_short,
+            rx_overflows: c.overflows,
+            tx_frames: self.sequence,
+            tx_dropped: 0,
+            text_dropped: 0,
+            text_truncated: 0,
+        })
+    }
+
+    // Controller retirement leaves the HIL control transport alive. No Host
+    // authority is available here, including on a failed UART write.
+    async fn run_retired(&mut self) {
+        loop {
+            let mut byte = [0];
+            match self.usb.read(&mut byte).await {
+                Ok(0) => continue,
+                Err(_) => esp_hal::system::software_reset(),
+                Ok(_) => {}
+            }
+            let Some(command) = self.decode_command(&byte) else {
+                continue;
+            };
+            let response = match command.validate_target(self.boot_id) {
+                Err(reason) => Event::Rejected(reason),
+                Ok(()) if command.session_id != 0 => Event::Rejected(RejectReason::InvalidState),
+                Ok(()) => match command.body {
+                    Command::GetCapabilities => Event::Hello(Self::capabilities()),
+                    Command::QueryLinkHealth => self.link_health(),
+                    _ => Event::Rejected(RejectReason::InvalidState),
+                },
+            };
+            self.send_frame(None, command.request_id, response).await;
+        }
+    }
+
+    async fn run(&mut self, hci: &Host, announce: bool) -> (u32, PeripheralOperation) {
+        let capabilities = Self::capabilities();
+        if announce {
+            self.send(hci, 0, Event::Hello(capabilities)).await;
+        }
         let mut lease: Option<Instant> = None;
         let mut active = false;
 
@@ -670,27 +870,43 @@ impl Console {
                 continue;
             }
             let response = match command.body {
-                Command::GetCapabilities => Event::Hello(capabilities),
-                Command::QueryLinkHealth => {
-                    let c = self.decoder.counters();
-                    Event::LinkHealth(LinkHealth {
-                        rx_frames: c.frames,
-                        rx_cobs_errors: c.cobs_errors,
-                        rx_checksum_errors: c.checksum_errors,
-                        rx_decode_errors: c.deserialize_errors
-                            + c.header_errors
-                            + c.protocol_version_errors
-                            + c.framing_version_errors
-                            + c.message_kind_errors
-                            + c.payload_length_errors
-                            + c.too_short,
-                        rx_overflows: c.overflows,
-                        tx_frames: self.sequence,
-                        tx_dropped: 0,
-                        text_dropped: 0,
-                        text_truncated: 0,
-                    })
+                Command::BluetoothPeripheral(
+                    operation @ (PeripheralOperation::Retire
+                    | PeripheralOperation::Restart
+                    | PeripheralOperation::Maintain),
+                ) => {
+                    // The peripheral lease guarantees send failures reset the
+                    // board without trying another command after HCI closure.
+                    if !self.peripheral_probe || active {
+                        Event::Rejected(RejectReason::InvalidState)
+                    } else {
+                        match execute(hci, Operation::Reset).await {
+                            Outcome::Complete { .. } => return (request, operation),
+                            Outcome::HciRejected => {
+                                self.send_peripheral(
+                                    hci,
+                                    request,
+                                    operation,
+                                    PeripheralResult::HciRejected { command_stage: 0 },
+                                )
+                                .await;
+                                continue;
+                            }
+                            _ => {
+                                self.send_peripheral(
+                                    hci,
+                                    request,
+                                    operation,
+                                    PeripheralResult::Timeout,
+                                )
+                                .await;
+                                continue;
+                            }
+                        }
+                    }
                 }
+                Command::GetCapabilities => Event::Hello(capabilities),
+                Command::QueryLinkHealth => self.link_health(),
                 Command::BluetoothPeripheral(operation) => {
                     let execution = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
                     let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
@@ -700,6 +916,11 @@ impl Console {
                             hold_millis,
                         } => Some((termination, hold_millis)),
                         PeripheralOperation::Snapshot => None,
+                        PeripheralOperation::Retire
+                        | PeripheralOperation::Restart
+                        | PeripheralOperation::Maintain => {
+                            unreachable!("handled before role commands")
+                        }
                     };
                     if start.is_some()
                         && (active
@@ -722,12 +943,14 @@ impl Console {
                         let result = if operation == PeripheralOperation::Snapshot {
                             PeripheralResult::Snapshot
                         } else {
-                            let initialize = !self.peripheral_probe
+                            let initialize = self.peripheral_reinitialize
+                                || !self.peripheral_probe
                                 || host_events.target_reset_commands
                                     != self.peripheral_reset_at_start;
                             self.peripheral_closed_at_start = execution.peripheral_disconnections;
                             self.peripheral_reset_at_start = host_events.target_reset_commands;
                             self.peripheral_probe = true;
+                            self.peripheral_reinitialize = false;
                             lease = Some(Instant::now() + Duration::from_secs(30));
                             match with_timeout(
                                 Duration::from_secs(5),
@@ -840,6 +1063,10 @@ fn rx_diagnostics() -> open_esp_radio_hil_protocol::BluetoothDtmRxDiagnostics {
 }
 
 fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult) -> Event {
+    let stack = super::cpu0_stack_usage_snapshot();
+    if !stack.has_required_headroom() {
+        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-cpu0-stack-headroom\r\n");
+    }
     let snapshot = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
     let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
     use core::fmt::Write as _;
@@ -881,6 +1108,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         )
         .is_err()
     };
+    let truncated = write!(detail, " stack_free={}", stack.free_bytes).is_err() || truncated;
     Event::BluetoothPeripheral(open_esp_radio_hil_protocol::BluetoothPeripheralEvidence {
         operation,
         result,
@@ -921,7 +1149,11 @@ fn poll_pinned_future<F: core::future::Future>(
     future: core::pin::Pin<&mut F>,
     cx: &mut core::task::Context<'_>,
 ) -> core::task::Poll<F::Output> {
-    future.poll(cx)
+    let poll: fn(
+        core::pin::Pin<&mut F>,
+        &mut core::task::Context<'_>,
+    ) -> core::task::Poll<F::Output> = F::poll;
+    core::hint::black_box(poll)(future, cx)
 }
 
 async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], PeripheralResult> {

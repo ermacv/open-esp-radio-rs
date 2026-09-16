@@ -1215,6 +1215,9 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
             connections,
             hold_millis: 100,
             termination: BluetoothPeripheralTermination::PeerReset,
+            retire_after: false,
+            restart_between_connections: false,
+            maintain_between_connections: false,
         };
         assert!(scenario.validate().is_err());
     }
@@ -1223,6 +1226,9 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
         connections: 100,
         hold_millis: 100,
         termination: BluetoothPeripheralTermination::PeerReset,
+        retire_after: false,
+        restart_between_connections: false,
+        maintain_between_connections: false,
     };
     scenario.validate().unwrap();
     scenario.workload = Workload::BluetoothPeripheral {
@@ -1230,6 +1236,9 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
         connections: 2,
         hold_millis: 5_001,
         termination: BluetoothPeripheralTermination::PeerReset,
+        retire_after: false,
+        restart_between_connections: false,
+        maintain_between_connections: false,
     };
     assert!(scenario.validate().is_err());
 }
@@ -1532,4 +1541,64 @@ fn repeated_station_pause_is_only_a_bounded_strict_rfpll_observation() {
 
     scenario.criteria.require_nonzero_rfpll_correction = false;
     assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn bluetooth_terminal_retirement_is_explicit_and_keeps_recovery_default() {
+    let retirement: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-peripheral-retirement.toml"
+    ))
+    .unwrap();
+    retirement.validate().unwrap();
+    assert!(matches!(
+        retirement.workload,
+        Workload::BluetoothPeripheral {
+            connections: 2,
+            retire_after: true,
+            restart_between_connections: false,
+            maintain_between_connections: false,
+            ..
+        }
+    ));
+    let recovery: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/bluetooth/bluetooth-peripheral-recovery.toml"
+    ))
+    .unwrap();
+    assert!(matches!(
+        recovery.workload,
+        Workload::BluetoothPeripheral {
+            retire_after: false,
+            restart_between_connections: false,
+            maintain_between_connections: false,
+            ..
+        }
+    ));
+    assert!(!toml::to_string(&recovery).unwrap().contains("retire_after"));
+}
+
+#[test]
+fn peripheral_inter_connection_lifecycle_requires_a_real_following_connection() {
+    for (name, restart, maintenance) in [
+        ("bluetooth-peripheral-powered-restart", true, false),
+        ("bluetooth-peripheral-phy-maintenance", false, true),
+    ] {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let mut scenario = catalog.get(name).unwrap().clone();
+        scenario.validate().unwrap();
+        if let Workload::BluetoothPeripheral {
+            connections,
+            restart_between_connections,
+            maintain_between_connections,
+            ..
+        } = &mut scenario.workload
+        {
+            assert_eq!(*restart_between_connections, restart);
+            assert_eq!(*maintain_between_connections, maintenance);
+            *connections = 1;
+        } else {
+            panic!("peripheral workload");
+        }
+        assert!(scenario.validate().is_err());
+    }
 }

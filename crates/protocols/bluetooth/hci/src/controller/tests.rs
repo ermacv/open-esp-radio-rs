@@ -693,3 +693,70 @@ fn assert_command_complete(
     assert_eq!(complete.cmd_opcode, opcode);
     assert_eq!(complete.status, status);
 }
+
+#[test]
+fn terminal_transport_close_retains_reset_response_authority_and_cannot_reopen() {
+    let mut resources =
+        LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(config(27, 1)).unwrap();
+    {
+        let mut endpoints = resources.split();
+        block_on(endpoints.host.write(&Reset::new())).unwrap();
+        let LeControllerCommandReadyClaim::Ready(initial) =
+            endpoints.controller.claim_initial_command_ready(17_u32)
+        else {
+            panic!("fresh epoch grants authority");
+        };
+        let mut buffer = [0; 80];
+        let LeControllerCommandIntake::Command { command, .. } = endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(initial, &mut buffer)
+        else {
+            panic!("queued Reset retains its owner");
+        };
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("Reset requires quiescence");
+        };
+        endpoints.controller.close_transport();
+        let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("same epoch still owns the accepted Reset");
+        };
+        // Software Reset completion cannot reopen the closed transport.
+        assert_eq!(
+            block_on(endpoints.host.write(&Reset::new())),
+            Err(HciChannelError::Closed)
+        );
+        let LeControllerResponsePublication::Fault {
+            pending,
+            error: HciChannelError::Closed,
+        } = pending.try_publish(&endpoints.controller)
+        else {
+            panic!("closure must retain unpublished response and affine authority");
+        };
+        assert_eq!(*pending.owner(), 17);
+        assert!(matches!(
+            endpoints.controller.claim_initial_command_ready(()),
+            LeControllerCommandReadyClaim::AlreadyClaimed(())
+        ));
+    }
+    assert!(!resources.is_pristine());
+    let mut endpoints = resources.split();
+    endpoints.controller.close_transport();
+    assert_eq!(
+        block_on(endpoints.host.write(&Reset::new())),
+        Err(HciChannelError::Closed)
+    );
+}
+
+#[test]
+fn closing_an_unused_transport_prevents_pristine_rebinding() {
+    let mut resources =
+        LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(config(27, 1)).unwrap();
+    assert!(resources.is_pristine());
+    resources.split().controller.close_transport();
+    assert!(!resources.is_pristine());
+}

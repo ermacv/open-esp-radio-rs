@@ -279,13 +279,14 @@ pub(super) fn validate_stack_usage(usage: StackUsage) -> Result<()> {
         if watermark.capacity_bytes == 0
             || watermark.free_bytes > watermark.capacity_bytes
             || watermark.used_bytes > watermark.capacity_bytes
-            || watermark.free_bytes + watermark.used_bytes != watermark.capacity_bytes
+            || watermark.free_bytes.checked_add(watermark.used_bytes)
+                != Some(watermark.capacity_bytes)
             || watermark.minimum_free_bytes == 0
             || watermark.minimum_free_bytes > watermark.capacity_bytes
         {
             return Err(format!("device reported inconsistent {name} stack watermark").into());
         }
-        if watermark.free_bytes < watermark.minimum_free_bytes {
+        if !watermark.has_required_headroom() {
             return Err(format!(
                 "{name} stack headroom is below policy: free={} capacity={} required={} bytes",
                 watermark.free_bytes, watermark.capacity_bytes, watermark.minimum_free_bytes

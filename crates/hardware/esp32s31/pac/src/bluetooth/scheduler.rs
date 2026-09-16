@@ -365,6 +365,16 @@ impl BluetoothSchedulerHardwareRunCommandPublished {
 }
 
 impl BluetoothTaskRegisters {
+    /// Read a head without clearing a live or foreign publication.
+    pub(super) fn scheduler_head_present(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> bool {
+        execute_scheduler_hardware_list_head_observation(self, index)
+            .address()
+            .is_some()
+    }
+
     /// Remove every published scheduler hardware-list head.
     ///
     /// SOURCE: complete ESP32-S31 `libbtdm_common.a` member `btdm_sched.c`

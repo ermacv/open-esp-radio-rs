@@ -7,6 +7,17 @@
 
 #![forbid(unsafe_code)]
 
+/// Why controller-time ownership cannot cross the terminal task barrier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerTimeRetirementError {
+    /// A live caller still owns a hardware latch request.
+    Requested,
+    /// A cancelled caller's hardware request still needs its original drain.
+    OrphanPending,
+    /// An ownership mismatch is retained and cannot become graceful shutdown.
+    Faulted,
+}
+
 #[cfg(any(target_arch = "riscv32", test))]
 use oer_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
 
@@ -221,7 +232,20 @@ mod worker {
         /// Whether the complete task owner may return to the cold ownership state.
         #[cfg(test)]
         pub(crate) const fn is_reunitable(&self) -> bool {
-            matches!(self.state, ControllerTimeWorkerState::Idle)
+            self.retirement_ready().is_ok()
+        }
+
+        /// Inspect durable ownership without consuming a request or accessing MMIO.
+        pub(crate) const fn retirement_ready(
+            &self,
+        ) -> Result<(), super::ControllerTimeRetirementError> {
+            use super::ControllerTimeRetirementError as Error;
+            match self.state {
+                ControllerTimeWorkerState::Idle => Ok(()),
+                ControllerTimeWorkerState::Requested(_) => Err(Error::Requested),
+                ControllerTimeWorkerState::DrainingOrphan(_) => Err(Error::OrphanPending),
+                ControllerTimeWorkerState::Faulted => Err(Error::Faulted),
+            }
         }
 
         #[cfg(test)]

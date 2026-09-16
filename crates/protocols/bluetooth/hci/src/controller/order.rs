@@ -973,6 +973,10 @@ pub struct LeControllerCommandReady<'epoch, Owner> {
 }
 
 impl<'epoch, Owner> LeControllerCommandReady<'epoch, Owner> {
+    pub(super) const fn epoch_identity(&self) -> HciEpochIdentity<'epoch> {
+        self.hci_epoch
+    }
+
     pub(crate) const fn initial(owner: Owner, hci_epoch: HciEpochIdentity<'epoch>) -> Self {
         Self { owner, hci_epoch }
     }

@@ -7,12 +7,11 @@ qualification mappings, external source references, ownership contract and
 peripheral timing limits. Source status does not imply RF delivery,
 interoperability or qualification readiness.
 
-Render the catalog together with its shared-PHY source facts from the repository
-root:
+Render from the repository root. The catalog imports its shared-PHY and
+coexistence source facts:
 
 ```console
 cargo qualification catalog render \
-  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
   --catalog qualification/catalog/esp32s31/bluetooth.toml \
   --out target/qualification/catalog/bluetooth-static
 ```
@@ -26,6 +25,16 @@ BR/EDR remains source inventory outside that LE gate.
 See the [whole-radio capability map](../FEATURES.md) for shared ownership and
 the [PHY consumer boundary](../../phy/FEATURES.md#protocol-consumer-composition)
 for cross-protocol composition limits.
+
+## Product programs
+
+[Peripheral/ACL](../../../../../qualification/targets/esp32s31/bluetooth-peripheral-acl.toml)
+and [secure peripheral GATT](../../../../../qualification/targets/esp32s31/bluetooth-secure-gatt.toml)
+select the narrower product criteria in the
+[product catalog](../../../../../qualification/catalog/esp32s31/bluetooth-products.toml).
+The secure program includes the peripheral lifecycle through dependencies.
+The complete LE program above retains its wider requirements. Current source
+subsets and existing plaintext ACL workloads do not qualify either product.
 
 ## Qualification scope mapping
 

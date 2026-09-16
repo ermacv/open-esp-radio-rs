@@ -73,8 +73,6 @@ required-capabilities = [
 ]
 
 catalogs = [
-  "qualification/catalog/esp32s31/wifi-phy.toml",
-  "qualification/catalog/esp32s31/coex.toml",
   "qualification/catalog/esp32s31/bluetooth.toml",
 ]
 catalog-capabilities = [

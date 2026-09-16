@@ -11,12 +11,13 @@ advertising may restart without a board or HCI Reset; the host resets the board
 when the probe ends. The commands alone do not qualify a connection or ACL
 traffic. The `bluetooth-peripheral-recovery` scenario coordinates a real Linux
 central with two connection, ACL echo, Connection Update, Channel Map Update
-and supervision-timeout cycles. The target Host
+and peer Reset recovery cycles. The target Host
 declares one 27-byte Controller-to-Host ACL credit, holds the first consumed
 fragment's credit for 300 ms, returns every credit explicitly, requires all ten
 fragments of an exact 251-byte ACL packet, reassembles and echoes it through the
 target Host facade, requires the central to complete LE Read Remote Features
-with `18:40:00:00:00:00:00:00` and Read Remote Version Information with Core
+with the [shared fixture feature contract](../../host/runner/src/fixture/bluetooth/contract.rs)
+and Read Remote Version Information with Core
 5.4, company value `0xffff` and subversion 1 after their successful Command
 Status events, requests an exact 120-ms interval and a two-channel map from the
 central,
@@ -35,9 +36,24 @@ trigger the selected command from the target Host. Disconnect requires local
 reason `0x16` and peer reason `0x13`; Reset requires peer supervision timeout
 and reruns the bounded Host bootstrap before advertising is restarted. These
 scenarios do not exercise powered teardown.
+The target Host continues pumping HCI events while awaiting its own Disconnect
+or Reset command response, so command completion and unsolicited events cannot
+block each other.
 The `bluetooth-peripheral-rf-loss` entry instead closes the Linux central's HCI
 channel and keeps its radio rfkill-blocked for at least 2500 ms after the second ACL exchange. It requires target supervision
 timeout reason `0x08` and advertising recovery before the next connection.
+
+The `bluetooth-peripheral-retirement` scenario ends real connection cycles in
+physical cold ownership and probes all old HCI authorities for closure.
+`bluetooth-peripheral-powered-restart` makes three connections per boot, with
+full cold release and restart on the original allocations between connections.
+`bluetooth-peripheral-phy-maintenance` uses the same three-connection profile
+but services due PHY tracking while preserving the powered epoch and HCI.
+Both check a working HCI Reset after each transition and finish with physical
+cold retirement. Run with `cargo hil run <scenario>` from the repository root,
+using the installed Linux Bluetooth fixture and local lab configuration.
+Maintenance admission is idle-only; these scenarios do not establish automatic
+tracking during a continuously active connection or DTM session.
 
 The peripheral diagnostic explicitly configures software window widening with
 a 500-ppm local-clock bound through `BluetoothColdStartConfig::with_peripheral_connection`.
@@ -286,6 +302,34 @@ the watchpoint. Fatal CPU exceptions report the hart, faulting instruction,
 fault address and saved return address through the ROM console. Watchpoints
 and stack painting complement the frame audit; individual frame sizes alone
 cannot prove the maximum depth of nested or indirect calls.
+
+Before admitting console commands, the Bluetooth image exercises three live
+runner handoffs and timer retirement/resume cycles. Each cycle queues HCI Reset
+before requesting idle handoff and delays Host response reads. The production
+runner must process Reset and wait for the Host to consume its completion before
+returning. The returned owner then disables all IRQ routes, requires drained
+timer work, removes the actual HAL timer owner from ISR storage, restores that
+owner and rebinds the routes.
+The same Controller and timer epoch remain retained; the started hardware
+counter and radio are not powered down.
+
+The `bluetooth-peripheral-retirement` scenario uses `retire_after = true` to add
+terminal ownership retirement after two real peer Reset/ACL recovery cycles.
+It requires successful HCI Reset and live handoff, timer/IRQ/HCI retirement,
+shared primary/NRT register-owner extraction and checked output release,
+platform affinity join, last-client RF close, temperature power-down, Bluetooth
+reset and checked clock restoration into a cold radio. Command, event and
+ACL-credit authorities must all remain closed. Empty ISR slots stay reserved against
+a second publication while old static Controller borrows remain live.
+The host records the final structured response in `bluetooth-peripheral.json`.
+The actual cold owner and old software borrows stay retained until board reset.
+A second powered start and reuse of static storage are outside this diagnostic.
+
+Bluetooth peripheral snapshots enforce the same CPU0 stack-headroom policy
+as network HIL and include the measured `stack_free` in diagnostic detail.
+They measure the active CPU0 stack; the standalone Bluetooth image does not
+start CPU1. A failed reserve check stops the HIL image before a successful
+snapshot can be returned.
 
 `data_plane` is selected by the startup command, not by rebuilding. Every
 repository scenario selects the production `split-radio-network` topology: it

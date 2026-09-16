@@ -13,6 +13,7 @@ default = []
 esp32s31 = ["dep:esp-hal"]
 
 [dependencies]
+embassy-sync = "0.8.0"
 critical-section = "1.2.0"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }

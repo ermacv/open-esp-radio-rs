@@ -3,7 +3,7 @@
 use super::{
     Result,
     hci::Socket,
-    model::{ConnectionReset, PeerAddress},
+    model::{ConnectionReset, EXPECTED_REMOTE_FEATURES, PeerAddress},
 };
 use bt_hci::{
     FromHciBytes,
@@ -34,7 +34,6 @@ pub(super) const ACL_ECHO_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] 
     bluetooth_peripheral_acl_payload();
 pub(super) const POST_UPDATE_ACL_ECHO_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] =
     bluetooth_peripheral_acl_payload_for_sequence(1);
-const EXPECTED_REMOTE_FEATURES: [u8; 8] = [0x18, 0x40, 0, 0, 0, 0, 0, 0];
 const EXPECTED_REMOTE_VERSION: u8 = 0x0d;
 const EXPECTED_REMOTE_VERSION_COMPANY: u16 = 0xffff;
 const EXPECTED_REMOTE_VERSION_SUBVERSION: u16 = 1;
@@ -706,7 +705,7 @@ mod tests {
         client.set_nonblocking(true).unwrap();
         let sender = std::thread::spawn(move || {
             server
-                .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x18, 0x40, 0, 0, 0, 0, 0, 0])
+                .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x19, 0x40, 0, 0, 0, 0, 0, 0])
                 .unwrap();
         });
         let adapter = super::super::model::Adapter(0);

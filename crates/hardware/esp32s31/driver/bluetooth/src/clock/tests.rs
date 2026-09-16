@@ -12,6 +12,7 @@ use super::{
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
+    CapturePowerBaseline,
     PrepareSharedMap,
     PrepareModemMap,
     EnablePllSource,
@@ -67,6 +68,15 @@ impl FakeShared {
 }
 
 impl SharedClockControl for FakeShared {
+    fn prepare_shared_power_epoch(&mut self) {
+        assert!(
+            self.operations.borrow().is_empty(),
+            "baseline must precede the first clock write"
+        );
+        self.operations
+            .borrow_mut()
+            .push(Operation::CapturePowerBaseline);
+    }
     fn retain_platform_pll_source(&mut self) {
         self.operations
             .borrow_mut()
@@ -209,6 +219,7 @@ fn exact_clock_order_joins_route_owned_observations() {
     assert_eq!(
         *operations.borrow(),
         [
+            Operation::CapturePowerBaseline,
             Operation::PrepareSharedMap,
             Operation::PrepareModemMap,
             Operation::EnablePllSource,
@@ -237,7 +248,7 @@ fn failed_readback_rolls_back_before_returning_owners() {
     let failure = enable_owned(&mut shared).unwrap_err();
     assert_eq!(failure.checkpoint, ClockCheckpoint::LowPowerTimerClock);
     assert_eq!(
-        &operations.borrow()[10..],
+        &operations.borrow()[11..],
         [
             Operation::ReleaseLowPower,
             Operation::DisableApb,

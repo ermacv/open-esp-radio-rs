@@ -54,7 +54,7 @@ pub enum BluetoothPeripheralTermination {
     LegacyPeerPowerOff,
 }
 
-/// Diagnostic peripheral operation; ending the whole probe requires a board reset.
+/// Diagnostic peripheral operation within one board boot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BluetoothPeripheralOperation {
     StartAdvertising {
@@ -62,15 +62,50 @@ pub enum BluetoothPeripheralOperation {
         hold_millis: u16,
     },
     Snapshot,
+    /// Reset and drain the Controller, retire HCI/timer/IRQ registers and join its platform.
+    /// This is terminal for this boot; actual cold owners remain retained.
+    Retire,
+    /// Physically shut down and reinitialize on the same storage, without a board reset.
+    Restart,
+    /// Service due shared-PHY tracking while retaining the same HCI and powered epoch.
+    Maintain,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BluetoothPeripheralResult {
-    Started { address: [u8; 6] },
+    Started {
+        address: [u8; 6],
+    },
     Snapshot,
-    HciRejected { command_stage: u8 },
+    HciRejected {
+        command_stage: u8,
+    },
     Timeout,
     LeaseExpired,
+    /// A cold release and powered initialization completed on the original allocations.
+    Restarted {
+        cycles: u32,
+        new_reset_completed: bool,
+        old_commands_closed: bool,
+        old_events_closed: bool,
+        old_acl_credits_closed: bool,
+    },
+    /// The same HCI completed Reset after a due quiescent tracking window.
+    Maintained {
+        cycles: u32,
+        due_tracking_completed: bool,
+        tracking_inhibited: bool,
+        same_hci_reset_completed: bool,
+        common_calibrated: bool,
+        bluetooth_calibrated: bool,
+    },
+    /// All ownership transitions completed; each Host authority was probed afterward.
+    Retired {
+        radio_cold: bool,
+        commands_closed: bool,
+        events_closed: bool,
+        acl_credits_closed: bool,
+    },
 }
 
 /// Publication counts are software observations, not successful peer exchanges.
@@ -128,6 +163,60 @@ impl BluetoothPeripheralEvidence {
 
     pub fn is_snapshot(&self, requested: BluetoothPeripheralOperation) -> bool {
         self.operation == requested && self.result == BluetoothPeripheralResult::Snapshot
+    }
+
+    pub fn is_maintained(&self, requested: BluetoothPeripheralOperation) -> bool {
+        requested == BluetoothPeripheralOperation::Maintain
+            && self.operation == requested
+            && matches!(
+                self.result,
+                BluetoothPeripheralResult::Maintained {
+                    cycles: 1..,
+                    due_tracking_completed: true,
+                    tracking_inhibited: false,
+                    same_hci_reset_completed: true,
+                    ..
+                }
+            )
+            && !self.terminal
+            && !self.saturated
+            && self.host_event_faults == 0
+            && self.host_acl_faults == 0
+    }
+
+    pub fn is_restarted(&self, requested: BluetoothPeripheralOperation) -> bool {
+        requested == BluetoothPeripheralOperation::Restart
+            && self.operation == requested
+            && matches!(
+                self.result,
+                BluetoothPeripheralResult::Restarted {
+                    cycles: 1..,
+                    new_reset_completed: true,
+                    old_commands_closed: true,
+                    old_events_closed: true,
+                    old_acl_credits_closed: true
+                }
+            )
+            && !self.terminal
+            && !self.saturated
+            && self.host_event_faults == 0
+            && self.host_acl_faults == 0
+    }
+
+    pub fn is_retired(&self, requested: BluetoothPeripheralOperation) -> bool {
+        requested == BluetoothPeripheralOperation::Retire
+            && self.operation == requested
+            && self.result
+                == BluetoothPeripheralResult::Retired {
+                    radio_cold: true,
+                    commands_closed: true,
+                    events_closed: true,
+                    acl_credits_closed: true,
+                }
+            && !self.terminal
+            && !self.saturated
+            && self.host_event_faults == 0
+            && self.host_acl_faults == 0
     }
 }
 
@@ -310,10 +399,149 @@ mod tests {
             BluetoothPeripheralEvidence {
                 operation: BluetoothPeripheralOperation::Snapshot,
                 result: BluetoothPeripheralResult::Snapshot,
-                ..evidence
+                ..evidence.clone()
             }
             .is_snapshot(BluetoothPeripheralOperation::Snapshot)
         );
+        let retired = BluetoothPeripheralEvidence {
+            operation: BluetoothPeripheralOperation::Retire,
+            result: BluetoothPeripheralResult::Retired {
+                radio_cold: true,
+                commands_closed: true,
+                events_closed: true,
+                acl_credits_closed: true,
+            },
+            ..evidence
+        };
+        assert!(retired.is_retired(BluetoothPeripheralOperation::Retire));
+        for (cycles, reset, commands, events, credits, expected) in [
+            (1, true, true, true, true, true),
+            (0, true, true, true, true, false),
+            (1, false, true, true, true, false),
+            (1, true, false, true, true, false),
+            (1, true, true, false, true, false),
+            (1, true, true, true, false, false),
+        ] {
+            let restarted = BluetoothPeripheralEvidence {
+                operation: BluetoothPeripheralOperation::Restart,
+                result: BluetoothPeripheralResult::Restarted {
+                    cycles,
+                    new_reset_completed: reset,
+                    old_commands_closed: commands,
+                    old_events_closed: events,
+                    old_acl_credits_closed: credits,
+                },
+                ..retired.clone()
+            };
+            assert_eq!(
+                restarted.is_restarted(BluetoothPeripheralOperation::Restart),
+                expected
+            );
+            assert!(!restarted.is_restarted(BluetoothPeripheralOperation::Retire));
+            for unhealthy in [
+                BluetoothPeripheralEvidence {
+                    terminal: true,
+                    ..restarted.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    saturated: true,
+                    ..restarted.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    host_event_faults: 1,
+                    ..restarted.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    host_acl_faults: 1,
+                    ..restarted
+                },
+            ] {
+                assert!(!unhealthy.is_restarted(BluetoothPeripheralOperation::Restart));
+            }
+        }
+
+        for (cycles, due, inhibited, reset, expected) in [
+            (1, true, false, true, true),
+            (0, true, false, true, false),
+            (1, false, false, true, false),
+            (1, true, true, true, false),
+            (1, true, false, false, false),
+        ] {
+            let maintained = BluetoothPeripheralEvidence {
+                operation: BluetoothPeripheralOperation::Maintain,
+                result: BluetoothPeripheralResult::Maintained {
+                    cycles,
+                    due_tracking_completed: due,
+                    tracking_inhibited: inhibited,
+                    same_hci_reset_completed: reset,
+                    common_calibrated: false,
+                    bluetooth_calibrated: false,
+                },
+                ..retired.clone()
+            };
+            assert_eq!(
+                maintained.is_maintained(BluetoothPeripheralOperation::Maintain),
+                expected
+            );
+            assert!(!maintained.is_maintained(BluetoothPeripheralOperation::Restart));
+            for unhealthy in [
+                BluetoothPeripheralEvidence {
+                    terminal: true,
+                    ..maintained.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    saturated: true,
+                    ..maintained.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    host_event_faults: 1,
+                    ..maintained.clone()
+                },
+                BluetoothPeripheralEvidence {
+                    host_acl_faults: 1,
+                    ..maintained.clone()
+                },
+            ] {
+                assert!(!unhealthy.is_maintained(BluetoothPeripheralOperation::Maintain));
+            }
+        }
+
+        assert!(!retired.is_retired(BluetoothPeripheralOperation::Snapshot));
+        for (radio_cold, commands_closed, events_closed, acl_credits_closed) in [
+            (false, true, true, true),
+            (true, false, true, true),
+            (true, true, false, true),
+            (true, true, true, false),
+        ] {
+            let incomplete = BluetoothPeripheralEvidence {
+                result: BluetoothPeripheralResult::Retired {
+                    radio_cold,
+                    commands_closed,
+                    events_closed,
+                    acl_credits_closed,
+                },
+                ..retired.clone()
+            };
+            assert!(!incomplete.is_retired(BluetoothPeripheralOperation::Retire));
+        }
+        for fault in 0..4 {
+            let mut unhealthy = retired.clone();
+            match fault {
+                0 => unhealthy.terminal = true,
+                1 => unhealthy.saturated = true,
+                2 => unhealthy.host_event_faults = 1,
+                _ => unhealthy.host_acl_faults = 1,
+            }
+            assert!(!unhealthy.is_retired(BluetoothPeripheralOperation::Retire));
+        }
+        let mut encoder = crate::FrameEncoder::new();
+        let mut decoder = crate::FrameDecoder::new();
+        let envelope = crate::Envelope::new(1, 2, 0, 3, crate::Event::BluetoothPeripheral(retired));
+        let mut observed = None;
+        decoder.feed(encoder.encode(&envelope).unwrap(), |frame| {
+            observed = Some(frame.unwrap())
+        });
+        assert_eq!(observed, Some(envelope));
     }
 
     #[test]

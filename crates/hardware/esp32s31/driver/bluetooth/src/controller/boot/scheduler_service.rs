@@ -34,7 +34,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         (),
         crate::le::advertising::connectable::LegacyConnectableAdvertisingDisabledRestoreFailure,
     > {
-        self.legacy_connectable_advertising_resources
+        self.roles
+            .legacy_connectable_advertising_resources
             .restore_disabled_advertiser(configured)
     }
 
@@ -91,8 +92,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::le::advertising::connectable::LegacyConnectableAdvertisingPrepared,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingRuntimeBeginFailure,
     > {
-        self.legacy_connectable_advertising_resources
-            .begin_scheduled_event(definition, event, self.peripheral_connection_resources)
+        let roles = &mut *self.roles;
+        roles
+            .legacy_connectable_advertising_resources
+            .begin_scheduled_event(
+                definition,
+                event,
+                &mut roles.peripheral_connection_resources,
+            )
     }
 
     /// Reserve one exact phase-locked connectable successor.
@@ -185,7 +192,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         };
         scheduled
             .prepare_candidate(
-                self.legacy_advertising_resources.default_tx_power_dbm(),
+                self.roles
+                    .legacy_advertising_resources
+                    .default_tx_power_dbm(),
                 crate::LegacyAdvertisingRecurringTimingObservation::new(epoch),
                 self.runtime.scheduler_config(),
             )
@@ -207,7 +216,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         };
         failure
             .retry(
-                self.legacy_advertising_resources.default_tx_power_dbm(),
+                self.roles
+                    .legacy_advertising_resources
+                    .default_tx_power_dbm(),
                 crate::LegacyAdvertisingRecurringTimingObservation::new(epoch),
                 self.runtime.scheduler_config(),
             )
@@ -263,7 +274,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         cancelled: crate::le::advertising::LegacyAdvertisingCancelled<'static>,
     ) -> crate::LegacyAdvertisingCancelledRestoreOutcome<'static> {
-        self.legacy_advertising_resources
+        self.roles
+            .legacy_advertising_resources
             .restore_cancelled(cancelled)
     }
 
@@ -408,7 +420,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         ),
         crate::le::scanning::passive::PassiveScanRuntimeRestoreFailure,
     > {
-        self.passive_scan_resources.restore_recycled(recycled)
+        self.roles.passive_scan_resources.restore_recycled(recycled)
     }
 
     /// Reclaim one completed response-capable advertising event after generic removal.
@@ -431,8 +443,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::le::advertising::connectable::LegacyConnectableAdvertisingNoConnectionRestored,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingNoConnection,
     > {
-        self.legacy_connectable_advertising_resources
-            .restore_no_connection(outcome, self.peripheral_connection_resources)
+        let roles = &mut *self.roles;
+        roles
+            .legacy_connectable_advertising_resources
+            .restore_no_connection(outcome, &mut roles.peripheral_connection_resources)
     }
 
     /// Restore advertising SRAM while retaining the accepted peripheral allocation.
@@ -443,7 +457,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::le::advertising::connectable::LegacyConnectableAdvertisingConnectionTransfer,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingConnectionAccepted,
     > {
-        self.legacy_connectable_advertising_resources
+        self.roles
+            .legacy_connectable_advertising_resources
             .restore_connection_accepted(outcome)
     }
 
@@ -455,6 +470,6 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::le::advertising::connectable::LegacyConnectableAdvertisingPeripheralResetEvidence,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingPeripheralResetCancellationFailure,
     >{
-        transfer.cancel_peripheral_for_reset(self.peripheral_connection_resources)
+        transfer.cancel_peripheral_for_reset(&mut self.roles.peripheral_connection_resources)
     }
 }

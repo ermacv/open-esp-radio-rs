@@ -4,7 +4,10 @@
 //! DTM/advertising first-event runners and the active-session actors. It does
 //! not interpret HCI commands or reproduce radio policy. Every awaited future borrows an owner
 //! retained in the actor's affine state slot; cancellation therefore leaves
-//! the exact lower transaction available to the next `run` call.
+//! the exact lower transaction available to the next `run` call. Idle-only HCI
+//! retirement consumes the actor after both packet FIFOs drain and returns its
+//! lower task with the retired HCI epoch. Rejection preserves the runnable actor;
+//! modem-timer, IRQ and powered Controller reunification remain separate.
 
 #![forbid(unsafe_code)]
 
@@ -181,6 +184,8 @@ use oer_esp32s31_bluetooth::{
 mod dispatch;
 #[cfg(any(target_arch = "riscv32", test))]
 mod owner;
+mod retirement;
+pub use retirement::ControllerCommandRetirementError;
 #[cfg(target_arch = "riscv32")]
 mod reset;
 mod response;

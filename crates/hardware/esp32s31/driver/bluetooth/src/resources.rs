@@ -1,6 +1,11 @@
 //! Lossless ownership transitions for standalone Bluetooth hardware.
 
 #[cfg(any(target_arch = "riscv32", test))]
+pub mod platform_retirement;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod runtime_owner;
+
+#[cfg(any(target_arch = "riscv32", test))]
 use core::mem::ManuallyDrop;
 
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
@@ -79,6 +84,10 @@ pub struct BluetoothRadioHardware {
 }
 
 impl BluetoothRadioHardware {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn from_released(hardware: RadioHardware) -> Self {
+        Self { hardware }
+    }
     /// Acquire the restricted radio singleton for standalone Bluetooth.
     pub fn take() -> Option<Self> {
         RadioHardware::take().map(|hardware| Self { hardware })
@@ -209,6 +218,11 @@ impl<P> TeardownPendingPlatform<P> {
     pub(crate) fn platform_mut(&mut self) -> &mut P {
         &mut self._platform
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_platform_after_shutdown(self) -> P {
+        ManuallyDrop::into_inner(self._platform)
+    }
 }
 
 /// Separate the cold HAL owner into the controller lifecycle's task and IRQ
@@ -244,6 +258,47 @@ pub(crate) struct TaskResources {
     // Host validation images execute finite register probes without a time runner.
     #[cfg(any(target_arch = "riscv32", test))]
     controller_time: ControllerTimeWorker,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl TaskResources {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn maintenance_registers(&mut self) -> &mut HalBluetoothTaskOwner {
+        &mut self.registers
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn release_after_phy_close(
+        self,
+        output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
+        timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
+    ) -> Result<
+        oer_esp32s31_pac::RadioHardware,
+        oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
+    > {
+        self.registers.release_after_phy_close(output, timer)
+    }
+
+    /// Preserve pending or faulted time ownership before any terminal extraction.
+    pub(crate) fn controller_time_retirement_ready(
+        &self,
+    ) -> Result<(), crate::controller::ControllerTimeRetirementError> {
+        self.controller_time.retirement_ready()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn release_controller_output(
+        &mut self,
+        output: oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
+        (
+            oer_esp32s31_hal::bluetooth::BluetoothControllerOutputReleaseError,
+            oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
+        ),
+    > {
+        output.try_release_idle_controller_output(&mut self.registers)
+    }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]

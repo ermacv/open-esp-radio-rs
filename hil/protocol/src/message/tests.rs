@@ -204,3 +204,36 @@ fn missing_second_flow_observation_cannot_qualify_whole_session_continuity() {
         None
     );
 }
+
+#[test]
+fn stack_headroom_accepts_the_boundary_and_rejects_exhaustion_or_invalid_evidence() {
+    let at_limit = super::StackWatermark {
+        capacity_bytes: 192 * 1024,
+        minimum_free_bytes: 16 * 1024,
+        free_bytes: 16 * 1024,
+        used_bytes: 176 * 1024,
+    };
+    assert!(at_limit.has_required_headroom());
+    assert!(
+        !super::StackWatermark {
+            free_bytes: at_limit.free_bytes - 1,
+            used_bytes: at_limit.used_bytes + 1,
+            ..at_limit
+        }
+        .has_required_headroom()
+    );
+    assert!(
+        !super::StackWatermark {
+            minimum_free_bytes: 0,
+            ..at_limit
+        }
+        .has_required_headroom()
+    );
+    assert!(
+        !super::StackWatermark {
+            used_bytes: u32::MAX,
+            ..at_limit
+        }
+        .has_required_headroom()
+    );
+}

@@ -1,7 +1,7 @@
 # Bluetooth execution with Embassy
 
 `controller` drives the chip controller's finite transactions and command
-ordering. `session::{dtm, advertising, scanning, peripheral}` drives the
+ordering. `session::{dtm, advertising, scan, peripheral}` drives the
 corresponding radio sessions. `time` binds controller deadlines to Embassy.
 
 `notification` owns waker registration and borrowed event waits. Durable
@@ -13,6 +13,16 @@ Runtime modules retain owners across awaits, cancellation and shutdown. The
 hardware backend owns MMIO transitions and quiescence proofs; final composition
 owns task storage and platform resources. Public types live in their owning
 module, without root compatibility exports.
+
+The command actor has one state slot in `controller/owner`. Its outer
+`controller/dispatch` loop checks the time budget and selects a phase.
+`dispatch/connectable` owns connectable-advertising waits and the admission
+handoff; `dispatch/peripheral` owns first-event, ACL, response and Reset waits.
+These handlers borrow the same actor and packet scratch buffer. Each await
+keeps the lower owner in the slot; taking it and storing its successor form
+one synchronous step. Cancellation therefore leaves the next `run` call
+with the exact retained transaction. Terminal boundaries carry the owner out
+instead of reporting a reusable idle state.
 
 The active peripheral branch drives the chip-owned completion and contiguous
 successor transaction. Scheduler/post-unlink readiness and controller-time
@@ -82,3 +92,9 @@ rejected header with its admission reason. Empty events preserve that last
 observation; ordinary scan requests also count as rejected connection requests.
 Recoverable recurrence boundaries preserve their
 semantic cause; storage-specific interrupt errors remain with the retained owner.
+
+The command actor exposes `try_into_idle` for quiescent PHY maintenance and
+`try_retire_hci` for terminal transport retirement. Both consume only an idle
+actor and preserve the complete actor on rejection. Physical maintenance,
+shutdown and powered restart are composed outside this command state machine;
+see the [Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).

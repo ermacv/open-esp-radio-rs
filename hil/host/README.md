@@ -28,6 +28,8 @@ not HIL scenarios or runner commands.
 The ownership map and bundle contract are in the
 [execution and evidence architecture](architecture.md).
 
+## Configure the lab
+
 Run the host interface through the workspace alias:
 
 ```console
@@ -46,6 +48,8 @@ Multi-boot station lifecycle scenarios require a configured startup artifact.
 Their first boot may create or replace it; every later boot must report
 `Restored` before the station lifecycle can qualify. This makes cold PHY cache
 replay an asserted transition rather than an informational UART message.
+
+## Build and run
 
 `cargo hil run <scenario>` builds and flashes the required image before the
 scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
@@ -68,6 +72,8 @@ firmware class. The flash operation reads that archived copy, binding firmware
 provenance to the bytes sent to the DUT. Completed and interrupted bundles also
 carry a deterministic integrity inventory covering every retained file.
 
+## Inspect evidence
+
 The target-level `history.json` and `history.html` are deterministic derived
 views over those bundles. Rebuild them at any time with
 `cargo hil report rebuild`; no DUT or private lab configuration is required.
@@ -81,6 +87,8 @@ scenario and repetition requirement is satisfied by a completed bundle for
 the exact current commit, and both the producer and evaluator worktrees are
 clean. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.
+
+## Prepare and restore network fixtures
 
 The controlled OpenWrt AP and HIL host share the fixture LAN. Reverse flows
 use the local IPv4 route selected for the discovered target. External AP
@@ -122,6 +130,8 @@ It does not establish target associations or qualify target throughput.
 `doctor` checks available tools and capabilities without applying a profile;
 a successful doctor result does not assert that current radio settings already
 match the selected scenario.
+
+## Collection and failure boundaries
 
 Capture handles acknowledge readiness before the session starts. Dumpcap's
 opened-file notification and tcpdump's opened-interface notification replace
@@ -171,6 +181,11 @@ capability, sudo or hardware step and do not load `hil/local.toml`:
 cargo hil fixture install --provider linux-net --dry-run
 cargo hil fixture install --provider linux-bluetooth --dry-run
 ```
+
+The helper `capabilities` and sudoers validation subprocesses each have a
+five-second execution deadline; timeout is an installation/preparation failure.
+Bluetooth preparation and execution share the versioned contract in
+[`bluetooth/contract.rs`](runner/src/fixture/bluetooth/contract.rs).
 
 Like every Cargo alias, `cargo hil` may compile the runner before it can print
 the plan. That Cargo startup is not an installer plan step. Missing helper

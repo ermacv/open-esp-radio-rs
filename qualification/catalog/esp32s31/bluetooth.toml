@@ -1,5 +1,9 @@
 schema = 2
 id = "esp32s31-bluetooth"
+imports = [
+  "qualification/catalog/esp32s31/wifi-phy.toml",
+  "qualification/catalog/esp32s31/coex.toml",
+]
 
 [validation]
 verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
@@ -136,10 +140,10 @@ depends-on = [
   "controller-initialization",
 ]
 gaps = [
-  { axis = "implementation", id = "controller-phy-maintenance-admission-execution-and-physical-release-missing" },
+  { axis = "implementation", id = "automatic-active-role-phy-maintenance-windows-missing" },
   { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },
   { axis = "hil", id = "bluetooth-registered-phy-client-tracking-and-baseband-cell-missing" },
-  { axis = "async", id = "periodic-tracking-wake-cancellation-and-teardown-contract-missing" },
+  { axis = "async", id = "autonomous-active-role-tracking-wake-and-cancellation-integration-missing" },
 ]
 source-fact-refs = [
   "bluetooth-initial-phy-handoff",
@@ -779,7 +783,7 @@ gaps = [
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
-  { axis = "async", id = "initial-establishment-lateness-powered-shutdown-and-unrelated-role-dispatch-missing" },
+  { axis = "async", id = "initial-establishment-lateness-and-unrelated-role-dispatch-missing" },
 ]
 
 [capabilities.catalog-scope]
@@ -846,11 +850,11 @@ depends-on = [
   "hci-controller-endpoints",
 ]
 gaps = [
-  { axis = "implementation", id = "initial-establishment-window-and-powered-lifecycle-runtime-missing" },
+  { axis = "implementation", id = "initial-establishment-window-runtime-missing" },
   { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
   { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
-  { axis = "async", id = "unrelated-list-timer-expiration-and-powered-shutdown-missing" },
+  { axis = "async", id = "unrelated-list-timer-expiration-dispatch-missing" },
 ]
 
 [capabilities.catalog-scope]
@@ -2470,7 +2474,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "Long-running RF/PHY maintenance, including DTM"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Initial common-PHY/client and baseband acquisition exist. The retained Bluetooth client owns read-only demand, consuming due/periodic evaluation and a release that preserves the last-client fact. Controller admission, target execution, timer integration, BTBB/IRQ/timer quiescence and physical RF close remain incomplete. RF/HIL readiness belongs to qualification."
+scope-and-limitations = "Initial common-PHY/client and baseband acquisition exist. The retained Bluetooth client owns read-only demand, consuming due/periodic evaluation and a release that preserves the last-client fact. The idle Controller composes due target tracking after runtime/role/timer and hardware-head/fault admission, then restores the same HCI and powered epoch. Terminal retirement composes last-client RF close, temperature power-down, reset and clock release; powered restart reuses the original allocations with a new HCI generation. Automatic tracking windows during active ACL/DTM and autonomous wake integration remain absent. RF/HIL readiness belongs to qualification."
 source-paths = []
 
 [[items]]
@@ -2695,7 +2699,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "Establishment / supervision timeout"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. A source-backed HIL scenario rfkill-blocks the Linux peer for at least 2500 ms and requires timeout recovery, but has no recorded hardware evidence; CRC-error behavior remains unqualified."
+scope-and-limitations = "Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. A source-backed HIL scenario rfkill-blocks the Linux peer for at least 2500 ms and requires timeout recovery. Closing the Linux user channel can terminate the connection before rfkill, so adapter blocking alone does not establish abrupt RF loss; CRC-error behavior remains unqualified."
 source-paths = []
 
 [[items]]
@@ -2722,7 +2726,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "LL Data PDU TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The single TX allocation retains control or Host ACL bytes through publication and peer acknowledgement. One 251-byte HCI ACL credit is fragmented into 27-byte legacy Data PDUs when plaintext or 23-byte plaintext fragments plus a four-octet MIC when encrypted; the HCI queue retains later credited packets. The peripheral recovery HIL workload reassembles each ten-fragment unencrypted input and queues two distinct exact 251-byte Host echoes, with the second following live channel-map application, but has no recorded hardware evidence. Multiple radio-resident packets and DLE remain absent."
+scope-and-limitations = "The single TX allocation retains control or Host ACL bytes through publication and peer acknowledgement. One 251-byte HCI ACL credit is fragmented into 27-byte legacy Data PDUs when plaintext or 23-byte plaintext fragments plus a four-octet MIC when encrypted; the HCI queue retains later credited packets. The peripheral recovery HIL workload reassembles each ten-fragment unencrypted input and queues two distinct exact 251-byte Host echoes, with the second following live channel-map application. Qualifying hardware evidence is evaluated independently of this source contract. Multiple radio-resident packets and DLE remain absent."
 source-paths = []
 
 [[items]]
@@ -2776,7 +2780,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "Feature Exchange"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with the used-feature octet intersected against the local mask. Host LE Read Remote Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, retains the request through TX-graph handoff and response, caches a successful page-zero result, reports unsupported peers with `0x1a`, and treats a 40-second response timeout as immediate connection loss with `0x22`. The source-backed peripheral HIL workload requires successful Command Status followed by the exact remote feature mask `18:40:00:00:00:00:00:00`; no recorded hardware run qualifies it."
+scope-and-limitations = "Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with the used-feature octet intersected against the local mask. Host LE Read Remote Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, retains the request through TX-graph handoff and response, caches a successful page-zero result, reports unsupported peers with `0x1a`, and treats a 40-second response timeout as immediate connection loss with `0x22`. The source-backed peripheral HIL workload requires successful Command Status followed by the exact remote feature mask `19:40:00:00:00:00:00:00`; no recorded hardware run qualifies it."
 source-paths = []
 
 [[items]]
@@ -3849,4 +3853,4 @@ id = "bluetooth-peripheral-timing-limits"
 domain = "bluetooth"
 title = "Peripheral timing limits"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
-overview = "The [active controller branch](../../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs)\ndrives completion and recycle before preparing a contiguous successor through\nfresh controller time, validation and scheduler publication. Each\n`PeripheralConnectionActive` boundary represents a first or successor `RUN`.\nResponse backpressure does not block radio readiness; cancellation retains\nboth the radio phase and HCI authority. A lost completion wake is bounded by\nan absolute recheck and common hardware stop; stop, identity, unlink or\npreparation failures seal both owners in `PeripheralConnectionActiveFailStop`.\n\n`PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must\nsupply the local clock accuracy bound. The default configuration leaves it\nunset and stops with `TimingPolicyUnavailable` when recurrence is attempted.\nThe actor responds to central feature requests through a bounded TX queue.\nIt consumes active HCI commands and Host-to-Controller ACL packets. Accepted\npeer LL Data fragments enter a bounded Controller-to-Host ACL FIFO after\nConnection Complete and split to the Host-declared ACL buffer length.\nHost Number Of Completed Packets restores the bounded single-handle credits;\nthe special command remains serialized behind an older pending normal response.\nAfter disconnection, the old handle accepts only outstanding credit returns and\ncannot be reused by another connection until those credits reach zero.\nCentral Connection Update and Channel Map Update are retained to their wrapping\nconnection instants; general LLCP and arbitrary missed-event recovery remain absent. Established\nsupervision uses the hardware valid-RX timestamp and retires the unlinked owner\nwith `0x08`. A source-backed HIL scenario now rfkill-blocks the peer adapter for\nat least 2500 ms, but abrupt RF loss remains unqualified until that scenario has current\nhardware evidence. A compiled lifecycle does not establish a successful\nover-air link.\n\nLower recurrence requires a caller-owned local clock accuracy bound. Its\nsoftware window widening does not establish arbitrary missed-event anchor\nrecovery or accumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
+overview = "The [active controller branch](../../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs)\ndrives completion and recycle before preparing a contiguous successor through\nfresh controller time, validation and scheduler publication. Each\n`PeripheralConnectionActive` boundary represents a first or successor `RUN`.\nResponse backpressure does not block radio readiness; cancellation retains\nboth the radio phase and HCI authority. A lost completion wake is bounded by\nan absolute recheck and common hardware stop; stop, identity, unlink or\npreparation failures seal both owners in `PeripheralConnectionActiveFailStop`.\n\n`PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must\nsupply the local clock accuracy bound. The default configuration leaves it\nunset and stops with `TimingPolicyUnavailable` when recurrence is attempted.\nThe actor responds to central feature requests through a bounded TX queue.\nIt consumes active HCI commands and Host-to-Controller ACL packets. Accepted\npeer LL Data fragments enter a bounded Controller-to-Host ACL FIFO after\nConnection Complete and split to the Host-declared ACL buffer length.\nHost Number Of Completed Packets restores the bounded single-handle credits;\nthe special command remains serialized behind an older pending normal response.\nAfter disconnection, the old handle accepts only outstanding credit returns and\ncannot be reused by another connection until those credits reach zero.\nCentral Connection Update and Channel Map Update are retained to their wrapping\nconnection instants; general LLCP and arbitrary missed-event recovery remain absent. Established\nsupervision uses the hardware valid-RX timestamp and retires the unlinked owner\nwith `0x08`. A source-backed HIL scenario now rfkill-blocks the peer adapter for\nat least 2500 ms, but abrupt RF loss remains unqualified until that scenario has current\nhardware evidence. A compiled lifecycle does not establish a successful\nover-air link.\n\nLower recurrence requires a caller-owned local clock accuracy bound. Its\nsoftware window widening does not establish arbitrary missed-event anchor\nrecovery or accumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."

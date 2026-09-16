@@ -311,6 +311,114 @@ pub struct RegisteredBluetoothPhyClientRelease {
     outcome: PhyClientReleaseOutcome,
 }
 
+/// Last Bluetooth client after the complete target RF-close graph.
+/// Controller, timer, temperature power and platform clocks still belong to
+/// the outer lifecycle. Retiring registration cannot release those owners.
+#[must_use = "retain the closed registration until physical owner reunion"]
+pub struct RegisteredBluetoothPhyRfClosed {
+    registered: RegisteredPhyState,
+}
+
+impl RegisteredBluetoothPhyRfClosed {
+    /// Read the final state while retaining its physical-close provenance.
+    pub const fn state(&self) -> &PhyState {
+        self.registered.state()
+    }
+    /// Final calibrated state, including the pre-close temperature observation.
+    #[cfg(target_arch = "riscv32")]
+    pub fn into_retired_state(self) -> PhyState {
+        self.registered.into_retired_state()
+    }
+}
+
+/// RF-close failure retaining the released client and registered epoch.
+#[must_use = "failed RF close retains the physical shutdown obligation"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPhyRfCloseFailure {
+    _owner: RegisteredBluetoothPhyClientRelease,
+    error: crate::PhyTargetPortError,
+    retryable: bool,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPhyRfCloseFailure {
+    /// The first failing preparation or hardware operation.
+    pub const fn error(&self) -> crate::PhyTargetPortError {
+        self.error
+    }
+
+    /// Recover the exact release only when preparation completed without any
+    /// ambiguous hardware operation. A started close remains owned by failure.
+    #[allow(
+        clippy::result_large_err,
+        reason = "both branches retain the affine PHY registration"
+    )]
+    pub fn into_retry(self) -> Result<RegisteredBluetoothPhyClientRelease, Self> {
+        if self.retryable {
+            Ok(self._owner)
+        } else {
+            Err(self)
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl RegisteredBluetoothPhyClientRelease {
+    /// Close the last client's physical RF through the outer stopped Controller.
+    ///
+    /// The caller retains the matching platform, stopped Controller/BTBB,
+    /// inactive IRQ routes and drained timers for this exact registration.
+    /// No second client may use RF during the operation. Non-final release is
+    /// rejected before MMIO. The temperature preflight and close graph are the
+    /// same target implementation used by the Wi-Fi radio lifecycle.
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to completion and retain the outer owners.
+    /// A completed preparation failure may return the original release for retry;
+    /// cancellation or ambiguous hardware failure never authorizes reuse.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete registered PHY epoch without allocation"
+    )]
+    pub async fn close_rf<P, D: crate::PhyAsyncDelay>(
+        mut self,
+        platform: &mut P,
+        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<'_>,
+    ) -> Result<RegisteredBluetoothPhyRfClosed, BluetoothPhyRfCloseFailure> {
+        if !self.is_last() {
+            return Err(BluetoothPhyRfCloseFailure {
+                _owner: self,
+                error: crate::PhyTargetPortError::HardwareInvariant,
+                retryable: true,
+            });
+        }
+        if let Err(error) = crate::target_port::close_bluetooth_rf::<P, D>(
+            platform,
+            registers,
+            self.registered.target_state_mut(),
+        )
+        .await
+        {
+            let (error, retryable) = match error {
+                crate::target_port::PhyRfCloseTemperatureFailure::Recoverable(error) => {
+                    (error, true)
+                }
+                crate::target_port::PhyRfCloseTemperatureFailure::HardwareAmbiguous(error) => {
+                    (error, false)
+                }
+            };
+            return Err(BluetoothPhyRfCloseFailure {
+                _owner: self,
+                error,
+                retryable,
+            });
+        }
+        Ok(RegisteredBluetoothPhyRfClosed {
+            registered: self.registered,
+        })
+    }
+}
+
 impl RegisteredBluetoothPhyClientRelease {
     /// Client removed by this transition.
     pub const fn client(&self) -> PhyModemClient {

@@ -3,8 +3,9 @@
 use open_esp_radio_hil_protocol::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
 
-pub(crate) const HELPER_CAPABILITIES: &str =
-    "schema=9 termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
+pub(crate) use open_esp_radio_hil_runner::bluetooth_fixture_contract::{
+    CONNECTION_RESET_SCHEMA, EXPECTED_REMOTE_FEATURES, HELPER_CAPABILITIES,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Adapter(pub(crate) u16);
@@ -189,7 +190,7 @@ impl ConnectionReset {
         termination: BluetoothPeripheralTermination,
     ) -> Self {
         Self {
-            schema: 9,
+            schema: CONNECTION_RESET_SCHEMA,
             adapter: adapter.to_string(),
             peer: peer.to_string(),
             hold_ms,
@@ -273,7 +274,7 @@ impl ConnectionReset {
             }
             BluetoothPeripheralTermination::LegacyPeerPowerOff => false,
         };
-        self.schema == 9
+        self.schema == CONNECTION_RESET_SCHEMA
             && self.adapter == adapter.to_string()
             && self.peer == peer.to_string()
             && self.hold_ms == hold_ms
@@ -284,7 +285,7 @@ impl ConnectionReset {
             && self.connection_complete
             && self.remote_features_command_status
             && self.remote_features_complete
-            && self.remote_features == Some([0x18, 0x40, 0, 0, 0, 0, 0, 0])
+            && self.remote_features == Some(EXPECTED_REMOTE_FEATURES)
             && self.remote_features_after_micros.is_some()
             && self.remote_version_command_status
             && self.remote_version_complete
@@ -363,7 +364,7 @@ mod connection_reset_tests {
     fn complete_remote_information(report: &mut ConnectionReset) {
         report.remote_features_command_status = true;
         report.remote_features_complete = true;
-        report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
         report.remote_features_after_micros = Some(1);
         report.remote_version_command_status = true;
         report.remote_version_complete = true;
@@ -407,9 +408,16 @@ mod connection_reset_tests {
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.restored = true;
         assert!(report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        // An old unencrypted profile and an old helper report are not accepted.
+        report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.schema = 9;
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        report.schema = CONNECTION_RESET_SCHEMA;
         report.remote_features = Some([0x18, 0, 0, 0, 0, 0, 0, 0]);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
-        report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
         report.remote_version_subversion = Some(2);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.remote_version_subversion = Some(1);

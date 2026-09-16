@@ -83,6 +83,9 @@ impl<Waiting, Unrelated, NoConnection, ConnectionAccepted, FailStop>
 }
 
 /// Collapse immediately ready lower edges without adding another ownership envelope.
+// Keep the affine continuation transfer in the caller's frame: an outlined
+// generic callback drive otherwise spills another complete radio owner.
+#[inline(always)]
 pub fn drive_legacy_connectable_advertising_initial_pending_ready_with<
     'runtime,
     S,
@@ -168,6 +171,7 @@ where
 }
 
 /// Collapse immediately ready radio edges while a response remains pending.
+#[inline(always)]
 pub fn drive_legacy_connectable_advertising_pending_ready_with<
     'runtime,
     S,

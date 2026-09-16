@@ -179,6 +179,7 @@ fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
     let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
     let (registers, ()) = stopped.into_parts();
     let (task, setup) = separate_interrupt_owner(registers);
+    assert_eq!(task.controller_time_retirement_ready(), Ok(()));
     assert_eq!(
         task.controller_time_phase(),
         ControllerTimeWorkerPhase::Idle
@@ -192,6 +193,23 @@ fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
     // Re-entering Wi-Fi proves that every inactive protocol and shared
     // owner survived the complete Bluetooth ownership roundtrip.
     let _wifi = hardware.into_wifi();
+}
+
+#[test]
+fn task_retirement_keeps_a_controller_time_ownership_fault() {
+    let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
+    let (registers, ()) = stopped.into_parts();
+    let (mut task, setup) = separate_interrupt_owner(registers);
+    assert!(
+        task.controller_time
+            .cancel_owned(crate::controller::time::ControllerTimeRequest::for_validation(1))
+            .is_err()
+    );
+    assert_eq!(
+        task.controller_time_retirement_ready(),
+        Err(crate::controller::ControllerTimeRetirementError::Faulted)
+    );
+    let _retained = (task, setup);
 }
 
 #[test]

@@ -467,6 +467,10 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
         .restore_no_connection(outcome, &mut peripheral)
         .unwrap_or_else(|_| panic!("both exact runtime slots must accept their owners"));
     assert!(connectable.event_is_idle());
+    assert!(
+        !connectable.retirement_ready(),
+        "the portable advertising generation is still running"
+    );
     assert!(peripheral.allocation_is_idle());
     assert_eq!(restored.definition(), definition);
     assert_eq!(restored.phase(), phase);
@@ -510,6 +514,7 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
     connectable
         .restore_disabled_advertiser(configured)
         .unwrap_or_else(|_| panic!("the stopped advertiser must rejoin its idle runtime"));
+    assert!(connectable.retirement_ready());
     assert_eq!(
         start_offset_micros,
         definition.set().interval().as_micros() + u64::from(delay.as_micros())

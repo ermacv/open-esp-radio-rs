@@ -348,6 +348,21 @@ impl<State> ControllerOwnerSlot<State> {
         );
     }
 
+    /// Transfer only a successfully refined owner; rejection restores its exact state.
+    pub(super) fn try_transfer<Next, Error>(
+        &mut self,
+        transfer: impl FnOnce(State) -> Result<Next, (Error, State)>,
+    ) -> Option<Result<Next, Error>> {
+        let state = self.state.take()?;
+        Some(match transfer(state) {
+            Ok(next) => Ok(next),
+            Err((error, state)) => {
+                self.state = Some(state);
+                Err(error)
+            }
+        })
+    }
+
     pub(super) const fn is_empty(&self) -> bool {
         self.state.is_none()
     }

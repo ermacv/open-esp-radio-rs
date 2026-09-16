@@ -147,6 +147,8 @@ pub struct PeripheralConnectionControllerPreparationPending<
 pub(crate) struct PeripheralConnectionControllerPrepared {
     pub(crate) merged: crate::scheduler::PeripheralConnectionEmptySchedulerMergePrepared,
     pub(crate) packet: oer_esp32s31_bluetooth_memory::LeReceivedPdu,
+    pub(crate) progress_deadline:
+        crate::le::peripheral::progress::PeripheralConnectionProgressDeadline,
 }
 
 /// Sealed Controller and accepted owner after a permanent preparation fault.
@@ -247,7 +249,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Perform one bounded observation of the connection sequence deadline.
     pub fn recheck(
         self,
-    ) -> PeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+    ) -> PeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    where
+        S: crate::controller::SchedulerRunInterruptStorage,
+    {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(ControllerTimePendingCoreStep::Waiting(core)) => {
                 return PeripheralConnectionControllerPreparationStep::Pending(Self { core });
@@ -277,9 +282,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             );
         };
         let mut controller = owner.controller;
+        let observed_micros = S::monotonic_micros();
+        let sampled_ticks = sample.raw_ticks();
+        let scale = controller.runtime.controller_time_scale();
         match phase {
             PeripheralConnectionControllerPreparationPhase::Sequence { admitted, packet } => {
                 let default_tx_power = controller
+                    .roles
                     .peripheral_connection_resources
                     .default_tx_power_dbm();
                 let direction_finding_workspace = controller.direction_finding_workspace;
@@ -306,13 +315,20 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         );
                     }
                 };
+                let progress_deadline = crate::le::peripheral::progress::PeripheralConnectionProgressDeadline::from_sequence(
+                    observed_micros, sampled_ticks, prepared.sequence_end_ticks(), scale,
+                );
                 match controller
                     .runtime
                     .prepare_peripheral_connection_empty_list_merge(prepared)
                 {
                     Ok(merged) => Self::prepared(
                         controller,
-                        PeripheralConnectionControllerPrepared { merged, packet },
+                        PeripheralConnectionControllerPrepared {
+                            merged,
+                            packet,
+                            progress_deadline,
+                        },
                     ),
                     Err(failure) => {
                         let error = failure.error();
@@ -500,13 +516,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
     ) -> ControlFlow<crate::scheduler::PeripheralConnectionSchedulerCompleted> {
-        completed.retire(self.peripheral_connection_resources)
+        completed.retire(&mut self.roles.peripheral_connection_resources)
     }
 
     pub(crate) fn peripheral_version_information(
         &self,
     ) -> Option<oer_bluetooth_ll::control::LeVersionInformation> {
-        self.peripheral_connection_resources
+        self.roles
+            .peripheral_connection_resources
             .config()
             .version_information()
     }
@@ -523,7 +540,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             control,
             encryption,
             acl,
-            self.peripheral_connection_resources
+            self.roles
+                .peripheral_connection_resources
                 .config()
                 .version_information(),
             random,
@@ -557,6 +575,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             );
         };
         let Some(timing_policy) = self
+            .roles
             .peripheral_connection_resources
             .config()
             .recurring_timing_policy()
@@ -679,40 +698,27 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::SchedulerInstant::from_image(self.epoch.project_without_reanchor(&self.sample))
     }
 
-    pub(crate) fn check_peripheral_supervision(
+    pub(crate) fn peripheral_progress_deadline(
         &self,
-        deadline: crate::le::peripheral::supervision::PeripheralSupervisionDeadline,
         admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
-    ) -> crate::le::peripheral::supervision::PeripheralSupervisionDecision {
-        deadline.decide(
-            crate::SchedulerInstant::from_image(self.epoch.project_without_reanchor(&self.sample)),
-            crate::SchedulerInstant::from_image(
-                self.epoch
-                    .project_peripheral_event_start(admitted.raw_window()),
-            ),
+    ) -> crate::le::peripheral::progress::PeripheralConnectionProgressDeadline
+    where
+        S: crate::controller::SchedulerRunInterruptStorage,
+    {
+        crate::le::peripheral::progress::PeripheralConnectionProgressDeadline::from_sequence(
+            S::monotonic_micros(),
+            self.sample.raw_ticks(),
+            admitted.sequence_end_ticks(),
+            self.controller.runtime.controller_time_scale(),
         )
     }
 
-    pub(crate) fn check_peripheral_termination(
+    pub(crate) fn check_peripheral_deadlines(
         &self,
-        deadline: crate::le::peripheral::termination::PeripheralTerminationDeadline,
+        deadlines: crate::le::peripheral::deadlines::Deadlines,
         admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
-    ) -> crate::le::peripheral::termination::PeripheralTerminationDecision {
-        deadline.decide(
-            self.peripheral_current_instant(),
-            crate::SchedulerInstant::from_image(
-                self.epoch
-                    .project_peripheral_event_start(admitted.raw_window()),
-            ),
-        )
-    }
-
-    pub(crate) fn check_peripheral_procedure(
-        &self,
-        deadline: crate::le::peripheral::procedure::PeripheralProcedureDeadline,
-        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
-    ) -> crate::le::peripheral::procedure::PeripheralProcedureDecision {
-        deadline.decide(
+    ) -> crate::le::peripheral::deadlines::Decision {
+        deadlines.decide(
             self.peripheral_current_instant(),
             crate::SchedulerInstant::from_image(
                 self.epoch

@@ -325,3 +325,22 @@ fn cancelling_borrowed_wait_leaves_exact_actor_owner_in_slot() {
     assert_eq!(*slot.current(), 47);
     assert!(!slot.is_empty());
 }
+
+#[test]
+fn rejected_owner_transfer_preserves_allocation_then_success_empties_slot() {
+    let owner = Box::new(103_u32);
+    let identity = core::ptr::from_ref(&*owner);
+    let mut slot = ControllerOwnerSlot::new(owner);
+    assert_eq!(
+        slot.try_transfer::<(), _>(|owner| Err(("pending", owner))),
+        Some(Err("pending"))
+    );
+    assert_eq!(identity, core::ptr::from_ref(&**slot.current()));
+    let owner = slot.try_transfer::<_, ()>(Ok).unwrap().unwrap();
+    assert_eq!(identity, core::ptr::from_ref(&*owner));
+    assert!(slot.is_empty());
+    assert_eq!(
+        slot.try_transfer::<(), ()>(|_| panic!("empty slot cannot transfer twice")),
+        None
+    );
+}

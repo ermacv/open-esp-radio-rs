@@ -1,6 +1,12 @@
 //! Durable first-fault storage shared by hard-handler composition.
 
-use core::{cell::RefCell, future::poll_fn, task::Poll};
+use core::{
+    cell::RefCell,
+    task::{Context, Poll},
+};
+
+#[cfg(test)]
+use core::future::poll_fn;
 
 use embassy_sync::{
     blocking_mutex::Mutex, blocking_mutex::raw::RawMutex, waitqueue::GenericAtomicWaker,
@@ -44,12 +50,14 @@ impl<M: RawMutex, T: Copy> DurableFirstFault<M, T> {
         self.value.lock(|value| *value.borrow())
     }
 
+    pub(crate) fn poll_wait(&self, context: &mut Context<'_>) -> Poll<T> {
+        self.waker.register(context.waker());
+        self.get().map_or(Poll::Pending, Poll::Ready)
+    }
+
+    #[cfg(test)]
     pub(crate) async fn wait(&self) -> T {
-        poll_fn(|context| {
-            self.waker.register(context.waker());
-            self.get().map_or(Poll::Pending, Poll::Ready)
-        })
-        .await
+        poll_fn(|context| self.poll_wait(context)).await
     }
 }
 

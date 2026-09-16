@@ -1031,9 +1031,9 @@ pub struct SchedulerInitialized<
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
 > {
-    task: TaskResources,
+    task: crate::resources::runtime_owner::RuntimeOwnerSlot<TaskResources>,
     _interrupts: Option<InterruptBankOwner>,
-    _platform: TeardownPendingPlatform<P>,
+    _platform: crate::resources::runtime_owner::RuntimeOwnerSlot<TeardownPendingPlatform<P>>,
     time_scale: BluetoothControllerTimeScale,
     _standalone_dtm_profile: crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
     config: SchedulerSoftwareConfig,
@@ -1041,23 +1041,59 @@ pub struct SchedulerInitialized<
     runtime: ControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
 }
 
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct SchedulerRestartParts<P, const MT: usize, const SC: usize> {
+    pub(crate) task: TaskResources,
+    pub(crate) platform: TeardownPendingPlatform<P>,
+    pub(crate) time_scale: BluetoothControllerTimeScale,
+    pub(crate) config: SchedulerSoftwareConfig,
+    pub(crate) scheduler_list: SchedulerExclusiveListEpoch,
+    pub(crate) runtime: ControllerRuntimeResources<MT, SC>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P, const MT: usize, const SC: usize> SchedulerInitialized<P, MT, SC> {
+    pub(crate) fn into_restart_parts(self) -> SchedulerRestartParts<P, MT, SC> {
+        assert!(
+            self._interrupts.is_none(),
+            "interrupt partition already staged"
+        );
+        SchedulerRestartParts {
+            task: self.task.into_unclaimed(),
+            platform: self._platform.into_unclaimed(),
+            time_scale: self.time_scale,
+            config: self.config,
+            scheduler_list: self._scheduler_list,
+            runtime: self.runtime,
+        }
+    }
+}
+
 impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     pub(crate) fn task_mut(&mut self) -> &mut TaskResources {
-        &mut self.task
+        self.task
+            .as_mut()
+            .expect("pre-split scheduler owns its task")
     }
 
     #[cfg(test)]
-    pub(crate) const fn controller_time_phase(
+    pub(crate) fn controller_time_phase(
         &self,
     ) -> crate::controller::time::ControllerTimeWorkerPhase {
-        self.task.controller_time_phase()
+        self.task
+            .as_ref()
+            .expect("pre-split task")
+            .controller_time_phase()
     }
 
     #[cfg(test)]
-    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
-        self.task.controller_time_needs_recheck()
+    pub(crate) fn controller_time_needs_recheck(&self) -> bool {
+        self.task
+            .as_ref()
+            .expect("pre-split task")
+            .controller_time_needs_recheck()
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1069,7 +1105,13 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn common_phy_parts_mut(&mut self) -> (&mut TaskResources, &mut P) {
-        (&mut self.task, self._platform.platform_mut())
+        (
+            self.task.as_mut().expect("pre-split task"),
+            self._platform
+                .as_mut()
+                .expect("pre-split platform")
+                .platform_mut(),
+        )
     }
 
     /// Number of fixed modem timer slots retained by the initialized epoch.
@@ -1914,26 +1956,33 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
-    /// Borrow the matching interrupt and task runtime endpoints from this
-    /// initialized hardware epoch.
+    /// Claim the task HAL slot once while borrowing stable software workers.
     ///
-    /// This is the production entry into an executor adapter. The retained
-    /// task, interrupt and platform owners cannot move or be rebound while
-    /// either endpoint is alive.
+    /// The task endpoint carries an exclusive, non-cloneable lease. HCI
+    /// retirement later extracts the actual register and controller-time owners.
+    /// The fourth endpoint leases the platform separately; command states never
+    /// contain its generic type. Interrupt publications and software queues stay borrowed.
+    /// A later split returns `None`, including after a runtime was dropped;
+    /// dropping it neither restores hardware nor authorizes a new epoch.
     pub fn split_runtime(
         &mut self,
-    ) -> (
+    ) -> Option<(
         ControllerInterruptRuntime<'_>,
         ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>,
         ControllerModemTimerRuntime<'_, MODEM_TIMER_CAPACITY>,
-    ) {
-        let task = &mut self.task;
+        crate::resources::platform_retirement::ControllerPlatformLease<'_, P>,
+    )> {
+        let task = self.task.lease()?;
+        let platform = crate::resources::platform_retirement::ControllerPlatformLease::claim(
+            &mut self._platform,
+        )
+        .expect("task and platform are claimed in one split");
         let time_scale = self.time_scale;
         let standalone_dtm_profile = &self._standalone_dtm_profile;
         let config = self.config;
         let scheduler_list = &mut self._scheduler_list;
         let (interrupt, software, modem_timer) = self.runtime.split();
-        (
+        Some((
             interrupt,
             ControllerPoweredTaskRuntime::new(
                 software,
@@ -1944,7 +1993,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 scheduler_list,
             ),
             modem_timer,
-        )
+            platform,
+        ))
     }
 }
 
@@ -2000,9 +2050,9 @@ impl<P> ControllerHalInitialized<P> {
         } = self;
         let hardware_lists_cleared = initialize_hardware(&mut task);
         SchedulerInitialized {
-            task,
+            task: crate::resources::runtime_owner::RuntimeOwnerSlot::new(task),
             _interrupts: Some(interrupts),
-            _platform: platform,
+            _platform: crate::resources::runtime_owner::RuntimeOwnerSlot::new(platform),
             time_scale,
             _standalone_dtm_profile: standalone_dtm_profile,
             config: SchedulerSoftwareConfig::reviewed_standalone(),

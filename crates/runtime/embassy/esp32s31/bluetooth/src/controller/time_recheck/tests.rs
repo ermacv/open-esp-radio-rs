@@ -71,3 +71,32 @@ fn absolute_timeline_exhaustion_is_typed_instead_of_wrapping() {
     );
     assert!(schedule.begin_wait().is_none());
 }
+
+#[test]
+fn powered_restart_reanchors_without_replaying_old_deadlines_or_wrapping() {
+    let period = DtmRecheckPeriod::from_ticks(5).unwrap();
+    let mut schedule = AbsoluteRecheckSchedule::new(DtmRecheckDeadline::from_ticks(10), period);
+    assert_eq!(
+        schedule.reanchor(DtmRecheckDeadline::from_ticks(10_000)),
+        Some(())
+    );
+    assert_eq!(
+        schedule.state(),
+        DtmRecheckScheduleState::Scheduled(DtmRecheckDeadline::from_ticks(10_005))
+    );
+    schedule.begin_wait().unwrap().complete();
+    let next = schedule.state();
+    assert_eq!(
+        next,
+        DtmRecheckScheduleState::Scheduled(DtmRecheckDeadline::from_ticks(10_010))
+    );
+    assert_eq!(
+        schedule.reanchor(DtmRecheckDeadline::from_ticks(u64::MAX - 4)),
+        None
+    );
+    assert_eq!(
+        schedule.state(),
+        next,
+        "failed reanchor preserves the original schedule"
+    );
+}

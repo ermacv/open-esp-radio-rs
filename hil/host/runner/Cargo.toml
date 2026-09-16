@@ -56,6 +56,9 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+embassy-futures = "0.1.2"
+embedded-io = "0.7.1"
+oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
 oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
 xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "0d41d8e80cb617d355cf6981b6ff76635c44cadc", default-features = false, features = ["std", "alloc", "medium-ethernet", "ipv4", "udp"] }
 critical-section = { version = "1.2.0", features = ["std"] }

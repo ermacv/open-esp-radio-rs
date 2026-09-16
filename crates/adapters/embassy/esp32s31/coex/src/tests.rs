@@ -252,3 +252,85 @@ fn cancelled_shutdown_ends_the_control_epoch_without_waiting_for_a_dead_owner() 
         );
     }
 }
+
+#[test]
+fn dropping_owner_wakes_the_request_and_permanently_closes_control() {
+    use core::{
+        future::Future,
+        task::{Context, Poll},
+    };
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Wake,
+    };
+    struct Wakes(AtomicUsize);
+    impl Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for before_request in [false, true] {
+        let mut resources = CoexResources::<NoopRawMutex, 1>::new();
+        let (mut control, owner) = resources.split();
+        let mut owner = Some(owner);
+        if before_request {
+            drop(owner.take());
+        }
+        let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+        let waker = wakes.clone().into();
+        let mut context = Context::from_waker(&waker);
+        {
+            let mut request = core::pin::pin!(control.execute(CoexCommand::Status));
+            if !before_request {
+                assert!(request.as_mut().poll(&mut context).is_pending());
+                drop(owner.take());
+                assert!(wakes.0.load(Ordering::SeqCst) > 0);
+            }
+            assert_eq!(
+                request.as_mut().poll(&mut context),
+                Poll::Ready(Err(CoexControlError::OwnerGone))
+            );
+        }
+        let mut another = core::pin::pin!(control.execute(CoexCommand::Shutdown));
+        assert_eq!(
+            another.as_mut().poll(&mut context),
+            Poll::Ready(Err(CoexControlError::OwnerGone))
+        );
+    }
+}
+
+#[test]
+fn cancellation_preserves_a_published_result_but_does_not_claim_cleanup() {
+    use core::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let mut resources = CoexResources::<NoopRawMutex, 1>::new();
+    let (mut control, owner) = resources.split();
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut hardware = Hardware::default();
+    let mut clock = Clock(CoexTimerClock::from_hardware_fields(
+        CoexClockSelector::Selector8,
+        0,
+        40,
+        true,
+    ));
+    let mut context = Context::from_waker(Waker::noop());
+    let mut enable = core::pin::pin!(control.execute(CoexCommand::Enable));
+    assert!(enable.as_mut().poll(&mut context).is_pending());
+    {
+        let mut runner = core::pin::pin!(owner.run(&mut core, &mut hardware, &mut clock));
+        assert!(runner.as_mut().poll(&mut context).is_pending());
+    }
+    assert!(core.status().enabled);
+    assert_eq!(
+        enable.as_mut().poll(&mut context),
+        Poll::Ready(Ok(CoexOutcome::Status(core.status())))
+    );
+}

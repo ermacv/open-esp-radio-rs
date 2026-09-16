@@ -11,9 +11,11 @@
 #[cfg(test)]
 extern crate std;
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender},
+    signal::Signal,
 };
 use oer_esp32s31_coex::{
     CoexClientRequest, CoexClockHardware, CoexCore, CoexError, CoexEventId, CoexStatus,
@@ -43,6 +45,7 @@ pub enum CoexOutcome {
 pub struct CoexResources<M: RawMutex, const DEPTH: usize> {
     commands: Channel<M, CoexCommand, DEPTH>,
     outcomes: Channel<M, Result<CoexOutcome, CoexError>, 1>,
+    closed: Signal<M, ()>,
 }
 
 impl<M: RawMutex, const DEPTH: usize> CoexResources<M, DEPTH> {
@@ -50,6 +53,7 @@ impl<M: RawMutex, const DEPTH: usize> CoexResources<M, DEPTH> {
         Self {
             commands: Channel::new(),
             outcomes: Channel::new(),
+            closed: Signal::new(),
         }
     }
 
@@ -62,15 +66,18 @@ impl<M: RawMutex, const DEPTH: usize> CoexResources<M, DEPTH> {
     pub fn split(&mut self) -> (CoexControl<'_, M, DEPTH>, CoexOwner<'_, M, DEPTH>) {
         self.commands.clear();
         self.outcomes.clear();
+        self.closed.reset();
         (
             CoexControl {
                 commands: self.commands.sender(),
                 outcomes: self.outcomes.receiver(),
                 state: ControlState::Ready,
+                closed: &self.closed,
             },
             CoexOwner {
                 commands: self.commands.receiver(),
                 outcomes: self.outcomes.sender(),
+                closed: &self.closed,
             },
         )
     }
@@ -87,12 +94,16 @@ pub struct CoexControl<'resources, M: RawMutex, const DEPTH: usize> {
     outcomes: Receiver<'resources, M, Result<CoexOutcome, CoexError>, 1>,
     // Lives outside the borrowed execute future, including cancellation.
     state: ControlState,
+    closed: &'resources Signal<M, ()>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CoexControlError {
     /// Shutdown completed; a new owner/resource epoch is required.
     Stopped,
+    /// The owner was dropped. This does not prove timers or RF are stopped;
+    /// the caller retains the core/hardware cleanup obligations.
+    OwnerGone,
     Operation(CoexError),
 }
 
@@ -101,27 +112,47 @@ enum ControlState {
     Ready,
     Pending,
     Stopped,
+    OwnerGone,
 }
 
 impl<M: RawMutex, const DEPTH: usize> CoexControl<'_, M, DEPTH> {
     /// Execute one command. Cancellation retains its transaction until the
     /// next call settles it. Successful Shutdown, including a cancelled call,
     /// ends this endpoint epoch and subsequent calls return `Stopped`.
+    /// Dropping the owner wakes pending requests with `OwnerGone`. A response
+    /// already published by the owner is settled first; no new command is sent
+    /// after owner disappearance. Owner loss does not perform hardware cleanup.
     pub async fn execute(&mut self, command: CoexCommand) -> Result<CoexOutcome, CoexControlError> {
         // Settle the preceding cancelled call before publishing another
         // command. Strictly one outstanding transaction makes its response
         // unambiguous without a second request-id namespace.
         if matches!(self.state, ControlState::Pending) {
-            let outcome = self.outcomes.receive().await;
+            let outcome = self.receive().await?;
             let _ = self.settle(outcome);
         }
         if matches!(self.state, ControlState::Stopped) {
             return Err(CoexControlError::Stopped);
         }
-        self.commands.send(command).await;
+        if matches!(self.state, ControlState::OwnerGone) {
+            return Err(CoexControlError::OwnerGone);
+        }
+        if let Either::First(()) = select(self.closed.wait(), self.commands.send(command)).await {
+            self.state = ControlState::OwnerGone;
+            return Err(CoexControlError::OwnerGone);
+        }
         self.state = ControlState::Pending;
-        let outcome = self.outcomes.receive().await;
+        let outcome = self.receive().await?;
         self.settle(outcome)
+    }
+
+    async fn receive(&mut self) -> Result<Result<CoexOutcome, CoexError>, CoexControlError> {
+        match select(self.outcomes.receive(), self.closed.wait()).await {
+            Either::First(outcome) => Ok(outcome),
+            Either::Second(()) => {
+                self.state = ControlState::OwnerGone;
+                Err(CoexControlError::OwnerGone)
+            }
+        }
     }
 
     fn settle(
@@ -140,10 +171,19 @@ impl<M: RawMutex, const DEPTH: usize> CoexControl<'_, M, DEPTH> {
 pub struct CoexOwner<'resources, M: RawMutex, const DEPTH: usize> {
     commands: Receiver<'resources, M, CoexCommand, DEPTH>,
     outcomes: Sender<'resources, M, Result<CoexOutcome, CoexError>, 1>,
+    closed: &'resources Signal<M, ()>,
+}
+
+impl<M: RawMutex, const DEPTH: usize> Drop for CoexOwner<'_, M, DEPTH> {
+    fn drop(&mut self) {
+        self.closed.signal(());
+    }
 }
 
 impl<M: RawMutex, const DEPTH: usize> CoexOwner<'_, M, DEPTH> {
     /// Run the only task allowed to mutate coexistence state and MMIO.
+    /// Cancellation notifies control endpoints but leaves timer recovery with
+    /// the caller's borrowed core and hardware. Use Shutdown for clean release.
     pub async fn run<H: CoexTimerHardware, C: CoexClockHardware>(
         self,
         core: &mut CoexCore,

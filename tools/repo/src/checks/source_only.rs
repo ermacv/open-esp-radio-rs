@@ -6,6 +6,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
     process::Stdio,
+    time::Instant,
 };
 
 use cargo_metadata::Message;
@@ -36,6 +37,17 @@ const PHY_PACKAGES: &[&str] = &[
     "pin-project-lite",
     "vcell",
 ];
+
+fn timed_stage<T>(label: &str, work: impl FnOnce() -> Result<T>) -> Result<T> {
+    let start = Instant::now();
+    let result = work();
+    eprintln!(
+        "source-only timing: stage={label} total-us={} status={}",
+        start.elapsed().as_micros(),
+        if result.is_ok() { "PASS" } else { "FAIL" },
+    );
+    result
+}
 
 fn production_lints(ctx: &Context) -> Result<()> {
     let packages = common::production_packages(ctx)?;
@@ -254,6 +266,20 @@ enum PreImageStage {
     Docs,
 }
 
+impl PreImageStage {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::RepositoryTests => "repository-tests",
+            Self::BlobrayLibraryTests => "blobray-library-tests",
+            Self::BlobrayLauncherTests => "blobray-launcher-tests",
+            Self::Metadata => "metadata",
+            Self::NetworkDependencies => "network-dependencies",
+            Self::Examples => "examples",
+            Self::Docs => "docs",
+        }
+    }
+}
+
 const PRE_IMAGE_STAGES: &[PreImageStage] = &[
     PreImageStage::RepositoryTests,
     PreImageStage::BlobrayLibraryTests,
@@ -305,61 +331,99 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
         PreImageStage::Metadata => metadata::run(ctx).map(|_| ()),
         PreImageStage::NetworkDependencies => network::run(ctx, true),
         PreImageStage::Examples => examples::run(ctx),
-        PreImageStage::Docs => docs::run(ctx, false),
+        PreImageStage::Docs => docs::run(ctx, false, false, 2),
     }
 }
 
-pub fn run(ctx: &Context) -> Result<()> {
-    run_pre_image_stages(|stage| execute_pre_image_stage(ctx, stage))?;
+fn checked_example_configurations(
+    evidence: Option<&examples::ExampleEvidence>,
+) -> Result<&BTreeSet<common::CargoConfiguration>> {
+    Ok(&evidence
+        .ok_or("docs gate requires fresh source-only example evidence")?
+        .target_configurations)
+}
 
-    process::run(
-        ctx.cargo()
-            .env("CARGO_TARGET_DIR", ctx.root.join("target"))
-            .args([
-                "build",
-                "--quiet",
-                "--locked",
-                "--offline",
-                "-p",
-                "open-esp-radio-hil-runner",
-            ]),
-    )?;
+pub fn run(ctx: &Context) -> Result<()> {
+    let total_start = Instant::now();
+    let mut example_evidence: Option<examples::ExampleEvidence> = None;
+    run_pre_image_stages(|stage| {
+        timed_stage(stage.label(), || match stage {
+            PreImageStage::Examples => {
+                example_evidence = Some(examples::run_with_evidence(ctx)?);
+                Ok(())
+            }
+            PreImageStage::Docs => {
+                let checked = checked_example_configurations(example_evidence.as_ref())?;
+                docs::run_with_consumers(ctx, false, false, 2, checked)
+            }
+            _ => execute_pre_image_stage(ctx, stage),
+        })
+    })?;
+
+    timed_stage("build-hil-runner", || {
+        process::run(
+            ctx.cargo()
+                .env("CARGO_TARGET_DIR", ctx.root.join("target"))
+                .args([
+                    "build",
+                    "--quiet",
+                    "--locked",
+                    "--offline",
+                    "-p",
+                    "open-esp-radio-hil-runner",
+                ]),
+        )
+    })?;
     let temporary = tempfile::tempdir()?;
-    let mut performance =
-        FinalImageBuild::spawn(ctx, temporary.path(), FinalImageClass::Performance)?;
+    let mut performance = timed_stage("spawn-performance-image", || {
+        FinalImageBuild::spawn(ctx, temporary.path(), FinalImageClass::Performance)
+    })?;
     println!("source-only: final performance HIL image build running concurrently");
 
-    process::run(ctx.cargo().args([
-        "clippy",
-        "--locked",
-        "--offline",
-        "--workspace",
-        "--all-targets",
-        "--",
-        "-D",
-        "warnings",
-        "-A",
-        "clippy::disallowed-methods",
-    ]))?;
-    production_lints(ctx)?;
-    safety::run(ctx)?;
-    architecture::run(ctx)?;
-    bluetooth::run(ctx)?;
-    publication(ctx)?;
-    let artifact = phy(ctx)?;
+    timed_stage("workspace-clippy", || {
+        process::run(ctx.cargo().args([
+            "clippy",
+            "--locked",
+            "--offline",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+            "-A",
+            "clippy::disallowed-methods",
+        ]))
+    })?;
+    timed_stage("production-lints", || production_lints(ctx))?;
+    timed_stage("safety", || safety::run(ctx))?;
+    timed_stage("architecture", || architecture::run(ctx))?;
+    timed_stage("bluetooth", || bluetooth::run(ctx))?;
+    timed_stage("publication", || publication(ctx))?;
+    let artifact = timed_stage("phy", || phy(ctx))?;
 
-    audit_final_images(
-        |class| match class {
-            FinalImageClass::Performance => performance.finish(&ctx.root),
-            FinalImageClass::Correctness => {
-                FinalImageBuild::spawn(ctx, temporary.path(), class)?.finish(&ctx.root)
-            }
-        },
-        |artifact| final_image_audit(ctx, &artifact.runtime_elf),
-    )?;
+    timed_stage("final-images", || {
+        audit_final_images(
+            |class| match class {
+                FinalImageClass::Performance => performance.finish(&ctx.root),
+                FinalImageClass::Correctness => {
+                    FinalImageBuild::spawn(ctx, temporary.path(), class)?.finish(&ctx.root)
+                }
+            },
+            |artifact| {
+                let class = artifact.report["image_class"].as_str().unwrap_or("unknown");
+                timed_stage(&format!("target-audit-{class}"), || {
+                    final_image_audit(ctx, &artifact.runtime_elf)
+                })
+            },
+        )
+    })?;
     println!(
         "source-only radio audit passed: rlib={} performance+correctness",
         artifact.display(),
+    );
+    eprintln!(
+        "source-only timing: stage=total total-us={} status=PASS",
+        total_start.elapsed().as_micros()
     );
     Ok(())
 }
@@ -390,10 +454,12 @@ struct FinalImageBuild {
     log: PathBuf,
     output: PathBuf,
     start: PathBuf,
+    started_at: Instant,
 }
 
 impl FinalImageBuild {
     fn spawn(ctx: &Context, temporary: &Path, class: FinalImageClass) -> Result<Self> {
+        let started_at = Instant::now();
         let log = temporary.join(format!("{}-image-build.log", class.id()));
         let output = temporary.join(format!("{}-image-build.json", class.id()));
         let start = temporary.join(format!("{}-image-build.start", class.id()));
@@ -420,12 +486,19 @@ impl FinalImageBuild {
             log,
             output,
             start,
+            started_at,
         })
     }
 
     fn finish(&mut self, root: &Path) -> Result<FinalImageArtifact> {
         let status = self.child.wait()?;
         eprint!("{}", fs::read_to_string(&self.log)?);
+        eprintln!(
+            "source-only timing: stage=image-build-{} total-us={} status={}",
+            self.class.id(),
+            self.started_at.elapsed().as_micros(),
+            if status.success() { "PASS" } else { "FAIL" },
+        );
         if !status.success() {
             return Err(
                 format!("final {} HIL image build failed: {status}", self.class.id()).into(),

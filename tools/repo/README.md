@@ -9,7 +9,8 @@ Run from the repository root:
 
 ```console
 cargo xtask doctor
-cargo xtask check source-only
+cargo xtask check docs
+cargo xtask check docs --package oer-memory
 ```
 
 The PHY archive contains LLVM bitcode. Install `rustup component add
@@ -26,8 +27,11 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
-| `cargo xtask check docs --list` | List resolved documentation configurations and genuine inapplicable actions without running doc builds, doctests or qualification evaluation |
-| `cargo xtask check docs` | Build separate public/private rustdoc, run applicable host doctests, compile MCU example consumers, check owned Markdown links and render static qualification views |
+| `cargo xtask check docs --list` | List the fast static plan without running checks; combine with `--full` or `--package` to inspect those plans |
+| `cargo xtask check docs` | Check owned Markdown links and static qualification catalogs/programs; no rustdoc, doctests or MCU builds |
+| `cargo xtask check docs --package oer-memory` | Also build public rustdoc and run applicable doctests for the selected package’s supported profiles; repeat `--package` for more packages, add `--private` for private API |
+| `cargo xtask check docs --full` | Check every public/private rustdoc profile, host doctest and MCU consumer, plus links and static views; at most two independent rustdoc caches run concurrently |
+| `cargo xtask check docs --full --jobs 1 --export-html` | Use one rustdoc worker and additionally copy complete isolated HTML snapshots; the required gate does not need this export |
 | `cargo xtask check source-only` | Compose repository suites once, including the docs gate, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
@@ -45,11 +49,32 @@ feature selection and Cargo build profile separate. A package or target that
 cannot take a documentation action is listed with its reason instead of being
 silently omitted.
 
+Use focused package tests and target builds for the code being changed. Run
+`check docs` for prose/catalog changes and `check docs --package PACKAGE` for
+API changes. `check source-only` is the complete, expensive checkpoint, including
+`check docs --full`; it is not required after every local edit. Shared contracts,
+Cargo feature policy, generated PAC and firmware layout changes need the relevant
+broader architecture, safety and artifact checks. Partial checks do not establish
+full repository coverage.
+
+Documentation reports explicitly identify `static`, `packages` or `full` scope.
+Static and package runs write to `target/docs/static/` and `target/docs/packages/`;
+they never overwrite the full report. The qualification tool shares the root
+Cargo cache across scopes. Catalog checks do not scan HIL/vendor evidence.
+
 The full docs gate uses the pinned toolchain and target with locked, offline
 Cargo operations. Its ignored outputs live below `target/docs/gate/`: the
-resolved plan is `job-plan.json`, public and private rustdoc snapshots are
-separate, static catalog views are under `catalogs/`, and `report.json` is
-written only after every stage succeeds. The gate checks tracked Markdown,
+resolved `job-plan.json` maps every logical requirement to an executed Cargo
+job, Cargo-generated rustdoc HTML stays in `cache/`, static catalog views are
+under `catalogs/`, and `report.json` is written only after every stage succeeds.
+Only `--export-html` copies full, separate public/private HTML snapshots into
+`rustdoc/`; it does not replace any required rustdoc check. The report records
+stage and per-job microsecond timings with Cargo execution separated from
+catalog/metadata leases and HTML snapshot copying. Featureless packages and
+packages with only an empty default feature reuse equivalent Cargo profiles;
+distinct dependency/feature graphs remain separate. Workers share read-only
+catalog leases but never write the same Cargo rustdoc target directory
+concurrently. The gate checks tracked Markdown,
 owner documents below `docs/`, package `README.md` files and Cargo `readme`
 targets. Arbitrary untracked working notes are not repository documentation.
 External URLs are counted as `external-not-checked`; no network requests are
@@ -66,6 +91,10 @@ paths and builder/final-audit verdicts. A failed or incomplete correctness
 build cannot be replaced by a previous application image or a successful
 performance build. This gate does not run on hardware or measure runtime stack
 high-water.
+Within `source-only`, the examples stage passes its successful in-memory MCU
+configuration checks to the docs stage, which maps its ten consumer obligations
+to those exact checks instead of compiling them twice. Standalone `check docs --full`
+still performs all ten checks itself; no saved PASS report is reused.
 
 Network dependency checks distinguish released compatibility, original upstream,
 maintained owned and research contracts. Compatibility products

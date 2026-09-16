@@ -40,11 +40,26 @@ enum Check {
     /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
     NetworkBackpressure,
     Examples,
-    /// Check first-party rustdoc, doctests, examples, links and static capability views.
+    /// Check links and static catalogs; select packages or --full for API builds.
     Docs {
-        /// List the complete plan and inapplicable actions without running checks.
+        /// Check every public/private API profile, doctest and MCU consumer.
+        #[arg(long, conflicts_with_all = ["package", "private"])]
+        full: bool,
+        /// Check public API and doctests for these packages' supported profiles.
+        #[arg(short, long, value_name = "PACKAGE", action = clap::ArgAction::Append)]
+        package: Vec<String>,
+        /// Include private API documentation for the selected packages.
+        #[arg(long, requires = "package")]
+        private: bool,
+        /// List the selected plan and inapplicable actions without running checks.
         #[arg(long)]
         list: bool,
+        /// Copy complete, isolated HTML snapshots after required rustdoc checks.
+        #[arg(long)]
+        export_html: bool,
+        /// At most two independent rustdoc Cargo cache groups in flight.
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
+        jobs: u8,
     },
     SourceOnly,
     BlobrayStandalone,
@@ -107,7 +122,26 @@ fn run() -> Result<()> {
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Examples => checks::examples::run(&ctx),
-            Check::Docs { list } => checks::docs::run(&ctx, list),
+            Check::Docs {
+                full,
+                package,
+                private,
+                list,
+                export_html,
+                jobs,
+            } => {
+                let scope = if full {
+                    checks::docs::Scope::Full
+                } else if package.is_empty() {
+                    checks::docs::Scope::Static
+                } else {
+                    checks::docs::Scope::Packages {
+                        names: package,
+                        private,
+                    }
+                };
+                checks::docs::run_selected(&ctx, scope, list, export_html, usize::from(jobs))
+            }
             Check::SourceOnly => checks::source_only::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
         },
@@ -148,5 +182,42 @@ fn main() -> std::process::ExitCode {
             eprintln!("xtask: {error}");
             std::process::ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn documentation_scopes_are_explicit_and_conflicting_inputs_are_rejected() {
+        let default = Cli::try_parse_from(["xtask", "check", "docs"]).unwrap();
+        assert!(matches!(default.command, Task::Check {
+            check: Check::Docs { full: false, package, private: false, .. }
+        } if package.is_empty()));
+        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--full", "--list"]).is_ok());
+        assert!(
+            Cli::try_parse_from([
+                "xtask",
+                "check",
+                "docs",
+                "--package",
+                "oer-memory",
+                "--private"
+            ])
+            .is_ok()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "xtask",
+                "check",
+                "docs",
+                "--full",
+                "--package",
+                "oer-memory"
+            ])
+            .is_err()
+        );
+        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--private"]).is_err());
     }
 }

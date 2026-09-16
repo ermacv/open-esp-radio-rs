@@ -86,16 +86,25 @@ depend on documentation paths. Update those consumers without changing the
 meaning of evidence or inventing a replacement proof.
 
 Use the repository's pinned toolchain for examples and API documentation.
-`cargo xtask check docs --list` resolves the documentation plan and records
-why an action is inapplicable without running its builds. `cargo xtask check
-docs` builds public and private rustdoc separately, runs applicable host
-doc-tests, compiles MCU examples without executing them, validates owned local
-Markdown links, and checks and renders static qualification catalogs. The
-command uses locked, offline Cargo operations and writes ignored outputs below
-`target/docs/gate/`; it does not query external links, load runtime evidence,
-evaluate readiness, flash a device or install fixtures. A successful docs gate
-therefore establishes source and presentation consistency, not radio behavior
-or qualification.
+`cargo xtask check docs` checks owned local Markdown links and checks/renders
+static qualification catalogs and programs. It does not build API documentation.
+For API changes, use `cargo xtask check docs --package PACKAGE`: public rustdoc
+and applicable host doctests run for that package's supported feature profiles.
+Repeat `--package` to select more packages; `--private` includes their private API.
+
+`cargo xtask check docs --full` checks the complete public/private rustdoc matrix,
+host doctests and MCU compile-only consumers. This expensive mode also remains
+part of `cargo xtask check source-only`; use it at full checkpoints, with focused
+checks during local iteration. Add `--list` to any scope to inspect its plan
+without executing checks. `--export-html` exports isolated rustdoc snapshots for
+package/full scopes.
+
+All modes use locked, offline Cargo operations. Their ignored reports live below
+`target/docs/static/`, `target/docs/packages/` and `target/docs/gate/`, respectively,
+and name their coverage explicitly. A partial run never updates the full report.
+These commands do not query external links, load runtime evidence, evaluate
+readiness, flash a device or install fixtures. Documentation checks establish
+consistency within their stated scope, not radio behavior or qualification.
 
 The checked Markdown surface consists of tracked documents plus owner
 documents under `docs/`, package `README.md` files and Cargo `readme` targets,

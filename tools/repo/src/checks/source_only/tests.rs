@@ -40,6 +40,25 @@ fn missing_or_ambiguous_library_output_fails() {
     assert!(phy_artifact(messages.as_bytes()).is_err());
 }
 
+#[test]
+fn docs_stage_rejects_missing_example_evidence() {
+    assert!(
+        checked_example_configurations(None)
+            .unwrap_err()
+            .to_string()
+            .contains("fresh source-only example evidence")
+    );
+    let evidence = examples::ExampleEvidence {
+        target_configurations: BTreeSet::new(),
+    };
+    assert_eq!(
+        checked_example_configurations(Some(&evidence))
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
 fn fixture_report(root: &Path, class: FinalImageClass, start: &Path) -> serde_json::Value {
     fs::write(start, b"start").unwrap();
     let base = root.join("target/hil/esp32s31").join(format!(

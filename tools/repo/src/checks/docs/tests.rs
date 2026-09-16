@@ -35,6 +35,40 @@ fn tiny_crate(source: &str) -> (tempfile::TempDir, Context, common::CargoConfigu
     (repository, context, configuration)
 }
 
+fn tiny_bin_crate(source: &str) -> (tempfile::TempDir, Context, common::CargoConfiguration) {
+    let repository = tempfile::tempdir().unwrap();
+    fs::create_dir(repository.path().join("src")).unwrap();
+    fs::write(
+        repository.path().join("Cargo.toml"),
+        "[package]\nname='doc-bin-fixture'\nversion='0.0.0'\nedition='2024'\n[workspace]\n",
+    )
+    .unwrap();
+    fs::write(repository.path().join("src/main.rs"), source).unwrap();
+    let context = Context::new(repository.path()).unwrap();
+    process::run(context.cargo().args(["generate-lockfile", "--offline"])).unwrap();
+    let manifest = repository.path().join("Cargo.toml").canonicalize().unwrap();
+    let host = String::from_utf8(
+        process::capture(context.command("rustc").arg("-vV"))
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .lines()
+    .find_map(|line| line.strip_prefix("host: "))
+    .unwrap()
+    .to_owned();
+    let configuration = common::CargoConfiguration {
+        manifest: manifest.clone(),
+        workspace_manifest: manifest,
+        package: "doc-bin-fixture".into(),
+        target: host,
+        features: Vec::new(),
+        build_profile: common::CargoBuildProfile::Dev,
+        cargo_target: common::CargoTargetSelection::Bin("doc-bin-fixture".into()),
+    };
+    (repository, context, configuration)
+}
+
 #[test]
 fn public_private_rustdoc_are_distinct_and_broken_links_fail_with_diagnostics() {
     let (_repository, context, configuration) =
@@ -81,6 +115,95 @@ fn public_private_rustdoc_are_distinct_and_broken_links_fail_with_diagnostics() 
     .to_string();
     assert!(error.contains("unresolved link"), "{error}");
     assert!(error.contains("Missing"), "{error}");
+}
+
+#[test]
+fn rustdoc_job_timing_separates_cargo_from_metadata_and_snapshot() {
+    let (_repository, context, configuration) = tiny_crate("pub struct Item;\n");
+    let output = acquire_output(&context).unwrap();
+    let job = Job {
+        purpose: Purpose::PublicRustdoc,
+        configuration,
+    };
+    let (required, required_timing) = run_rustdoc_measured(&context, &output, &job, false).unwrap();
+    assert!(required.verified.join("index.html").is_file());
+    assert!(required.snapshot.is_none());
+    assert_eq!(required_timing.snapshot_us, 0);
+    let (exported, timing) = run_rustdoc_measured(&context, &output, &job, true).unwrap();
+    assert!(
+        exported
+            .snapshot
+            .unwrap()
+            .join("doc_fixture/index.html")
+            .is_file()
+    );
+    assert!(timing.cargo_us > 0);
+    assert!(timing.snapshot_us > 0);
+    assert!(timing.total_us >= timing.cargo_us + timing.snapshot_us);
+    assert_eq!(
+        job_timing(&context, &job, timing).unwrap()["timing"]["cargo-us"],
+        timing.cargo_us
+    );
+}
+
+#[test]
+fn bounded_rustdoc_workers_verify_every_job_and_propagate_failures() {
+    let (_repository, context, configuration) = tiny_crate("pub struct Item;\n");
+    let output = acquire_output(&context).unwrap();
+    let jobs = [
+        Job {
+            purpose: Purpose::PublicRustdoc,
+            configuration: configuration.clone(),
+        },
+        Job {
+            purpose: Purpose::PrivateRustdoc,
+            configuration,
+        },
+    ];
+    let verified = run_rustdoc_jobs(&context, &output, &jobs, false, 2).unwrap();
+    assert_eq!(verified.len(), jobs.len());
+    assert!(verified.iter().all(|(_, rendered, timing)| {
+        rendered.verified.join("index.html").is_file()
+            && rendered.snapshot.is_none()
+            && timing.snapshot_us == 0
+    }));
+    fs::write(
+        context.root.join("src/lib.rs"),
+        "//! [`Missing`] does not resolve.\npub struct Item;\n",
+    )
+    .unwrap();
+    let error = run_rustdoc_jobs(&context, &output, &jobs, false, 2)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("unresolved link"), "{error}");
+    assert!(run_rustdoc_jobs(&context, &output, &jobs, false, 3).is_err());
+}
+
+#[test]
+fn binary_public_and_private_rustdoc_both_reject_hidden_broken_links() {
+    let (_repository, context, configuration) = tiny_bin_crate(
+        "/// Public function.\npub fn visible() {}\n/// [`MissingHidden`] is broken.\nfn hidden() {}\nfn main() {}\n",
+    );
+    let output = acquire_output(&context).unwrap();
+    let public = Job {
+        purpose: Purpose::PublicRustdoc,
+        configuration: configuration.clone(),
+    };
+    let private = Job {
+        purpose: Purpose::PrivateRustdoc,
+        configuration,
+    };
+    let public_error = run_rustdoc_measured(&context, &output, &public, false)
+        .err()
+        .unwrap()
+        .to_string();
+    let private_error = run_rustdoc_measured(&context, &output, &private, false)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(public_error.contains("MissingHidden"), "{public_error}");
+    assert!(private_error.contains("MissingHidden"), "{private_error}");
 }
 
 #[test]
@@ -234,19 +357,23 @@ fn catalog_orchestration_propagates_owner_failures_before_render() {
     };
     for failed in ["catalog", "unknown.toml", "exact.toml"] {
         let mut actions = Vec::new();
-        let error = run_catalog_actions(std::slice::from_ref(&group), |_, action| {
-            let name = match action {
-                CatalogAction::CheckCatalogs => "catalog",
-                CatalogAction::CheckProgram(path) => path.to_str().unwrap(),
-                CatalogAction::Render { .. } => "render",
-            };
-            actions.push(name.to_owned());
-            if name == failed {
-                Err(format!("owner rejected {failed}").into())
-            } else {
-                Ok(())
-            }
-        })
+        let error = run_catalog_actions(
+            Path::new("target/docs/static"),
+            std::slice::from_ref(&group),
+            |_, action| {
+                let name = match action {
+                    CatalogAction::CheckCatalogs => "catalog",
+                    CatalogAction::CheckProgram(path) => path.to_str().unwrap(),
+                    CatalogAction::Render { .. } => "render",
+                };
+                actions.push(name.to_owned());
+                if name == failed {
+                    Err(format!("owner rejected {failed}").into())
+                } else {
+                    Ok(())
+                }
+            },
+        )
         .unwrap_err()
         .to_string();
         assert!(error.contains(failed), "{error}");
@@ -276,6 +403,7 @@ fn planner_follows_transitive_required_features_like_cargo() {
     let repository = tempfile::tempdir().unwrap();
     for path in [
         "fixture/src",
+        "empty/src",
         "examples/example/src",
         "qualification/catalog/chip",
     ] {
@@ -283,7 +411,7 @@ fn planner_follows_transitive_required_features_like_cargo() {
     }
     fs::write(
         repository.path().join("Cargo.toml"),
-        "[workspace]\nresolver='3'\nmembers=['fixture', 'examples/example']\n",
+        "[workspace]\nresolver='3'\nmembers=['fixture', 'empty', 'examples/example']\n",
     )
     .unwrap();
     fs::write(repository.path().join("README.md"), "# Fixture\n").unwrap();
@@ -304,6 +432,17 @@ fn planner_follows_transitive_required_features_like_cargo() {
     fs::write(
         repository.path().join("fixture/src/main.rs"),
         "fn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("empty/Cargo.toml"),
+        "[package]\nname='empty-feature-fixture'\nversion='0.0.0'\nedition='2024'\n\
+         [package.metadata.open-radio]\nscope='production'\nlayer='protocol'\nplatform='portable'\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("empty/src/lib.rs"),
+        "pub struct Item;\n",
     )
     .unwrap();
     fs::write(
@@ -331,6 +470,104 @@ fn planner_follows_transitive_required_features_like_cargo() {
     process::run(context.command("git").args(["add", "."])).unwrap();
 
     let plan = build_plan(&context, "x86_64-unknown-linux-gnu").unwrap();
+    let mut selected = plan.clone();
+    select_plan(&mut selected, &Scope::Static).unwrap();
+    assert!(selected.jobs.is_empty());
+    assert!(selected.execution_jobs.is_empty());
+    assert!(selected.requirement_map.is_empty());
+    assert_eq!(selected.documents, plan.documents);
+    assert_eq!(selected.catalogs.len(), plan.catalogs.len());
+
+    let mut selected = plan.clone();
+    select_plan(
+        &mut selected,
+        &Scope::Packages {
+            names: vec!["required-features-fixture".into()],
+            private: false,
+        },
+    )
+    .unwrap();
+    assert!(!selected.jobs.is_empty());
+    assert!(selected.jobs.iter().all(|job| job.configuration.package
+        == "required-features-fixture"
+        && job.purpose != Purpose::PrivateRustdoc));
+    assert!(
+        selected
+            .jobs
+            .iter()
+            .any(|job| job.purpose == Purpose::HostDoctest)
+    );
+    assert_eq!(selected.requirement_map.len(), selected.jobs.len());
+    assert!(
+        selected
+            .requirement_map
+            .iter()
+            .all(|(_, job)| selected.execution_jobs.contains(job))
+    );
+    assert!(
+        select_plan(
+            &mut selected,
+            &Scope::Packages {
+                names: vec!["misspelled-package".into()],
+                private: false,
+            }
+        )
+        .is_err()
+    );
+
+    let mut selected = plan.clone();
+    select_plan(&mut selected, &Scope::Full).unwrap();
+    assert_eq!(selected.jobs, plan.jobs);
+    assert_eq!(selected.execution_jobs, plan.execution_jobs);
+    let mut selected = plan.clone();
+    select_plan(
+        &mut selected,
+        &Scope::Packages {
+            names: vec!["required-features-fixture".into()],
+            private: true,
+        },
+    )
+    .unwrap();
+    assert!(
+        selected
+            .jobs
+            .iter()
+            .any(|job| job.purpose == Purpose::PrivateRustdoc)
+    );
+    let empty_requirements = plan
+        .jobs
+        .iter()
+        .filter(|job| job.configuration.package == "empty-feature-fixture")
+        .count();
+    let empty_executions = plan
+        .execution_jobs
+        .iter()
+        .filter(|job| job.configuration.package == "empty-feature-fixture")
+        .count();
+    assert_eq!(empty_requirements, 9);
+    assert_eq!(empty_executions, 3);
+    assert_eq!(plan.requirement_map.len(), plan.jobs.len());
+    assert!(
+        plan.requirement_map
+            .iter()
+            .all(|(_, execution)| { plan.execution_jobs.contains(execution) })
+    );
+    let consumer = plan
+        .execution_jobs
+        .iter()
+        .find(|job| job.purpose == Purpose::McuCompileConsumer)
+        .unwrap()
+        .configuration
+        .clone();
+    assert!(validate_verified_consumers(&plan, &BTreeSet::from([consumer.clone()])).is_ok());
+    let mut wrong_consumer = consumer;
+    wrong_consumer.target = "host-target".into();
+    assert!(
+        validate_verified_consumers(&plan, &BTreeSet::from([wrong_consumer]))
+            .unwrap_err()
+            .to_string()
+            .contains("does not match")
+    );
     let demo_jobs = plan
         .jobs
         .iter()

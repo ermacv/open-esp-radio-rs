@@ -23,6 +23,7 @@ for shared lifecycle, PHY, coexistence and all three protocol inventories.
 | Build a station application | [Station example](examples/esp32s31-station/README.md) |
 | Build another radio role | [AP](examples/esp32s31-access-point/README.md), [monitor](examples/esp32s31-monitor/README.md), [Bluetooth controller](examples/esp32s31-bluetooth-controller/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
+| Assess STA and BLE product readiness | [Qualification programs](qualification/README.md) |
 | Check source and dependency policy | [Repository tooling](tools/repo/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
@@ -60,10 +61,15 @@ supported feature profiles; lockfiles pin their resolution.
 cargo check --workspace --locked --offline
 cargo test --workspace --locked --offline
 cargo fmt --all -- --check
-cargo xtask check source-only
+cargo xtask check docs
 ```
 
-The complete source-only gate also needs the embedded target and the selected
+For API changes, use `cargo xtask check docs --package PACKAGE`; add `--private`
+when reviewing private API. Run focused package tests and the relevant target
+profile while iterating. `cargo xtask check docs --full` builds the complete API
+matrix.
+
+Use `cargo xtask check source-only` for the complete source checkpoint. It also needs the embedded target and the selected
 toolchain's `llvm-tools-preview` component. It checks dependency and ownership
 boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration and HIL workspaces have their own build configuration; the root

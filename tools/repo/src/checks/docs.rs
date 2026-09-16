@@ -7,12 +7,21 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     process::Command,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Instant,
 };
 
 use cargo_metadata::TargetKind;
-use pulldown_cmark::{BrokenLink, CowStr, Event, Options, Parser, Tag, TagEnd};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
+
+mod markdown;
+use markdown::check_markdown;
 
 use super::{TARGET, common};
 use crate::{Context, Result, cargo, paths, process};
@@ -46,7 +55,7 @@ impl Purpose {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Job {
     purpose: Purpose,
     configuration: common::CargoConfiguration,
@@ -67,13 +76,137 @@ struct CatalogGroup {
     programs: Vec<PathBuf>,
 }
 
+#[derive(Clone)]
 struct Plan {
     source_package_count: usize,
     workspace_count: usize,
+    /// All source coverage obligations, including equivalent Cargo profiles.
     jobs: Vec<Job>,
+    /// Distinct invocations selected without merging distinct feature graphs.
+    execution_jobs: Vec<Job>,
+    requirement_map: Vec<(Job, Job)>,
     inapplicable: Vec<Inapplicable>,
     documents: Vec<PathBuf>,
     catalogs: Vec<CatalogGroup>,
+}
+
+/// Explicit coverage: a partial documentation check is never a full gate.
+#[derive(Clone, Debug)]
+pub enum Scope {
+    Static,
+    Packages { names: Vec<String>, private: bool },
+    Full,
+}
+
+impl Scope {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Packages { .. } => "packages",
+            Self::Full => "full",
+        }
+    }
+
+    fn output_name(&self) -> &'static str {
+        match self {
+            Self::Full => "gate",
+            _ => self.label(),
+        }
+    }
+
+    fn as_json(&self) -> Value {
+        match self {
+            Self::Packages { names, private } => json!({
+                "mode": self.label(), "packages": names, "private": private,
+                "full-gate": false,
+            }),
+            _ => json!({"mode": self.label(), "full-gate": matches!(self, Self::Full)}),
+        }
+    }
+}
+
+fn select_plan(plan: &mut Plan, scope: &Scope) -> Result<()> {
+    if let Scope::Packages { names, .. } = scope {
+        if names.is_empty() {
+            return Err("package documentation requires at least one package".into());
+        }
+        for name in names {
+            if !plan
+                .jobs
+                .iter()
+                .any(|job| job.configuration.package == *name)
+            {
+                return Err(format!(
+                    "package {name:?} has no documentation jobs in this repository"
+                )
+                .into());
+            }
+        }
+    }
+    let include = |job: &Job| match scope {
+        Scope::Full => true,
+        Scope::Static => false,
+        Scope::Packages { names, private } => {
+            names.contains(&job.configuration.package)
+                && (*private || job.purpose != Purpose::PrivateRustdoc)
+        }
+    };
+    plan.jobs.retain(include);
+    plan.execution_jobs.retain(include);
+    plan.requirement_map.retain(|(job, _)| include(job));
+    plan.inapplicable.retain(|entry| match scope {
+        Scope::Full => true,
+        Scope::Static => false,
+        Scope::Packages { names, .. } => names.contains(&entry.package),
+    });
+    Ok(())
+}
+
+fn executable_documentation_features(
+    package: &cargo_metadata::Package,
+    requested: &[String],
+) -> Vec<String> {
+    let only_empty_default =
+        package.features.len() == 1 && package.features.get("default").is_some_and(Vec::is_empty);
+    if package.features.is_empty() || only_empty_default {
+        Vec::new()
+    } else {
+        requested.to_vec()
+    }
+}
+
+fn record_requirement(
+    mapped: &mut Vec<(Job, Job)>,
+    purpose: Purpose,
+    configuration: common::CargoConfiguration,
+    package: Option<&cargo_metadata::Package>,
+) {
+    let requirement = Job {
+        purpose,
+        configuration,
+    };
+    let mut execution = requirement.clone();
+    if let Some(package) = package {
+        execution.configuration.features =
+            executable_documentation_features(package, &execution.configuration.features);
+    }
+    mapped.push((requirement, execution));
+}
+
+fn validate_verified_consumers(
+    plan: &Plan,
+    verified: &BTreeSet<common::CargoConfiguration>,
+) -> Result<()> {
+    let planned = plan
+        .execution_jobs
+        .iter()
+        .filter(|job| job.purpose == Purpose::McuCompileConsumer)
+        .map(|job| job.configuration.clone())
+        .collect::<BTreeSet<_>>();
+    if !verified.is_subset(&planned) {
+        return Err("source-only example evidence does not match planned MCU consumers".into());
+    }
+    Ok(())
 }
 
 struct ToolchainIdentity {
@@ -92,19 +225,145 @@ struct LinkSummary {
     anchors: usize,
 }
 
-pub fn run(ctx: &Context, list: bool) -> Result<()> {
+/// Keep Cargo execution separate from catalog leases and HTML export so
+/// cold, warm and one-source-change measurements remain comparable.
+#[derive(Clone, Copy, Default)]
+struct JobTiming {
+    metadata_us: u64,
+    cargo_us: u64,
+    snapshot_us: u64,
+    total_us: u64,
+}
+
+struct RustdocOutput {
+    verified: PathBuf,
+    snapshot: Option<PathBuf>,
+}
+
+impl JobTiming {
+    fn as_json(self) -> Value {
+        json!({
+            "metadata-us": self.metadata_us,
+            "cargo-us": self.cargo_us,
+            "snapshot-us": self.snapshot_us,
+            "total-us": self.total_us,
+        })
+    }
+}
+
+fn elapsed_us(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+fn stage_timing(label: &str, duration_us: u64) {
+    eprintln!("docs timing: stage={label} total-us={duration_us}");
+}
+
+fn job_timing(ctx: &Context, job: &Job, timing: JobTiming) -> Result<Value> {
+    let id = job.configuration.id(&ctx.root)?;
+    eprintln!(
+        "docs timing: job={} id={id} metadata-us={} cargo-us={} snapshot-us={} total-us={}",
+        job.purpose.label(),
+        timing.metadata_us,
+        timing.cargo_us,
+        timing.snapshot_us,
+        timing.total_us,
+    );
+    Ok(json!({
+        "purpose": job.purpose.label(),
+        "configuration-id": id,
+        "verification": "docs-cargo",
+        "timing": timing.as_json(),
+    }))
+}
+
+fn reused_consumer_timing(ctx: &Context, job: &Job) -> Result<Value> {
+    let id = job.configuration.id(&ctx.root)?;
+    eprintln!(
+        "docs timing: job={} id={id} metadata-us=0 cargo-us=0 snapshot-us=0 total-us=0 verification=source-only/examples",
+        job.purpose.label(),
+    );
+    Ok(json!({
+        "purpose": job.purpose.label(),
+        "configuration-id": id,
+        "verification": "source-only/examples",
+        "timing": JobTiming::default().as_json(),
+    }))
+}
+
+/// Full checkpoint entry point used by source-only orchestration.
+pub fn run(ctx: &Context, list: bool, export_html: bool, workers: usize) -> Result<()> {
+    run_with_consumers(ctx, list, export_html, workers, &BTreeSet::new())
+}
+
+pub fn run_selected(
+    ctx: &Context,
+    scope: Scope,
+    list: bool,
+    export_html: bool,
+    workers: usize,
+) -> Result<()> {
+    if export_html && matches!(scope, Scope::Static) {
+        return Err("--export-html requires --full or --package".into());
+    }
+    run_scoped(ctx, scope, list, export_html, workers, &BTreeSet::new())
+}
+
+pub fn run_with_consumers(
+    ctx: &Context,
+    list: bool,
+    export_html: bool,
+    workers: usize,
+    verified_consumers: &BTreeSet<common::CargoConfiguration>,
+) -> Result<()> {
+    run_scoped(
+        ctx,
+        Scope::Full,
+        list,
+        export_html,
+        workers,
+        verified_consumers,
+    )
+}
+
+fn run_scoped(
+    ctx: &Context,
+    scope: Scope,
+    list: bool,
+    export_html: bool,
+    workers: usize,
+    verified_consumers: &BTreeSet<common::CargoConfiguration>,
+) -> Result<()> {
+    if !(1..=2).contains(&workers) {
+        return Err("docs rustdoc workers must be one or two".into());
+    }
+    let gate_start = Instant::now();
+    let stage_start = Instant::now();
     let toolchain = toolchain_identity(ctx)?;
-    let plan = build_plan(ctx, &toolchain.host)?;
-    let output = acquire_output(ctx)?;
-    let plan_value = plan_json(ctx, &plan, &toolchain)?;
+    let toolchain_us = elapsed_us(stage_start);
+    stage_timing("toolchain", toolchain_us);
+    let stage_start = Instant::now();
+    let mut plan = build_plan(ctx, &toolchain.host)?;
+    select_plan(&mut plan, &scope)?;
+    validate_verified_consumers(&plan, verified_consumers)?;
+    let plan_us = elapsed_us(stage_start);
+    stage_timing("plan-metadata", plan_us);
+    let stage_start = Instant::now();
+    let output = acquire_scoped_output(ctx, scope.output_name())?;
+    let mut plan_value = plan_json(ctx, &plan, &toolchain)?;
+    plan_value["scope"] = scope.as_json();
     write_json(&output.join("job-plan.json"), &plan_value)?;
+    let output_us = elapsed_us(stage_start);
+    stage_timing("output-and-plan-json", output_us);
     if list {
         print_plan(ctx, &plan)?;
         println!(
-            "docs plan: workspaces={} packages={} jobs={} documents={} catalog-groups={} inapplicable={}",
+            "docs {} plan: workspaces={} packages={} requirements={} executions={} documents={} catalog-groups={} inapplicable={}",
+            scope.label(),
             plan.workspace_count,
             plan.source_package_count,
             plan.jobs.len(),
+            plan.execution_jobs.len(),
             plan.documents.len(),
             plan.catalogs.len(),
             plan.inapplicable.len()
@@ -112,6 +371,7 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
         return Ok(());
     }
 
+    let stage_start = Instant::now();
     let report = output.join("report.json");
     if report.try_exists()? {
         fs::remove_file(&report)?;
@@ -120,36 +380,76 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
     let before_status = repository_status(ctx)?;
     let before_locks = lock_identities(&plan)?;
     let source_sha256 = source_identity(ctx, &plan)?;
+    let reset_us = elapsed_us(stage_start);
+    stage_timing("reset-and-source-identity", reset_us);
 
     let mut rustdoc_outputs = Vec::new();
-    for job in plan.jobs.iter().filter(|job| {
-        matches!(
-            job.purpose,
-            Purpose::PublicRustdoc | Purpose::PrivateRustdoc
-        )
-    }) {
-        rustdoc_outputs.push(run_rustdoc(ctx, &output, job)?);
+    let mut html_snapshots = Vec::new();
+    let mut job_timings = Vec::new();
+    let stage_start = Instant::now();
+    let rustdoc_jobs = plan
+        .execution_jobs
+        .iter()
+        .filter(|job| {
+            matches!(
+                job.purpose,
+                Purpose::PublicRustdoc | Purpose::PrivateRustdoc
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    for (job, rendered, timing) in
+        run_rustdoc_jobs(ctx, &output, &rustdoc_jobs, export_html, workers)?
+    {
+        rustdoc_outputs.push(rendered.verified);
+        if let Some(snapshot) = rendered.snapshot {
+            html_snapshots.push(snapshot);
+        }
+        job_timings.push(job_timing(ctx, &job, timing)?);
     }
+    let rustdoc_us = elapsed_us(stage_start);
+    stage_timing("rustdoc", rustdoc_us);
+    let stage_start = Instant::now();
     for job in plan
-        .jobs
+        .execution_jobs
         .iter()
         .filter(|job| job.purpose == Purpose::HostDoctest)
     {
-        run_doctest(ctx, &output, job)?;
+        let timing = run_doctest_measured(ctx, &output, job)?;
+        job_timings.push(job_timing(ctx, job, timing)?);
     }
+    let doctest_us = elapsed_us(stage_start);
+    stage_timing("host-doctest", doctest_us);
+    let stage_start = Instant::now();
+    let mut reused_consumers = 0;
     for job in plan
-        .jobs
+        .execution_jobs
         .iter()
         .filter(|job| job.purpose == Purpose::McuCompileConsumer)
     {
-        run_consumer(ctx, &output, job)?;
+        if verified_consumers.contains(&job.configuration) {
+            reused_consumers += 1;
+            job_timings.push(reused_consumer_timing(ctx, job)?);
+        } else {
+            let timing = run_consumer_measured(ctx, &output, job)?;
+            job_timings.push(job_timing(ctx, job, timing)?);
+        }
     }
+    let consumer_us = elapsed_us(stage_start);
+    stage_timing("mcu-consumer", consumer_us);
 
+    let stage_start = Instant::now();
     let generated = run_catalogs(ctx, &output, &plan.catalogs)?;
+    let catalogs_us = elapsed_us(stage_start);
+    stage_timing("catalogs", catalogs_us);
+    let stage_start = Instant::now();
     let mut documents = plan.documents.clone();
     documents.extend(generated);
     let links = check_markdown(ctx, &documents)?;
+    let markdown_us = elapsed_us(stage_start);
+    stage_timing("markdown-links", markdown_us);
 
+    let stage_start = Instant::now();
     if repository_status(ctx)? != before_status {
         return Err("docs gate changed tracked or unrelated untracked source state".into());
     }
@@ -159,10 +459,15 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
     if source_identity(ctx, &plan)? != source_sha256 {
         return Err("docs gate changed a source input".into());
     }
+    let integrity_us = elapsed_us(stage_start);
+    stage_timing("source-integrity", integrity_us);
 
+    let stage_start = Instant::now();
     let counts = purpose_counts(&plan.jobs);
+    let execution_counts = purpose_counts(&plan.execution_jobs);
     let report_value = json!({
-        "schema": 1,
+        "schema": 2,
+        "scope": scope.as_json(),
         "source": {
             "head": repository_head(ctx)?,
             "dirty": !before_status.is_empty(),
@@ -174,6 +479,8 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
             "workspaces": plan.workspace_count,
             "packages": plan.source_package_count,
             "configurations": unique_configuration_count(ctx, &plan.jobs)?,
+            "requirements": plan.jobs.len(),
+            "mapped-requirements": plan.requirement_map.len(),
             "public-rustdoc": counts.get(Purpose::PublicRustdoc.label()).copied().unwrap_or(0),
             "private-rustdoc": counts.get(Purpose::PrivateRustdoc.label()).copied().unwrap_or(0),
             "host-doctest": counts.get(Purpose::HostDoctest.label()).copied().unwrap_or(0),
@@ -187,10 +494,41 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
             "anchors": links.anchors,
             "inapplicable": plan.inapplicable.len(),
         },
+        "execution": {
+            "jobs": plan.execution_jobs.len(),
+            "public-rustdoc": execution_counts.get(Purpose::PublicRustdoc.label()).copied().unwrap_or(0),
+            "private-rustdoc": execution_counts.get(Purpose::PrivateRustdoc.label()).copied().unwrap_or(0),
+            "host-doctest": execution_counts.get(Purpose::HostDoctest.label()).copied().unwrap_or(0),
+            "mcu-compile-consumer": execution_counts.get(Purpose::McuCompileConsumer.label()).copied().unwrap_or(0),
+            "mcu-compile-consumer-example-evidence": reused_consumers,
+            "local-cargo-jobs": plan.execution_jobs.len() - reused_consumers,
+            "rustdoc-workers": workers,
+        },
+        "requirement-map": plan.requirement_map.iter().map(|(requirement, execution)| {
+            requirement_mapping_json(ctx, requirement, execution)
+        }).collect::<Result<Vec<_>>>()?,
         "outputs": {
             "job-plan": relative(ctx, &output.join("job-plan.json"))?,
-            "public-private-rustdoc": rustdoc_outputs.iter().map(|path| relative(ctx, path)).collect::<Result<Vec<_>>>()?,
+            "verified-rustdoc": rustdoc_outputs.iter().map(|path| relative(ctx, path)).collect::<Result<Vec<_>>>()?,
+            "exported-html-snapshots": html_snapshots.iter().map(|path| relative(ctx, path)).collect::<Result<Vec<_>>>()?,
+            "html-snapshot-export": export_html,
             "static-catalogs": plan.catalogs.iter().map(|group| relative(ctx, &output.join("catalogs").join(&group.chip).join("forward"))).collect::<Result<Vec<_>>>()?,
+        },
+        "timings": {
+            "unit": "microseconds",
+            "jobs": job_timings,
+            "stages": {
+                "toolchain": toolchain_us,
+                "plan-metadata": plan_us,
+                "output-and-plan-json": output_us,
+                "reset-and-source-identity": reset_us,
+                "rustdoc": rustdoc_us,
+                "host-doctest": doctest_us,
+                "mcu-consumer": consumer_us,
+                "catalogs": catalogs_us,
+                "markdown-links": markdown_us,
+                "source-integrity": integrity_us,
+            },
         },
         "inapplicable": plan.inapplicable.iter().map(|entry| json!({
             "package": entry.package,
@@ -206,8 +544,11 @@ pub fn run(ctx: &Context, list: bool) -> Result<()> {
         },
     });
     write_json(&report, &report_value)?;
+    stage_timing("report-write", elapsed_us(stage_start));
+    stage_timing("total", elapsed_us(gate_start));
     println!(
-        "docs gate passed: workspaces={} packages={} public={} private={} doctests={} consumers={} catalogs={} programs={} documents={} local-links={} external-not-checked={} inapplicable={}",
+        "docs {} passed: workspaces={} packages={} public={} private={} doctests={} consumers={} catalogs={} programs={} documents={} local-links={} external-not-checked={} inapplicable={}",
+        scope.label(),
         plan.workspace_count,
         plan.source_package_count,
         counts
@@ -249,7 +590,7 @@ fn build_plan(ctx: &Context, host: &str) -> Result<Plan> {
         .map(|item| &item.workspace_manifest)
         .collect::<BTreeSet<_>>()
         .len();
-    let mut jobs = Vec::new();
+    let mut mapped = Vec::new();
     let mut inapplicable = BTreeSet::new();
     for item in &packages {
         let class = common::classification(&item.package)?;
@@ -316,22 +657,28 @@ fn build_plan(ctx: &Context, host: &str) -> Result<Plan> {
                     build_profile,
                     cargo_target: selector.clone(),
                 };
-                jobs.push(Job {
-                    purpose: Purpose::PublicRustdoc,
-                    configuration: configuration.clone(),
-                });
-                jobs.push(Job {
-                    purpose: Purpose::PrivateRustdoc,
-                    configuration: configuration.clone(),
-                });
+                record_requirement(
+                    &mut mapped,
+                    Purpose::PublicRustdoc,
+                    configuration.clone(),
+                    Some(&item.package),
+                );
+                record_requirement(
+                    &mut mapped,
+                    Purpose::PrivateRustdoc,
+                    configuration.clone(),
+                    Some(&item.package),
+                );
                 if target.doctest
                     && target_triple == host
                     && matches!(selector, common::CargoTargetSelection::Lib(_))
                 {
-                    jobs.push(Job {
-                        purpose: Purpose::HostDoctest,
+                    record_requirement(
+                        &mut mapped,
+                        Purpose::HostDoctest,
                         configuration,
-                    });
+                        Some(&item.package),
+                    );
                 }
             }
             if applicable_profiles == 0 {
@@ -371,18 +718,27 @@ fn build_plan(ctx: &Context, host: &str) -> Result<Plan> {
         }
     }
     for configuration in common::example_configurations(ctx, TARGET)? {
-        jobs.push(Job {
-            purpose: Purpose::McuCompileConsumer,
+        record_requirement(
+            &mut mapped,
+            Purpose::McuCompileConsumer,
             configuration,
-        });
+            None,
+        );
     }
-    jobs.sort_by(|left, right| {
-        (left.purpose, &left.configuration).cmp(&(right.purpose, &right.configuration))
-    });
+    mapped.sort_by(|left, right| left.0.cmp(&right.0));
+    let jobs = mapped.iter().map(|(job, _)| job.clone()).collect();
+    let execution_jobs = mapped
+        .iter()
+        .map(|(_, job)| job.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     Ok(Plan {
         source_package_count: packages.len(),
         workspace_count,
         jobs,
+        execution_jobs,
+        requirement_map: mapped,
         inapplicable: inapplicable.into_iter().collect(),
         documents: owned_documents(ctx, &packages)?,
         catalogs: catalog_groups(ctx)?,
@@ -575,8 +931,13 @@ fn first_line(output: &str) -> String {
     output.lines().next().unwrap_or_default().to_owned()
 }
 
+#[cfg(test)]
 fn acquire_output(ctx: &Context) -> Result<PathBuf> {
-    let output = ctx.root.join("target/docs/gate");
+    acquire_scoped_output(ctx, "gate")
+}
+
+fn acquire_scoped_output(ctx: &Context, name: &str) -> Result<PathBuf> {
+    let output = ctx.root.join("target/docs").join(name);
     let owner = output.join(".owner");
     if output.try_exists()? {
         if output.is_symlink() || !output.is_dir() {
@@ -719,7 +1080,113 @@ fn workspace_cache_id(ctx: &Context, configuration: &common::CargoConfiguration)
     Ok(format!("{:x}", Sha256::digest(identity.as_bytes()))[..20].to_owned())
 }
 
-fn run_rustdoc(ctx: &Context, output: &Path, job: &Job) -> Result<PathBuf> {
+fn run_rustdoc_jobs(
+    ctx: &Context,
+    output: &Path,
+    jobs: &[Job],
+    export_html: bool,
+    workers: usize,
+) -> Result<Vec<(Job, RustdocOutput, JobTiming)>> {
+    if !(1..=2).contains(&workers) || jobs.iter().collect::<BTreeSet<_>>().len() != jobs.len() {
+        return Err("rustdoc worker plan must be bounded and contain distinct jobs".into());
+    }
+    if workers == 1 {
+        return jobs
+            .iter()
+            .map(|job| {
+                let (rendered, timing) = run_rustdoc_measured(ctx, output, job, export_html)?;
+                Ok((job.clone(), rendered, timing))
+            })
+            .collect();
+    }
+
+    // A worker owns one Cargo target-dir group at a time. Catalog readers may
+    // overlap, but no two commands can mutate the same rustdoc cache staging.
+    let mut groups =
+        BTreeMap::<(PathBuf, Purpose, String, common::CargoBuildProfile), Vec<Job>>::new();
+    for job in jobs {
+        groups
+            .entry((
+                job.configuration.workspace_manifest.clone(),
+                job.purpose,
+                job.configuration.target.clone(),
+                job.configuration.build_profile,
+            ))
+            .or_default()
+            .push(job.clone());
+    }
+    let mut groups = groups.into_values().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        right
+            .len()
+            .cmp(&left.len())
+            .then_with(|| left[0].cmp(&right[0]))
+    });
+    let queue = Mutex::new(VecDeque::from(groups));
+    let canceled = AtomicBool::new(false);
+    let (sender, receiver) = mpsc::channel::<(Job, Result<(RustdocOutput, JobTiming)>)>();
+    let completed = thread::scope(|scope| {
+        for _ in 0..workers {
+            let sender = sender.clone();
+            let queue = &queue;
+            let canceled = &canceled;
+            scope.spawn(move || {
+                while !canceled.load(Ordering::Acquire) {
+                    let Some(group) = queue.lock().expect("rustdoc queue poisoned").pop_front()
+                    else {
+                        break;
+                    };
+                    for job in group {
+                        if canceled.load(Ordering::Acquire) {
+                            break;
+                        }
+                        let result = run_rustdoc_measured(ctx, output, &job, export_html);
+                        if result.is_err() {
+                            canceled.store(true, Ordering::Release);
+                        }
+                        if sender.send((job, result)).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+        drop(sender);
+        receiver.into_iter().collect::<Vec<_>>()
+    });
+    let mut results = BTreeMap::new();
+    let mut first_error = None;
+    for (job, result) in completed {
+        match result {
+            Ok(output) => {
+                results.insert(job, output);
+            }
+            Err(error) if first_error.is_none() => first_error = Some(error),
+            Err(_) => {}
+        }
+    }
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    if results.len() != jobs.len() {
+        return Err("rustdoc workers did not verify every planned execution".into());
+    }
+    jobs.iter()
+        .map(|job| {
+            let (rendered, timing) = results.remove(job).ok_or("rustdoc worker result missing")?;
+            Ok((job.clone(), rendered, timing))
+        })
+        .collect()
+}
+
+fn run_rustdoc_measured(
+    ctx: &Context,
+    output: &Path,
+    job: &Job,
+    export_html: bool,
+) -> Result<(RustdocOutput, JobTiming)> {
+    let total_start = Instant::now();
+    let metadata_start = Instant::now();
     let configuration = &job.configuration;
     eprintln!(
         "docs {}: package={} target={} features={:?} cargo-target={}",
@@ -751,14 +1218,54 @@ fn run_rustdoc(ctx: &Context, output: &Path, job: &Job) -> Result<PathBuf> {
         command.arg("--document-private-items");
     }
     strict_rustdoc(&mut command);
+    let metadata_us = elapsed_us(metadata_start);
+    let cargo_start = Instant::now();
     run_checked(&mut command)?;
-    let snapshot = output
-        .join("rustdoc")
-        .join(job.purpose.label())
-        .join(configuration.id(&ctx.root)?);
-    owned_remove_dir(output, &snapshot)?;
-    snapshot_rustdoc(&staging, &snapshot, &configuration.cargo_target)?;
-    Ok(snapshot)
+    let cargo_us = elapsed_us(cargo_start);
+    let verified = staging.join(target_crate_name(&configuration.cargo_target)?);
+    if !verified.join("index.html").is_file() {
+        return Err(format!("Cargo rustdoc output missing: {}", verified.display()).into());
+    }
+    let (snapshot, snapshot_us) = if export_html {
+        let snapshot_start = Instant::now();
+        let snapshot = output
+            .join("rustdoc")
+            .join(job.purpose.label())
+            .join(configuration.id(&ctx.root)?);
+        owned_remove_dir(output, &snapshot)?;
+        snapshot_rustdoc(&staging, &snapshot, &configuration.cargo_target)?;
+        (Some(snapshot), elapsed_us(snapshot_start))
+    } else {
+        (None, 0)
+    };
+    Ok((
+        RustdocOutput { verified, snapshot },
+        JobTiming {
+            metadata_us,
+            cargo_us,
+            snapshot_us,
+            total_us: elapsed_us(total_start),
+        },
+    ))
+}
+
+#[cfg(test)]
+fn run_rustdoc(ctx: &Context, output: &Path, job: &Job) -> Result<PathBuf> {
+    run_rustdoc_measured(ctx, output, job, true)?
+        .0
+        .snapshot
+        .ok_or_else(|| "fixture rustdoc snapshot missing".into())
+}
+
+fn target_crate_name(target: &common::CargoTargetSelection) -> Result<String> {
+    match target {
+        common::CargoTargetSelection::Lib(name) | common::CargoTargetSelection::Bin(name) => {
+            Ok(name.replace('-', "_"))
+        }
+        common::CargoTargetSelection::DefaultTargets => {
+            Err("rustdoc requires an explicit Cargo target".into())
+        }
+    }
 }
 
 fn snapshot_rustdoc(
@@ -766,13 +1273,7 @@ fn snapshot_rustdoc(
     snapshot: &Path,
     target: &common::CargoTargetSelection,
 ) -> Result<()> {
-    let target_name = match target {
-        common::CargoTargetSelection::Lib(name) | common::CargoTargetSelection::Bin(name) => name,
-        common::CargoTargetSelection::DefaultTargets => {
-            return Err("rustdoc snapshot requires an explicit Cargo target".into());
-        }
-    };
-    let crate_name = target_name.replace('-', "_");
+    let crate_name = target_crate_name(target)?;
     copy_tree(&staging.join(&crate_name), &snapshot.join(&crate_name))?;
     let static_files = staging.join("static.files");
     if static_files.is_dir() {
@@ -805,7 +1306,9 @@ fn apply_documentation_environment(command: &mut Command, output: &Path) -> Resu
     Ok(())
 }
 
-fn run_doctest(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
+fn run_doctest_measured(ctx: &Context, output: &Path, job: &Job) -> Result<JobTiming> {
+    let total_start = Instant::now();
+    let metadata_start = Instant::now();
     let configuration = &job.configuration;
     let _catalog = cargo::catalog_read(
         ctx,
@@ -823,10 +1326,25 @@ fn run_doctest(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
     doctest_configuration.cargo_target = common::CargoTargetSelection::DefaultTargets;
     doctest_configuration.apply(&mut command);
     strict_rustdoc(&mut command);
-    run_checked(&mut command)
+    let metadata_us = elapsed_us(metadata_start);
+    let cargo_start = Instant::now();
+    run_checked(&mut command)?;
+    Ok(JobTiming {
+        metadata_us,
+        cargo_us: elapsed_us(cargo_start),
+        snapshot_us: 0,
+        total_us: elapsed_us(total_start),
+    })
 }
 
-fn run_consumer(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
+#[cfg(test)]
+fn run_doctest(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
+    run_doctest_measured(ctx, output, job).map(|_| ())
+}
+
+fn run_consumer_measured(ctx: &Context, output: &Path, job: &Job) -> Result<JobTiming> {
+    let total_start = Instant::now();
+    let metadata_start = Instant::now();
     let configuration = &job.configuration;
     let _catalog = cargo::catalog_read(
         ctx,
@@ -839,7 +1357,20 @@ fn run_consumer(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
     let mut command = ctx.cargo();
     command.args(["check", "--target-dir"]).arg(cache);
     configuration.apply(&mut command);
-    run_checked(&mut command)
+    let metadata_us = elapsed_us(metadata_start);
+    let cargo_start = Instant::now();
+    run_checked(&mut command)?;
+    Ok(JobTiming {
+        metadata_us,
+        cargo_us: elapsed_us(cargo_start),
+        snapshot_us: 0,
+        total_us: elapsed_us(total_start),
+    })
+}
+
+#[cfg(test)]
+fn run_consumer(ctx: &Context, output: &Path, job: &Job) -> Result<()> {
+    run_consumer_measured(ctx, output, job).map(|_| ())
 }
 
 fn catalog_groups(ctx: &Context) -> Result<Vec<CatalogGroup>> {
@@ -898,8 +1429,9 @@ fn catalog_groups(ctx: &Context) -> Result<Vec<CatalogGroup>> {
     Ok(groups.into_values().collect())
 }
 
-fn qualification_binary(ctx: &Context, output: &Path) -> Result<PathBuf> {
-    let target = output.join("cache/qualification");
+fn qualification_binary(ctx: &Context) -> Result<PathBuf> {
+    // All scopes use the same catalog tool; avoid recompiling it per scope.
+    let target = ctx.root.join("target");
     process::run(ctx.cargo().env("CARGO_TARGET_DIR", &target).args([
         "build",
         "--locked",
@@ -935,8 +1467,8 @@ fn qualification_command(
 }
 
 fn run_catalogs(ctx: &Context, output: &Path, groups: &[CatalogGroup]) -> Result<Vec<PathBuf>> {
-    let binary = qualification_binary(ctx, output)?;
-    run_catalog_actions(groups, |group, action| {
+    let binary = qualification_binary(ctx)?;
+    run_catalog_actions(output, groups, |group, action| {
         let mut arguments = vec![OsString::from("catalog")];
         match action {
             CatalogAction::CheckCatalogs => {
@@ -1001,6 +1533,7 @@ enum CatalogAction<'a> {
 }
 
 fn run_catalog_actions(
+    output: &Path,
     groups: &[CatalogGroup],
     mut execute: impl FnMut(&CatalogGroup, CatalogAction<'_>) -> Result<()>,
 ) -> Result<()> {
@@ -1009,7 +1542,7 @@ fn run_catalog_actions(
         for program in &group.programs {
             execute(group, CatalogAction::CheckProgram(program))?;
         }
-        let base = PathBuf::from("target/docs/gate/catalogs").join(&group.chip);
+        let base = output.join("catalogs").join(&group.chip);
         execute(
             group,
             CatalogAction::Render {
@@ -1092,6 +1625,19 @@ fn configuration_json(ctx: &Context, configuration: &common::CargoConfiguration)
     }))
 }
 
+fn requirement_mapping_json(ctx: &Context, requirement: &Job, execution: &Job) -> Result<Value> {
+    Ok(json!({
+        "requirement": {
+            "purpose": requirement.purpose.label(),
+            "configuration-id": requirement.configuration.id(&ctx.root)?,
+        },
+        "execution": {
+            "purpose": execution.purpose.label(),
+            "configuration-id": execution.configuration.id(&ctx.root)?,
+        },
+    }))
+}
+
 fn toolchain_json(identity: &ToolchainIdentity) -> Value {
     json!({
         "cargo": identity.cargo,
@@ -1104,7 +1650,7 @@ fn toolchain_json(identity: &ToolchainIdentity) -> Value {
 
 fn plan_json(ctx: &Context, plan: &Plan, toolchain: &ToolchainIdentity) -> Result<Value> {
     Ok(json!({
-        "schema": 1,
+        "schema": 2,
         "toolchain": toolchain_json(toolchain),
         "target": TARGET,
         "workspaces": plan.workspace_count,
@@ -1113,6 +1659,13 @@ fn plan_json(ctx: &Context, plan: &Plan, toolchain: &ToolchainIdentity) -> Resul
             "purpose": job.purpose.label(),
             "configuration": configuration_json(ctx, &job.configuration)?,
         }))).collect::<Result<Vec<_>>>()?,
+        "executions": plan.execution_jobs.iter().map(|job| Ok(json!({
+            "purpose": job.purpose.label(),
+            "configuration": configuration_json(ctx, &job.configuration)?,
+        }))).collect::<Result<Vec<_>>>()?,
+        "requirement-map": plan.requirement_map.iter().map(|(requirement, execution)| {
+            requirement_mapping_json(ctx, requirement, execution)
+        }).collect::<Result<Vec<_>>>()?,
         "documents": plan.documents.iter().map(|path| relative(ctx, path)).collect::<Result<Vec<_>>>()?,
         "catalog-groups": plan.catalogs.iter().map(|group| json!({
             "chip": group.chip,
@@ -1155,6 +1708,17 @@ fn print_plan(ctx: &Context, plan: &Plan) -> Result<()> {
             job.configuration.target,
             job.configuration.features,
             job.configuration.build_profile.label(),
+            job.configuration.cargo_target.label(),
+        );
+    }
+    for job in &plan.execution_jobs {
+        println!(
+            "DOC-EXEC\tpurpose={}\tid={}\tpackage={}\ttarget={}\tfeatures={:?}\tcargo-target={}",
+            job.purpose.label(),
+            job.configuration.id(&ctx.root)?,
+            job.configuration.package,
+            job.configuration.target,
+            job.configuration.features,
             job.configuration.cargo_target.label(),
         );
     }
@@ -1253,410 +1817,6 @@ fn source_identity(ctx: &Context, plan: &Plan) -> Result<String> {
         hasher.update([0]);
     }
     Ok(format!("{:x}", hasher.finalize()))
-}
-
-#[derive(Default)]
-struct ParsedMarkdown {
-    anchors: BTreeSet<String>,
-    links: Vec<String>,
-    undefined_references: Vec<String>,
-}
-
-fn parse_markdown(text: &str) -> ParsedMarkdown {
-    let mut undefined_references = Vec::new();
-    let mut callback = |broken: BrokenLink<'_>| {
-        undefined_references.push(broken.reference.to_string());
-        Some((CowStr::from("#"), CowStr::from("")))
-    };
-    let options = Options::ENABLE_TABLES
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_HEADING_ATTRIBUTES;
-    let parser = Parser::new_with_broken_link_callback(text, options, Some(&mut callback));
-    let mut anchors = BTreeSet::new();
-    let mut duplicate_headings = BTreeMap::<String, usize>::new();
-    let mut links = Vec::new();
-    let mut heading: Option<(Option<String>, String)> = None;
-    for event in parser {
-        match event {
-            Event::Start(Tag::Heading { id, .. }) => {
-                heading = Some((id.map(|id| id.to_string()), String::new()));
-            }
-            Event::End(TagEnd::Heading(_)) => {
-                if let Some((explicit, text)) = heading.take() {
-                    let base = explicit.unwrap_or_else(|| heading_slug(&text));
-                    let count = duplicate_headings.entry(base.clone()).or_default();
-                    let anchor = if *count == 0 {
-                        base
-                    } else {
-                        format!("{base}-{count}")
-                    };
-                    *count += 1;
-                    anchors.insert(anchor);
-                }
-            }
-            Event::Text(text) | Event::Code(text) => {
-                if let Some((_, heading)) = &mut heading {
-                    heading.push_str(&text);
-                }
-            }
-            Event::Start(Tag::Link { dest_url, .. })
-            | Event::Start(Tag::Image { dest_url, .. }) => links.push(dest_url.to_string()),
-            Event::Html(html) | Event::InlineHtml(html) => {
-                anchors.extend(html_anchors(&html));
-            }
-            _ => {}
-        }
-    }
-    ParsedMarkdown {
-        anchors,
-        links,
-        undefined_references,
-    }
-}
-
-fn heading_slug(text: &str) -> String {
-    let mut slug = String::new();
-    for character in text.chars().flat_map(char::to_lowercase) {
-        if character.is_alphanumeric() || matches!(character, '-' | '_') {
-            slug.push(character);
-        } else if character.is_whitespace() {
-            slug.push('-');
-        }
-    }
-    slug
-}
-
-fn html_anchors(html: &str) -> Vec<String> {
-    let mut anchors = Vec::new();
-    let bytes = html.as_bytes();
-    let mut cursor = 0;
-    while let Some(offset) = html[cursor..].find("<a") {
-        let start = cursor + offset + 2;
-        let Some(end_offset) = html[start..].find('>') else {
-            break;
-        };
-        let end = start + end_offset;
-        if let Ok(attributes) = std::str::from_utf8(&bytes[start..end]) {
-            for name in ["id", "name"] {
-                if let Some(value) = html_attribute(attributes, name) {
-                    anchors.push(value);
-                }
-            }
-        }
-        cursor = end + 1;
-    }
-    anchors
-}
-
-fn html_attribute(attributes: &str, wanted: &str) -> Option<String> {
-    let mut cursor = 0;
-    let bytes = attributes.as_bytes();
-    while cursor < bytes.len() {
-        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        let name_start = cursor;
-        while cursor < bytes.len()
-            && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'-' | b'_'))
-        {
-            cursor += 1;
-        }
-        let name = &attributes[name_start..cursor];
-        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        if cursor >= bytes.len() || bytes[cursor] != b'=' {
-            cursor += usize::from(cursor < bytes.len());
-            continue;
-        }
-        cursor += 1;
-        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        let quote = bytes
-            .get(cursor)
-            .copied()
-            .filter(|byte| matches!(byte, b'\'' | b'"'));
-        if quote.is_some() {
-            cursor += 1;
-        }
-        let value_start = cursor;
-        while cursor < bytes.len()
-            && quote.map_or_else(
-                || !bytes[cursor].is_ascii_whitespace(),
-                |quote| bytes[cursor] != quote,
-            )
-        {
-            cursor += 1;
-        }
-        let value = &attributes[value_start..cursor];
-        if quote.is_some() && cursor < bytes.len() {
-            cursor += 1;
-        }
-        if name.eq_ignore_ascii_case(wanted) {
-            return Some(value.to_owned());
-        }
-    }
-    None
-}
-
-fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkSummary> {
-    let root = ctx.root.canonicalize()?;
-    let mut queue = initial.iter().cloned().collect::<VecDeque<_>>();
-    let mut documents = BTreeMap::<PathBuf, ParsedMarkdown>::new();
-    while let Some(path) = queue.pop_front() {
-        let path = path.canonicalize()?;
-        if documents.contains_key(&path) {
-            continue;
-        }
-        if !path.starts_with(&root) {
-            return Err(format!("Markdown document escaped repository: {}", path.display()).into());
-        }
-        let parsed = parse_markdown(&fs::read_to_string(&path)?);
-        if !parsed.undefined_references.is_empty() {
-            return Err(format!(
-                "Markdown document {} has undefined references: {:?}",
-                path.strip_prefix(&root)?.display(),
-                parsed.undefined_references
-            )
-            .into());
-        }
-        for destination in &parsed.links {
-            if let Some((target, _)) = local_destination(&root, &path, destination)?
-                && target
-                    .extension()
-                    .is_some_and(|extension| extension == "md")
-                && target.is_file()
-                && !documents.contains_key(&target)
-            {
-                queue.push_back(target);
-            }
-        }
-        documents.insert(path, parsed);
-    }
-
-    let mut local_links = 0;
-    let mut external_not_checked = 0;
-    for (document, parsed) in &documents {
-        for destination in &parsed.links {
-            let Some((target, fragment)) = local_destination(&root, document, destination)? else {
-                external_not_checked += 1;
-                continue;
-            };
-            local_links += 1;
-            if !target.try_exists()? {
-                return Err(format!(
-                    "Markdown link from {} has missing local target {destination:?}",
-                    document.strip_prefix(&root)?.display()
-                )
-                .into());
-            }
-            let canonical = target.canonicalize()?;
-            if !canonical.starts_with(&root) {
-                return Err(format!(
-                    "Markdown link from {} escapes repository: {destination:?}",
-                    document.strip_prefix(&root)?.display()
-                )
-                .into());
-            }
-            if let Some(fragment) = fragment.filter(|fragment| !fragment.is_empty()) {
-                check_fragment(&root, document, &canonical, &fragment, &documents)?;
-            }
-        }
-    }
-    Ok(LinkSummary {
-        documents: documents.len(),
-        local_links,
-        external_not_checked,
-        anchors: documents
-            .values()
-            .map(|document| document.anchors.len())
-            .sum(),
-    })
-}
-
-fn local_destination(
-    root: &Path,
-    document: &Path,
-    destination: &str,
-) -> Result<Option<(PathBuf, Option<String>)>> {
-    let destination = destination.trim();
-    if destination.is_empty() {
-        return Ok(Some((document.to_owned(), None)));
-    }
-    if has_url_scheme(destination) || destination.starts_with("//") {
-        return Ok(None);
-    }
-    let (path, fragment) = destination
-        .split_once('#')
-        .map_or((destination, None), |(path, fragment)| {
-            (path, Some(fragment))
-        });
-    let path = path.split_once('?').map_or(path, |(path, _)| path);
-    let path = percent_decode(path)?;
-    let fragment = fragment.map(percent_decode).transpose()?;
-    let joined = if path.is_empty() {
-        document.to_owned()
-    } else if let Some(path) = path.strip_prefix('/') {
-        root.join(path)
-    } else {
-        document
-            .parent()
-            .ok_or("Markdown document has no parent")?
-            .join(path.as_ref())
-    };
-    let normalized = lexical_normalize(&joined)?;
-    if !normalized.starts_with(root) {
-        return Err(format!("Markdown link escapes repository: {destination:?}").into());
-    }
-    Ok(Some((normalized, fragment.map(Cow::into_owned))))
-}
-
-fn has_url_scheme(destination: &str) -> bool {
-    let Some((scheme, _)) = destination.split_once(':') else {
-        return false;
-    };
-    !scheme.is_empty()
-        && scheme.as_bytes()[0].is_ascii_alphabetic()
-        && scheme
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
-}
-
-fn percent_decode(value: &str) -> Result<Cow<'_, str>> {
-    if !value.as_bytes().contains(&b'%') {
-        return Ok(Cow::Borrowed(value));
-    }
-    let mut output = Vec::with_capacity(value.len());
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let high = bytes.get(index + 1).and_then(|byte| hex(*byte));
-            let low = bytes.get(index + 2).and_then(|byte| hex(*byte));
-            let (Some(high), Some(low)) = (high, low) else {
-                return Err(format!("invalid percent encoding in Markdown link {value:?}").into());
-            };
-            output.push((high << 4) | low);
-            index += 3;
-        } else {
-            output.push(bytes[index]);
-            index += 1;
-        }
-    }
-    Ok(Cow::Owned(String::from_utf8(output)?))
-}
-
-fn hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn lexical_normalize(path: &Path) -> Result<PathBuf> {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Prefix(_) | Component::RootDir => normalized.push(component.as_os_str()),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return Err(
-                        format!("path escapes its filesystem root: {}", path.display()).into(),
-                    );
-                }
-            }
-            Component::Normal(part) => normalized.push(part),
-        }
-    }
-    Ok(normalized)
-}
-
-fn check_fragment(
-    root: &Path,
-    source: &Path,
-    target: &Path,
-    fragment: &str,
-    documents: &BTreeMap<PathBuf, ParsedMarkdown>,
-) -> Result<()> {
-    if target.is_dir() {
-        return Err(format!(
-            "Markdown link from {} uses an anchor on directory {}",
-            source.strip_prefix(root)?.display(),
-            target.strip_prefix(root)?.display()
-        )
-        .into());
-    }
-    if target
-        .extension()
-        .is_some_and(|extension| extension == "md")
-    {
-        let parsed = documents.get(target).ok_or_else(|| {
-            format!(
-                "linked Markdown target was not parsed: {}",
-                target.display()
-            )
-        })?;
-        if !parsed.anchors.contains(fragment) {
-            return Err(format!(
-                "Markdown link from {} has missing anchor #{fragment} in {}",
-                source.strip_prefix(root).unwrap_or(source).display(),
-                target.strip_prefix(root).unwrap_or(target).display()
-            )
-            .into());
-        }
-        return Ok(());
-    }
-    if matches!(
-        target.extension().and_then(|extension| extension.to_str()),
-        Some("rs" | "toml")
-    ) {
-        check_source_line_fragment(target, fragment)?;
-        return Ok(());
-    }
-    if matches!(
-        target.extension().and_then(|extension| extension.to_str()),
-        Some("html" | "htm")
-    ) {
-        let anchors = html_anchors(&fs::read_to_string(target)?);
-        if anchors.iter().any(|anchor| anchor == fragment) {
-            return Ok(());
-        }
-    }
-    Err(format!(
-        "Markdown link from {} has unsupported or missing fragment #{fragment} in {}",
-        source.strip_prefix(root).unwrap_or(source).display(),
-        target.strip_prefix(root).unwrap_or(target).display()
-    )
-    .into())
-}
-
-fn check_source_line_fragment(path: &Path, fragment: &str) -> Result<()> {
-    let Some(lines) = fragment.strip_prefix('L') else {
-        return Err(
-            format!("source link fragment must use GitHub line syntax: #{fragment}").into(),
-        );
-    };
-    let (start, end) = lines
-        .split_once("-L")
-        .map_or((lines, lines), |(start, end)| (start, end));
-    let start: usize = start.parse()?;
-    let end: usize = end.parse()?;
-    let line_count = fs::read_to_string(path)?.lines().count();
-    if start == 0 || end < start || end > line_count {
-        return Err(format!(
-            "source link fragment #{fragment} is outside {} lines in {}",
-            line_count,
-            path.display()
-        )
-        .into());
-    }
-    Ok(())
 }
 
 #[cfg(test)]

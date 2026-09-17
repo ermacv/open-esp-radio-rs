@@ -11,7 +11,10 @@ pub struct AdvertisingRxDiagnostics {
     pub scan_headers: u32,
     pub connect_headers: u32,
     pub unfinished_packets: u32,
-    pub last_progress: Option<[LeRxNodeObservation; 2]>,
+    pub last_progress: Option<
+        [LeRxNodeObservation;
+            oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+    >,
 }
 
 static RX: Mutex<Cell<AdvertisingRxDiagnostics>> =
@@ -29,7 +32,11 @@ pub fn snapshot() -> AdvertisingRxDiagnostics {
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl AdvertisingRxDiagnostics {
-    fn observe(&mut self, nodes: [LeRxNodeObservation; 2]) {
+    fn observe(
+        &mut self,
+        nodes: [LeRxNodeObservation;
+            oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+    ) {
         self.events = self.events.saturating_add(1);
         if nodes
             .iter()
@@ -51,7 +58,10 @@ impl AdvertisingRxDiagnostics {
 }
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn record(nodes: [LeRxNodeObservation; 2]) {
+pub(crate) fn record(
+    nodes: [LeRxNodeObservation;
+        oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+) {
     critical_section::with(|cs| {
         let mut state = RX.borrow(cs).get();
         state.observe(nodes);
@@ -78,11 +88,16 @@ mod tests {
             ..empty
         };
         let mut state = AdvertisingRxDiagnostics::default();
-        state.observe([pending, empty]);
-        state.observe([empty; 2]);
+        let mut nodes =
+            [empty; oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT];
+        nodes[0] = pending;
+        state.observe(nodes);
+        state.observe(
+            [empty; oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+        );
         assert_eq!(state.events, 2);
         assert_eq!(state.connect_headers, 1);
         assert_eq!(state.unfinished_packets, 1);
-        assert_eq!(state.last_progress, Some([pending, empty]));
+        assert_eq!(state.last_progress, Some(nodes));
     }
 }

@@ -569,6 +569,32 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
         delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
     ) -> PeripheralConnectionRecurringCandidateStep {
+        self.prepare_peripheral_connection_candidate(completed, delta.into())
+    }
+
+    /// Preview a budget-selected maintenance pause through the same
+    /// channel/timing/window-widening planner as ordinary recurrence. The LL
+    /// owner checks establishment, Instant obligations and the per-connection
+    /// recovery budget. This does not grant physical PHY access: the active
+    /// session must also check control state and fresh protocol-time margins.
+    /// Cancellation is legal before maintenance begins and preserves the owner.
+    pub fn prepare_peripheral_connection_maintenance_candidate(
+        &mut self,
+        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) -> PeripheralConnectionRecurringCandidateStep {
+        self.prepare_peripheral_connection_candidate(
+            completed,
+            crate::le::peripheral::connection::PeripheralConnectionRecurrence::Maintenance(delta),
+        )
+    }
+
+    fn prepare_peripheral_connection_candidate(
+        &mut self,
+        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        recurrence: crate::le::peripheral::connection::PeripheralConnectionRecurrence,
+    ) -> PeripheralConnectionRecurringCandidateStep {
+        let delta = recurrence.delta();
         let Some(epoch) = *self.scheduler_epoch else {
             return PeripheralConnectionRecurringCandidateStep::SchedulerEpochUnavailable(
                 PeripheralConnectionRecurringRetry::new(completed, delta),
@@ -585,7 +611,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             );
         };
         match completed.prepare_recurring_event_candidate(
-            delta,
+            recurrence,
             epoch,
             self.runtime.scheduler_config(),
             timing_policy,
@@ -698,6 +724,43 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         crate::SchedulerInstant::from_image(self.epoch.project_without_reanchor(&self.sample))
     }
 
+    pub(crate) fn peripheral_maintenance_window(
+        &self,
+        candidate: &crate::scheduler::PeripheralConnectionRecurringEventCandidate,
+        budget: crate::le::peripheral::maintenance::PeripheralMaintenanceBudget,
+        acquisition_started: u64,
+        monotonic_now: u64,
+        deadlines: crate::le::peripheral::deadlines::Deadlines,
+    ) -> Result<
+        crate::le::peripheral::maintenance::Window,
+        crate::le::peripheral::maintenance::PeripheralMaintenanceBlocked,
+    > {
+        budget.admit(
+            self.peripheral_current_instant(),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_start(candidate.raw_window()),
+            ),
+            crate::SchedulerInstant::from_image(
+                self.epoch
+                    .project_peripheral_event_end(candidate.raw_window()),
+            ),
+            acquisition_started,
+            monotonic_now,
+            self.controller
+                .runtime
+                .scheduler_config()
+                .late_start_guard_micros(),
+            deadlines,
+        )
+    }
+
+    pub(crate) fn maintenance_task_mut(
+        &mut self,
+    ) -> &mut ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY> {
+        &mut self.controller
+    }
+
     pub(crate) fn peripheral_progress_deadline(
         &self,
         admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
@@ -730,6 +793,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub(crate) fn decide_peripheral_missed_anchor(
         &self,
         admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        restoring_maintenance: bool,
     ) -> crate::le::peripheral::recovery::PeripheralMissedAnchorDecision {
         crate::le::peripheral::recovery::decide_missed_anchor(
             admitted.connection_state(),
@@ -744,6 +808,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 .late_start_guard_micros(),
             admitted.timing().interval_micros(),
             admitted.delta(),
+            restoring_maintenance,
         )
     }
 

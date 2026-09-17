@@ -208,7 +208,13 @@ fn compiled_dcode_failures_do_not_publish_partial_codes() {
     let probe = input("OER_PHY_PROBE", None);
     let entry = "open_phy_calibration_trace_dcode";
     let rust = image(&probe, None, entry);
-    for channel_ready in [false, true] {
+    for (channel_ready, busy_reads, expected_commands) in [
+        (false, 0, 0),
+        (true, u16::MAX, 1),
+        // Each half fits independently, but the combined read/modify/write
+        // must exhaust the single D-code transaction budget.
+        (true, 6_000, 2),
+    ] {
         let mut scenario = calibration::pbus_scenario(0, false, 0, 0xa5);
         scenario.max_steps = 20_000_000;
         scenario.mmio_initial = BTreeMap::from([
@@ -226,9 +232,9 @@ fn compiled_dcode_failures_do_not_publish_partial_codes() {
             scenario.memory_initial.insert(output + index, 0xa5);
         }
         if channel_ready {
-            // The first CKGEN read never completes. No D-code measurement is
+            // The first CKGEN transaction exhausts its shared budget. No measurement is
             // supplied; advancing beyond this failure must be rejected.
-            let mut stuck = bank(0x5a, u16::MAX);
+            let mut stuck = bank(0x5a, busy_reads);
             stuck.reads.clear();
             scenario.device_models.push(Arc::new(stuck));
         }
@@ -242,10 +248,9 @@ fn compiled_dcode_failures_do_not_publish_partial_codes() {
         let commands = result.events.iter().filter(|event| matches!(event,
             ExecutionEvent::Write { address, .. } if *address == PORT_BASE || *address == PORT_BASE + 4)).count();
         assert_eq!(
-            commands,
-            usize::from(channel_ready),
+            commands, expected_commands,
             "hardware progressed past the failed boundary"
         );
-        println!("PASS D-code failure containment channel_ready={channel_ready}");
+        println!("PASS D-code failure containment channel_ready={channel_ready} busy={busy_reads}");
     }
 }

@@ -1,7 +1,10 @@
 //! HIL owns the command lease and UART; the production composition owns RF.
 
+mod backpressure;
+mod calibration_traffic;
 mod command_pump;
 mod retirement;
+mod security;
 
 use bt_hci::{
     ControllerToHostPacket,
@@ -409,6 +412,7 @@ async fn run_session(
     let mut console = Console::new(usb, boot_id);
     let mut cycles = 0u32;
     let mut maintenance_cycles = 0u32;
+    let mut calibration_debug = None;
     let mut announce = true;
     loop {
         let BluetoothSystem {
@@ -423,21 +427,78 @@ async fn run_session(
             ));
             poll_with_stack_boundary(exercise.as_mut()).await
         };
-        let (hardware, request, operation) = {
+        let (mut hardware, request, operation) = {
             let mut active = core::pin::pin!(retirement::run_active(
                 hardware,
                 &hci,
                 &host_acl_credits,
                 &mut console,
-                announce
+                announce,
+                &mut platform
             ));
             poll_with_stack_boundary(active.as_mut()).await
         };
         announce = false;
-        if operation == PeripheralOperation::Maintain {
+        if let PeripheralOperation::CalibrationTraffic { enabled } = operation {
+            let restored = if enabled {
+                assert!(calibration_debug.is_none());
+                calibration_debug = Some(
+                    hardware
+                        .set_idle_phy_tracking_debug(
+                            oer_esp32s31_phy::state::PhyTemperatureTrackingDebug {
+                                first: 3,
+                                second: 0,
+                            },
+                        )
+                        .expect("idle threshold configuration"),
+                );
+                false
+            } else {
+                let previous = calibration_debug
+                    .take()
+                    .expect("configured threshold owner");
+                let forced = hardware
+                    .set_idle_phy_tracking_debug(previous)
+                    .expect("idle threshold restoration");
+                assert_eq!(forced.first, 3);
+                assert_eq!(forced.second, 0);
+                true
+            };
+            calibration_traffic::configure(enabled);
+            console.peripheral_reinitialize = true;
+            console
+                .send_frame(
+                    None,
+                    request,
+                    peripheral_evidence(
+                        operation,
+                        PeripheralResult::CalibrationTrafficConfigured { enabled, restored },
+                    ),
+                )
+                .await;
+            system = BluetoothSystem {
+                hci,
+                host_acl_credits,
+                runners: oer_esp32s31_bluetooth_integration::BluetoothRunners { hardware },
+            };
+            continue;
+        }
+        // A caller must restore diagnostic state before a normal lifecycle exit.
+        assert!(calibration_debug.is_none());
+        if matches!(
+            operation,
+            PeripheralOperation::Maintain | PeripheralOperation::Calibrate { .. }
+        ) {
             let (hardware, outcome) = {
-                let mut maintenance =
-                    core::pin::pin!(retirement::maintain(hardware, &mut platform, &hci));
+                let mut maintenance = core::pin::pin!(retirement::maintain(
+                    hardware,
+                    &mut platform,
+                    &hci,
+                    match operation {
+                        PeripheralOperation::Calibrate { threshold } => Some(threshold),
+                        _ => None,
+                    }
+                ));
                 poll_with_stack_boundary(maintenance.as_mut()).await
             };
             maintenance_cycles = maintenance_cycles
@@ -523,6 +584,18 @@ async fn pump(hci: &Host, host_acl_credits: &HostAclCredits) {
             .read(&mut buffer)
             .await
             .unwrap_or_else(|_| panic!("HCI transport failed"));
+        if let Some((handle, valid)) = security::observe(&packet) {
+            security::reply(hci, &mut buffer, handle, valid).await;
+            continue;
+        }
+        if backpressure::enabled() {
+            backpressure::receive(hci, host_acl_credits, packet).await;
+            continue;
+        }
+        if calibration_traffic::enabled() {
+            calibration_traffic::receive(hci, host_acl_credits, packet).await;
+            continue;
+        }
         match packet {
             ControllerToHostPacket::Acl(packet) => {
                 let credit_handle = packet.handle();
@@ -751,6 +824,8 @@ impl Console {
             features: FeatureCapabilities {
                 bluetooth_dtm: true,
                 bluetooth_peripheral: true,
+                bluetooth_phy_maintenance: cfg!(feature = "bluetooth-phy-maintenance"),
+                phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
                 structured_evidence: true,
                 psram_task_stack: true,
                 ..FeatureCapabilities::default()
@@ -808,7 +883,12 @@ impl Console {
         }
     }
 
-    async fn run(&mut self, hci: &Host, announce: bool) -> (u32, PeripheralOperation) {
+    async fn run(
+        &mut self,
+        hci: &Host,
+        credits: &HostAclCredits,
+        announce: bool,
+    ) -> (u32, PeripheralOperation) {
         let capabilities = Self::capabilities();
         if announce {
             self.send(hci, 0, Event::Hello(capabilities)).await;
@@ -834,6 +914,8 @@ impl Console {
                     hci,
                     0,
                     Event::BluetoothDtm(Evidence {
+                        software_reset_boot: esp_hal::system::reset_reason()
+                            == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
                         operation: Operation::Reset,
                         result: Outcome::LeaseExpired,
                         rx_diagnostics: rx_diagnostics(),
@@ -871,13 +953,82 @@ impl Console {
             }
             let response = match command.body {
                 Command::BluetoothPeripheral(
+                    operation @ PeripheralOperation::EncryptedAcl { enabled, failure },
+                ) => {
+                    if active
+                        || self.peripheral_probe
+                        || backpressure::enabled()
+                        || calibration_traffic::enabled()
+                        || security::enabled()
+                        || PERIPHERAL_HOST_EVENTS
+                            .connection_live
+                            .load(Ordering::Relaxed)
+                    {
+                        Event::Rejected(RejectReason::InvalidState)
+                    } else {
+                        security::configure(enabled, failure);
+                        peripheral_evidence(
+                            operation,
+                            PeripheralResult::EncryptedAclConfigured { enabled, failure },
+                        )
+                    }
+                }
+                Command::BluetoothPeripheral(
+                    operation @ PeripheralOperation::AclBackpressure { enabled },
+                ) => {
+                    if active
+                        || calibration_traffic::enabled()
+                        || PERIPHERAL_HOST_EVENTS
+                            .connection_live
+                            .load(Ordering::Relaxed)
+                        || (enabled && self.peripheral_probe)
+                        || backpressure::configure(enabled).is_err()
+                    {
+                        Event::Rejected(RejectReason::InvalidState)
+                    } else {
+                        peripheral_evidence(
+                            operation,
+                            PeripheralResult::AclBackpressureConfigured { enabled },
+                        )
+                    }
+                }
+                Command::BluetoothPeripheral(
+                    operation @ PeripheralOperation::HoldAclCredit { hold },
+                ) => {
+                    if backpressure::hold(hold, credits).await.is_err() {
+                        Event::Rejected(RejectReason::InvalidState)
+                    } else {
+                        peripheral_evidence(
+                            operation,
+                            PeripheralResult::AclCreditHoldConfigured { hold },
+                        )
+                    }
+                }
+                Command::BluetoothPeripheral(
                     operation @ (PeripheralOperation::Retire
                     | PeripheralOperation::Restart
-                    | PeripheralOperation::Maintain),
+                    | PeripheralOperation::Maintain
+                    | PeripheralOperation::Calibrate { .. }
+                    | PeripheralOperation::CalibrationTraffic { .. }),
                 ) => {
                     // The peripheral lease guarantees send failures reset the
                     // board without trying another command after HCI closure.
-                    if !self.peripheral_probe || active {
+                    let configuring =
+                        matches!(operation, PeripheralOperation::CalibrationTraffic { .. });
+                    let valid_configuration = match operation {
+                        PeripheralOperation::CalibrationTraffic { enabled } => {
+                            cfg!(feature = "bluetooth-phy-maintenance")
+                                && !security::enabled()
+                                && !backpressure::enabled()
+                                && enabled != calibration_traffic::enabled()
+                                && !PERIPHERAL_HOST_EVENTS
+                                    .connection_live
+                                    .load(Ordering::Relaxed)
+                                && (self.peripheral_probe || enabled)
+                        }
+                        _ => !calibration_traffic::enabled() && !backpressure::enabled(),
+                    };
+                    if (!self.peripheral_probe && !configuring) || active || !valid_configuration {
                         Event::Rejected(RejectReason::InvalidState)
                     } else {
                         match execute(hci, Operation::Reset).await {
@@ -905,6 +1056,16 @@ impl Console {
                         }
                     }
                 }
+                Command::BluetoothPeripheral(PeripheralOperation::AclBurst) => {
+                    if calibration_traffic::burst(hci).await.is_ok() {
+                        peripheral_evidence(
+                            PeripheralOperation::AclBurst,
+                            PeripheralResult::AclBurstQueued,
+                        )
+                    } else {
+                        Event::Rejected(RejectReason::InvalidState)
+                    }
+                }
                 Command::GetCapabilities => Event::Hello(capabilities),
                 Command::QueryLinkHealth => self.link_health(),
                 Command::BluetoothPeripheral(operation) => {
@@ -918,7 +1079,13 @@ impl Console {
                         PeripheralOperation::Snapshot => None,
                         PeripheralOperation::Retire
                         | PeripheralOperation::Restart
-                        | PeripheralOperation::Maintain => {
+                        | PeripheralOperation::Maintain
+                        | PeripheralOperation::Calibrate { .. }
+                        | PeripheralOperation::CalibrationTraffic { .. }
+                        | PeripheralOperation::AclBurst
+                        | PeripheralOperation::EncryptedAcl { .. }
+                        | PeripheralOperation::AclBackpressure { .. }
+                        | PeripheralOperation::HoldAclCredit { .. } => {
                             unreachable!("handled before role commands")
                         }
                     };
@@ -1005,6 +1172,8 @@ impl Console {
                                     hci,
                                     request,
                                     Event::BluetoothDtm(Evidence {
+                                        software_reset_boot: esp_hal::system::reset_reason()
+                                            == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
                                         operation,
                                         result,
                                         rx_diagnostics: rx_diagnostics(),
@@ -1015,6 +1184,8 @@ impl Console {
                             }
                         }
                         Event::BluetoothDtm(Evidence {
+                            software_reset_boot: esp_hal::system::reset_reason()
+                                == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
                             operation,
                             result,
                             rx_diagnostics: rx_diagnostics(),
@@ -1077,7 +1248,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         let ll = oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot();
         write!(
             detail,
-            "ll rx={} drop={} ctrl={} queued={} done={} maps={} op={:?} closed={} reason={:?}",
+            "ll rx={} drop={} ctrl={} queued={} done={} maps={} op={:?} closed={} reason={:?} idle={}",
             ll.received,
             ll.discarded,
             ll.control,
@@ -1086,7 +1257,8 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
             ll.channel_map_updates,
             ll.last_opcode,
             snapshot.peripheral_disconnections,
-            snapshot.last_disconnect_reason
+            snapshot.last_disconnect_reason,
+            u8::from(ll.encryption_idle)
         )
         .is_err()
     } else {
@@ -1115,6 +1287,11 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         advertising_runs: snapshot.advertising_runs,
         peripheral_runs: snapshot.peripheral_runs,
         peripheral_disconnections: snapshot.peripheral_disconnections,
+        phy_peripheral_maintenance: snapshot.phy_peripheral_maintenance,
+        phy_maintenance: maintenance_measurements(),
+        calibration_traffic: Some(calibration_traffic::snapshot()),
+        acl_backpressure: Some(backpressure::snapshot()),
+        encryption: Some(security::snapshot()),
         connection_complete_events: host_events.connections,
         disconnection_complete_events: host_events.disconnections,
         connection_update_complete_events: host_events.connection_updates,
@@ -1174,6 +1351,8 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
                 EventMask::new()
                     .enable_le_meta(true)
                     .enable_hardware_error(true)
+                    .enable_encryption_change_v1(security::enabled())
+                    .enable_encryption_key_refresh_complete(security::enabled())
                     .enable_disconnection_complete(true),
             ),
             1
@@ -1182,7 +1361,8 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
             LeSetEventMask::new(
                 LeEventMask::new()
                     .enable_le_conn_complete(true)
-                    .enable_le_conn_update_complete(true),
+                    .enable_le_conn_update_complete(true)
+                    .enable_le_long_term_key_request(security::enabled()),
             ),
             2
         );
@@ -1215,4 +1395,50 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
     command!(LeSetAdvData::new(payload.len() as u8, data), 7);
     command!(LeSetAdvEnable::new(true), 8);
     Ok(address.into_inner())
+}
+
+#[inline(never)]
+fn maintenance_measurements() -> Option<open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence>
+{
+    use oer_esp32s31_phy::tracking::observation::Operation;
+    let m = oer_esp32s31_bluetooth_integration::maintenance_observation::snapshot()?;
+    let timing = |operation: Operation| {
+        let t = m.operations[operation as usize];
+        open_esp_radio_hil_protocol::BluetoothPhyOperation {
+            completed: t.completed,
+            maximum_micros: t.maximum_micros,
+        }
+    };
+    Some(
+        open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
+            transactions: m.transactions,
+            restored: m.restored,
+            common_calibrations: m.common_calibrations,
+            latest_rx_quality: m.latest_rx_quality.map(|quality| {
+                open_esp_radio_hil_protocol::PhyRxGainQualityEvidence {
+                    shared_baseband: quality.shared_baseband(),
+                    wifi_baseband: quality.wifi_baseband(),
+                    wifi_fine: quality.wifi_fine(),
+                    wifi_radio: quality.wifi_radio(),
+                }
+            }),
+            bluetooth_calibrations: m.bluetooth_calibrations,
+            maximum_execution_micros: m.maximum_execution_micros,
+            maximum_restoration_micros: m.maximum_restoration_micros,
+            maximum_to_run_micros: m.maximum_to_run_micros,
+            maximum_poll_micros: m.maximum_poll_micros,
+            admitted_at_micros: m.admitted_at_micros,
+            execution_deadline_micros: m.execution_deadline_micros,
+            restoration_deadline_micros: m.restoration_deadline_micros,
+            physical_finished_at_micros: m.physical_finished_at_micros,
+            run_at_micros: m.run_at_micros,
+            dcode: timing(Operation::Dcode),
+            rx_gain: timing(Operation::RxGain),
+            tx_dc_pwdet: timing(Operation::TxDcPwdet),
+            rfpll: timing(Operation::Rfpll),
+            calibration: timing(Operation::Calibration),
+            temperature: timing(Operation::Temperature),
+            invalid: m.invalid,
+        },
+    )
 }

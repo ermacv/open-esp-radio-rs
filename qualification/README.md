@@ -62,9 +62,12 @@ The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 68 existing
 Bluetooth LE qualification declarations and the wider LE, Classic and Host-only
 source inventory. It imports the Wi-Fi/PHY and
 [coexistence](catalog/esp32s31/coex.toml) catalogs to reuse the exact
-`bluetooth-initial-phy-handoff` and diagnostic
-`coex-timer-validation-bridge` source facts. Neither lower fact promotes the
-incomplete common-PHY or coexistence lifetime.
+Bluetooth initial handoff, idle PHY maintenance, idle physical release and
+same-storage restart facts, alongside the diagnostic `coex-timer-validation-bridge`.
+The periodic Bluetooth maintenance fact owns configured active-ACL windows and
+DTM hard-expiry behavior; qualified timing/RF bounds and encrypted recovery
+remain separate limits. Implemented subsets do not promote the incomplete common-PHY, powered
+teardown or coexistence lifetimes.
 
 The coexistence catalog and the
 [whole-radio catalog](catalog/esp32s31/whole-radio.toml) are source-inventory
@@ -198,8 +201,12 @@ or logical HCI Reset does not establish the complete product lifecycle.
 
 The peripheral program selects the existing recovery, local Disconnect, local
 Reset, RF-loss and soak scenarios, plus physical retirement, same-storage
-powered restart and quiescent PHY maintenance. Automatic maintenance during
-continuous ACL/DTM remains an explicit implementation and async gap. The secure program additionally requires
+powered restart, quiescent PHY maintenance and automatic maintenance with live
+ACL traffic. Qualified execution/restoration bounds and complete terminal-fault
+coverage remain gaps; active DTM is non-preemptible and has a separate
+hard-deadline fail-stop requirement. See the canonical
+[periodic maintenance contract](catalog/esp32s31/wifi-phy.toml).
+The secure program additionally requires
 key/counter/MIC handling, Secure Connections pairing, ATT security enforcement,
 bond restoration and coordinated Host/Controller shutdown. Existing plaintext
 ACL scenarios do not supply encrypted or GATT evidence.

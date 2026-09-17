@@ -49,9 +49,17 @@ pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<F
 pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     let bluetooth_preflight: Option<fn(fixture::bluetooth::model::Adapter) -> Result<()>> =
         match selected.workload {
-            Workload::BluetoothDtm { .. } => Some(fixture::bluetooth::preflight),
-            Workload::BluetoothPeripheral { .. } => {
+            Workload::BluetoothAclCalibration { .. } | Workload::BluetoothAclBackpressure => {
+                Some(fixture::bluetooth::att::preflight)
+            }
+            Workload::BluetoothDtm { .. } | Workload::BluetoothMaintenanceDeadline => {
+                Some(fixture::bluetooth::preflight)
+            }
+            Workload::BluetoothPeripheral { .. } | Workload::BluetoothEncryptedAcl { .. } => {
                 Some(fixture::bluetooth::preflight_connect_reset)
+            }
+            Workload::BluetoothSecurityFailure { .. } => {
+                Some(fixture::bluetooth::preflight_security_failure)
             }
             _ => None,
         };

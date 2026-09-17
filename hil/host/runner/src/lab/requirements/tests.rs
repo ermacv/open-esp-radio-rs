@@ -98,6 +98,22 @@ fn suite_requirements_include_every_selected_owner() {
 #[test]
 fn bluetooth_requires_its_adapter_without_a_network() {
     for workload in [
+        Workload::BluetoothMaintenanceDeadline,
+        Workload::BluetoothAclBackpressure,
+        Workload::BluetoothEncryptedAcl { key_refresh: false },
+        Workload::BluetoothEncryptedAcl { key_refresh: true },
+        Workload::BluetoothSecurityFailure {
+            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey,
+            read_version_before_disconnect: false,
+        },
+        Workload::BluetoothSecurityFailure {
+            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::WrongKey,
+            read_version_before_disconnect: false,
+        },
+        Workload::BluetoothAclCalibration {
+            duration_millis: 15000,
+            minimum_calibrations: 8,
+        },
         Workload::BluetoothDtm {
             boots: 2,
             minimum_packets: 10,
@@ -111,6 +127,7 @@ fn bluetooth_requires_its_adapter_without_a_network() {
             retire_after: false,
             restart_between_connections: false,
             maintain_between_connections: false,
+            calibration_threshold: None,
         },
     ] {
         let required = Requirements::for_scenario(&scenario(workload));

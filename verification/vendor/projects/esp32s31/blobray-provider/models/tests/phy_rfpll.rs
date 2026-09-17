@@ -97,9 +97,6 @@ fn envelope_events(events: Vec<ExecutionEvent>) -> Vec<ExecutionEvent> {
                     || *address == PORT_BASE
                     || *address == PORT_BASE + 4
             }
-            // Production's bounded I2C completion wait requests one-microsecond
-            // waits; the ROM polls. Their timing is outside this projection.
-            ExecutionEvent::DelayMicros(1) => false,
             _ => true,
         })
         .collect()
@@ -191,6 +188,7 @@ fn compiled_zero_delta_maintenance_matches_frequency_envelope() {
                     .iter()
                     .filter(|event| matches!(event, ExecutionEvent::DelayMicros(1)))
                     .count();
+                assert_eq!(poll_waits, 0, "unexpected executor I2C delay {context}");
                 let vendor_events = envelope_events(vendor.events);
                 let rust_events = envelope_events(rust.events);
                 assert_eq!(
@@ -332,6 +330,13 @@ fn run(
             _ => None,
         })
         .collect();
+    if result
+        .events
+        .iter()
+        .any(|event| matches!(event, ExecutionEvent::DelayMicros(micros) if *micros != 5))
+    {
+        return Err("search contains a delay other than its required 5-us settle".into());
+    }
     let settles = result
         .events
         .iter()
@@ -415,3 +420,13 @@ fn compiled_search_matches_i2c_commands_and_requested_settles() {
 
 #[path = "phy_rfpll/combined.rs"]
 mod combined;
+
+#[test]
+fn frequency_envelope_projection_preserves_executor_delays() {
+    let delays = vec![
+        ExecutionEvent::DelayMicros(1),
+        ExecutionEvent::DelayMicros(2),
+        ExecutionEvent::DelayMicros(5),
+    ];
+    assert_eq!(envelope_events(delays.clone()), delays);
+}

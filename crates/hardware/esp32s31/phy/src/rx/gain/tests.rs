@@ -72,6 +72,7 @@ fn recalibration_publishes_fresh_rxbb_corrections_only_in_wifi_bank() {
         let mut parameters = init_parameters();
         parameters.memory.rxbb_dc_adjustments = [[old; 2]; 6];
         let outcome = PhyRxGainDcOutcome {
+            quality: Default::default(),
             wifi_index_dc: [[0x100; 2]; 8],
             wifi_dc_base: [0x100; 2],
             shared_index_dc: [[0x100; 2]; 11],

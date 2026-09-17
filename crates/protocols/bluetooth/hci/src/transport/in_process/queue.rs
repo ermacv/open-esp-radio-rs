@@ -269,6 +269,38 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
             .lock(|state| state.borrow_mut().try_receive_for(self.generation))
     }
 
+    /// Active ACL backpressure retains data while commands keep progressing.
+    pub(super) fn try_receive_admitted(
+        &self,
+        acl_ready: bool,
+    ) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
+        self.queue.state.lock(|state| {
+            let mut state = state.borrow_mut();
+            if state.generation != self.generation {
+                return Err(HciChannelError::Closed);
+            }
+            state.try_receive_admitted(acl_ready)
+        })
+    }
+
+    pub(super) async fn wait_receive_admitted(&self, acl_ready: bool) {
+        poll_fn(|context| {
+            self.queue.state.lock(|state| {
+                let mut state = state.borrow_mut();
+                if state.generation != self.generation
+                    || state.closed
+                    || state.admitted_offset(acl_ready).is_some()
+                {
+                    Poll::Ready(())
+                } else {
+                    state.receiver_waker.register(context.waker());
+                    Poll::Pending
+                }
+            })
+        })
+        .await
+    }
+
     pub(super) fn is_pristine(&self) -> bool {
         self.queue.state.lock(|state| {
             let state = state.borrow();
@@ -373,14 +405,32 @@ impl<const DEPTH: usize, const PACKET_CAPACITY: usize>
     }
 
     fn try_receive(&mut self) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
-        if self.length == 0 {
+        self.try_receive_admitted(true)
+    }
+
+    fn admitted_offset(&self, acl_ready: bool) -> Option<usize> {
+        (0..self.length).find(|offset| {
+            acl_ready || self.slots[(self.head + offset) % DEPTH].kind != PacketKind::AclData
+        })
+    }
+
+    fn try_receive_admitted(
+        &mut self,
+        acl_ready: bool,
+    ) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
+        let Some(offset) = self.admitted_offset(acl_ready) else {
             return Err(if self.closed {
                 HciChannelError::Closed
             } else {
                 HciChannelError::Empty
             });
+        };
+        let packet = self.slots[(self.head + offset) % DEPTH];
+        // Compact only the prefix before the selected command. ACL and command
+        // order each remain FIFO; no second packet store or queue credit exists.
+        for index in (1..=offset).rev() {
+            self.slots[(self.head + index) % DEPTH] = self.slots[(self.head + index - 1) % DEPTH];
         }
-        let packet = self.slots[self.head];
         self.slots[self.head].bytes.fill(0);
         self.slots[self.head].length = 0;
         self.head = (self.head + 1) % DEPTH;
@@ -482,5 +532,94 @@ mod restart_tests {
             Err(HciChannelError::Closed)
         ));
         assert!(matches!(b.try_receive(), Err(HciChannelError::Closed)));
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use core::{future::Future, pin::pin, task::Context};
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::{Wake, Waker},
+    };
+
+    fn packet(kind: PacketKind, value: u8) -> PacketSlot<8> {
+        PacketSlot {
+            kind,
+            length: 1,
+            bytes: [value; 8],
+        }
+    }
+
+    #[test]
+    fn bypass_preserves_each_fifo_across_ring_wrap_and_zeros_vacated_storage() {
+        for rotation in 0..4 {
+            let queue = AsyncPacketQueue::<NoopRawMutex, 4, 8>::new();
+            let epoch = queue.epoch();
+            for _ in 0..rotation {
+                epoch.try_send(packet(PacketKind::Cmd, 99)).unwrap();
+                epoch.try_receive().unwrap();
+            }
+            for (kind, value) in [
+                (PacketKind::AclData, 1),
+                (PacketKind::Cmd, 2),
+                (PacketKind::AclData, 3),
+                (PacketKind::Cmd, 4),
+            ] {
+                epoch.try_send(packet(kind, value)).unwrap();
+            }
+            assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 2);
+            epoch.try_send(packet(PacketKind::AclData, 5)).unwrap();
+            assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 4);
+            assert!(matches!(
+                epoch.try_receive_admitted(false),
+                Err(HciChannelError::Empty)
+            ));
+            for value in [1, 3, 5] {
+                assert_eq!(epoch.try_receive_admitted(true).unwrap().bytes[0], value);
+            }
+            assert!(epoch.vacant_storage_is_zeroed());
+        }
+    }
+
+    struct Wakes(AtomicUsize);
+    impl Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn blocked_data_does_not_spin_and_command_publication_wakes_a_cancelled_replacement() {
+        let queue = AsyncPacketQueue::<NoopRawMutex, 4, 8>::new();
+        let epoch = queue.epoch();
+        epoch.try_send(packet(PacketKind::AclData, 1)).unwrap();
+        let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+        let waker = Waker::from(wakes.clone());
+        let mut cx = Context::from_waker(&waker);
+        {
+            let mut cancelled = pin!(epoch.wait_receive_admitted(false));
+            assert!(cancelled.as_mut().poll(&mut cx).is_pending());
+        }
+        let mut replacement = pin!(epoch.wait_receive_admitted(false));
+        assert!(replacement.as_mut().poll(&mut cx).is_pending());
+        epoch.try_send(packet(PacketKind::Cmd, 2)).unwrap();
+        assert!(wakes.0.load(Ordering::Relaxed) > 0);
+        assert!(replacement.as_mut().poll(&mut cx).is_ready());
+        assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 2);
+        assert_eq!(epoch.try_receive_admitted(true).unwrap().bytes[0], 1);
+        epoch.close();
+        assert!(matches!(
+            epoch.try_receive_admitted(false),
+            Err(HciChannelError::Closed)
+        ));
     }
 }

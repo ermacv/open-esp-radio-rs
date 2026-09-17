@@ -11,18 +11,23 @@ mod framing;
 mod io;
 pub use bluetooth::{
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES,
-    BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS, BluetoothDtmEvidence, BluetoothDtmOperation,
-    BluetoothDtmResult, BluetoothDtmRxDiagnostics, BluetoothPeripheralEvidence,
-    BluetoothPeripheralOperation, BluetoothPeripheralResult, BluetoothPeripheralTermination,
-    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
+    BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
+    BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+    BluetoothAclBackpressureEvidence, BluetoothCalibrationTrafficEvidence, BluetoothDtmEvidence,
+    BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
+    BluetoothEncryptionEvidence, BluetoothPeripheralEvidence, BluetoothPeripheralOperation,
+    BluetoothPeripheralResult, BluetoothPeripheralTermination, BluetoothPhyMaintenanceEvidence,
+    BluetoothPhyOperation, BluetoothSecurityFailure, bluetooth_backpressure_packet,
+    bluetooth_calibration_notification, bluetooth_peripheral_acl_payload,
+    bluetooth_peripheral_acl_payload_for_sequence,
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;
 mod phy;
 pub use phy::{
     PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyRxGainEvidence,
-    PhyRxGainExecutionEvidence, PhyTimingEvidence, PhyTxWaitEvidence, PhyWaitTiming,
-    RfpllCorrectionEvidence, RfpllEvidence, TemperatureEvidence,
+    PhyRxGainExecutionEvidence, PhyRxGainQualityEvidence, PhyTimingEvidence, PhyTxWaitEvidence,
+    PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence, TemperatureEvidence,
 };
 mod memory_benchmark;
 mod message;

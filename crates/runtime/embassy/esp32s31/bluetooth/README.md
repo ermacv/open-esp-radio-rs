@@ -73,10 +73,14 @@ fragment. Accepted peer LL Data fragments are copied into a two-packet
 Controller-to-Host FIFO after Connection Complete, split to the Host-declared
 ACL buffer length and retained across HCI queue backpressure or exhausted Host
 credits. Host Number Of Completed Packets restores credits for handle `0x0001`
-without a success event. Flow-controlled output keeps its command intake live
+without a success event. ACL credit exhaustion blocks data delivery; ordered HCI
+events still use transport capacity and consume no ACL credits. This includes
+Number Of Completed Packets, security notifications and Disconnection Complete.
+Flow-controlled output keeps its command intake live
 even when the sole Host ACL owner is occupied; an older pending normal response
-still retains causal order. A second Host ACL packet is consumed and completed
-without displacing the retained packet. Central Connection
+still retains causal order. Further Host ACL packets remain in the transport
+queue until the retained packet completes; commands may bypass those waiting
+data packets. Central Connection
 Update and Channel Map Update remain owned across recurring scheduler
 cancellation and apply at their exact instants. Host-visible parameter changes
 publish LE Connection Update Complete after Connection Complete; anchor-only
@@ -93,8 +97,38 @@ observation; ordinary scan requests also count as rejected connection requests.
 Recoverable recurrence boundaries preserve their
 semantic cause; storage-specific interrupt errors remain with the retained owner.
 
-The command actor exposes `try_into_idle` for quiescent PHY maintenance and
-`try_retire_hci` for terminal transport retirement. Both consume only an idle
-actor and preserve the complete actor on rejection. Physical maintenance,
-shutdown and powered restart are composed outside this command state machine;
-see the [Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).
+The command actor exposes `try_into_idle` for unconfigured quiescent maintenance
+and `try_retire_hci` for terminal transport retirement. A configured actor uses
+`take_idle_phy_maintenance` or `take_peripheral_phy_maintenance`: the continuation
+retains its original policy and diagnostics while the lower owner moves to the
+physical transaction. Raw idle extraction cannot discard an enabled deadline.
+
+`enable_phy_maintenance` requires an idle actor and an explicit
+`PhyMaintenancePolicy`. The actual retained PHY supplies the original due time;
+force eligibility and hard expiry are measured from that time, never from the
+latest retry. Re-entry cannot change the policy or revive an expired epoch.
+At an unreserved ACL successor the actor retains pending acquisition in its
+owner slot, tries the natural gap, and delegates any deliberate miss to the LL
+admission API. Wait cancellation preserves that complete owner. Restoring the
+same actor refreshes demand from the physical owner and preserves the driver's
+original deadline through the next RUN.
+
+`PhyMaintenanceRestored` reports the driver's actual guarded RUN timestamp and
+original window. It is a progress boundary: the composition continues command
+and timer service. Physical completion precedes this boundary and cannot stand
+in for it. Neither observation establishes peer packet reception.
+
+The hardware composition's `run_with_phy_maintenance` and
+`run_with_phy_maintenance_until_idle` join the matching platform, timer and IRQ
+owners and service due/hard wakes alongside normal command work. Active DTM
+has no maintenance handoff. It runs until Test End or terminal shared-RF
+fail-stop; expiry never synthesizes a normal Host command. On ESP32-S31, no
+local stop currently proves quiescence of active DTM and every shared-RF
+consumer, so the backend escalates to full SoC reset. HCI closes first without
+waiting for Host progress. Even terminal command quarantine retains the hard
+wake, preventing autonomous RF from outliving that deadline.
+
+Budgets need measured platform bounds; this API supplies no qualified thermal
+or blocking-poll defaults. Physical admission, shutdown and restart remain
+outside the command state machine; see the
+[Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).

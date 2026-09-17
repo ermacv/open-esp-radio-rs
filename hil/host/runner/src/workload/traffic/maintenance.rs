@@ -198,7 +198,7 @@ fn validate_temperature(
     temperature: Option<open_esp_radio_hil_protocol::TemperatureEvidence>,
 ) -> Result<()> {
     use open_esp_radio_hil_protocol::StationPauseOperation as Op;
-    if operation == Op::Temperature {
+    if matches!(operation, Op::Temperature | Op::Tracking | Op::Calibration) {
         if temperature.is_none() {
             return Err("missing committed temperature detail".into());
         }
@@ -320,9 +320,9 @@ fn validate_pause(
     Ok(())
 }
 
-/// One standalone Wi-Fi parent in a thermally stable cell where RFPLL is not
-/// due. Counts prove completed coverage, not execution order or independent
-/// hardware readback.
+/// One standalone Wi-Fi parent, including its RFPLL demand evaluation.
+/// A completed RFPLL child need not apply a correction. Counts prove completed
+/// coverage, not execution order or independent hardware readback.
 fn validate_tracking_parent(
     evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
 ) -> Result<()> {
@@ -331,6 +331,7 @@ fn validate_tracking_parent(
         .tracking
         .ok_or("missing whole PHY parent outcome")?;
     if [
+        timing.rfpll,
         timing.wifi_i2c,
         timing.wifi_power,
         timing.calibration,
@@ -338,7 +339,6 @@ fn validate_tracking_parent(
     ]
     .iter()
     .any(|operation| operation.started != 1 || operation.completed != 1)
-        || timing.rfpll.started != 0
         || timing.bluetooth_ieee802154_power.started != 0
         || tracking.bluetooth_ieee802154_calibrated
     {

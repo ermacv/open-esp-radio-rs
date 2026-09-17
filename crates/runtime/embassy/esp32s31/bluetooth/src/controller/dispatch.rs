@@ -258,6 +258,23 @@ where
             if recheck.status() == DtmControllerTimeRecheckStatus::TimelineExhausted {
                 return self.retain_boundary(ControllerCommandBoundary::ControllerTimeExhausted);
             }
+            if matches!(
+                self.owner.current(),
+                ControllerCommandState::PeripheralMaintenancePending(_)
+            ) {
+                // Keep acquisition ownership stored while timer/IRQ work can win.
+                recheck.wait_until_absolute_recheck().await;
+            }
+            if let Some(boundary) = self.step_phy_maintenance() {
+                return boundary;
+            }
+            if matches!(
+                self.owner.current(),
+                ControllerCommandState::PeripheralMaintenancePending(_)
+                    | ControllerCommandState::PeripheralMaintenanceFailed(_)
+            ) {
+                continue;
+            }
             match self.phase() {
                 ControllerCommandPhase::Idle => {
                     let ControllerCommandState::Idle(idle) = self.owner.current() else {

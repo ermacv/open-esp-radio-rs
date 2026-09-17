@@ -160,6 +160,7 @@ impl PhyColdI2cTransaction {
         Self { request, phase }
     }
 
+    #[inline]
     pub const fn action(&self) -> PhyColdI2cAction {
         let address = self.request.address();
         match self.phase {

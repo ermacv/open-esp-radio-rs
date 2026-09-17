@@ -275,9 +275,13 @@ mod tests {
                     ..
                 } = original
                     .controller
-                    .try_receive_active_peripheral_with_buffer(ready, None, &mut buffer, |_, _| {
-                        panic!("expected credits, not ACL")
-                    })
+                    .try_receive_active_peripheral_with_buffer(
+                        ready,
+                        None,
+                        true,
+                        &mut buffer,
+                        |_, _| panic!("expected credits, not ACL"),
+                    )
                 else {
                     panic!("accepted Host credits retained across rejection");
                 };

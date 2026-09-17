@@ -155,6 +155,7 @@ fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
         dcode: Some(PhyDcodeOutcome { codes: [7; 8] }),
         rx_gain: Some(crate::rx::gain::PhyRxGainInitOutcome {
             dc: Some(crate::rx::gain_calibration::PhyRxGainDcOutcome {
+                quality: Default::default(),
                 wifi_index_dc: [[1; 2]; 8],
                 wifi_dc_base: [2; 2],
                 shared_index_dc: [[3; 2]; 11],

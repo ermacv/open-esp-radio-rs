@@ -896,7 +896,13 @@ impl SerialCapture {
                     || evidence.is_snapshot(operation)
                     || evidence.is_retired(operation)
                     || evidence.is_restarted(operation)
-                    || evidence.is_maintained(operation) =>
+                    || evidence.is_maintained(operation)
+                    || (evidence.operation == operation && matches!((operation, evidence.result),
+                        (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::AclBurst, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclBurstQueued)
+                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured { .. })
+                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::AclBackpressure { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclBackpressureConfigured { .. })
+                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::HoldAclCredit { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclCreditHoldConfigured { .. })
+                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::CalibrationTraffic { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::CalibrationTrafficConfigured { .. }))) =>
             {
                 Ok(evidence)
             }

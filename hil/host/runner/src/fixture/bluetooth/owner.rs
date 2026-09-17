@@ -349,6 +349,30 @@ pub(super) fn connect_reset(
     Ok(())
 }
 
+pub(super) fn security_failure(
+    adapter: Adapter,
+    peer: super::model::PeerAddress,
+    report: &mut super::model::security_failure::Report,
+) -> Result<()> {
+    let mut owner = Owner::snapshot(adapter)?;
+    report.initial_powered = Some(owner.powered);
+    report.initial_soft_blocked = Some(owner.rfkill.blocked);
+    let result = (|| {
+        owner.acquire()?;
+        let user = owner.user.as_ref().ok_or("missing exclusive HCI channel")?;
+        user.command(Reset::new())?;
+        super::security_failure::run(user, peer, report)
+    })();
+    if let Err(error) = result {
+        report.errors.push(error.to_string());
+    }
+    match oer_process::cleanup(|| owner.restore()) {
+        Ok(()) => report.restored = true,
+        Err(error) => report.errors.push(format!("restore: {error}")),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

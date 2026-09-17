@@ -144,8 +144,11 @@ Unsupported optional control requests receive `LL_UNKNOWN_RSP`. Two software
 responses may wait behind one controller TX packet; that packet remains queued
 until descriptor completion, including across recurring preparation cancellation.
 The current TX descriptor remains pinned after its payload is reclaimed.
-Connection RX retains its current descriptor and packet and rearms the other
-allocation as one writable successor for each recurring event.
+Connection RX has three physical packet nodes. It retains the hardware current
+descriptor and packet and rearms the other two as writable successors. Both the
+first event and every recurrence admit at most two packets, matching the ACL
+reservation. A control packet with MD set therefore does not consume the only
+receive slot before a following `LL_TERMINATE_IND` in the same event.
 Version exchange queues at most one `LL_VERSION_IND` per connection and requires
 an explicit `with_version_information` identity in the connection runtime config.
 Host Read Remote Version Information publishes Command Status before a local
@@ -187,6 +190,13 @@ expires the connection with reason `0x08`; a reservation starting at or beyond
 the deadline waits without publication. The shared
 [protocol deadline gate](src/le/peripheral/deadlines.rs) checks termination,
 procedure and supervision expiry before waiting for any future deadline.
+For plaintext maintenance recovery, a fresh hardware valid-RX timestamp inside
+the completed event's actual window also proves reception when empty or duplicate
+PDUs have no delivered payload. A stale timestamp or scheduler anchor cannot
+release recovery. This path supplies no initial or Instant acknowledgement and
+is unavailable during encryption or its transitions, where packet validation
+remains required.
+
 The same gate runs while Controller-to-Host ACL delivery is backpressured.
 Retirement releases the reservation and restores the unlinked allocation.
 If executor latency closes an established
@@ -236,7 +246,11 @@ least 2500 ms, then requires target supervision timeout and reconnect. Closing
 the Linux user channel can terminate the connection before rfkill; that outcome
 fails this strict timeout scenario and does not establish abrupt RF loss.
 Host-to-Controller packets use legacy LL fragmentation and return their credit
-after acknowledgement. Unencrypted packets carry at most 27 payload octets;
+after acknowledgement. One packet owns LL fragmentation at a time; further
+packets retain their order in the existing HCI queue, which covers the declared
+TX credits. Commands bypass blocked data without completing or discarding it.
+The readiness wait uses the same capacity predicate, keeping command/credit
+progress live without spinning on the data backlog. Unencrypted packets carry at most 27 payload octets;
 encrypted packets carry at most 23 plaintext octets plus the four-octet MIC.
 Accepted peer LL
 Data fragments enter a two-packet Controller-to-Host FIFO after Connection
@@ -262,8 +276,17 @@ standard masked LE Long Term Key Request event; the closed active classifier
 accepts the positive or negative HCI reply only for that live request and
 handle. An accepted new packet advances its counter once, while a radio
 retransmission reuses the retained ciphertext. RX authentication and decryption
-precede ordinary LL dispatch; TX control, ACL and empty acknowledgement packets
-are encrypted while the session is active. Restart replaces session material
+precede ordinary LL dispatch; nonempty TX control and ACL packets are encrypted
+while the session is active. Empty acknowledgements retain zero payload length,
+carry no MIC and consume no encryption counter. The radio's ordinary empty TX
+path also serves encrypted connections. RX empty acknowledgements neither
+consume Host ACL credits nor advance the encryption handshake, including while
+waiting for the Host LTK; they cannot revive a failed session. The
+[`completion/security`](src/le/peripheral/connection/completion/security.rs)
+boundary authenticates nonempty packets before dispatch and seals the session
+on a MIC or forbidden-PDU failure. These rules follow Bluetooth Core Vol 6,
+Part B [Data Physical Channel PDU and encryption procedures](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html).
+Restart replaces session material
 and resets both counters only after the encrypted pause response and the peer's
 unencrypted response, then publishes Encryption Key Refresh Complete. Initial
 start publishes Encryption Change. MIC or physical-channel sequence failure
@@ -272,8 +295,14 @@ reason `0x06`. Reset, disconnection and fault owners retain and destroy the
 session keys with the connection. LE Encryption is advertised, and the two LTK
 reply commands are present in Read Local Supported Commands. Pairing, SMP and
 key persistence remain Host responsibilities. The software path does not use
-the reviewed BLE encryption accelerator. Vendor comparison and on-air
-interoperability/fault evidence remain absent.
+the reviewed BLE encryption accelerator. The
+[encrypted ACL HIL scenario](../../../../../hil/scenarios/bluetooth/bluetooth-peripheral-encrypted-acl.toml)
+exercises fixed-key start, bidirectional fragmented traffic, connection/channel-map
+updates, reconnect and cold release. The separate
+[key-refresh scenario](../../../../../hil/scenarios/bluetooth/bluetooth-peripheral-key-refresh.toml)
+requires a replacement LTK and a second echo on the same handle. Vendor comparison
+and security-fault coverage remain incomplete; these scenarios do not establish SMP
+or secure GATT readiness.
 
 The bootstrap `Read Local Supported Commands` response publishes the exact
 closed command inventory used by production classification. State-dependent
@@ -315,6 +344,12 @@ It evaluates the registered client's real deadline and runs the existing target
 tracking executor only when due. A not-due result is explicit; inhibited
 tracking remains visible in the returned outcome.
 
+The idle owner can set the retained client's diagnostic tracking thresholds
+through `set_phy_tracking_debug`. This changes the existing policy, not samples
+or RF authority. The manual composition saves that policy and restores it after
+successful maintenance; failed ownership remains sealed. A zero threshold
+exercises the actual due calibration branch at the measured temperature.
+
 Successful maintenance restores the same PHY owner and both original ISR
 owners. HCI stays open, and counter epoch, software borrows, role generations
 and memory publications remain unchanged. Host packets queued during the
@@ -322,7 +357,72 @@ window wait for the returned task. Failures retain an unrouted, non-runnable
 frontier; cancellation requires external reset. The composition reanchors its
 absolute recheck and binds routes only after this join succeeds.
 
-The caller requests maintenance after returning the runner to idle. Automatic
-maintenance windows during active ACL or DTM execution are not implemented.
+The caller requests maintenance after returning the runner to idle. An optional
+absolute tracking deadline is checked before execution and before ISR-owner
+restoration; target execution also checks each poll and arms a deadline wake.
+Failure retains the unrouted owner frontier, including an already-settled PHY
+if the final time check fails. This rejects late tracking completion, not
+blocking-poll duration or the complete routing/restoration interval; see the
+[PHY timing contract](../../phy/src/tracking/README.md).
+
+`prepare_peripheral_connection_maintenance_candidate` forms a provisional
+budget-selected successor from the completed ACL graph through the ordinary
+recurrence planner. Its LL owner retains initial acknowledgement, confirmation
+of acknowledgement for pending Instant procedures, protected Instant events
+and the requirement for a valid accepted packet before another deliberate
+miss. RX activity alone does not release that requirement before packet
+validation. A rejected or cancelled proposal preserves the original owner,
+anchor correction and widening reference. This proposal supplies no PHY grant:
+active control/encryption state, fresh deadline margins, physical quiescence
+and restoration remain separate admission obligations.
+
+`PeripheralConnectionActiveSession::begin_phy_maintenance` implements a separate
+active handoff at the unreserved successor. It observes the retained PHY's due
+schedule, keeps the complete HCI/control/encryption/ACL state and acquires fresh
+Controller time. `PeripheralMaintenanceBudget` reserves execution, restoration
+and protocol margin; acquisition latency consumes the available gap. The next
+event's complete reservation and margin must precede every protocol deadline.
+The natural gap is tried first; an explicitly force-eligible request may then
+try successive LL-admitted candidates until execution and restoration fit.
+All omitted events are checked against pending Instants. Planning consumes a
+fixed transaction budget; previews cannot renew it. The selected candidate
+preserves anchor progression, event counter, channel selection and window
+widening. Another forced pause requires a valid accepted peer packet.
+Cancellation before physical access rebuilds
+the contiguous successor without spending skip credit.
+
+`PeripheralPhyMaintenanceReady::maintain_phy` consumes that window and the real
+unrouted IRQ/timer owners through the same physical executor as idle maintenance.
+It checks that the checked-out connection graph and RX pool belong to the task,
+while the other four roles remain idle. Success returns a distinct restoration
+owner with no preview-cancellation edge. The original restoration deadline stays
+with the candidate through admission, fresh time and RUN publication. Late
+restoration seals ownership; neither ordinary missed-anchor recovery nor the
+establishment fallback may add another miss. Budgets need measured platform
+bounds, and the storage/PHY delay implementations must share one monotonic clock.
+
+Successful guarded publication emits `PeripheralMaintenanceRun` with the
+original admission and restoration deadline, actual post-RUN time and event
+counter. This observation accompanies the returned running owner; it cannot
+recreate one or prove a valid peer exchange.
+
+The runtime's configured `run_with_phy_maintenance` entry now yields these
+active owners automatically and restores the same actor after the physical
+join. Its policy keeps original due, force-eligible and hard times distinct;
+no retry or configured re-entry renews a deadline. Active DTM remains
+non-preemptible. Hard expiry terminates the entire shared-PHY epoch: all RF
+admission must cease, not just Bluetooth command service. The current S31
+backend has no proven local active-RF shutdown, so it closes HCI and escalates
+to full SoC reset without emulating Host Test End or waiting for the Host.
+A future proven local shutdown may preserve non-RF work without changing this
+shared-RF policy. Ordinary recovery cannot revive the failed epoch.
+
+The [runtime maintenance contract](../../../../runtime/embassy/esp32s31/bluetooth/README.md)
+and canonical [periodic-maintenance source fact](../../../../../qualification/catalog/esp32s31/wifi-phy.toml)
+describe the configured composition and remaining evidence limits. Active ACL
+HIL exercises due physical transactions and connection continuity; it does not
+establish every temperature-triggered calibration branch, measured worst-case
+execution bounds, deliberate-skip hardware coverage or DTM deadline/RF-stop
+qualification.
 Source implementation and diagnostic scenarios do not by themselves qualify
 RF behavior; qualification consumes independent evidence.

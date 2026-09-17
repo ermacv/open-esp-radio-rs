@@ -11,7 +11,13 @@ use core::fmt::{self, Write};
 pub enum BluetoothExecutionEvent {
     ConnectableAdvertisingRun,
     PeripheralRun,
-    PeripheralDisconnected { reason: u8 },
+    PeripheralDisconnected {
+        reason: u8,
+    },
+    /// Physical maintenance returned; subsequent RUN still has its own deadline.
+    PhyMaintenance {
+        peripheral: bool,
+    },
     Retry,
     Terminal,
 }
@@ -22,6 +28,8 @@ pub struct BluetoothExecutionSnapshot {
     pub peripheral_runs: u32,
     pub peripheral_disconnections: u32,
     pub last_disconnect_reason: Option<u8>,
+    pub phy_idle_maintenance: u32,
+    pub phy_peripheral_maintenance: u32,
     pub retries: u32,
     pub terminal: bool,
     pub saturated: bool,
@@ -37,6 +45,8 @@ impl BluetoothExecutionSnapshot {
             peripheral_runs: 0,
             peripheral_disconnections: 0,
             last_disconnect_reason: None,
+            phy_idle_maintenance: 0,
+            phy_peripheral_maintenance: 0,
             retries: 0,
             terminal: false,
             saturated: false,
@@ -61,6 +71,12 @@ impl BluetoothExecutionSnapshot {
             BluetoothExecutionEvent::PeripheralDisconnected { reason } => {
                 self.last_disconnect_reason = Some(reason);
                 Some(&mut self.peripheral_disconnections)
+            }
+            BluetoothExecutionEvent::PhyMaintenance { peripheral: false } => {
+                Some(&mut self.phy_idle_maintenance)
+            }
+            BluetoothExecutionEvent::PhyMaintenance { peripheral: true } => {
+                Some(&mut self.phy_peripheral_maintenance)
             }
             BluetoothExecutionEvent::Retry => Some(&mut self.retries),
             BluetoothExecutionEvent::Terminal => {

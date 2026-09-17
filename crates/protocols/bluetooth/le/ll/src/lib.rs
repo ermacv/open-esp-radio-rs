@@ -8,6 +8,11 @@
 //! vendor-archive, or ROM-ABI dependency. Chip code lowers prepared protocol
 //! work into its private descriptor and register accessors; an HCI router may
 //! configure roles only after those lower ownership boundaries exist.
+//!
+//! [`connection::maintenance`] admits provisional budgeted event omissions on
+//! the same connection owner, retaining initial acknowledgement, Instant and
+//! post-maintenance recovery obligations. This protocol decision grants no
+//! hardware access or timing budget; both remain with the lower radio owner.
 
 mod address;
 pub mod advertiser;

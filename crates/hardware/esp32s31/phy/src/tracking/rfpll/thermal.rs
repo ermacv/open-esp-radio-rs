@@ -89,6 +89,7 @@ impl Transition {
         self.request
     }
 
+    #[inline(always)]
     pub const fn action(&self) -> Action {
         match &self.step {
             Step::Select => Action::SelectSoftwareControl,
@@ -100,6 +101,7 @@ impl Transition {
         }
     }
 
+    #[inline(always)]
     pub fn advance(&mut self, completion: Completion) -> Result<(), Error> {
         match (&mut self.step, completion) {
             (Step::Select, Completion::SoftwareControlSelected) => self.step = Step::Settle,

@@ -256,7 +256,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Full powered shutdown"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The Wi-Fi production supervisor composes runtime/IRQ quiescence, last-client release, exact RF/analog shutdown, route-owned clock/reset restoration and cold-owner return. Bluetooth, IEEE 802.15.4 and shared-protocol shutdown remain uncomposed."
+scope-and-limitations = "The Wi-Fi production supervisor composes idle quiescence and cold-owner return. The projected Bluetooth idle powered-release fact defines its standalone boundary. IEEE 802.15.4 and joint-protocol shutdown remain uncomposed; these idle paths do not establish arbitrary active/faulted-role teardown."
 source-paths = []
 
 [[items]]
@@ -396,3 +396,27 @@ source-paths = [
   "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md",
   "qualification/targets/esp32s31/ieee802154.toml",
 ]
+
+[[items]]
+id = "whole-radio-idle-bluetooth-phy-maintenance"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Idle Bluetooth PHY maintenance"
+source-fact = "bluetooth-idle-phy-maintenance"
+
+[[items]]
+id = "whole-radio-bluetooth-same-storage-powered-restart"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Bluetooth cold restart with original storage"
+source-fact = "bluetooth-same-storage-powered-restart"
+
+[[items]]
+id = "whole-radio-idle-bluetooth-powered-release"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Idle Bluetooth physical release"
+source-fact = "bluetooth-idle-powered-release"
+
+[[items]]
+id = "whole-radio-bluetooth-periodic-phy-maintenance"
+section = "whole-radio-active-operation-power-saving-and-shutdown"
+title = "Bluetooth periodic PHY maintenance"
+source-fact = "bluetooth-periodic-phy-maintenance"

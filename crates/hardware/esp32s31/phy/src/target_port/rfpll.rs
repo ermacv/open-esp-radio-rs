@@ -4,8 +4,9 @@
 //! radio traffic, acquire a coex grant, or commit a tracking temperature.
 //! `maintain` includes the current frequency-control entry and restoration;
 //! `search` and `correct` are children requiring that boundary from the caller.
-
-use crate::executor::wait::Kind;
+//! Runtime execution polls I2C directly and retains the required 2/5-us ROM
+//! settles. These futures do not suspend inside the admitted RFPLL transaction;
+//! finite edge limits are observation bounds, not wall-clock guarantees.
 
 use oer_esp32s31_hal::owner::SharedPhyAccess;
 
@@ -18,48 +19,45 @@ use crate::{
             RfpllFrequencyI2cBinding,
         },
     },
-    target_executor::{PhyAsyncDelay, PhyTargetPortError, complete_rfpll_i2c},
+    target_executor::{
+        PhyAsyncDelay, PhyShortDelay, PhyTargetPortError, complete_rfpll_i2c_direct,
+    },
     tracking::rfpll::{
         self,
         search::{self, Action, Completion, Status},
     },
 };
 
-async fn i2c<D: PhyAsyncDelay>(
+fn i2c(
     registers: &mut impl SharedPhyAccess,
     action: I2cAction,
 ) -> Result<I2cCompletion, PhyTargetPortError> {
     let binding =
         RfpllFrequencyI2cBinding::new(action).map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-    complete_rfpll_i2c(binding, registers, |kind, micros| {
-        D::after_micros(kind, micros)
-    })
-    .await
+    complete_rfpll_i2c_direct(binding, registers)
 }
 
-async fn complete<D: PhyAsyncDelay>(
+fn complete<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
     action: Action,
 ) -> Result<Completion, PhyTargetPortError> {
     match action {
         Action::ReadInitialCap => {
-            let I2cCompletion::ByteRead { value: low, .. } = i2c::<D>(
+            let I2cCompletion::ByteRead { value: low, .. } = i2c(
                 registers,
                 I2cAction::ReadByte {
                     address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW,
                 },
-            )
-            .await?
+            )?
             else {
                 return Err(PhyTargetPortError::UnexpectedBinding);
             };
-            let I2cCompletion::MaskedRead { value: high, .. } = i2c::<D>(
+            let I2cCompletion::MaskedRead { value: high, .. } = i2c(
                 registers,
                 I2cAction::ReadMasked {
                     field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
                 },
-            )
-            .await?
+            )?
             else {
                 return Err(PhyTargetPortError::UnexpectedBinding);
             };
@@ -68,50 +66,48 @@ async fn complete<D: PhyAsyncDelay>(
             ))
         }
         Action::EnableSearch => {
-            i2c::<D>(
+            i2c(
                 registers,
                 I2cAction::WriteMasked {
                     field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
                     value: 1,
                 },
-            )
-            .await?;
+            )?;
             Ok(Completion::SearchEnabled)
         }
         Action::WriteCap(requested) => {
             // Complete ROM phy_write_pll_cap clamps a negative signed input;
             // the search retains the requested value for its own arithmetic.
             let programmed = requested.max(0) as u16;
-            i2c::<D>(
+            i2c(
                 registers,
                 I2cAction::WriteByte {
                     address: analog_registers::RFPLL_CAPACITOR_LOW,
                     value: programmed as u8,
                 },
-            )
-            .await?;
-            i2c::<D>(
+            )?;
+            i2c(
                 registers,
                 I2cAction::WriteMasked {
                     field: analog_registers::RFPLL_CAPACITOR_HIGH,
                     value: (programmed >> 8) as u8,
                 },
-            )
-            .await?;
+            )?;
             Ok(Completion::CapWritten(requested))
         }
         Action::DelayMicros(micros) => {
-            D::after_micros(Kind::Settle, u64::from(micros)).await;
+            if !D::ShortDelay::settle_micros(micros) {
+                return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+            }
             Ok(Completion::DelayElapsed(micros))
         }
         Action::ReadStatus => {
-            let I2cCompletion::MaskedRead { value, .. } = i2c::<D>(
+            let I2cCompletion::MaskedRead { value, .. } = i2c(
                 registers,
                 I2cAction::ReadMasked {
                     field: analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS,
                 },
-            )
-            .await?
+            )?
             else {
                 return Err(PhyTargetPortError::UnexpectedBinding);
             };
@@ -141,7 +137,7 @@ pub async fn search<D: PhyAsyncDelay>(
             return Ok(outcome);
         }
         search
-            .advance(complete::<D>(registers, action).await?)
+            .advance(complete::<D>(registers, action)?)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
     }
 }
@@ -157,7 +153,7 @@ pub async fn correct<D: PhyAsyncDelay>(
         if let rfpll::Action::Complete(outcome) = correction.action() {
             return Ok(outcome);
         }
-        let completion = complete_correction::<D>(registers, correction.action()).await?;
+        let completion = complete_correction::<D>(registers, correction.action())?;
         correction
             .advance(completion)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -196,14 +192,14 @@ pub async fn maintain<D: PhyAsyncDelay>(
         .ok_or(PhyTargetPortError::UnexpectedBinding)
 }
 
-async fn complete_correction<D: PhyAsyncDelay>(
+fn complete_correction<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
     action: rfpll::Action,
 ) -> Result<rfpll::Completion, PhyTargetPortError> {
     match action {
-        rfpll::Action::Search(action) => Ok(rfpll::Completion::Search(
-            complete::<D>(registers, action).await?,
-        )),
+        rfpll::Action::Search(action) => {
+            Ok(rfpll::Completion::Search(complete::<D>(registers, action)?))
+        }
         rfpll::Action::Memory(action) => {
             let binding = PhyFrequencyCapMemoryExternalBinding::lower(action)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -225,7 +221,9 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
             Completion::SoftwareControlSelected
         }
         Action::Settle => {
-            D::after_micros(Kind::Settle, 2).await;
+            if !D::ShortDelay::settle_micros(2) {
+                return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+            }
             Completion::Settled
         }
         Action::ObserveBoundary => {
@@ -233,7 +231,7 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
             Completion::BoundaryObserved
         }
         Action::Correct(action) => {
-            Completion::Correction(complete_correction::<D>(registers, action).await?)
+            Completion::Correction(complete_correction::<D>(registers, action)?)
         }
         Action::RestoreHardwareControl => {
             frequency::set_baseband_mode(registers, 0);

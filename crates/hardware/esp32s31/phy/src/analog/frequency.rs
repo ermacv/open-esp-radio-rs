@@ -372,6 +372,7 @@ impl PhyFrequencyCapMemoryTransition {
         )
     }
 
+    #[inline(always)]
     pub const fn action(&self) -> PhyFrequencyCapMemoryAction {
         match self.step {
             PhyFrequencyCapMemoryStep::Read { entry_index } => {
@@ -406,6 +407,7 @@ impl PhyFrequencyCapMemoryTransition {
         }
     }
 
+    #[inline(always)]
     pub fn advance(
         &mut self,
         completion: PhyFrequencyCapMemoryCompletion,

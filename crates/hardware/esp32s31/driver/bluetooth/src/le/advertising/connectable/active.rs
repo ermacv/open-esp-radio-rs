@@ -378,7 +378,10 @@ where
     /// Read-only RX progress from the retained, removed graph.
     pub fn receive_observations(
         &self,
-    ) -> Option<[oer_esp32s31_bluetooth_memory::LeRxNodeObservation; 2]> {
+    ) -> Option<
+        [oer_esp32s31_bluetooth_memory::LeRxNodeObservation;
+            oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+    > {
         match &self._owner {
             LegacyConnectableAdvertisingActiveFailStopOwner::Recycle {
                 _step: LegacyConnectableAdvertisingRecycleStep::ReceiveInvalid { _ready, .. },

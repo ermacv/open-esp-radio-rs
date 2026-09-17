@@ -878,6 +878,62 @@ fn recurring_rx_retains_private_cursor_and_rotates_its_successor() {
 }
 
 #[test]
+fn recurring_rx_admits_version_and_termination_in_one_event_without_reusing_current() {
+    let mut owner = active_graph(0x2f00_4000);
+    let version = [0x1f, 6, 0x0c, 0x0d, 0xff, 0xff, 1, 0];
+    let terminate = [3, 2, 2, 0x13];
+    // Alternate partial and full events through multiple cursor rotations.
+    // The peer's MD=1 packet must not exhaust the next event's writable list.
+    for count in [1, 2, 2, 1, 2, 2, 2] {
+        let before = owner.storage.as_ref().get_ref().model_receive_current();
+        let mut current = before;
+        for packet in [&version[..], &terminate[..]].into_iter().take(count) {
+            current = owner
+                .pool
+                .model_controller_receive_after_current(current, packet);
+            owner
+                .storage
+                .as_ref()
+                .get_ref()
+                .model_advance_receive_current(current);
+        }
+        let batch = owner.pool.extract_completed_connection_rx_batch().unwrap();
+        assert_eq!(batch.len(), count);
+        assert_eq!(batch.packet(0).unwrap().as_bytes(), version);
+        if count == 2 {
+            assert_eq!(batch.packet(1).unwrap().as_bytes(), terminate);
+        }
+        owner.restore_after_event();
+        assert_eq!(
+            owner.storage.as_ref().get_ref().model_receive_current(),
+            current
+        );
+        assert!(owner.event_resources_are_recycled());
+        assert!(
+            owner
+                .pool
+                .extract_completed_connection_rx_batch()
+                .unwrap()
+                .is_empty()
+        );
+        // An empty event cannot replay the retained current packet or consume capacity.
+        owner.restore_after_event();
+        assert_eq!(
+            owner.storage.as_ref().get_ref().model_receive_current(),
+            current
+        );
+        assert!(
+            owner
+                .pool
+                .extract_completed_connection_rx_batch()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(batch.packet(0).unwrap().as_bytes(), version);
+    }
+}
+
+#[test]
 fn receive_time_survives_empty_rx_recycle_and_recurring_cancellation() {
     let mut active = active_graph(0x2f02_1000);
     assert_eq!(

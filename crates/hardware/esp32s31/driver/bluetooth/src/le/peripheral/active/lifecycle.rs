@@ -71,6 +71,9 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             }
         }
         let cause = match deadline_phase {
+            radio::DeadlinePhase::MaintenanceRestoration => {
+                PeripheralConnectionActiveFaultCause::MaintenanceRestorationExpired
+            }
             radio::DeadlinePhase::SchedulerStop => {
                 PeripheralConnectionActiveFaultCause::CompletionAbortDeadlineExpired
             }
@@ -179,14 +182,14 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         observe_remote_feature_result(&mut control, &mut procedure, &mut host_events);
         observe_remote_version_result(&mut control, &mut procedure, &mut host_events);
         observe_encryption_host_events(&mut encryption, &mut host_events);
-        let (radio, published) = match step {
+        let (radio, published, maintenance) = match step {
             radio::Step::Continue(radio) => {
                 radio.begin_unlink_budget(previous_phase, &mut progress_deadline);
-                (radio, false)
+                (radio, false, None)
             }
-            radio::Step::Published(radio) => {
+            radio::Step::Published(radio, maintenance) => {
                 progress_deadline = radio.progress_deadline();
-                (radio, true)
+                (radio, true, maintenance)
             }
             radio::Step::Fault(radio) => {
                 return PeripheralConnectionActiveStep::Fault(PeripheralConnectionActiveFault {
@@ -221,7 +224,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             read_remote_version_after_status,
         };
         if published {
-            PeripheralConnectionActiveStep::Published(session)
+            PeripheralConnectionActiveStep::Published(session, maintenance)
         } else {
             PeripheralConnectionActiveStep::Continue(session)
         }
@@ -304,6 +307,9 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
                 }
             }
             let cause = match deadline_phase {
+                radio::DeadlinePhase::MaintenanceRestoration => {
+                    PeripheralConnectionActiveFaultCause::MaintenanceRestorationExpired
+                }
                 radio::DeadlinePhase::SchedulerStop => {
                     PeripheralConnectionActiveFaultCause::CompletionAbortDeadlineExpired
                 }

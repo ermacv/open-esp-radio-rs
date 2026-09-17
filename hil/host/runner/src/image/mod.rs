@@ -45,15 +45,23 @@ struct ImageCapabilitySignature {
 pub(crate) fn classify_flashed_capabilities(
     features: &FeatureCapabilities,
 ) -> Option<crate::image::ImageClass> {
-    if features.bluetooth_dtm || features.bluetooth_peripheral {
+    if features.bluetooth_dtm || features.bluetooth_peripheral || features.bluetooth_phy_maintenance
+    {
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
             bluetooth_peripheral: true,
+            bluetooth_phy_maintenance: features.bluetooth_phy_maintenance,
+            // Sealed older Bluetooth images retain their original placement.
+            phy_rx_hot_sram: features.phy_rx_hot_sram,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
-        return (*features == expected).then_some(ImageClass::BluetoothDtm);
+        return (*features == expected).then_some(if features.bluetooth_phy_maintenance {
+            ImageClass::BluetoothPhyMaintenance
+        } else {
+            ImageClass::BluetoothDtm
+        });
     }
     if features.phy_rx_hot_sram {
         let mut control = *features;
@@ -444,7 +452,10 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = if class == ImageClass::BluetoothDtm {
+    let runtime_features = if matches!(
+        class,
+        ImageClass::BluetoothDtm | ImageClass::BluetoothPhyMaintenance
+    ) {
         class.runtime_features().to_owned()
     } else {
         format!("{},{}", class.runtime_features(), network.feature())
@@ -855,7 +866,10 @@ fn audit_radio_observers<'a>(
 ) -> Result<()> {
     if matches!(
         class,
-        ImageClass::BluetoothDtm | ImageClass::BootSmoke | ImageClass::DiagnosticMemoryBenchmark
+        ImageClass::BluetoothDtm
+            | ImageClass::BluetoothPhyMaintenance
+            | ImageClass::BootSmoke
+            | ImageClass::DiagnosticMemoryBenchmark
     ) {
         return Ok(());
     }

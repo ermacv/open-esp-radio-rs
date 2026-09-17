@@ -595,3 +595,69 @@ fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
         }
     }
 }
+
+#[test]
+fn parent_retains_convergence_and_baseband_limit_outcome_separately() {
+    let mut parent = PhyRxGainDcTransition::new(PhyRxGainDcParameters {
+        crystal_selector: 0,
+        pbus_rx_path_value: 0xbf,
+        rx_saturation_detected: false,
+    });
+    for (gain, power, expected_convergence) in [(3, 20, true), (5, 56, false)] {
+        let request = PhyRxDcCalibrationRequest {
+            stage: PhyRxDcCalibrationStage::Baseband,
+            gain_index: gain,
+            initial: [261, 301],
+            ..RADIO
+        };
+        let mut child = PhyRxDcCalibrationTransition::new(request);
+        child.threshold = 1;
+        // Deliver actual minimum outcomes to the production feedback policy.
+        // A quiet zero residual converges; a sentinel must exhaust the loop.
+        for _ in 0..12 {
+            let low = child.minimum_request(false);
+            child.accept_measurement(false, outcome(low, 0, 0, power));
+            let high = child.minimum_request(true);
+            child.accept_measurement(true, outcome(high, 0, 0, power));
+            if matches!(child.action(), PhyRxDcCalibrationAction::ForcePbus(_))
+                && matches!(child.step, Step::CleanupI { .. })
+            {
+                break;
+            }
+        }
+        for _ in 0..3 {
+            match child.action() {
+                PhyRxDcCalibrationAction::ForcePbus(transaction) => child
+                    .advance(PhyRxDcCalibrationCompletion::PbusForceCompleted(
+                        transaction,
+                    ))
+                    .unwrap(),
+                PhyRxDcCalibrationAction::RestoreControl => child
+                    .advance(PhyRxDcCalibrationCompletion::ControlRestored)
+                    .unwrap(),
+                other => panic!("missing physical cleanup: {other:?}"),
+            }
+        }
+        let completed = child.terminal().unwrap().unwrap();
+        assert_eq!(completed.converged, expected_convergence);
+        assert_eq!(
+            completed.iterations,
+            if expected_convergence { 1 } else { 12 }
+        );
+        assert_eq!(completed.configuration, request.initial);
+        parent.step = DcStep::CalibrateBaseband {
+            bank: PhyRxGainDcBank::Wifi,
+            index: gain,
+            transition: child,
+        };
+        parent.finish_calibration().unwrap();
+        assert_eq!(
+            parent.quality.wifi_baseband()[gain as usize],
+            expected_convergence
+        );
+        assert_eq!(parent.wifi_index_dc[gain as usize], request.initial);
+    }
+    let published = parent.outcome();
+    assert!(published.quality.wifi_baseband()[3]);
+    assert!(!published.quality.wifi_baseband()[5]);
+}

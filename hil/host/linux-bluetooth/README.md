@@ -210,8 +210,113 @@ the peer identity must match across directions. The catalog scenario requests
 two boots and stops at the first failure. It establishes
 only the tested LE 1M DTM link; general BLE readiness remains with qualification.
 
-The connection helper report uses schema 10. The installer and runner require
+The connection helper report uses schema 14. The installer and runner require
 the same advertised helper contract; reinstall the Linux Bluetooth fixture when
 that contract changes. Advertising Encryption in this exchange does not qualify
 encrypted traffic: key exchange, MIC/counter handling and encrypted interoperability
 require their own evidence.
+
+## Kernel ATT calibration fixture
+
+The `bluetooth-peripheral-acl-calibration` workload uses a fixed ATT socket
+through the Linux kernel and BlueZ, implemented in
+[`fixture/bluetooth/att.rs`](../runner/src/fixture/bluetooth/att.rs). It uses the
+same runner adapter lease but does not enter the helper's exclusive HCI channel.
+The configured adapter must initially be powered off. BlueZ, `busctl` and user
+access to `/dev/rfkill` are required; the socket binds the selected adapter's
+public address. Missing access fails setup rather than changing permissions.
+
+The owner snapshots adapter identity and soft rfkill, powers it for the test,
+and verifies power/rfkill restoration on completion or error. The brief BlueZ
+re-registration interval after clearing rfkill has a bounded setup retry. Peer
+payloads, HCI credit snapshots, calibration counts and cleanup results are saved
+with the ordinary sealed HIL run. No helper reinstall is required for this path.
+
+
+## Encrypted peripheral ACL fixture
+
+`cargo hil run bluetooth-peripheral-encrypted-acl` uses the same exclusive
+Linux HCI fixture and adapter lease as peripheral recovery. Reinstall the helper
+with `cargo hil fixture install --provider linux-bluetooth --adapter hci0` after
+updating its schema. Its finite `connect-reset --encrypted` mode starts AES-CCM
+with the public test LTK/Rand/EDIV from `open-esp-radio-hil-protocol`, requires
+successful Command Status followed by Encryption Change for the exact handle,
+and only then sends application data. No arbitrary keys or HCI commands are
+accepted by the launcher interface.
+
+Each connection checks both exact 251-byte echoes, with the second following
+Connection Update and Channel Map Update. The current target fragments its
+outbound encrypted payload into eleven LL fragments; the central's existing
+27-byte payload profile produces ten target Host fragments per exchange.
+Target evidence requires one matching LTK request/reply and Encryption Change,
+no plaintext application data, complete credit returns and link retirement.
+Two connections share one target boot and HCI epoch; three repetitions each end
+in cold retirement. Peer Reset is still the recovery stimulus, not abrupt RF
+loss. Adapter state is restored on success or failure.
+
+`cargo hil run bluetooth-peripheral-key-refresh` selects the same workload with
+`key_refresh = true`. The finite helper mode `connect-reset --encrypted
+--key-refresh` issues LE Enable Encryption again after both updates, with the
+distinct public `BLUETOOTH_REFRESH_*` identity. Before sending the second echo it
+requires a new successful Command Status and Encryption Key Refresh Complete on
+the original handle. The target requires two matching key requests/replies, one
+initial Encryption Change and one Key Refresh Complete per connection; missing
+or duplicate transitions fail the scenario. Both connection cycles use the same
+Controller epoch. The helper accepts no arbitrary key material.
+
+These scenarios cover fixed-key Controller interoperability. Pairing, bonding
+and intentionally corrupted MIC tests remain separate requirements;
+a passed plaintext scenario or an advertised feature bit cannot substitute for
+this evidence.
+
+## Initial-key failure fixtures
+
+`cargo hil run bluetooth-peripheral-missing-key` and
+`cargo hil run bluetooth-peripheral-wrong-key` use the same leased helper.
+Its finite `security-failure --adapter hci0 --peer <address> --failure
+missing-key|wrong-key` command accepts no custom key or opcode. Install it through
+`cargo hil fixture install --provider linux-bluetooth --adapter hci0`.
+
+The target diagnostic Host injects exactly one negative LTK reply or one reply
+with a mismatched public key. The peer sends no application data on this failed
+connection. Missing key requires a successful encryption-command admission
+followed by Encryption Change with PIN or Key Missing (`0x06`, encryption off).
+The helper then explicitly disconnects this still-live plaintext ACL, requiring
+local reason `0x16` and target remote-user reason `0x13`. It does not misclassify
+initial key rejection as an automatic disconnect.
+
+`cargo hil run bluetooth-peripheral-missing-key-plaintext` is a separate
+diagnostic. Its fixed `--read-version-before-disconnect` helper flag requests
+Read Remote Version Information after the `0x06` rejection and requires a
+successful completion for the same handle and the target's exact development
+identity before sending Disconnect. The original missing-key scenario still
+disconnects immediately. Both retain target reason `0x13` and the same recovery
+requirements; the diagnostic is not a substitute in qualification. A version
+completion may come from the central's cache and alone does not prove a fresh
+over-the-air exchange or application-data progress.
+
+Security-failure reports use schema 2 and retain at most 64 incoming HCI
+packets, each bounded to 258 bytes, with monotonic times relative to submission
+of LE Enable Encryption. This chronology is not an RF capture. The complete
+probe retains its eight-second deadline, including the optional version read;
+missing or failed completion does not fall back to immediate Disconnect.
+
+Wrong key requires target MIC failure `0x3d`, with no successful encryption or
+Host ACL delivery. The central observes supervision timeout `0x08` after the
+target stops the failed link; any Encryption Change received before disconnect
+must also report failure `0x08` with encryption off. That central timeout alone
+cannot satisfy the scenario. A spontaneous disconnect, rejected HCI command,
+successful encryption, unrelated handle, data packet or incomplete restoration
+fails the probe.
+
+Each scenario then reconnects in the same target boot/HCI epoch, starts normal
+encryption and checks both exact fragmented echoes, connection/channel-map
+updates, peer Reset recovery and cold retirement. There are three repetitions.
+Preflight checks password-free admission of both failure modes and the separate
+version diagnostic using an invalid peer
+address, rejected by the CLI parser before any adapter acquisition. A successful
+`sudo -l` listing alone is not proof of password-free execution.
+Reports retain both peer evidence and target snapshots, including partial
+failures. These probes cover initial-key rejection and handshake MIC failure;
+they do not establish missing-key handling during refresh or corrupted data MIC
+handling in an already encrypted session, SMP, pairing or secure GATT.

@@ -14,6 +14,8 @@ use crate::{controller as ctrl, scheduler as sched};
 use core::ops::ControlFlow;
 use ctrl::SchedulerRunInterruptStorage;
 
+type Restoration = Option<oer_esp32s31_phy::tracking::deadline::TrackingDeadline>;
+
 type Task<'a, S, const N: usize> = ctrl::ControllerPublishedTaskService<'a, S, N>;
 
 use super::super::progress::PeripheralConnectionProgressDeadline as ProgressDeadline;
@@ -128,6 +130,7 @@ pub enum PeripheralConnectionActiveWait<'a> {
 /// Failure closes this active lifecycle without reclaiming its affine owners.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionActiveFaultCause {
+    MaintenanceRestorationExpired,
     CompletionAbortDeadlineExpired,
     CompletionAbortInvariant,
     ControllerTimeDeadlineExpired,
@@ -174,12 +177,14 @@ pub(super) enum Radio<'a, S: SchedulerRunInterruptStorage, const N: usize> {
         task: Task<'a, S, N>,
         candidate: sched::PeripheralConnectionRecurringEventCandidate,
         evidence: Evidence,
+        restoration: Restoration,
     },
     Current {
         wait_for_recheck: bool,
         pending: TimedCurrent<'a, S, N>,
         admitted: sched::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
+        restoration: Restoration,
     },
     TerminationCurrent {
         wait_for_recheck: bool,
@@ -192,11 +197,13 @@ pub(super) enum Radio<'a, S: SchedulerRunInterruptStorage, const N: usize> {
         merged: sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         progress_deadline: ProgressDeadline,
         evidence: Evidence,
+        restoration: Restoration,
     },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DeadlinePhase {
+    MaintenanceRestoration,
     SchedulerCompletion,
     SchedulerStop,
     PostUnlink,
@@ -205,7 +212,10 @@ pub(super) enum DeadlinePhase {
 
 pub(super) enum Step<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     Continue(Radio<'a, S, N>),
-    Published(Radio<'a, S, N>),
+    Published(
+        Radio<'a, S, N>,
+        Option<super::super::maintenance::PeripheralMaintenanceRun>,
+    ),
     Fault(Fault<'a, S, N>),
 }
 
@@ -343,6 +353,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     }
 
     pub(super) fn expired_phase(&mut self, event: &mut ProgressDeadline) -> Option<DeadlinePhase> {
+        let restoration = match self {
+            Self::Candidate { restoration, .. }
+            | Self::Current { restoration, .. }
+            | Self::Merged { restoration, .. } => *restoration,
+            _ => None,
+        };
+        if restoration.is_some_and(|deadline| deadline.check(Some(S::monotonic_micros())).is_err())
+        {
+            return Some(DeadlinePhase::MaintenanceRestoration);
+        }
         let phase = self.deadline_phase()?;
         let deadline = match self {
             Self::Current { pending, .. }
@@ -503,19 +523,21 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 mut task,
                 candidate,
                 evidence,
+                restoration,
             } => match task.admit_peripheral_connection_recurring_candidate(candidate) {
                 ControlFlow::Break(failure) => fault(
                     Cause::Preparation(failure.error()),
                     FaultOwner::Preparation(task, failure, evidence),
                 ),
                 ControlFlow::Continue(admitted) => {
-                    Self::begin_current(task, admitted, evidence, false)
+                    Self::begin_current(task, admitted, evidence, false, restoration)
                 }
             },
             Self::Current {
                 pending,
                 admitted,
                 evidence,
+                restoration,
                 ..
             } => match pending.recheck() {
                 Err(failure) => fault(
@@ -527,9 +549,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     pending,
                     admitted,
                     evidence,
+                    restoration,
                 }),
                 Ok(ControlFlow::Continue(now)) => {
-                    Self::finish_current(now, admitted, evidence, &mut link)
+                    Self::finish_current(now, admitted, evidence, &mut link, restoration)
                 }
             },
             Self::TerminationCurrent {
@@ -579,7 +602,8 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 merged,
                 progress_deadline,
                 evidence,
-            } => Self::publish(task, merged, evidence, progress_deadline),
+                restoration,
+            } => Self::publish(task, merged, evidence, progress_deadline, restoration),
         }
     }
 
@@ -676,7 +700,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             },
             radio => match radio.step(control, encryption, acl, deadlines, host_events, random) {
                 Step::Continue(radio) => ResetStep::Continue(radio),
-                Step::Published(radio) => ResetStep::Published(radio),
+                Step::Published(radio, _) => ResetStep::Published(radio),
                 Step::Fault(fault) => ResetStep::Fault(fault),
             },
         }
@@ -688,6 +712,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         merged: sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         evidence: Evidence,
         progress_deadline: ProgressDeadline,
+        restoration: Restoration,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
 
@@ -706,13 +731,30 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 FaultOwner::Publication(task, failure, evidence),
             ),
             ControlFlow::Continue(ControlFlow::Continue(ControlFlow::Continue(running))) => {
-                Step::Published(Self::Running(Running::from_recurring(
+                let running = Self::Running(Running::from_recurring(
                     task,
                     running,
                     event_counter,
                     evidence,
                     progress_deadline,
-                )))
+                ));
+                let observation = if let Some(deadline) = restoration {
+                    let now = S::monotonic_micros();
+                    if deadline.check(Some(now)).is_err() {
+                        return Step::Fault(
+                            running.expire_deadline(Cause::MaintenanceRestorationExpired),
+                        );
+                    }
+                    Some(super::super::maintenance::PeripheralMaintenanceRun {
+                        admitted_at_micros: deadline.started_at_micros(),
+                        run_at_micros: now,
+                        restoration_deadline_micros: deadline.expires_at_micros(),
+                        event_counter,
+                    })
+                } else {
+                    None
+                };
+                Step::Published(running, observation)
             }
         }
     }
@@ -944,6 +986,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     task,
                     candidate,
                     evidence,
+                    restoration: None,
                 })
             }
             ctrl::PeripheralConnectionRecurringCandidateStep::SchedulerEpochUnavailable(retry) => {
@@ -989,6 +1032,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         admitted: sched::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         link: &mut LinkState<'_>,
+        restoration: Restoration,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
 
@@ -1012,12 +1056,12 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             }
             Decision::Wait => {
                 let task = now.into_retained_epoch().into_task_service();
-                return Self::begin_current(task, admitted, evidence, true);
+                return Self::begin_current(task, admitted, evidence, true, restoration);
             }
             Decision::Run => {}
         }
         use super::super::recovery::PeripheralMissedAnchorDecision;
-        match now.decide_peripheral_missed_anchor(&admitted) {
+        match now.decide_peripheral_missed_anchor(&admitted, restoration.is_some()) {
             PeripheralMissedAnchorDecision::Run
             | PeripheralMissedAnchorDecision::EstablishmentPolicyRequired => {}
             PeripheralMissedAnchorDecision::Skip(delta) => {
@@ -1026,6 +1070,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     .cancel_peripheral_connection_recurring_pre_sequence(admitted)
                     .into_parts();
                 return Self::prepare_candidate(task, completed, delta, evidence, link);
+            }
+            PeripheralMissedAnchorDecision::MaintenanceWindowMissed => {
+                let mut task = now.into_retained_epoch().into_task_service();
+                let (completed, _) = task
+                    .cancel_peripheral_connection_recurring_pre_sequence(admitted)
+                    .into_parts();
+                return fault(
+                    Cause::MaintenanceRestorationExpired,
+                    FaultOwner::Recovery(task, completed, evidence),
+                );
             }
             PeripheralMissedAnchorDecision::DeltaUnavailable => {
                 let mut task = now.into_retained_epoch().into_task_service();
@@ -1046,6 +1100,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                     merged,
                     progress_deadline,
                     evidence,
+                    restoration,
                 })
             }
             ctrl::PeripheralConnectionRecurringSequenceCompletion::EventRejected {
@@ -1190,6 +1245,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
         admitted: sched::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         wait_for_recheck: bool,
+        restoration: Restoration,
     ) -> Step<'a, S, N> {
         use PeripheralConnectionActiveFaultCause as Cause;
         let retained = match task.retain_scheduler_epoch() {
@@ -1207,6 +1263,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
                 pending: TimedCurrent::new(pending),
                 admitted,
                 evidence,
+                restoration,
             }),
             Err(failure) => fault(
                 Cause::ControllerTimeBegin(failure.error()),

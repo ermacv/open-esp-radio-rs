@@ -312,3 +312,45 @@ source_ends_with = ["runtime/src/bluetooth/retirement.rs", "library/core/src/fut
 max_bytes = 17920
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "quiescent HIL maintenance retains the complete runner success/failure frontier and verifies Reset through the same Host before returning it. The lower PHY poll and Reset runner have separate frames; no active radio task runs during tracking. Runtime painting bounds the full nested chain on the unchanged 192-KiB CPU0 stack"
+
+[[reviewed_frames]]
+function_contains = "::system::runner::retirement::BluetoothHardwareTimerRetired<"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs", "library/core/src/future/future.rs"]
+max_bytes = 8704
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "idle PHY maintenance retains the original runner and the lower deadline-aware PHY success/failure owner; its poll frame executes with radio tasks and CPU IRQ routes stopped. Lower PHY polling and final runner assembly are outlined. The HIL maintenance scenario paints the complete nested chain and requires 16-KiB free on the fixed 192-KiB CPU0 stack"
+
+[[reviewed_frames]]
+function_contains = "::system::runner::maintenance::poll_maintenance::<"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs"]
+max_bytes = 19456
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "physical maintenance retains one admitted ACL/HCI owner and the shared PHY transaction while both CPU IRQ routes and source-127 ownership are withdrawn; it runs after command dispatch has returned, not nested inside that dispatch frame. This outlined physical poll and its caller fit the fixed 192-KiB CPU0 stack; the active maintenance scenario must measure the complete call chain with at least 16-KiB free"
+
+[[reviewed_frames]]
+function_contains = "::system::runner::retirement::maintenance::finish::<"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs"]
+max_bytes = 10240
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "idle restoration consumes one physical result and reconstructs the runner; failure stores either the runner or the extracted lower owner with a compact remainder, never both complete actor allocations. Physical polling has returned before this frame; the lifecycle HIL watermark covers the complete restoration chain"
+
+[[reviewed_frames]]
+function_contains = "::maintain_due_phy::<"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs"]
+max_bytes = 10240
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "automatic maintenance joins one lower authority to its metadata-only actor continuation and the real timer/IRQ owners; synchronous diverging failure escalation avoids retaining separate async failure graphs. Command dispatch is no longer on the stack; nested physical polling and final restoration remain bounded by the active HIL watermark"
+
+[[reviewed_frames]]
+function_contains = "::active::maintenance::PeripheralPhyMaintenancePending<"
+source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/maintenance.rs"]
+max_bytes = 10240
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "one finite acquisition check retains the original connection and HCI owner across natural-gap admission, LL-gated budgeted successor proposals and lossless cancellation; there is no physical PHY execution in this frame. This path runs inside the separately reviewed actor dispatch on the fixed 192-KiB CPU0 stack and requires the same measured 16-KiB free margin"
+
+[[reviewed_frames]]
+function_contains = "::run_with_phy_maintenance_until_idle"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs", "library/core/src/future/future.rs"]
+max_bytes = 22528
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the pinned automatic runner alternates the borrowed command loop with the consuming physical handoff while retaining the stop-request latch and complete runner return slot; these two branches do not execute concurrently. Outlined command extraction keeps its failure owners out of this frame. The active-maintenance HIL paints the complete CPU0 chain, including this caller, and still requires 16-KiB free on the fixed 192-KiB stack"

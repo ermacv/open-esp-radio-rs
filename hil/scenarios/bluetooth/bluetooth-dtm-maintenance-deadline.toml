@@ -1,0 +1,10 @@
+schema = 4
+id = "bluetooth-dtm-maintenance-deadline"
+description = "Active DTM TX/RX reaches autonomous PHY hard expiry, produces a new software-reset boot and RF silence without Host Test End or Reset"
+image = "bluetooth-phy-maintenance"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "dtm", "phy-maintenance", "fail-stop"]
+
+[workload]
+kind = "bluetooth-maintenance-deadline"

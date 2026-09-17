@@ -83,6 +83,49 @@ fn execute_workload_inner(
             output,
             context,
         ),
+        Workload::BluetoothSecurityFailure {
+            failure,
+            read_version_before_disconnect,
+        } => crate::workload::bluetooth::security_failure::run(
+            *failure,
+            *read_version_before_disconnect,
+            output,
+            context,
+        ),
+        Workload::BluetoothEncryptedAcl { key_refresh } => {
+            crate::workload::bluetooth::run_peripheral(
+                crate::workload::bluetooth::PeripheralConfig {
+                    boots: 1,
+                    connections: 2,
+                    hold_millis: 0,
+                    termination:
+                        open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+                    retire_after: true,
+                    restart_between_connections: false,
+                    maintain_between_connections: false,
+                    calibration_threshold: None,
+                    encrypted: true,
+                    key_refresh: *key_refresh,
+                },
+                output,
+                context,
+            )
+        }
+        Workload::BluetoothAclBackpressure => {
+            crate::workload::bluetooth::backpressure::run(output, context)
+        }
+        Workload::BluetoothMaintenanceDeadline => {
+            crate::workload::bluetooth::deadline::run(output, context)
+        }
+        Workload::BluetoothAclCalibration {
+            duration_millis,
+            minimum_calibrations,
+        } => crate::workload::bluetooth::calibration::run(
+            *duration_millis,
+            *minimum_calibrations,
+            output,
+            context,
+        ),
         Workload::BluetoothPeripheral {
             boots,
             connections,
@@ -91,8 +134,11 @@ fn execute_workload_inner(
             retire_after,
             restart_between_connections,
             maintain_between_connections,
+            calibration_threshold,
         } => crate::workload::bluetooth::run_peripheral(
             crate::workload::bluetooth::PeripheralConfig {
+                encrypted: false,
+                key_refresh: false,
                 boots: *boots,
                 connections: *connections,
                 hold_millis: *hold_millis,
@@ -100,6 +146,7 @@ fn execute_workload_inner(
                 retire_after: *retire_after,
                 restart_between_connections: *restart_between_connections,
                 maintain_between_connections: *maintain_between_connections,
+                calibration_threshold: *calibration_threshold,
             },
             output,
             context,

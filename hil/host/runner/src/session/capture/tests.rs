@@ -1531,3 +1531,71 @@ fn queued_commands_make_progress_without_inbound_bytes_or_read_timeouts() {
         "outbound data must not enter the transcript"
     );
 }
+
+#[test]
+fn encryption_configuration_waits_for_delayed_boot_before_issuing_commands() {
+    let output = Output::new();
+    let (input, rx) = serial_pair();
+    let (writes, commands) = mpsc::channel();
+    let capture = SerialCapture::start_transport(&output.0, move || {
+        Ok(Serial {
+            input: rx,
+            fail_write: false,
+            writes: Some(writes),
+        })
+    })
+    .unwrap();
+    let input_guard = input.clone();
+    let target = thread::spawn(move || {
+        assert!(commands.recv_timeout(Duration::from_millis(60)).is_err());
+        let Event::Hello(mut caps) = hello(7, 0).body else {
+            panic!("hello")
+        };
+        caps.features.bluetooth_peripheral = true;
+        input
+            .send(Ok(frame(Envelope::new(7, 0, 0, 0, Event::Hello(caps)))))
+            .unwrap();
+        let query = receive_command(&commands);
+        assert_eq!(query.body, Command::GetCapabilities);
+        input
+            .send(Ok(frame(Envelope::new(
+                7,
+                1,
+                0,
+                query.request_id,
+                Event::Hello(caps),
+            ))))
+            .unwrap();
+        let request = receive_command(&commands);
+        assert_eq!(request.boot_id, 7);
+        assert_eq!(
+            request.body,
+            Command::BluetoothPeripheral(
+                open_esp_radio_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl {
+                    enabled: true,
+                    failure: Some(
+                        open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey
+                    ),
+                }
+            )
+        );
+        input
+            .send(Ok(frame(Envelope::new(
+                7,
+                2,
+                0,
+                request.request_id,
+                Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState),
+            ))))
+            .unwrap();
+    });
+    let error = crate::workload::bluetooth::configure_encryption(
+        &capture,
+        true,
+        Some(open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey),
+    )
+    .unwrap_err();
+    target.join().unwrap();
+    assert!(error.to_string().contains("InvalidState"), "{error}");
+    drop(input_guard);
+}

@@ -28,175 +28,51 @@ use oer_esp32s31_hal::owner::{SharedPhyAccess, SharedPhyContext};
 pub fn clear_pbus<D: PhyShortDelay, O: PhyTargetObserver>(
     mut child: PhyCalibrationPbusClearTransition,
     registers: &mut impl SharedPhyContext,
-    observer: &mut O,
+    _observer: &mut O,
 ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+    use crate::analog::pbus::{PhyPbusClearAction as Action, PhyPbusClearCompletion as Completion};
+    use oer_esp32s31_hal::phy::{agc, pbus};
+
+    // Keep the admitted child and its exact command/settle order. This small
+    // runtime child does not need the cold-init action/completion envelopes.
     for _ in 0..RF_OPERATION_LIMIT {
         child = match child.commit() {
             Ok(completion) => return Ok(completion),
             Err(child) => child,
         };
-        let binding = child
-            .lower_external()
-            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        let completion = complete_cold_direct::<D, _>(binding, registers, observer)?;
+        let completion = match child.action() {
+            Action::ConfigureDebugMode => {
+                pbus::configure_debug_mode(registers);
+                Completion::DebugModeConfigured
+            }
+            Action::ForceTest(transaction) => {
+                if !crate::target_executor::force_pbus_direct(registers, transaction) {
+                    return Err(PhyTargetPortError::HardwareEdgeTimedOut);
+                }
+                Completion::ForceTestCompleted(transaction)
+            }
+            Action::ConfigureWorkMode => Completion::WorkModeConfigured {
+                settle_required: pbus::configure_work_mode(registers),
+            },
+            Action::DelayMicros(micros) => {
+                short_settle::<D>(micros)?;
+                Completion::DelayElapsed
+            }
+            Action::ConfigureWorkModePulse => {
+                agc::configure_pbus_work_mode_pulse(registers);
+                Completion::WorkModePulseConfigured
+            }
+            Action::ClearWorkModePulse => {
+                agc::clear_pbus_work_mode_pulse(registers);
+                Completion::WorkModePulseCleared
+            }
+            Action::Complete(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+        };
         child
-            .advance_external(completion)
+            .advance(completion)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
     }
     Err(PhyTargetPortError::RfOperationLimit)
-}
-
-fn complete_cold_direct<D: PhyShortDelay, O: PhyTargetObserver>(
-    binding: crate::calibration::cold::PhyColdExternalBinding,
-    registers: &mut impl SharedPhyContext,
-    observer: &mut O,
-) -> Result<crate::analog::i2c::PhyRfInitPrefixCompletion, PhyTargetPortError> {
-    use crate::{
-        calibration::cold::{
-            PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdObservationRequest,
-            PhyColdPbusObservation,
-        },
-        target_port::PhyRfBoundary,
-    };
-    match binding {
-        PhyColdExternalBinding::I2cConfiguration(mut binding) => {
-            let completed = crate::executor::wait::poll::bounded(|| {
-                match binding.action() {
-                    oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::StartCommand => {
-                        match binding.start_target(registers) {
-                            Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
-                            Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
-                        }
-                    }
-                    oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::AwaitCompletionEdge => {
-                        binding
-                            .observe_target_edge(registers)
-                            .map_err(|_| PhyTargetPortError::HardwareInvariant)?;
-                    }
-                    oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::Complete => {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            })?;
-            if !completed {
-                return Err(PhyTargetPortError::HardwareEdgeTimedOut);
-            }
-            binding
-                .into_completion()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)
-        }
-        PhyColdExternalBinding::I2c(mut binding) => {
-            let completed = crate::executor::wait::poll::bounded(|| {
-                match binding.action() {
-                    PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                        match binding.start_target(registers) {
-                            Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
-                            Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
-                        }
-                    }
-                    PhyColdI2cAction::AwaitReadCompletionEdge { .. }
-                    | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        binding
-                            .observe_target_edge(registers)
-                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-                    }
-                    PhyColdI2cAction::Complete(_) => return Ok(true),
-                }
-                Ok(false)
-            })?;
-            if !completed {
-                return Err(PhyTargetPortError::HardwareEdgeTimedOut);
-            }
-            binding
-                .into_completion()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)
-        }
-        PhyColdExternalBinding::Mmio(binding) => {
-            let boundary = match binding.outer_action() {
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureFeBbClock => {
-                    Some(PhyRfBoundary::BeforeRfInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureI2cClockSelection => {
-                    Some(PhyRfBoundary::AfterPbusClear)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
-                    Some(PhyRfBoundary::BeforeI2cMasterRegisterInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                    Some(PhyRfBoundary::BeforePowerDetectorRegisterInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
-                    Some(PhyRfBoundary::BeforeFrontEndRegisterInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                    Some(PhyRfBoundary::BeforeTemperatureSensorReadInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                    Some(PhyRfBoundary::BeforeTxPowerControlBackgroundInit)
-                }
-                crate::analog::i2c::PhyRfInitPrefixAction::ChannelFrequency(
-                    crate::analog::frequency::PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters { .. },
-                ) => Some(PhyRfBoundary::BeforeChannelFrequencyInit),
-                _ => None,
-            };
-            if let Some(boundary) = boundary {
-                observer.rf_boundary(boundary);
-            }
-            binding
-                .execute_target(registers)
-                .map_err(|error| match error {
-                    crate::calibration::cold::PhyColdLoweringError::HardwareRestoreInvariant => {
-                        PhyTargetPortError::HardwareInvariant
-                    }
-                    _ => PhyTargetPortError::UnexpectedBinding,
-                })
-        }
-        PhyColdExternalBinding::Observation(binding) => {
-            if binding.outer_action()
-                == crate::analog::i2c::PhyRfInitPrefixAction::CaptureChannelFrequencyControl
-            {
-                observer.rf_boundary(PhyRfBoundary::BeforeChannelFrequencyInit);
-            }
-            match binding.request() {
-                PhyColdObservationRequest::ObserveDcIqReadiness {
-                    readiness_samples, ..
-                }
-                | PhyColdObservationRequest::ObserveSignalPowerReadiness {
-                    readiness_samples,
-                    ..
-                } if readiness_samples >= crate::HARDWARE_EDGE_LIMIT => binding
-                    .into_timeout_completion()
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding),
-                _ => binding
-                    .execute_target(registers)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding),
-            }
-        }
-        PhyColdExternalBinding::Pbus(mut binding) => {
-            binding
-                .start_target(registers)
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completed = crate::executor::wait::poll::bounded(|| {
-                binding
-                    .observe_target_edge(registers)
-                    .map(|edge| edge == PhyColdPbusObservation::EdgeConsumed)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)
-            })?;
-            if !completed {
-                return Err(PhyTargetPortError::HardwareEdgeTimedOut);
-            }
-            binding
-                .into_completion()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)
-        }
-        PhyColdExternalBinding::Timer(binding) => {
-            short_settle::<D>(binding.micros())?;
-            binding
-                .into_elapsed_completion()
-                .map_err(|_| PhyTargetPortError::UnexpectedBinding)
-        }
-    }
 }
 
 /// Run the complete D-code child, retaining its nested PLL and I2C waits.
@@ -207,13 +83,21 @@ pub fn dcode<D: PhyShortDelay, P>(
     registers: &mut impl SharedPhyAccess,
     mut observe: impl FnMut(bool),
 ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+    use crate::analog::dcode::{PhyDcodeAction, PhyDcodeExternalBinding};
+
     for _ in 0..RF_OPERATION_LIMIT {
-        child = match child.commit() {
-            Ok(completion) => return Ok(completion),
-            Err(child) => child,
-        };
-        let binding = child
-            .lower_external()
+        // Consume ownership only at the terminal boundary; moving the whole
+        // nested PLL state through a failed commit is unnecessary per action.
+        let action = child.action();
+        if matches!(
+            action,
+            PhyDcodeAction::Complete(_) | PhyDcodeAction::Failed(_)
+        ) {
+            return child
+                .commit()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding);
+        }
+        let binding = PhyDcodeExternalBinding::lower(action)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
         let completion = complete_dcode_direct::<D>(binding, registers)?;
         if let crate::analog::dcode::PhyDcodeCompletion::Rfpll(
@@ -242,26 +126,41 @@ fn complete_dcode_direct<D: PhyShortDelay>(
             complete_rfpll_hot::<D>(binding, registers)?,
         )),
         PhyDcodeExternalBinding::I2c(mut binding) => {
-            use crate::calibration::cold::{
-                PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-            };
+            use crate::analog::i2c::PhyI2cError;
+            use crate::calibration::cold::PhyColdI2cAction;
+            // One shared transition budget, including the terminal check,
+            // spans read and read/modify/write just as in the cold binding.
             let completed = crate::executor::wait::poll::bounded(|| {
                 match binding.action() {
-                    PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                        match binding.start_target(registers) {
-                            Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
-                            Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+                    PhyColdI2cAction::StartRead { address } => {
+                        match crate::analog::i2c::try_start_read(registers, address) {
+                            Ok(()) => binding
+                                .read_started()
+                                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                            Err(PhyI2cError::Busy) => {}
                         }
                     }
-                    PhyColdI2cAction::AwaitReadCompletionEdge { .. }
-                    | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        match binding
-                            .observe_target_edge(registers)
-                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
-                        {
-                            PhyColdI2cObservation::EdgeConsumed
-                            | PhyColdI2cObservation::StillPending => {}
+                    PhyColdI2cAction::StartWrite { address, value } => {
+                        match crate::analog::i2c::try_start_write(registers, address, value) {
+                            Ok(()) => binding
+                                .write_started()
+                                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                            Err(PhyI2cError::Busy) => {}
                         }
+                    }
+                    PhyColdI2cAction::AwaitReadCompletionEdge { address } => {
+                        binding
+                            .observe_read_result(crate::analog::i2c::try_finish_read(
+                                registers, address,
+                            ))
+                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                    }
+                    PhyColdI2cAction::AwaitWriteCompletionEdge { address } => {
+                        binding
+                            .observe_write_result(crate::analog::i2c::try_finish_write(
+                                registers, address,
+                            ))
+                            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
                     }
                     PhyColdI2cAction::Complete(_) => return Ok(true),
                 }
@@ -334,6 +233,7 @@ pub fn rx_gain_init<D: PhyShortDelay, P>(
                     rx_gain_dc_direct::<D>(parameters, registers, &mut budget, &mut execution);
                 observe(Operation::RxGainDcPhase, terminal_event(&outcome));
                 let outcome = outcome?;
+                execution.quality = outcome.as_ref().ok().map(|outcome| outcome.quality);
 
                 observe(Operation::RxGainControlPhase, Event::Started);
                 let restored = oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
@@ -601,6 +501,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
     };
 
     let mut outcome = PhyRxGainDcOutcome {
+        quality: crate::rx::gain_calibration::PhyRxGainDcQuality::EMPTY,
         wifi_index_dc: [[0; 2]; 8],
         wifi_dc_base: [0; 2],
         shared_index_dc: [[0; 2]; 11],
@@ -695,6 +596,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                 budget,
                 execution,
             )?;
+            outcome.quality.record_shared(index, calibrated.converged);
             outcome.shared_index_dc[index as usize] = calibrated.configuration;
         }
         crate::target_executor::write_i2c_field_direct(
@@ -741,6 +643,9 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                 budget,
                 execution,
             )?;
+            outcome
+                .quality
+                .record_wifi_fine(index, calibrated.converged);
             fine_current = calibrated.configuration;
             if index == 0 {
                 fine_base = fine_current;
@@ -810,6 +715,9 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                 budget,
                 execution,
             )?;
+            outcome
+                .quality
+                .record_wifi_baseband(index, calibrated.converged);
             outcome.wifi_index_dc[index as usize] = calibrated.configuration;
             if index == 0 {
                 force_rx_gain_pbus(
@@ -817,7 +725,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     PhyRxGainDcBank::Wifi,
                     PhyPbusForceTest::new(1, 2, 0),
                 )?;
-                outcome.wifi_dc_base = rx_gain_one_step_direct::<D>(
+                let radio = rx_gain_one_step_direct::<D>(
                     PhyRxDcCalibrationRequest {
                         shared_radio: false,
                         stage: PhyRxDcCalibrationStage::Radio,
@@ -830,8 +738,9 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     registers,
                     budget,
                     execution,
-                )?
-                .configuration;
+                )?;
+                outcome.quality.record_wifi_radio(radio.converged);
+                outcome.wifi_dc_base = radio.configuration;
             }
         }
         Ok(())
@@ -882,43 +791,14 @@ fn complete_rfpll_hot<D: PhyShortDelay>(
             }
             _ => Ok(binding.execute_target(registers)),
         },
-        RfpllFrequencyExternalBinding::I2c(binding) => complete_rfpll_i2c_hot(binding, registers),
+        RfpllFrequencyExternalBinding::I2c(binding) => {
+            crate::target_executor::complete_rfpll_i2c_direct(binding, registers)
+        }
         RfpllFrequencyExternalBinding::Timer(binding) => {
             short_settle::<D>(binding.micros())?;
             Ok(binding.into_completion())
         }
     }
-}
-
-fn complete_rfpll_i2c_hot(
-    mut binding: crate::analog::rfpll::RfpllFrequencyI2cBinding,
-    registers: &mut impl SharedPhyAccess,
-) -> Result<crate::analog::rfpll::RfpllFrequencyCompletion, PhyTargetPortError> {
-    use crate::calibration::cold::{PhyColdI2cAction, PhyColdI2cError};
-    let completed = crate::executor::wait::poll::bounded(|| {
-        match binding.action() {
-            PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                match binding.start_target(registers) {
-                    Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
-                    Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
-                }
-            }
-            PhyColdI2cAction::AwaitReadCompletionEdge { .. }
-            | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                binding
-                    .observe_target_edge(registers)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            }
-            PhyColdI2cAction::Complete(_) => return Ok(true),
-        }
-        Ok(false)
-    })?;
-    if !completed {
-        return Err(PhyTargetPortError::HardwareEdgeTimedOut);
-    }
-    binding
-        .into_completion()
-        .map_err(|_| PhyTargetPortError::UnexpectedBinding)
 }
 
 fn terminal_event<T, E>(result: &Result<T, E>) -> crate::tracking::observation::Event {

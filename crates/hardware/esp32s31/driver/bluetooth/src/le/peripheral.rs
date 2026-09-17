@@ -17,6 +17,7 @@ pub(crate) mod deadlines;
 pub(crate) mod first_hci;
 #[cfg(any(target_arch = "riscv32", test))]
 mod hci_order;
+pub mod maintenance;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod procedure;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -94,7 +95,9 @@ pub use active::{
     PeripheralConnectionActiveWait, PeripheralConnectionCommandIntake,
     PeripheralConnectionCommandMismatch, PeripheralConnectionCommandRoute,
     PeripheralConnectionHostEventPublication, PeripheralConnectionResetBarrier,
-    PeripheralConnectionResetFault, PeripheralConnectionResetStep,
+    PeripheralConnectionResetFault, PeripheralConnectionResetStep, PeripheralPhyMaintenanceError,
+    PeripheralPhyMaintenanceFailure, PeripheralPhyMaintenancePending,
+    PeripheralPhyMaintenanceReady, PeripheralPhyMaintenanceRestoring, PeripheralPhyMaintenanceStep,
 };
 
 #[cfg(feature = "dtm-diagnostics")]

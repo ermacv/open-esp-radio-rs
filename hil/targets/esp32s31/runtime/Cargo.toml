@@ -10,7 +10,7 @@ build = "build.rs"
 [features]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
-phy-rx-hot-sram = ["oer-esp32s31-embassy-wifi/phy-rx-hot-sram"]
+phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-embassy-wifi?/phy-rx-hot-sram"]
 default = ["code-psram", "profile-psram-data"]
 code-flash = []
 code-psram = []
@@ -18,6 +18,8 @@ profile-psram-data = []
 profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-runtime/psram-task-stack"]
 boot-smoke = []
+# Explicit diagnostic policy; no production thermal budget is implied.
+bluetooth-phy-maintenance = ["bluetooth-hil"]
 bluetooth-hil = ["dep:oer-esp32s31-phy", "oer-esp32s31-bluetooth/dtm-diagnostics", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol"]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network"]
 compat-network = ["dep:embassy-net-compat", "oer-esp32s31-embassy-wifi/compat-network"]

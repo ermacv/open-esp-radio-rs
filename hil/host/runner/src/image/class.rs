@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
     BluetoothDtm,
+    BluetoothPhyMaintenance,
     BootSmoke,
     Performance,
     Correctness,
@@ -30,8 +31,9 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::BluetoothDtm,
+        Self::BluetoothPhyMaintenance,
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -52,6 +54,7 @@ impl ImageClass {
     pub const fn id(self) -> &'static str {
         match self {
             Self::BluetoothDtm => "bluetooth-dtm",
+            Self::BluetoothPhyMaintenance => "bluetooth-phy-maintenance",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
@@ -74,7 +77,12 @@ impl ImageClass {
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
-            Self::BluetoothDtm => "bluetooth-hil,psram-task-stack,code-psram,profile-psram-data",
+            Self::BluetoothDtm => {
+                "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data"
+            }
+            Self::BluetoothPhyMaintenance => {
+                "bluetooth-phy-maintenance,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
             Self::Correctness => {
@@ -128,6 +136,7 @@ impl ImageClass {
     pub const fn runtime_profile(self) -> &'static str {
         match self {
             Self::BluetoothDtm
+            | Self::BluetoothPhyMaintenance
             | Self::BootSmoke
             | Self::Performance
             | Self::Correctness
@@ -169,6 +178,7 @@ impl ImageClass {
         !matches!(
             self,
             Self::BluetoothDtm
+                | Self::BluetoothPhyMaintenance
                 | Self::BootSmoke
                 | Self::Performance
                 | Self::DiagnosticTaskResidence

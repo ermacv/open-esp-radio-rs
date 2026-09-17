@@ -16,7 +16,11 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
     ) -> Result<(), LeControllerEndpointMismatch> {
         match &self.order {
-            Order::CommandReady(ready) => controller.wait_command_available(ready).await,
+            Order::CommandReady(ready) => {
+                controller
+                    .wait_active_peripheral_available(ready, self.acl.can_accept_host_packet())
+                    .await
+            }
             Order::ResponsePending(_) => {
                 unreachable!("a response-pending connection cannot accept a command")
             }
@@ -54,6 +58,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             unreachable!("a response-pending connection cannot route a command")
         };
         let live_handle = host_events.live_handle();
+        let acl_ready = acl.can_accept_host_packet();
         let local_procedure_busy =
             control.local_procedure_pending() || encryption.blocks_unrelated_transmission();
         let local_version_available = control.remote_version_request_available();
@@ -75,6 +80,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         match controller.try_receive_active_peripheral_with_buffer(
             ready,
             live_handle,
+            acl_ready,
             buffer,
             |mut state, packet| {
                 state.acl.accept_host_packet(packet);
@@ -242,7 +248,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     }
 
     fn from_ready(
-        ready: oer_bluetooth_hci::LeControllerCommandReady<'a, PeripheralConnectionState<'a, S, N>>,
+        ready: oer_bluetooth_hci::LeControllerCommandReady<
+            'a,
+            PeripheralConnectionState<radio::Radio<'a, S, N>>,
+        >,
     ) -> Self {
         let (state, ready) = ready.into_parts();
         state.into_session(Order::CommandReady(ready))
@@ -251,7 +260,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
     fn from_pending(
         pending: oer_bluetooth_hci::LeControllerResponsePending<
             'a,
-            PeripheralConnectionState<'a, S, N>,
+            PeripheralConnectionState<radio::Radio<'a, S, N>>,
         >,
     ) -> Self {
         let (state, pending) = pending.into_parts();
@@ -268,7 +277,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         self.acl.can_accept_host_packet()
     }
 
-    /// Whether the next retained Controller ACL packet awaits a Host credit.
+    /// Whether the next output awaits a Host ACL credit rather than transport space.
     pub fn host_event_is_flow_controlled<
         M: RawMutex,
         const H2C: usize,
@@ -278,11 +287,9 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         &self,
         controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
     ) -> bool {
-        if !self.host_events.connection_result_published() || !self.acl.has_controller_packet() {
-            return false;
-        }
         let profile = controller.controller_to_host_acl_profile();
-        self.acl.controller_packet_is_flow_controlled(
+        self.host_events.output_is_flow_controlled(
+            &self.acl,
             profile.is_flow_controlled(),
             profile.total_packets(),
         )

@@ -1,5 +1,9 @@
 //! Ordered Host event state retained beside the live peripheral graph.
 
+#[cfg(target_arch = "riscv32")]
+use super::acl;
+#[cfg(not(target_arch = "riscv32"))]
+use super::active_acl as acl;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::{
     HciChannelError, LeConnectionUpdateCompleteEvent, LeControllerCommandEndpoint,
@@ -97,6 +101,20 @@ impl PeripheralConnectionHostEvents {
     /// ACL data cannot precede the Host-visible connection result.
     pub(super) const fn connection_result_published(&self) -> bool {
         matches!(self.connection, EventState::Complete)
+    }
+
+    /// Whether the next output is ACL data waiting for a Host buffer credit.
+    /// HCI events use transport capacity but do not consume ACL credits.
+    pub(super) fn output_is_flow_controlled(
+        &self,
+        acl: &acl::PeripheralConnectionAcl,
+        flow_controlled: bool,
+        total_packets: Option<u16>,
+    ) -> bool {
+        !self.has_pending()
+            && self.connection_result_published()
+            && acl.has_controller_packet()
+            && acl.controller_packet_is_flow_controlled(flow_controlled, total_packets)
     }
 
     pub(super) fn live_handle(&self) -> Option<ConnHandle> {
@@ -513,6 +531,94 @@ mod tests {
         pdu[30..35].copy_from_slice(&LeDataChannelMap::all().wire_bytes());
         pdu[35] = 5 | (4 << 5);
         LeLegacyConnectionRequest::decode(&pdu).expect("fixture is a valid CONNECT_IND")
+    }
+
+    #[test]
+    fn acl_credit_exhaustion_does_not_block_ordered_hci_events() {
+        use acl::{ControllerAclPublication, PeripheralConnectionAcl};
+        use oer_bluetooth_ll::control::{LePeripheralControl, LePeripheralReceive};
+
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 80>::new(
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+                27,
+                1,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let endpoints = resources.split();
+        let mut events = PeripheralConnectionHostEvents::new();
+        events.connection = EventState::Complete;
+        events.established = true;
+        let mut acl = PeripheralConnectionAcl::new();
+        let mut control = LePeripheralControl::new();
+        for data in [7, 9] {
+            let bytes = [2, 1, data];
+            let LePeripheralReceive::Data(fragment) = control.receive(&bytes, None).unwrap() else {
+                panic!("nonempty LL data");
+            };
+            acl.accept_controller_fragment(fragment);
+        }
+        assert!(matches!(
+            acl.try_publish_controller_packet(&endpoints.controller, 27, true, Some(1)),
+            ControllerAclPublication::Published
+        ));
+        assert!(events.output_is_flow_controlled(&acl, true, Some(1)));
+        events.observe_acl_completed(1);
+        assert!(!events.output_is_flow_controlled(&acl, true, Some(1)));
+        // The event retains its own transport-capacity obligation.
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Pending
+        ));
+        let mut buffer = [0; 80];
+        assert!(matches!(
+            block_on(endpoints.host.read(&mut buffer)).unwrap(),
+            ControllerToHostPacket::Acl(_)
+        ));
+        // Free transport space permits the event without returning an ACL credit.
+        assert!(!events.output_is_flow_controlled(&acl, true, Some(1)));
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Published
+        ));
+        let ControllerToHostPacket::Event(packet) =
+            block_on(endpoints.host.read(&mut buffer)).unwrap()
+        else {
+            panic!("TX credit must be an HCI event");
+        };
+        assert!(matches!(
+            Event::try_from(packet).unwrap(),
+            Event::NumberOfCompletedPackets(_)
+        ));
+        assert!(events.output_is_flow_controlled(&acl, true, Some(1)));
+        assert!(!acl.controller_credits_settled());
+        assert!(matches!(
+            acl.try_publish_controller_packet(&endpoints.controller, 27, true, Some(1)),
+            ControllerAclPublication::FlowControlled
+        ));
+
+        events.observe_encryption_enabled();
+        events.observe_encryption_refreshed();
+        for _ in 0..2 {
+            assert!(!events.output_is_flow_controlled(&acl, true, Some(1)));
+            assert!(matches!(
+                events.try_publish(&endpoints.controller),
+                PeripheralConnectionHostEventPublication::Masked
+            ));
+        }
+        assert!(events.output_is_flow_controlled(&acl, true, Some(1)));
+
+        // Even a masked event must be processed to release its lifecycle duty.
+        events.observe_disconnection(0x08);
+        assert!(!events.output_is_flow_controlled(&acl, true, Some(1)));
+        assert!(matches!(
+            events.try_publish(&endpoints.controller),
+            PeripheralConnectionHostEventPublication::Masked
+        ));
+        assert!(events.ready_to_restore_idle());
+        assert!(!acl.controller_credits_settled());
     }
 
     #[test]

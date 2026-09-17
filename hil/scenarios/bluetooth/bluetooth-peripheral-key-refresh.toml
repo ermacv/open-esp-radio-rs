@@ -1,0 +1,11 @@
+schema = 4
+id = "bluetooth-peripheral-key-refresh"
+description = "Replace the fixed test LTK inside each of two encrypted ACL connections, verify both echoes, recover after peer Reset and retire cold"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-refresh", "lifecycle"]
+
+[workload]
+kind = "bluetooth-encrypted-acl"
+key_refresh = true

@@ -11,3 +11,7 @@ pub mod fixture_install;
 mod target_bluetooth_command_pump;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+#[cfg(test)]
+#[path = "../../../targets/esp32s31/runtime/src/bluetooth/security.rs"]
+mod target_bluetooth_security;

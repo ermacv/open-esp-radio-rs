@@ -139,21 +139,30 @@ vendor-anchors = [
 depends-on = [
   "controller-initialization",
 ]
+hil-requirements = [
+  { scenario = "bluetooth-peripheral-active-phy-maintenance", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-acl-calibration", minimum-repetitions = 3 },
+  { scenario = "bluetooth-dtm-maintenance-deadline", minimum-repetitions = 3 },
+]
 gaps = [
-  { axis = "implementation", id = "automatic-active-role-phy-maintenance-windows-missing" },
+  { axis = "implementation", id = "active-role-phy-maintenance-qualified-bounds-and-encrypted-recovery-incomplete" },
   { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },
   { axis = "hil", id = "bluetooth-registered-phy-client-tracking-and-baseband-cell-missing" },
-  { axis = "async", id = "autonomous-active-role-tracking-wake-and-cancellation-integration-missing" },
+  { axis = "async", id = "active-role-blocking-poll-deadlines-and-terminal-fault-coverage-incomplete" },
 ]
 source-fact-refs = [
   "bluetooth-initial-phy-handoff",
+  "bluetooth-idle-phy-maintenance",
+  "bluetooth-periodic-phy-maintenance",
+  "bluetooth-idle-powered-release",
+  "bluetooth-same-storage-powered-restart",
 ]
 
 [[capabilities.source-contracts]]
 id = "bluetooth-phy-demand-and-release"
 composition = "production"
 scope = "Retain the registered Bluetooth PHY client while inspecting or cancellation-safely waiting for periodic demand, consume due or periodic evaluation into the exact pending tracking request, and release the client without discarding the saved last-client fact"
-limits = "These lower transitions acquire no Controller or shared-RF permission; Controller quiescence, target execution, timer integration, physical-owner reunion and RF close remain unimplemented"
+limits = "These lower transitions acquire no Controller or shared-RF permission. The referenced idle maintenance and powered-release facts own their composed subsets; periodic active-role service retains its separate incomplete fact"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
   "crates/hardware/esp32s31/phy/src/state/client.rs",
@@ -955,15 +964,17 @@ depends-on = [
   "async-controller-runtime",
 ]
 gaps = [
-  { axis = "implementation", id = "powered-cleanup-and-cold-reconstruction-missing" },
-  { axis = "implementation", id = "scheduler-disable-recheck-wake-packet-bottom-half-irq-output-btbb-phy-clock-and-cold-reconstruction-missing" },
+  { axis = "implementation", id = "active-and-faulted-role-powered-teardown-not-composed" },
+  { axis = "implementation", id = "scheduler-disable-recheck-wake-and-packet-bottom-half-teardown-missing" },
   { axis = "vendor", id = "complete-disable-deinit-production-trace-missing" },
   { axis = "vendor", id = "scheduler-disable-comparison-missing" },
   { axis = "hil", id = "repeated-powered-roundtrip-and-fault-cells-missing" },
   { axis = "hil", id = "scheduler-disable-command-and-busy-observation-cell-missing" },
-  { axis = "async", id = "quiescence-deadline-and-terminal-disposition-missing" },
+  { axis = "async", id = "active-and-faulted-role-quiescence-deadline-and-terminal-disposition-missing" },
   { axis = "async", id = "scheduler-disable-recheck-wake-and-bottom-half-contract-missing" },
 ]
+
+source-fact-refs = ["bluetooth-idle-powered-release", "bluetooth-same-storage-powered-restart"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -2471,11 +2482,8 @@ source-paths = []
 [[items]]
 id = "bluetooth-long-running-rf-phy-maintenance-including-dtm"
 section = "bluetooth-le-phy-rf-dtm"
-title = "Long-running RF/PHY maintenance, including DTM"
-status = "partial"
-level = "lower-primitive"
-scope-and-limitations = "Initial common-PHY/client and baseband acquisition exist. The retained Bluetooth client owns read-only demand, consuming due/periodic evaluation and a release that preserves the last-client fact. The idle Controller composes due target tracking after runtime/role/timer and hardware-head/fault admission, then restores the same HCI and powered epoch. Terminal retirement composes last-client RF close, temperature power-down, reset and clock release; powered restart reuses the original allocations with a new HCI generation. Automatic tracking windows during active ACL/DTM and autonomous wake integration remain absent. RF/HIL readiness belongs to qualification."
-source-paths = []
+title = "Long-running RF/PHY maintenance and non-preemptible DTM deferral"
+source-fact = "bluetooth-periodic-phy-maintenance"
 
 [[items]]
 id = "bluetooth-legacy-non-connectable-advertising-adv-nonconn-ind"
@@ -2843,7 +2851,7 @@ section = "bluetooth-security-privacy"
 title = "Link Layer Encryption"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The portable LL crate owns non-copyable LTK/session material, the Peripheral start/pause/restart handshakes, independent 39-bit direction counters, nonce/AAD construction, four-octet MIC authentication and allocation-free software AES-CCM. The production composition supplies fresh SKDp/IVp from the ESP32-S31 hardware RNG, routes the standard redacted HCI LTK reply and negative-reply commands only for the live pending request, and publishes masked LTK Request, Encryption Change and Encryption Key Refresh Complete events. The radio path authenticates and decrypts RX before LL dispatch, encrypts control, ACL and empty acknowledgement packets, retains ciphertext and its counter through retransmission, and limits encrypted legacy ACL plaintext to 23 octets. Pause keeps its response encrypted, accepts only the peer's unencrypted pause response, requires fresh SKDp/IVp and resets both counters under the replacement session key. MIC or physical-channel sequence failure retires the link with `0x3d`; a missing restart key reliably terminates with `0x06`. Official Core vectors and host regressions cover portable cryptography, HCI policy, counters, retransmission and MIC failure; the target composition builds, but vendor comparison and on-air interoperability/fault evidence remain absent. SMP, pairing and key persistence remain Host responsibilities."
+scope-and-limitations = "The portable LL crate owns non-copyable LTK/session material, the Peripheral start/pause/restart handshakes, independent 39-bit direction counters, nonce/AAD construction, four-octet MIC authentication and allocation-free software AES-CCM. The production composition supplies fresh SKDp/IVp from the ESP32-S31 hardware RNG, routes the standard redacted HCI LTK reply and negative-reply commands only for the live pending request, and publishes masked LTK Request, Encryption Change and Encryption Key Refresh Complete events. The radio path authenticates and decrypts RX before LL dispatch, encrypts nonempty control and ACL packets while empty acknowledgements carry no MIC and consume no counter, retains ciphertext and its counter through retransmission, and limits encrypted legacy ACL plaintext to 23 octets. Pause keeps its response encrypted, accepts only the peer's unencrypted pause response, requires fresh SKDp/IVp and resets both counters under the replacement session key. MIC or physical-channel sequence failure retires the link with `0x3d`; a missing restart key reliably terminates with `0x06`. Official Core vectors and host regressions cover portable cryptography, HCI policy, counters, retransmission and MIC failure; the fixed-key encrypted ACL HIL scenario exercises start, bidirectional fragmentation, updates, reconnect and cold release. The separate key-refresh scenario replaces the LTK on the same handle and requires exact post-refresh traffic and both Host completion events. Vendor comparison and security-fault coverage remain incomplete. SMP, pairing and key persistence remain Host responsibilities."
 source-paths = []
 
 [[items]]
@@ -3221,7 +3229,7 @@ section = "bluetooth-controller-lifetime"
 title = "Powered shutdown"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Pre-publication rollback and selected HCI Reset paths exist. Complete hardware quiescence, PHY/client release and cold reconstruction remain incomplete."
+scope-and-limitations = "The projected idle powered-release and same-storage restart facts define the implemented standalone frontier. The broader powered-teardown capability also requires bounded shutdown from active and faulted roles, including scheduler-disable/recheck and packet bottom-half disposition"
 source-paths = []
 
 [[items]]
@@ -3711,7 +3719,7 @@ id = "bluetooth-qualification-mapping-powered-shutdown"
 section = "bluetooth-qualification-scope-mapping"
 title = "Powered shutdown"
 kind = "qualification-mapping"
-details = "`powered-teardown`. Selected cleanup paths do not close the complete last-owner lifetime."
+details = "`powered-teardown` retains the broader active/faulted-role obligation; its source-fact references describe the implemented idle physical release and same-storage restart."
 source-paths = []
 
 [[references]]
@@ -3854,3 +3862,21 @@ domain = "bluetooth"
 title = "Peripheral timing limits"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
 overview = "The [active controller branch](../../../../runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs)\ndrives completion and recycle before preparing a contiguous successor through\nfresh controller time, validation and scheduler publication. Each\n`PeripheralConnectionActive` boundary represents a first or successor `RUN`.\nResponse backpressure does not block radio readiness; cancellation retains\nboth the radio phase and HCI authority. A lost completion wake is bounded by\nan absolute recheck and common hardware stop; stop, identity, unlink or\npreparation failures seal both owners in `PeripheralConnectionActiveFailStop`.\n\n`PeripheralConnectionRuntimeConfig::with_software_recurring_timing(ppm)` must\nsupply the local clock accuracy bound. The default configuration leaves it\nunset and stops with `TimingPolicyUnavailable` when recurrence is attempted.\nThe actor responds to central feature requests through a bounded TX queue.\nIt consumes active HCI commands and Host-to-Controller ACL packets. Accepted\npeer LL Data fragments enter a bounded Controller-to-Host ACL FIFO after\nConnection Complete and split to the Host-declared ACL buffer length.\nHost Number Of Completed Packets restores the bounded single-handle credits;\nthe special command remains serialized behind an older pending normal response.\nAfter disconnection, the old handle accepts only outstanding credit returns and\ncannot be reused by another connection until those credits reach zero.\nCentral Connection Update and Channel Map Update are retained to their wrapping\nconnection instants; general LLCP and arbitrary missed-event recovery remain absent. Established\nsupervision uses the hardware valid-RX timestamp and retires the unlinked owner\nwith `0x08`. A source-backed HIL scenario now rfkill-blocks the peer adapter for\nat least 2500 ms, but abrupt RF loss remains unqualified until that scenario has current\nhardware evidence. A compiled lifecycle does not establish a successful\nover-air link.\n\nLower recurrence requires a caller-owned local clock accuracy bound. Its\nsoftware window widening does not establish arbitrary missed-event anchor\nrecovery or accumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
+
+[[items]]
+id = "bluetooth-idle-phy-maintenance"
+section = "bluetooth-controller-lifetime"
+title = "Idle Bluetooth PHY maintenance"
+source-fact = "bluetooth-idle-phy-maintenance"
+
+[[items]]
+id = "bluetooth-same-storage-powered-restart"
+section = "bluetooth-controller-lifetime"
+title = "Bluetooth cold restart with original storage"
+source-fact = "bluetooth-same-storage-powered-restart"
+
+[[items]]
+id = "bluetooth-idle-powered-release"
+section = "bluetooth-controller-lifetime"
+title = "Idle Bluetooth physical release"
+source-fact = "bluetooth-idle-powered-release"

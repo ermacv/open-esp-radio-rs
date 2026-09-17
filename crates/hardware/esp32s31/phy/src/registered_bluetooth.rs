@@ -169,6 +169,20 @@ pub struct RegisteredBluetoothPhyClient {
 }
 
 impl RegisteredBluetoothPhyClient {
+    /// Change only the diagnostic thermal thresholds, returning their old policy.
+    /// This does not mutate samples, acknowledge demand or grant RF access.
+    /// The caller retains exclusive client authority and must arrange quiescence.
+    #[cfg(target_arch = "riscv32")]
+    pub fn set_tracking_debug(
+        &mut self,
+        debug: crate::state::PhyTemperatureTrackingDebug,
+    ) -> crate::state::PhyTemperatureTrackingDebug {
+        let state = self.registered.target_state_mut();
+        let old = state.temperature_tracking_debug();
+        state.set_temperature_tracking_debug(debug.first, debug.second);
+        old
+    }
+
     /// Borrow the target-registered PHY state without mutable authority.
     pub const fn phy_state(&self) -> &PhyState {
         self.registered.state()

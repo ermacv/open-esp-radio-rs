@@ -1,0 +1,12 @@
+schema = 4
+id = "bluetooth-peripheral-missing-key-plaintext"
+description = "Diagnose plaintext remote-version exchange after missing-key rejection before explicit Disconnect and encrypted recovery"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "encryption", "security-failure", "diagnostic"]
+
+[workload]
+kind = "bluetooth-security-failure"
+failure = "missing-key"
+read_version_before_disconnect = true

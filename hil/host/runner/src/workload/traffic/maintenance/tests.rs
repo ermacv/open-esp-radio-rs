@@ -14,6 +14,7 @@ fn parent_timing(common: bool, wifi: bool) -> open_esp_radio_hil_protocol::PhyTi
     };
     let absent = PhyOperationTiming::default();
     PhyTimingEvidence {
+        rfpll: complete,
         wifi_i2c: complete,
         wifi_power: complete,
         calibration: complete,
@@ -131,7 +132,7 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
             )
             .is_err()
         );
-        for mutation in 0..7 {
+        for mutation in 0..8 {
             let mut changed = evidence;
             let timing = changed.timings.as_mut().unwrap();
             match mutation {
@@ -140,11 +141,15 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
                     timing.wifi_power.started = 2;
                     timing.wifi_power.completed = 2;
                 }
-                2 => timing.rfpll = timing.wifi_power,
+                2 => timing.rfpll = Default::default(),
                 3 => timing.bluetooth_ieee802154_power = timing.wifi_power,
                 4 => timing.channel_restore = Default::default(),
                 5 => timing.tx_gain_publication = Default::default(),
                 6 => changed.tracking.as_mut().unwrap().common_calibrated = false,
+                7 => {
+                    timing.rfpll.started = 2;
+                    timing.rfpll.completed = 2;
+                }
                 _ => unreachable!(),
             }
             assert!(
@@ -506,14 +511,20 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
 }
 
 #[test]
-fn temperature_detail_is_required_only_for_temperature_operation() {
+fn temperature_detail_is_required_for_acquisition_and_full_parent_operations() {
     let detail = open_esp_radio_hil_protocol::TemperatureEvidence {
         temperature: -12,
         sensor_index: 4,
         next_dac: 10,
     };
-    assert!(validate_temperature(StationPauseOperation::Temperature, Some(detail)).is_ok());
-    assert!(validate_temperature(StationPauseOperation::Temperature, None).is_err());
+    for operation in [
+        StationPauseOperation::Temperature,
+        StationPauseOperation::Tracking,
+        StationPauseOperation::Calibration,
+    ] {
+        assert!(validate_temperature(operation, Some(detail)).is_ok());
+        assert!(validate_temperature(operation, None).is_err());
+    }
     assert!(validate_temperature(StationPauseOperation::Access, Some(detail)).is_err());
     assert!(validate_temperature(StationPauseOperation::Access, None).is_ok());
 }
@@ -575,6 +586,7 @@ fn rx_gain_phases_must_be_complete_and_fit_the_parent() {
         ..Default::default()
     };
     let execution = Some(PhyRxGainExecutionEvidence {
+        quality: Some(open_esp_radio_hil_protocol::PhyRxGainQualityEvidence::default()),
         minimum_searches: 121,
         minimum_operations: 191,
         outer_operations: 58,

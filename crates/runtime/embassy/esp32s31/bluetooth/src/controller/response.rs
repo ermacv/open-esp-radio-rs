@@ -52,6 +52,16 @@ where
 {
     /// A command lifecycle completed and the actor again owns the idle command token.
     IdleRestored(ControllerIdleCompletion),
+    /// Due idle maintenance; the command owner is retained, with HCI still open.
+    PhyMaintenanceIdle,
+    /// Admitted active maintenance; take its exact authority before running again.
+    PhyMaintenancePeripheral,
+    /// The actual guarded successor reached RUN in the same admission window.
+    PhyMaintenanceRestored(
+        oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceRun,
+    ),
+    /// Maintenance has failed closed; the actor retains all lower owners.
+    PhyMaintenanceFailed(super::maintenance::PhyMaintenanceError),
     /// A non-command Host frame remains bound to its source HCI epoch and buffer.
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
     /// The supplied endpoint does not match the retained transaction.

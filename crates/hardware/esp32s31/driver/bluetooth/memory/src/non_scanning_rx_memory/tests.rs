@@ -30,7 +30,7 @@ fn published_cursor_preserves_both_receive_slots_across_rearming() {
 }
 
 #[test]
-fn pinned_pool_forms_one_initialized_two_node_rotation() {
+fn pinned_pool_forms_one_initialized_bounded_receive_graph() {
     let storage = std::boxed::Box::leak(std::boxed::Box::new(NonScanningRxMemoryStorage::new()));
     let base = NonScanningRxMemoryModelAddress::new(0x2f00_4000)
         .expect("the model base belongs to controller SRAM");

@@ -1,5 +1,6 @@
 //! Linux DTM fixture preparation, isolated from ESP firmware execution.
 
+pub(crate) mod att;
 pub(crate) mod model;
 
 use model::{Adapter, Check};
@@ -130,6 +131,47 @@ fn require_helper_capabilities(success: bool, stdout: &[u8]) -> crate::Result<()
     Err("installed Bluetooth helper is incompatible; rerun cargo hil fixture install --provider linux-bluetooth".into())
 }
 
+/// Prove password-free admission without acquiring an adapter: Clap rejects the invalid peer
+/// before launcher adoption or any RF operation. `sudo -l` alone permits password-required rules.
+pub(crate) fn preflight_security_failure(adapter: Adapter) -> crate::Result<()> {
+    preflight(adapter)?;
+    for (failure, read_version) in [
+        ("missing-key", false),
+        ("wrong-key", false),
+        ("missing-key", true),
+    ] {
+        let mut command = Command::new("sudo");
+        command.args([
+            "-n",
+            "/usr/local/libexec/open-radio-bluetooth",
+            "security-failure",
+            "--adapter",
+            &adapter.to_string(),
+            "--peer",
+            "invalid",
+            "--failure",
+            failure,
+        ]);
+        if read_version {
+            command.arg("--read-version-before-disconnect");
+        }
+        let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
+        require_security_failure_admission(output.status.code(), &output.stderr)?;
+    }
+    Ok(())
+}
+
+fn require_security_failure_admission(code: Option<i32>, stderr: &[u8]) -> crate::Result<()> {
+    if code == Some(2)
+        && String::from_utf8_lossy(stderr)
+            .contains("invalid value 'invalid' for '--peer <PEER>': peer must be a public address")
+    {
+        Ok(())
+    } else {
+        Err("security-failure helper is not admitted without a password; rerun cargo hil fixture install --provider linux-bluetooth with the selected --adapter".into())
+    }
+}
+
 pub(crate) fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
     preflight(adapter)?;
     let mut command = Command::new("sudo");
@@ -187,6 +229,21 @@ pub(crate) fn connect_reset_in(
     hold_ms: u16,
     termination: BluetoothPeripheralTermination,
 ) -> crate::Result<model::ConnectionReset> {
+    connect_profile_in(output, adapter, peer, hold_ms, termination, false, false)
+}
+
+pub(crate) fn connect_profile_in(
+    output: &Path,
+    adapter: Adapter,
+    peer: model::PeerAddress,
+    hold_ms: u16,
+    termination: BluetoothPeripheralTermination,
+    encrypted: bool,
+    key_refresh: bool,
+) -> crate::Result<model::ConnectionReset> {
+    if key_refresh && !encrypted {
+        return Err("key refresh requires encrypted ACL".into());
+    }
     fs::create_dir_all(output)?;
     if hold_ms > 5_000 {
         return Err("connection hold must be at most 5000 ms".into());
@@ -218,6 +275,12 @@ pub(crate) fn connect_reset_in(
         .stdin(Stdio::null())
         .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
         .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
+    if key_refresh {
+        command.arg("--key-refresh");
+    }
+    if encrypted {
+        command.arg("--encrypted");
+    }
     let result = (|| -> crate::Result<model::ConnectionReset> {
         let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
             &mut command,
@@ -226,7 +289,9 @@ pub(crate) fn connect_reset_in(
         let status = child.wait_timeout(Some(Duration::from_secs(45)))?;
         let report: model::ConnectionReset = serde_json::from_slice(&fs::read(output.join("helper.json"))?)
             .map_err(|error| format!("invalid connect-reset report ({error}); rerun cargo hil fixture install --provider linux-bluetooth"))?;
-        if !status.success() || !report.passed(adapter, peer, hold_ms, termination) {
+        if !status.success()
+            || !report.passed_profile(adapter, peer, hold_ms, termination, encrypted, key_refresh)
+        {
             return Err(format!(
                 "connect-reset failed or incomplete: {}",
                 report.errors.join("; ")
@@ -250,9 +315,88 @@ pub(crate) fn connect_reset_in(
     result.map_err(|error| format!("{error}; evidence: {}", output.display()).into())
 }
 
+/// Execute the finite initial-key failure probe through the installed, leased helper.
+pub(crate) fn security_failure_in(
+    output: &Path,
+    adapter: Adapter,
+    peer: model::PeerAddress,
+    failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
+    read_version_before_disconnect: bool,
+) -> crate::Result<model::security_failure::Report> {
+    use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
+    fs::create_dir_all(output)?;
+    let mut command = Command::new("sudo");
+    command
+        .args([
+            "-n",
+            "/usr/local/libexec/open-radio-bluetooth",
+            "security-failure",
+            "--adapter",
+            &adapter.to_string(),
+            "--peer",
+            &peer.to_string(),
+            "--failure",
+            match failure {
+                Failure::MissingKey => "missing-key",
+                Failure::WrongKey => "wrong-key",
+            },
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
+        .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
+    if read_version_before_disconnect {
+        command.arg("--read-version-before-disconnect");
+    }
+    let result = (|| -> crate::Result<model::security_failure::Report> {
+        let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
+            &mut command,
+            Duration::from_secs(20),
+        )?;
+        let status = child.wait_timeout(Some(Duration::from_secs(35)))?;
+        let report: model::security_failure::Report =
+            serde_json::from_slice(&fs::read(output.join("helper.json"))?).map_err(|error|
+                format!("security-failure helper returned no valid report ({error}); exit {status}; inspect {}", output.join("helper.stderr").display()))?;
+        if !status.success()
+            || !report.passed(adapter, peer, failure)
+            || report.read_version_before_disconnect != read_version_before_disconnect
+        {
+            return Err(
+                format!("security failure probe failed or incomplete: {:?}", report).into(),
+            );
+        }
+        Ok(report)
+    })();
+    let observed = fs::read(output.join("helper.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<model::security_failure::Report>(&bytes).ok())
+        .unwrap_or_else(|| model::security_failure::Report::new(adapter, peer, failure));
+    crate::evidence::run::atomic_json(
+        &output.join("result.json"),
+        &serde_json::json!({
+            "schema": 1, "failure": failure, "read_version_before_disconnect":read_version_before_disconnect, "passed": result.is_ok(), "helper": observed,
+            "error": result.as_ref().err().map(ToString::to_string),
+        }),
+    )?;
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn security_admission_rejects_password_requirement_and_unrelated_cli_errors() {
+        let rejected_peer =
+            b"error: invalid value 'invalid' for '--peer <PEER>': peer must be a public address";
+        assert!(require_security_failure_admission(Some(2), rejected_peer).is_ok());
+        assert!(
+            require_security_failure_admission(Some(1), b"sudo: a password is required").is_err()
+        );
+        assert!(require_security_failure_admission(Some(0), rejected_peer).is_err());
+        assert!(
+            require_security_failure_admission(Some(2), b"unknown command security-failure")
+                .is_err()
+        );
+    }
     #[test]
     fn absent_or_partial_helper_evidence_cannot_pass() {
         assert!(checked_report(true, Adapter(0), b"").is_err());

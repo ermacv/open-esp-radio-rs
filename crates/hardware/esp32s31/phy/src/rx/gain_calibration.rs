@@ -11,6 +11,9 @@
     allow(unsafe_code)
 )]
 
+mod quality;
+pub use quality::PhyRxGainDcQuality;
+
 use crate::{
     analog::{
         i2c::{
@@ -847,6 +850,8 @@ pub struct PhyRxGainDcParameters {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainDcOutcome {
+    /// Per-search convergence, distinct from successful transaction completion.
+    pub quality: PhyRxGainDcQuality,
     pub wifi_index_dc: [[u16; 2]; 8],
     pub wifi_dc_base: [u16; 2],
     /// Eleven calibrated entries beginning at `phy_param[0x1b4]`.
@@ -1175,6 +1180,7 @@ pub(crate) const fn shared_mixer_dgain_transaction(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainDcTransition {
+    quality: PhyRxGainDcQuality,
     parameters: PhyRxGainDcParameters,
     step: DcStep,
     wifi_index_dc: [[u16; 2]; 8],
@@ -1230,6 +1236,7 @@ impl PhyRxGainDcTransition {
 
         match finished {
             Finished::Fine(index, Ok(outcome)) => {
+                self.quality.record_wifi_fine(index, outcome.converged);
                 self.fine_current = outcome.configuration;
                 if index == 0 {
                     self.fine_base = outcome.configuration;
@@ -1253,6 +1260,7 @@ impl PhyRxGainDcTransition {
                 self.store_calibration(bank, index, outcome);
             }
             Finished::WifiRadio(Ok(outcome)) => {
+                self.quality.record_wifi_radio(outcome.converged);
                 self.wifi_dc_base = outcome.configuration;
                 self.next_gain(PhyRxGainDcBank::Wifi, 0);
             }
@@ -1332,6 +1340,7 @@ impl PhyRxGainDcTransition {
         Self {
             parameters,
             step: DcStep::ConfigureRegisters,
+            quality: PhyRxGainDcQuality::EMPTY,
             wifi_index_dc: [[0; 2]; 8],
             wifi_dc_base: [0; 2],
             shared_index_dc: [[0; 2]; 11],
@@ -1349,6 +1358,7 @@ impl PhyRxGainDcTransition {
 
     const fn outcome(&self) -> PhyRxGainDcOutcome {
         PhyRxGainDcOutcome {
+            quality: self.quality,
             wifi_index_dc: self.wifi_index_dc,
             wifi_dc_base: self.wifi_dc_base,
             shared_index_dc: self.shared_index_dc,
@@ -1538,8 +1548,14 @@ impl PhyRxGainDcTransition {
         outcome: PhyRxDcCalibrationOutcome,
     ) {
         match bank {
-            PhyRxGainDcBank::Wifi => self.wifi_index_dc[index as usize] = outcome.configuration,
-            PhyRxGainDcBank::Shared => self.shared_index_dc[index as usize] = outcome.configuration,
+            PhyRxGainDcBank::Wifi => {
+                self.quality.record_wifi_baseband(index, outcome.converged);
+                self.wifi_index_dc[index as usize] = outcome.configuration;
+            }
+            PhyRxGainDcBank::Shared => {
+                self.quality.record_shared(index, outcome.converged);
+                self.shared_index_dc[index as usize] = outcome.configuration;
+            }
         }
         if bank == PhyRxGainDcBank::Wifi && index == 0 {
             // The independent radio DC measurement must start at the low

@@ -663,6 +663,12 @@ where
         self.host_to_controller.wait_receive_ready().await;
     }
 
+    pub(crate) async fn wait_active_peripheral_available(&self, acl_ready: bool) {
+        self.host_to_controller
+            .wait_receive_admitted(acl_ready)
+            .await;
+    }
+
     /// Await, consume and production-classify the oldest Host command.
     ///
     /// Classification is synchronous after queue consumption, so cancellation
@@ -776,6 +782,7 @@ where
         buffer: &'buffer mut [u8],
         live_handle: Option<bt_hci::param::ConnHandle>,
         acl_capacity: u16,
+        acl_ready: bool,
         state: State,
         accept_acl: impl FnOnce(State, Result<LeHostAclPacket, LeHostAclPacketRejection>) -> State,
     ) -> HciActivePeripheralIntake<'channel, 'buffer, State> {
@@ -786,7 +793,7 @@ where
                 buffer,
             };
         }
-        let mut slot = match self.host_to_controller.try_receive() {
+        let mut slot = match self.host_to_controller.try_receive_admitted(acl_ready) {
             Ok(slot) => slot,
             Err(HciChannelError::Empty) => {
                 return HciActivePeripheralIntake::Empty { state, buffer };

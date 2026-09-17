@@ -378,6 +378,41 @@ pub fn complete_rx_gain_i2c(
         .map_err(|_| PhyTargetPortError::UnexpectedBinding)
 }
 
+/// Complete an admitted RFPLL I2C command with the ROM's immediate status
+/// polling. Publication, retries and terminal recognition share the existing
+/// finite edge budget. Bus status reads have no mandatory settling interval;
+/// analog settling remains an explicit responsibility of the caller.
+pub(crate) fn complete_rfpll_i2c_direct(
+    mut binding: crate::analog::rfpll::RfpllFrequencyI2cBinding,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<crate::analog::rfpll::RfpllFrequencyCompletion, PhyTargetPortError> {
+    use crate::calibration::cold::{PhyColdI2cAction, PhyColdI2cError};
+    let completed = crate::executor::wait::poll::bounded(|| {
+        match binding.action() {
+            PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
+                match binding.start_target(registers) {
+                    Ok(()) | Err(PhyColdI2cError::BusyAtStart) => {}
+                    Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+                }
+            }
+            PhyColdI2cAction::AwaitReadCompletionEdge { .. }
+            | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
+                binding
+                    .observe_target_edge(registers)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            }
+            PhyColdI2cAction::Complete(_) => return Ok(true),
+        }
+        Ok(false)
+    })?;
+    if !completed {
+        return Err(PhyTargetPortError::HardwareEdgeTimedOut);
+    }
+    binding
+        .into_completion()
+        .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+}
+
 macro_rules! define_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(

@@ -181,12 +181,19 @@ impl Scenario {
             )
             .into());
         }
-        if (self.image == ImageClass::BluetoothDtm)
-            != matches!(
-                self.workload,
-                Workload::BluetoothDtm { .. } | Workload::BluetoothPeripheral { .. }
-            )
-        {
+        if matches!(
+            self.image,
+            ImageClass::BluetoothDtm | ImageClass::BluetoothPhyMaintenance
+        ) != matches!(
+            self.workload,
+            Workload::BluetoothDtm { .. }
+                | Workload::BluetoothPeripheral { .. }
+                | Workload::BluetoothAclCalibration { .. }
+                | Workload::BluetoothAclBackpressure
+                | Workload::BluetoothEncryptedAcl { .. }
+                | Workload::BluetoothSecurityFailure { .. }
+                | Workload::BluetoothMaintenanceDeadline
+        ) {
             return self
                 .criteria_error("Bluetooth workloads require their exclusive firmware image");
         }
@@ -449,6 +456,54 @@ impl Scenario {
             }
         }
         match &self.workload {
+            Workload::BluetoothSecurityFailure {
+                failure,
+                read_version_before_disconnect: true,
+            } if *failure != open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey => {
+                return self.criteria_error(
+                    "plaintext verification requires initial missing-key rejection",
+                );
+            }
+            Workload::BluetoothAclBackpressure
+            | Workload::BluetoothEncryptedAcl { .. }
+            | Workload::BluetoothSecurityFailure { .. } => {
+                if self.image != ImageClass::BluetoothDtm
+                    || self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "ACL diagnostics require the Bluetooth image and no Wi-Fi criteria",
+                    );
+                }
+            }
+            Workload::BluetoothMaintenanceDeadline => {
+                if self.image != ImageClass::BluetoothPhyMaintenance
+                    || self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "DTM deadline requires automatic maintenance and no Wi-Fi criteria",
+                    );
+                }
+            }
+            Workload::BluetoothAclCalibration {
+                duration_millis,
+                minimum_calibrations,
+            } => {
+                bounded(*duration_millis, 10_000, 20_000, self, "duration_millis")?;
+                bounded(*minimum_calibrations, 2, 20, self, "minimum_calibrations")?;
+                if self.image != ImageClass::BluetoothPhyMaintenance
+                    || self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "ACL calibration requires its maintenance image and no Wi-Fi criteria",
+                    );
+                }
+            }
             Workload::BluetoothDtm {
                 boots,
                 minimum_packets,
@@ -476,9 +531,23 @@ impl Scenario {
                 retire_after: _,
                 restart_between_connections,
                 maintain_between_connections,
+                calibration_threshold,
             } => {
                 bounded(*boots, 1, 10, self, "boots")?;
                 bounded(*connections, 1, 100, self, "connections")?;
+                if calibration_threshold.is_some() && !*maintain_between_connections {
+                    return self.criteria_error(
+                        "calibration threshold requires manual inter-connection maintenance",
+                    );
+                }
+
+                if self.image == ImageClass::BluetoothPhyMaintenance
+                    && *maintain_between_connections
+                {
+                    return self.criteria_error(
+                        "automatic PHY maintenance retains its policy; manual inter-connection maintenance requires the bluetooth-dtm image",
+                    );
+                }
                 if (*restart_between_connections || *maintain_between_connections)
                     && *connections < 2
                 {

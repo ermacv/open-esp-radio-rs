@@ -8,6 +8,34 @@
 
 #![forbid(unsafe_code)]
 
+/// Distinguish an observed late event from a deliberate budgeted event pause.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy)]
+pub(crate) enum PeripheralConnectionRecurrence {
+    Ordinary(oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta),
+    Maintenance(oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta),
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl PeripheralConnectionRecurrence {
+    pub(crate) const fn delta(
+        self,
+    ) -> oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta {
+        match self {
+            Self::Ordinary(delta) | Self::Maintenance(delta) => delta,
+        }
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl From<oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta>
+    for PeripheralConnectionRecurrence
+{
+    fn from(delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta) -> Self {
+        Self::Ordinary(delta)
+    }
+}
+
 #[cfg(any(target_arch = "riscv32", test))]
 mod completion;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -658,7 +686,7 @@ impl PeripheralConnectionRuntimeResources {
         Ok(())
     }
 
-    fn can_restore_allocation(
+    pub(crate) fn can_restore_allocation(
         &self,
         graph: PeripheralConnectionMemoryGraphIdentity,
         receive: NonScanningRxMemoryIdentity,

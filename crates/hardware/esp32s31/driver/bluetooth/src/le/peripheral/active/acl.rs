@@ -56,10 +56,14 @@ impl PeripheralConnectionAcl {
         packet: Result<LeHostAclPacket, LeHostAclPacketRejection>,
     ) {
         match packet {
-            Ok(packet) if self.host_tx.is_none() => {
+            Ok(packet) => {
+                assert!(
+                    self.can_accept_host_packet(),
+                    "ACL intake requires vacant TX ownership"
+                );
                 self.host_tx = Some(packet);
             }
-            Ok(_) | Err(_) => self.complete_one_host_packet(),
+            Err(_) => self.complete_one_host_packet(),
         }
     }
 
@@ -275,6 +279,179 @@ mod tests {
     }
 
     #[test]
+    fn four_advertised_credits_survive_backpressure_and_return_only_at_ack_or_disconnect() {
+        use core::{
+            future::Future,
+            pin::pin,
+            task::{Context, Waker},
+        };
+        use embassy_futures::block_on;
+        use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+        use oer_bluetooth_hci::{
+            BluetoothPublicDeviceAddress, LeControllerActivePeripheralIntake as Intake,
+            LeControllerBootstrapConfig, LeControllerCommandReadyClaim, LeControllerHciResources,
+            bt_hci::{param::ConnHandleCompletedPackets, transport::Transport},
+        };
+
+        for disconnect in [false, true] {
+            let mut resources = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(
+                LeControllerBootstrapConfig::new(
+                    BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+                    251,
+                    4,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let mut endpoints = resources.split();
+            for sequence in 1..=4 {
+                block_on(endpoints.host.write(&AclPacket::new(
+                    ConnHandle::new(1),
+                    AclPacketBoundary::FirstNonFlushable,
+                    AclBroadcastFlag::PointToPoint,
+                    &[sequence; 60],
+                )))
+                .unwrap();
+            }
+            let LeControllerCommandReadyClaim::Ready(mut ready) = endpoints
+                .controller
+                .claim_initial_command_ready(PeripheralConnectionAcl::new())
+            else {
+                panic!("initial authority");
+            };
+            let mut scratch = [0; 258];
+            let mut total = 0;
+            for sequence in 1..=4 {
+                assert!(ready.owner().can_accept_host_packet());
+                let handle = (!disconnect || sequence == 1).then(|| ConnHandle::new(1));
+                let Intake::Acl { ready: next, .. } = endpoints
+                    .controller
+                    .try_receive_active_peripheral_with_buffer(
+                        ready,
+                        handle,
+                        true,
+                        &mut scratch,
+                        |mut acl, packet| {
+                            acl.accept_host_packet(packet);
+                            acl
+                        },
+                    )
+                else {
+                    panic!("all four admitted packets must remain queued in order");
+                };
+                ready = next;
+                if !disconnect || sequence == 1 {
+                    assert!(!ready.owner().can_accept_host_packet());
+                    if sequence < 4 {
+                        // Waiting for HCI cannot turn an occupied ACL owner into
+                        // a busy loop or consume queued data on cancellation.
+                        {
+                            let mut wait = pin!(
+                                endpoints
+                                    .controller
+                                    .wait_active_peripheral_available(&ready, false)
+                            );
+                            assert!(
+                                wait.as_mut()
+                                    .poll(&mut Context::from_waker(Waker::noop()))
+                                    .is_pending()
+                            );
+                        }
+                        let Intake::Empty { ready: next, .. } = endpoints
+                            .controller
+                            .try_receive_active_peripheral_with_buffer(
+                                ready,
+                                handle,
+                                false,
+                                &mut scratch,
+                                |_, _| panic!("blocked packet consumed"),
+                            )
+                        else {
+                            panic!("only blocked data must remain pending");
+                        };
+                        ready = next;
+                    }
+                    if sequence == 1 {
+                        // A real Host-credit command behind three ACL packets
+                        // remains reachable while the first TX is unacknowledged.
+                        block_on(
+                            endpoints
+                                .host
+                                .acl_credit_sender()
+                                .return_completed_packets(&[ConnHandleCompletedPackets::new(
+                                    ConnHandle::new(1),
+                                    1,
+                                )]),
+                        )
+                        .unwrap();
+                        block_on(
+                            endpoints
+                                .controller
+                                .wait_active_peripheral_available(&ready, false),
+                        )
+                        .unwrap();
+                        let Intake::HostCompletedPackets {
+                            ready: next,
+                            command: Ok(command),
+                            ..
+                        } = endpoints
+                            .controller
+                            .try_receive_active_peripheral_with_buffer(
+                                ready,
+                                handle,
+                                false,
+                                &mut scratch,
+                                |_, _| panic!("credit command must bypass blocked data"),
+                            )
+                        else {
+                            panic!("credit command lost behind ACL");
+                        };
+                        assert_eq!(command.completed_for(handle), Some(1));
+                        ready = next;
+                    }
+                    ready = ready.map_owner(|mut acl| {
+                        assert_eq!(acl.take_completed_host_packets(), 0);
+                        if disconnect {
+                            acl.cancel_host_packet();
+                        } else {
+                            for length in [27, 27, 6] {
+                                assert_eq!(
+                                    acl.next_fragment(27).unwrap().payload(),
+                                    &[sequence; 60][..length]
+                                );
+                                acl.fragment_enqueued(length);
+                                acl.observe_transmission_completion(false);
+                                assert_eq!(acl.take_completed_host_packets(), 0);
+                                acl.observe_transmission_completion(true);
+                            }
+                        }
+                        acl
+                    });
+                }
+                ready = ready.map_owner(|mut acl| {
+                    assert_eq!(acl.take_completed_host_packets(), 1);
+                    assert_eq!(acl.take_completed_host_packets(), 0);
+                    total += 1;
+                    acl
+                });
+            }
+            assert_eq!(total, 4);
+            assert!(matches!(
+                endpoints
+                    .controller
+                    .try_receive_active_peripheral_with_buffer(
+                        ready,
+                        None,
+                        true,
+                        &mut scratch,
+                        |_, _| panic!("duplicate packet")
+                    ),
+                Intake::Empty { .. }
+            ));
+        }
+    }
+
+    #[test]
     fn one_credit_returns_only_after_every_legacy_fragment_is_acknowledged() {
         let mut acl = PeripheralConnectionAcl::new();
         acl.accept_host_packet(Ok(owned(60)));
@@ -318,12 +495,6 @@ mod tests {
 
         acl.accept_host_packet(Ok(owned(5)));
         acl.cancel_host_packet();
-        acl.cancel_host_packet();
-        assert_eq!(acl.take_completed_host_packets(), 1);
-
-        acl.accept_host_packet(Ok(owned(5)));
-        acl.accept_host_packet(Ok(owned(5)));
-        assert_eq!(acl.take_completed_host_packets(), 1);
         acl.cancel_host_packet();
         assert_eq!(acl.take_completed_host_packets(), 1);
 
@@ -517,6 +688,7 @@ mod tests {
             .try_receive_active_peripheral_with_buffer(
                 ready,
                 Some(ConnHandle::new(1)),
+                true,
                 &mut command_buffer,
                 |owner, _| owner,
             )

@@ -61,7 +61,27 @@ pub enum BluetoothPeripheralOperation {
         termination: BluetoothPeripheralTermination,
         hold_millis: u16,
     },
+    /// Enable the fixed-key Controller encryption diagnostic while idle.
+    EncryptedAcl {
+        enabled: bool,
+        failure: Option<BluetoothSecurityFailure>,
+    },
     Snapshot,
+    /// Select the ATT Host that can retain one RX credit while draining HCI events.
+    AclBackpressure {
+        enabled: bool,
+    },
+    /// Arm the next test packet credit, or return the exact retained credit.
+    HoldAclCredit {
+        hold: bool,
+    },
+    /// Select the four-credit ATT workload and force real thermal calibration.
+    /// Idle only; disabling restores the exact pre-experiment thresholds.
+    CalibrationTraffic {
+        enabled: bool,
+    },
+    /// Queue four sequenced 64-byte ACL packets; requires all prior credits returned.
+    AclBurst,
     /// Reset and drain the Controller, retire HCI/timer/IRQ registers and join its platform.
     /// This is terminal for this boot; actual cold owners remain retained.
     Retire,
@@ -69,6 +89,10 @@ pub enum BluetoothPeripheralOperation {
     Restart,
     /// Service due shared-PHY tracking while retaining the same HCI and powered epoch.
     Maintain,
+    /// Measure real calibration branches using diagnostic thresholds, preserving samples.
+    Calibrate {
+        threshold: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +100,22 @@ pub enum BluetoothPeripheralResult {
     Started {
         address: [u8; 6],
     },
+    EncryptedAclConfigured {
+        enabled: bool,
+        failure: Option<BluetoothSecurityFailure>,
+    },
     Snapshot,
+    CalibrationTrafficConfigured {
+        enabled: bool,
+        restored: bool,
+    },
+    AclBurstQueued,
+    AclBackpressureConfigured {
+        enabled: bool,
+    },
+    AclCreditHoldConfigured {
+        hold: bool,
+    },
     HciRejected {
         command_stage: u8,
     },
@@ -108,6 +147,142 @@ pub enum BluetoothPeripheralResult {
     },
 }
 
+/// Completed child invocations and their largest observed duration.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothPhyOperation {
+    pub completed: u16,
+    pub maximum_micros: u32,
+}
+
+/// Measurements from actual PHY execution and guarded RUN, in microseconds.
+/// Operation elapsed times nest; observed maxima are not worst-case bounds.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothPhyMaintenanceEvidence {
+    pub transactions: u32,
+    pub restored: u32,
+    pub common_calibrations: u32,
+    /// Latest completed RX DC product, retained across subsequent light tracking.
+    #[serde(default)]
+    pub latest_rx_quality: Option<crate::PhyRxGainQualityEvidence>,
+    pub bluetooth_calibrations: u32,
+    pub maximum_execution_micros: u32,
+    pub maximum_restoration_micros: u32,
+    pub maximum_to_run_micros: u32,
+    pub maximum_poll_micros: u32,
+    pub admitted_at_micros: u64,
+    pub execution_deadline_micros: Option<u64>,
+    pub restoration_deadline_micros: Option<u64>,
+    pub physical_finished_at_micros: Option<u64>,
+    pub run_at_micros: Option<u64>,
+    pub dcode: BluetoothPhyOperation,
+    pub rx_gain: BluetoothPhyOperation,
+    pub tx_dc_pwdet: BluetoothPhyOperation,
+    pub rfpll: BluetoothPhyOperation,
+    pub calibration: BluetoothPhyOperation,
+    pub temperature: BluetoothPhyOperation,
+    pub invalid: bool,
+}
+
+/// Dedicated plaintext traffic evidence; counts include the MTU response.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothCalibrationTrafficEvidence {
+    pub enabled: bool,
+    pub connected: bool,
+    pub interval_micros: u32,
+    pub mtu_exchanged: bool,
+    pub sent: u32,
+    pub completed: u32,
+    pub faults: u32,
+}
+
+/// Test Host observations; retained credits and event delivery are independent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothAclBackpressureEvidence {
+    pub enabled: bool,
+    pub armed: bool,
+    pub held: bool,
+    pub mtu_exchanged: bool,
+    pub received: u32,
+    pub returned: u32,
+    pub sent: u32,
+    pub completed: u32,
+    pub supervision_timeout_millis: u32,
+    pub held_at_millis: u32,
+    pub disconnected_at_millis: u32,
+    pub disconnected_while_held: bool,
+    pub faults: u32,
+}
+
+/// Fragmented ATT Write Command used solely as the backpressure stimulus.
+pub const fn bluetooth_backpressure_packet() -> [u8; 64] {
+    let mut packet = bluetooth_calibration_notification(0);
+    packet[4] = 0x52;
+    packet
+}
+
+/// One complete L2CAP ATT notification, crossing three legacy LL packets.
+pub const fn bluetooth_calibration_notification(sequence: u32) -> [u8; 64] {
+    let mut packet = [0; 64];
+    packet[0] = 60;
+    packet[2] = 4;
+    packet[4] = 0x1b;
+    packet[5] = 1;
+    let bytes = sequence.to_le_bytes();
+    let mut i = 0;
+    while i < 4 {
+        packet[7 + i] = bytes[i];
+        i += 1;
+    }
+    i = 11;
+    while i < 64 {
+        packet[i] = (sequence as u8).wrapping_add(i as u8);
+        i += 1;
+    }
+    packet
+}
+
+/// Public, non-secret key material for the finite encrypted ACL fixture only.
+pub const BLUETOOTH_TEST_LTK: [u8; 16] = [0x35; 16];
+pub const BLUETOOTH_TEST_RAND: [u8; 8] = [0x27; 8];
+pub const BLUETOOTH_TEST_EDIV: u16 = 0x1937;
+/// Distinct public key identity for in-connection refresh of the diagnostic session.
+pub const BLUETOOTH_REFRESH_LTK: [u8; 16] = [0x6a; 16];
+pub const BLUETOOTH_REFRESH_RAND: [u8; 8] = [0x58; 8];
+pub const BLUETOOTH_REFRESH_EDIV: u16 = 0x2849;
+
+/// One deliberately rejected first encryption attempt; subsequent connections use valid keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BluetoothSecurityFailure {
+    MissingKey,
+    WrongKey,
+}
+
+impl core::str::FromStr for BluetoothSecurityFailure {
+    type Err = &'static str;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "missing-key" => Ok(Self::MissingKey),
+            "wrong-key" => Ok(Self::WrongKey),
+            _ => Err("expected missing-key or wrong-key"),
+        }
+    }
+}
+
+/// Host-observed security transitions; key bytes never enter run evidence.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothEncryptionEvidence {
+    pub enabled: bool,
+    pub encrypted: bool,
+    pub key_requests: u32,
+    pub key_replies: u32,
+    pub negative_replies: u32,
+    pub wrong_key_replies: u32,
+    pub encryption_changes: u32,
+    pub key_refreshes: u32,
+    pub faults: u32,
+}
+
 /// Publication counts are software observations, not successful peer exchanges.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BluetoothPeripheralEvidence {
@@ -116,6 +291,17 @@ pub struct BluetoothPeripheralEvidence {
     pub advertising_runs: u32,
     pub peripheral_runs: u32,
     pub peripheral_disconnections: u32,
+    /// Completed physical maintenance transactions while retaining the ACL session.
+    #[serde(default)]
+    pub phy_peripheral_maintenance: u32,
+    #[serde(default)]
+    pub phy_maintenance: Option<BluetoothPhyMaintenanceEvidence>,
+    #[serde(default)]
+    pub calibration_traffic: Option<BluetoothCalibrationTrafficEvidence>,
+    #[serde(default)]
+    pub acl_backpressure: Option<BluetoothAclBackpressureEvidence>,
+    #[serde(default)]
+    pub encryption: Option<BluetoothEncryptionEvidence>,
     /// Successful, profile-valid LE Connection Complete events consumed by the Host.
     pub connection_complete_events: u32,
     /// Successful, profile-valid Disconnection Complete events consumed by the Host.
@@ -166,8 +352,10 @@ impl BluetoothPeripheralEvidence {
     }
 
     pub fn is_maintained(&self, requested: BluetoothPeripheralOperation) -> bool {
-        requested == BluetoothPeripheralOperation::Maintain
-            && self.operation == requested
+        matches!(
+            requested,
+            BluetoothPeripheralOperation::Maintain | BluetoothPeripheralOperation::Calibrate { .. }
+        ) && self.operation == requested
             && matches!(
                 self.result,
                 BluetoothPeripheralResult::Maintained {
@@ -238,6 +426,9 @@ pub enum BluetoothDtmResult {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BluetoothDtmEvidence {
+    /// Platform reported a digital-core software reset on this boot (not HCI Reset).
+    #[serde(default)]
+    pub software_reset_boot: bool,
     pub operation: BluetoothDtmOperation,
     pub result: BluetoothDtmResult,
     pub rx_diagnostics: BluetoothDtmRxDiagnostics,
@@ -292,6 +483,12 @@ mod tests {
 
     #[test]
     fn peripheral_publication_and_terminal_evidence_survive_framing() {
+        fn largest_operation() -> BluetoothPhyOperation {
+            BluetoothPhyOperation {
+                completed: u16::MAX,
+                maximum_micros: u32::MAX,
+            }
+        }
         for result in [
             BluetoothPeripheralResult::Started {
                 address: [1, 2, 3, 4, 5, 6],
@@ -302,35 +499,98 @@ mod tests {
             BluetoothPeripheralResult::LeaseExpired,
         ] {
             let expected = crate::Envelope::new(
-                7,
-                8,
-                0,
-                9,
+                u64::MAX,
+                u32::MAX,
+                u64::MAX,
+                u32::MAX,
                 crate::Event::BluetoothPeripheral(BluetoothPeripheralEvidence {
-                    operation: BluetoothPeripheralOperation::Snapshot,
+                    operation: BluetoothPeripheralOperation::StartAdvertising {
+                        termination: BluetoothPeripheralTermination::PeerReset,
+                        hold_millis: u16::MAX,
+                    },
                     result,
                     advertising_runs: u32::MAX,
-                    peripheral_runs: 2,
-                    peripheral_disconnections: 1,
-                    connection_complete_events: 1,
-                    disconnection_complete_events: 1,
-                    connection_update_complete_events: 1,
-                    channel_map_update_events: 1,
-                    target_disconnect_commands: 1,
-                    target_reset_commands: 1,
-                    host_event_faults: 0,
-                    host_acl_received_packets: 1,
-                    host_acl_queued_packets: 1,
-                    host_acl_transmitted_packets: 1,
-                    host_acl_completed_packets: 1,
-                    host_acl_backpressure_holds: 1,
-                    host_acl_faults: 0,
-                    last_disconnect_reason: Some(8),
-                    retries: 3,
+                    peripheral_runs: u32::MAX,
+                    peripheral_disconnections: u32::MAX,
+                    phy_peripheral_maintenance: u32::MAX,
+                    encryption: Some(BluetoothEncryptionEvidence {
+                        enabled: true,
+                        encrypted: true,
+                        key_requests: u32::MAX,
+                        key_replies: u32::MAX,
+                        negative_replies: u32::MAX,
+                        wrong_key_replies: u32::MAX,
+                        encryption_changes: u32::MAX,
+                        key_refreshes: u32::MAX,
+                        faults: u32::MAX,
+                    }),
+                    acl_backpressure: Some(BluetoothAclBackpressureEvidence {
+                        enabled: true,
+                        armed: true,
+                        held: true,
+                        mtu_exchanged: true,
+                        received: u32::MAX,
+                        returned: u32::MAX,
+                        sent: u32::MAX,
+                        completed: u32::MAX,
+                        supervision_timeout_millis: u32::MAX,
+                        held_at_millis: u32::MAX,
+                        disconnected_at_millis: u32::MAX,
+                        disconnected_while_held: true,
+                        faults: u32::MAX,
+                    }),
+                    calibration_traffic: Some(BluetoothCalibrationTrafficEvidence {
+                        enabled: true,
+                        connected: true,
+                        interval_micros: u32::MAX,
+                        mtu_exchanged: true,
+                        sent: u32::MAX,
+                        completed: u32::MAX,
+                        faults: u32::MAX,
+                    }),
+                    phy_maintenance: Some(BluetoothPhyMaintenanceEvidence {
+                        transactions: u32::MAX,
+                        restored: u32::MAX,
+                        common_calibrations: u32::MAX,
+                        bluetooth_calibrations: u32::MAX,
+                        latest_rx_quality: Some(crate::PhyRxGainQualityEvidence::default()),
+                        maximum_execution_micros: u32::MAX,
+                        maximum_restoration_micros: u32::MAX,
+                        maximum_to_run_micros: u32::MAX,
+                        maximum_poll_micros: u32::MAX,
+                        admitted_at_micros: u64::MAX,
+                        execution_deadline_micros: Some(u64::MAX),
+                        restoration_deadline_micros: Some(u64::MAX),
+                        physical_finished_at_micros: Some(u64::MAX),
+                        run_at_micros: Some(u64::MAX),
+                        dcode: largest_operation(),
+                        rx_gain: largest_operation(),
+                        tx_dc_pwdet: largest_operation(),
+                        rfpll: largest_operation(),
+                        calibration: largest_operation(),
+                        temperature: largest_operation(),
+                        invalid: true,
+                    }),
+                    connection_complete_events: u32::MAX,
+                    disconnection_complete_events: u32::MAX,
+                    connection_update_complete_events: u32::MAX,
+                    channel_map_update_events: u32::MAX,
+                    target_disconnect_commands: u32::MAX,
+                    target_reset_commands: u32::MAX,
+                    host_event_faults: u32::MAX,
+                    host_acl_received_packets: u32::MAX,
+                    host_acl_queued_packets: u32::MAX,
+                    host_acl_transmitted_packets: u32::MAX,
+                    host_acl_completed_packets: u32::MAX,
+                    host_acl_backpressure_holds: u32::MAX,
+                    host_acl_faults: u32::MAX,
+                    last_disconnect_reason: Some(u8::MAX),
+                    retries: u32::MAX,
                     terminal: true,
                     saturated: true,
                     detail_truncated: false,
-                    detail: "peripheral active: TimingPolicyUnavailable"
+                    detail: core::str::from_utf8(&[b'x'; 128])
+                        .unwrap()
                         .try_into()
                         .unwrap(),
                 }),
@@ -358,6 +618,11 @@ mod tests {
             advertising_runs: 1,
             peripheral_runs: 0,
             peripheral_disconnections: 0,
+            phy_peripheral_maintenance: 0,
+            phy_maintenance: None,
+            calibration_traffic: None,
+            acl_backpressure: None,
+            encryption: None,
             connection_complete_events: 0,
             disconnection_complete_events: 0,
             connection_update_complete_events: 0,
@@ -552,6 +817,7 @@ mod tests {
             0,
             5,
             crate::Event::BluetoothDtm(BluetoothDtmEvidence {
+                software_reset_boot: false,
                 operation: BluetoothDtmOperation::End,
                 result: BluetoothDtmResult::Complete {
                     received_packets: Some(0),
@@ -576,6 +842,7 @@ mod tests {
     #[test]
     fn only_correlated_complete_results_with_correct_count_scope_pass() {
         let evidence = BluetoothDtmEvidence {
+            software_reset_boot: false,
             rx_diagnostics: BluetoothDtmRxDiagnostics::default(),
             operation: BluetoothDtmOperation::End,
             result: BluetoothDtmResult::Complete {

@@ -139,6 +139,7 @@ fn transport_rejection_preserves_all_roles_and_success_returns_their_original_ow
             } = hci.controller.try_receive_active_peripheral_with_buffer(
                 ready,
                 None,
+                true,
                 &mut buffer,
                 |_, _| panic!("credits"),
             )
@@ -246,4 +247,39 @@ fn advertising_generations_and_shared_peripheral_allocation_survive_rejected_ret
         next.into_parts().0.identity().generation().get(),
         generation + 1
     );
+}
+
+#[test]
+fn active_peripheral_handoff_keeps_all_other_roles_non_preemptible() {
+    let mut roles = roles();
+    let peripheral = roles.peripheral_connection_resources.begin_event().unwrap();
+    assert_eq!(
+        roles.retirement_ready(),
+        Err(ControllerRoleRetirementError::PeripheralConnection)
+    );
+    assert_eq!(roles.other_roles_ready(), Ok(()));
+    let dtm = roles.dtm_resources.begin_session_epoch().unwrap();
+    assert_eq!(
+        roles.other_roles_ready(),
+        Err(ControllerRoleRetirementError::Dtm)
+    );
+    roles
+        .dtm_resources
+        .restore_idle(dtm.cancel())
+        .unwrap_or_else(|_| panic!("same DTM owner"));
+    let scan = roles.passive_scan_resources.begin_event().unwrap();
+    assert_eq!(
+        roles.other_roles_ready(),
+        Err(ControllerRoleRetirementError::Scanning)
+    );
+    roles
+        .passive_scan_resources
+        .restore_idle(scan)
+        .unwrap_or_else(|_| panic!("same scanner"));
+    assert_eq!(roles.other_roles_ready(), Ok(()));
+    roles
+        .peripheral_connection_resources
+        .restore_idle(peripheral)
+        .unwrap_or_else(|_| panic!("same peripheral owner"));
+    assert_eq!(roles.retirement_ready(), Ok(()));
 }

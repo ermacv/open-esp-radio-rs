@@ -738,6 +738,7 @@ impl<P> TargetPhyParamTrackingSuccess<P> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetPhyParamTrackingError {
     Run(PhyParamTrackingRunError<PhyTargetPortError>),
+    Deadline(crate::tracking::deadline::TrackingDeadlineError),
     MissingCompletedOwner,
 }
 
@@ -2214,7 +2215,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     }
                 });
         for _ in 0..RF_OPERATION_LIMIT {
-            if let crate::tracking::rfpll::thermal::Action::Complete(outcome) = child.action() {
+            let action = child.action();
+            if let crate::tracking::rfpll::thermal::Action::Complete(outcome) = action {
                 let completion = child
                     .commit()
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2225,7 +2227,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 });
                 return Ok(completion);
             }
-            let completion = rfpll::complete_thermal::<D>(registers, child.action()).await?;
+            let completion = rfpll::complete_thermal::<D>(registers, action).await?;
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2670,6 +2672,68 @@ where
             return Err(TargetBluetoothPhyParamTrackingFailure {
                 poisoned: tracking.fail(),
                 error: TargetPhyParamTrackingError::Run(error),
+            });
+        }
+    };
+    match tracking.into_client_owner() {
+        Ok(owner) => Ok(TargetBluetoothPhyParamTrackingSuccess { owner, outcome }),
+        Err(tracking) => Err(TargetBluetoothPhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::MissingCompletedOwner,
+        }),
+    }
+}
+
+/// Execute Bluetooth tracking inside the composition's absolute time budget.
+///
+/// `deadline` uses [`PhyAsyncDelay::now_micros`]'s clock domain. The composition
+/// must already hold exclusive RF access and reserve a separate restoration
+/// margin before the next required protocol event. The independent timer wakes
+/// a suspended child at the deadline. Missing/reversed clocks, expired windows
+/// and completion at or after the deadline retain the exact poisoned PHY owner.
+///
+/// Synchronous hardware transactions cannot be preempted by this guard. An
+/// overlong poll is detected when it returns, before a runnable owner can be
+/// published. This guard is not a measured worst-case calibration duration or
+/// a guarantee that an admitted BLE connection will survive hardware failure.
+///
+/// # Cancellation
+///
+/// Drive this future to a terminal result. A deadline failure drops only the
+/// borrowed child transaction and seals its retained registered owner; it does
+/// not resume Bluetooth or roll back partially written hardware. External
+/// cancellation requires an out-of-band reset, just as unbounded tracking does.
+#[must_use = "deadline failure retains the poisoned Bluetooth PHY epoch"]
+pub async fn run_target_bluetooth_phy_param_tracking_until<P, D, O>(
+    platform: &mut P,
+    registers: &mut SharedPhyHal<'_>,
+    mut tracking: RegisteredBluetoothPhyPendingTracking,
+    observer: O,
+    deadline: crate::tracking::deadline::TrackingDeadline,
+) -> Result<TargetBluetoothPhyParamTrackingSuccess, TargetBluetoothPhyParamTrackingFailure>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let result = {
+        let (state, pending) = tracking.target_tracking_parts();
+        let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
+        crate::tracking::deadline::run(
+            deadline,
+            D::now_micros,
+            |remaining| D::after_micros(crate::executor::wait::Kind::Completion, remaining),
+            run_phy_param_tracking(pending, state, &mut port),
+        )
+        .await
+        .map_err(TargetPhyParamTrackingError::Deadline)
+        .and_then(|result| result.map_err(TargetPhyParamTrackingError::Run))
+    };
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetBluetoothPhyParamTrackingFailure {
+                poisoned: tracking.fail(),
+                error,
             });
         }
     };

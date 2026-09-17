@@ -227,7 +227,11 @@ impl ReleasedEspHalBluetoothInterruptRegisters {
 impl RetiredEspHalBluetoothInterruptRegisters {
     /// Lend the recovered bank to the same idle Controller's PHY maintenance.
     /// Failure retains the bank, timer and command authority without routing.
-    pub async fn maintain_phy<
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "explicit affine owners and observational input"
+    )]
+    pub fn maintain_phy<
         'a,
         P,
         S,
@@ -245,9 +249,13 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
         controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
         clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
-    ) -> Result<
-        oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<'a, S, SC, MT>,
-        oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<'a, S, SC, MT>,
+        observer: impl oer_esp32s31_phy::PhyTargetObserver,
+        tracking_deadline: Option<oer_esp32s31_phy::tracking::deadline::TrackingDeadline>,
+    ) -> impl core::future::Future<
+        Output = Result<
+            oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<'a, S, SC, MT>,
+            oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<'a, S, SC, MT>,
+        >,
     >
     where
         S: oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
@@ -255,15 +263,82 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         D: oer_esp32s31_phy::PhyAsyncDelay,
         M: embassy_sync::blocking_mutex::raw::RawMutex,
     {
+        // Return the lower future directly: an async forwarding wrapper would
+        // retain another move frontier for the complete PHY/IRQ owner graph.
         task.maintain_phy::<P, D, _, M, MT, H2C, C2H, PC>(
             timer,
             self._registers,
             platform,
             controller,
             clock,
-            oer_esp32s31_phy::NoopPhyTargetObserver,
+            observer,
+            tracking_deadline,
         )
-        .await
+    }
+
+    /// Service an admitted ACL window with the actual recovered IRQ bank.
+    /// `D`, the PHY clock and `S` must share one monotonic microsecond domain.
+    /// The returned connection still retains its bounded restoration obligation.
+    pub fn maintain_peripheral_phy<
+        'a,
+        P,
+        S,
+        D,
+        M,
+        const SC: usize,
+        const MT: usize,
+        const H2C: usize,
+        const C2H: usize,
+        const PC: usize,
+    >(
+        self,
+        connection: oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceReady<
+            'a,
+            S,
+            SC,
+        >,
+        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'a, S, MT>,
+        platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
+        controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
+        clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
+        observer: impl oer_esp32s31_phy::PhyTargetObserver,
+    ) -> impl core::future::Future<
+        Output = Result<
+            oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<
+                'a,
+                S,
+                SC,
+                MT,
+                oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceRestoring<
+                    'a,
+                    S,
+                    SC,
+                >,
+            >,
+            oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<
+                'a,
+                S,
+                SC,
+                MT,
+                oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceReady<'a, S, SC>,
+            >,
+        >,
+    >
+    where
+        S: oer_esp32s31_bluetooth::controller::SchedulerRunInterruptStorage
+            + oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
+            + oer_esp32s31_bluetooth::controller::ModemLpTimerSoftwareOwnerStorage,
+        D: oer_esp32s31_phy::PhyAsyncDelay,
+        M: embassy_sync::blocking_mutex::raw::RawMutex,
+    {
+        connection.maintain_phy::<P, D, _, M, MT, H2C, C2H, PC>(
+            timer,
+            self._registers,
+            platform,
+            controller,
+            clock,
+            observer,
+        )
     }
 
     /// Join the retired task to its post-route register bank for terminal output

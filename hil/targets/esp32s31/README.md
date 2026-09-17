@@ -55,6 +55,39 @@ using the installed Linux Bluetooth fixture and local lab configuration.
 Maintenance admission is idle-only; these scenarios do not establish automatic
 tracking during a continuously active connection or DTM session.
 
+`bluetooth-peripheral-phy-calibration` uses the same idle handoff with
+`calibration_threshold = 0`. It requires actual common RX and Bluetooth TX
+calibration completions between connections, same-HCI Reset and final cold
+release. The temporary threshold never substitutes sensor readings and is
+restored before the next connection. The `bluetooth-dtm` image selects the
+`phy-rx-hot-sram` placement experiment for direct RX-gain without enabling
+Wi-Fi; sealed older images retain their original feature report and firmware
+provenance.
+
+`bluetooth-peripheral-active-phy-maintenance` uses automatic production ACL
+handoff. Each connection must contain new physical maintenance and matching
+guarded RUN completions, followed by ACL/update/map progress and peer Reset
+recovery. Its explicit execution/restoration/deferral values remain engineering
+budgets. It does not force every expensive calibration branch or prove the
+shortest connection interval. Run either scenario with `cargo hil run <scenario>`.
+
+`phy_maintenance` evidence contains boot totals and child timing maxima plus
+the latest transaction's timestamps. An idle transaction has no restoration
+deadline or RUN; it preserves the totals of earlier guarded ACL restorations.
+`latest_rx_quality` identifies the last completed RX DC product and remains
+available across subsequent light tracking. Wi-Fi's `rx_gain.execution.quality`
+identifies the DC product of that observed transaction. Per-gain false values
+mean iteration-limit completion: baseband searches retain their initial pair,
+while radio/fine searches retain their last correction. Missing quality differs
+from a completed product with limited searches. Lifecycle scenarios require the
+observation when forcing calibration, but do not require every search to
+converge or claim RF quality. See the
+[PHY result contract](../../../crates/hardware/esp32s31/phy/src/rx/gain_calibration/quality.rs).
+
+Nested operation durations are inclusive. These observations are not worst-case
+execution bounds, RF quality or thermal qualification. Invalid/overflowed
+measurements and missing active restoration fail the HIL check.
+
 The peripheral diagnostic explicitly configures software window widening with
 a 500-ppm local-clock bound through `BluetoothColdStartConfig::with_peripheral_connection`.
 Cold start retains and verifies selection of the main XTAL. The bound assumes
@@ -312,6 +345,17 @@ timer work, removes the actual HAL timer owner from ISR storage, restores that
 owner and rebinds the routes.
 The same Controller and timer epoch remain retained; the started hardware
 counter and radio are not powered down.
+
+`cargo hil run bluetooth-peripheral-active-phy-maintenance` selects the separate
+`bluetooth-phy-maintenance` image and calls the production automatic runner.
+Every ACL cycle must advance the typed active-maintenance counter, exchange
+ACL data, apply connection/channel-map updates and recover after peer Reset.
+The [diagnostic policy constructor](runtime/src/bluetooth/retirement.rs) owns its
+explicit engineering budgets; these are not qualified thermal or execution
+limits. A completed tracking transaction does not imply that every
+condition-dependent calibration branch ran. This scenario does not yet prove
+intentional event omission or DTM hard-deadline RF shutdown. The current S31
+fail-stop fallback is a full SoC reset, not an IRQ-only quarantine.
 
 The `bluetooth-peripheral-retirement` scenario uses `retire_after = true` to add
 terminal ownership retirement after two real peer Reset/ACL recovery cycles.
@@ -675,3 +719,60 @@ image selection and cleanup are part of the run.
 experiment. It places the direct source-owned RX-gain transaction in internal
 SRAM without changing the graph, waits, workload or evidence contract. Compare
 it with the ordinary profile to isolate code placement after timing parity.
+
+## ACL calibration and terminal DTM maintenance
+
+`cargo hil run bluetooth-peripheral-acl-backpressure` uses the `bluetooth-dtm`
+image and the same kernel/BlueZ ATT fixture as the calibration workload. The
+diagnostic Host negotiates MTU, then retains one RX ACL credit for a fragmented
+ATT Write Command while continuing to read HCI events. The peer socket remains
+open until the Host observes Disconnection Complete (`0x08`). The scenario
+requires this event before credit return, with target-observed elapsed time
+within 250 ms before to 1000 ms after the negotiated supervision timeout
+(supported test range 100–8000 ms). These margins cover event/Host observation
+timing; the production supervision deadline is unchanged.
+
+After explicit credit return, the runner waits for the old connection's queued
+data and Host credits to drain. It reconnects on the same boot and HCI session,
+checks a fresh bidirectional MTU exchange and its completion credit, restores
+the fixture and cold-retires the radio. `AclBackpressure` owns the diagnostic
+Host selection and `HoldAclCredit` owns the retained credit. Neither operation
+changes production flow control or PHY thresholds. The test establishes a
+Host-backpressure timeout path; the independent abrupt RF-loss requirement
+remains separate.
+
+`cargo hil run bluetooth-peripheral-acl-calibration` uses the normal automatic
+maintenance image and the kernel/BlueZ ATT fixture. It requires an initially
+powered-off dedicated adapter, a public LE peer at 7.5 ms, and the four advertised
+Host ACL credits. The Host exchanges MTU once, then sends four sequenced 64-byte
+ACL packets per burst; the peer verifies complete notification contents and the
+runner checks exact completion credits. Empty peer ACKs must allow repeated
+maintenance without requiring reverse payload traffic. Scenario values specify
+the observation duration and minimum number of full RX/TX calibrations.
+
+The typed `CalibrationTraffic` operation configures real calibration thresholds
+only at the idle command boundary, retains the original values, and restores them
+before cold retirement. Samples and the production PHY algorithms are unchanged.
+`AclBurst` rejects unreturned credits, a wrong interval or an inactive connection.
+Wire protocol changes require matching firmware; archived images remain tied to
+their original protocol and source identity.
+
+`cargo hil run bluetooth-dtm-maintenance-deadline` starts real TX and RX tests
+in separate captures. It accepts one autonomous reboot in an explicit time
+window shorter than the diagnostic lease, verifies the platform software-reset
+reason, and requires peer packet silence before sending a DUT Host Reset or Test
+End. Peer measurement errors remain failures even when reset itself is observed;
+both phases retain their independent results. This requires a DTM peer that
+reliably completes Test End after RX with zero received packets. Packet silence
+is a DTM observation, not a spectrum-wide emissions measurement or proof of
+continuous packet cadence before reset.
+
+
+The `bluetooth-peripheral-encrypted-acl` scenario uses the same production
+Controller and exact ACL echo Host, with an explicitly selected diagnostic
+LTK provider. The Host validates Rand/EDIV and the sole live handle, pumps HCI
+while replying to the key request, and rejects plaintext application data in
+its evidence. Key values are public fixture constants; session SKD/IV still
+come from production hardware entropy. See the
+[encrypted ACL fixture](../../host/linux-bluetooth/README.md#encrypted-peripheral-acl-fixture)
+for the exchange, reconnection and cleanup gates and their limits.

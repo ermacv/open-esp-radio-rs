@@ -161,7 +161,10 @@ followed by two packet-bearing nodes. Both the connection's private receive
 cursor and the selector-two publication refer to that predecessor. The
 controller advances to its successor before receiving; publishing the first
 packet-bearing node would skip it and produce a completion-chain gap.
-After recycle the same predecessor is rearmed for the next event. This bounded
+After connection recycle, the last completed packet node remains the hardware
+current cursor. A third physical packet node lets the pool publish two writable
+successors without rearming that current allocation. The initial event links
+only its two-packet prefix; the spare is initially unreachable. This bounded
 pool is an open ownership choice, not proof of equivalence to the vendor's
 persistent global buffer rotation; the shared hardware cursor contract is
 described in [the RX-list reference](bluetooth-passive-scanning.md).
@@ -230,7 +233,7 @@ private head. No compressed pointer or list word leaves the memory crate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner also attaches a separate statically allocated
-two-node RX rotation graph. That pool represents the common non-scanning
+three-node RX rotation graph with a two-packet event capacity. That pool represents the common non-scanning
 selector-two class rather than a connection-private vendor allocation, so a
 future response-capable advertiser can transfer the exact affine owner after
 accepting `CONNECT_IND`. Pre-publication cancellation clears the link-state RX
@@ -391,11 +394,12 @@ ACL delivery retain separate ownership and evidence requirements.
 Connection RX uses the acceptance gate from current `conn_rx_process`, separately
 from advertising RX. Rejected completed observations are counted and skipped
 without hiding later accepted packets in the same bounded list. The connection pool retains its last completed RX descriptor and packet, and
-rearms only the other packet allocation as its next writable successor. It does
+rearms only the other two packet allocations as its writable successors. It does
 not rewind the private hardware cursor or clear the adjacent controller word.
 Extraction skips the retained current descriptor, preventing a previous packet
-from being dispatched twice. The first event has two writable nodes; recurrence
-has one writable successor. Software RX endpoints track this rotation. This is a
+from being dispatched twice. The first event and every recurrence each have two
+writable nodes; physical storage also retains the current node after connection
+recycle. Software RX endpoints track this rotation. This is a
 bounded counterpart of the vendor append/recycle path, not its dynamic allocator.
 
 The live CPU-owned graph retains two TX headers and one bounded packet allocation.

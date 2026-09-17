@@ -182,6 +182,7 @@ use oer_esp32s31_bluetooth::{
 };
 
 mod dispatch;
+pub mod maintenance;
 #[cfg(any(target_arch = "riscv32", test))]
 mod owner;
 mod retirement;

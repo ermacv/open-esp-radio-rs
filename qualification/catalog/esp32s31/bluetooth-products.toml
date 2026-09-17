@@ -32,20 +32,30 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-retirement", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-powered-restart", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-phy-maintenance", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-active-phy-maintenance", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-acl-calibration", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-acl-backpressure", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "implementation", id = "peripheral-event-deadlines-and-autonomous-phy-maintenance-incomplete" },
+  { axis = "implementation", id = "peripheral-event-deadlines-and-qualified-maintenance-bounds-incomplete" },
   { axis = "host", id = "peripheral-virtual-time-irq-list-admission-backpressure-and-recovery-regressions-incomplete" },
   { axis = "vendor", id = "peripheral-scheduler-packet-and-powered-release-production-traces-missing" },
   { axis = "hil", id = "peripheral-abrupt-rf-loss-stimulus-not-established-by-soft-rfkill" },
-  { axis = "async", id = "peripheral-active-role-phy-maintenance-window-integration-missing" },
+  { axis = "async", id = "peripheral-active-maintenance-blocking-poll-and-terminal-lifecycle-coverage-incomplete" },
+]
+
+source-fact-refs = [
+  "bluetooth-idle-phy-maintenance",
+  "bluetooth-periodic-phy-maintenance",
+  "bluetooth-idle-powered-release",
+  "bluetooth-same-storage-powered-restart",
 ]
 
 [[capabilities.source-contracts]]
 id = "peripheral-acl-current-composition"
 composition = "production"
 scope = "The Controller owner slot, legacy connectable role, recurring peripheral session and HCI endpoints retain one physical owner while handling connection commands and packet progress"
-limits = "The product also requires bounded ISR and timer work, exclusive packet-list publication, rejection of a second connection or exhausted queue before mutation, retention of cancelled-command obligations, and complete fault/stop cleanup. Logical Disconnect or HCI Reset is not powered release. Existing ACL HIL does not exercise encrypted traffic"
+limits = "The product also requires bounded ISR and timer work, exclusive packet-list publication, rejection of a second connection or exhausted queue before mutation, retention of cancelled-command obligations, and complete fault/stop cleanup. Logical Disconnect or HCI Reset is not powered release. The active Host-to-Controller ACL owner retains one packet while further advertised credits remain backed by the HCI queue; capacity-aware intake and readiness preserve queued data and allow commands to bypass it. The dedicated ACL calibration workload checks all four credits, exact sequenced notifications and repeated common RX/Bluetooth TX maintenance at 7.5 ms, then restores its diagnostic thresholds and retires the cold owner. Encrypted traffic belongs to the separate peripheral-link-security scenario"
 source-paths = [
   "crates/runtime/embassy/esp32s31/bluetooth/src/controller/owner.rs",
   "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs",
@@ -55,11 +65,6 @@ source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/connection.rs",
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/deadlines.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/maintenance.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs",
-  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs",
-  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs",
 ]
 
 [capabilities.catalog-scope]
@@ -81,11 +86,17 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["peripheral-acl"]
 vendor-anchors = ["verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+hil-requirements = [
+  { scenario = "bluetooth-peripheral-encrypted-acl", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-key-refresh", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-missing-key", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-wrong-key", minimum-repetitions = 3 },
+]
 gaps = [
   { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
   { axis = "host", id = "encrypted-peripheral-key-counter-backpressure-and-retransmission-boundary-tests-missing" },
   { axis = "vendor", id = "encrypted-peripheral-production-contract-evidence-missing" },
-  { axis = "hil", id = "encrypted-peripheral-mic-failure-reconnect-and-counter-scenarios-missing" },
+  { axis = "hil", id = "encrypted-peripheral-missing-key-mic-failure-and-counter-evidence-incomplete" },
   { axis = "async", id = "encrypted-peripheral-cancellation-and-key-retirement-lifecycle-incomplete" },
 ]
 
@@ -93,7 +104,7 @@ gaps = [
 id = "peripheral-security-current-primitives"
 composition = "production"
 scope = "Portable LL security and HCI security procedures supply the existing key, encryption and packet-authentication primitives"
-limits = "This product-scoped criterion requires their composed peripheral boundary and RF evidence. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
+limits = "The fixed-key encrypted ACL scenario exercises the composed peripheral boundary with exact bidirectional echoes, updates, reconnect and cold release. A separate key-refresh scenario requires a replacement LTK on the same handle and post-refresh traffic; its hardware evidence is evaluated independently. Separate initial missing-key and wrong-key scenarios require exact failure evidence followed by encrypted recovery. Their hardware evidence is evaluated independently; missing-key refresh and corrupted active-data MIC coverage remain incomplete. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",

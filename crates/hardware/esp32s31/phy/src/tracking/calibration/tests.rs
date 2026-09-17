@@ -15,6 +15,7 @@ const PARAMETERS: PhyCalibrationTrackingParameters = PhyCalibrationTrackingParam
 const RX_GAIN_OUTCOME: crate::rx::gain::PhyRxGainInitOutcome =
     crate::rx::gain::PhyRxGainInitOutcome {
         dc: Some(crate::rx::gain_calibration::PhyRxGainDcOutcome {
+            quality: crate::rx::gain_calibration::PhyRxGainDcQuality::EMPTY,
             wifi_index_dc: [[0; 2]; 8],
             wifi_dc_base: [0; 2],
             shared_index_dc: [[0; 2]; 11],

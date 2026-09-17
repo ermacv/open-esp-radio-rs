@@ -47,6 +47,12 @@ pub(crate) mod acl;
 mod hci;
 mod host_events;
 mod lifecycle;
+mod maintenance;
+pub use maintenance::{
+    PeripheralPhyMaintenanceError, PeripheralPhyMaintenanceFailure,
+    PeripheralPhyMaintenancePending, PeripheralPhyMaintenanceReady,
+    PeripheralPhyMaintenanceRestoring, PeripheralPhyMaintenanceStep,
+};
 mod radio;
 
 use super::first_hci::{
@@ -104,8 +110,8 @@ pub struct PeripheralConnectionActiveSession<'a, S: SchedulerRunInterruptStorage
     read_remote_version_after_status: bool,
 }
 
-struct PeripheralConnectionState<'a, S: SchedulerRunInterruptStorage, const N: usize> {
-    radio: radio::Radio<'a, S, N>,
+struct PeripheralConnectionState<R> {
+    radio: R,
     control: oer_bluetooth_ll::control::LePeripheralControl,
     encryption: oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
     supervision: Option<super::supervision::PeripheralSupervisionDeadline>,
@@ -122,7 +128,7 @@ struct PeripheralConnectionState<'a, S: SchedulerRunInterruptStorage, const N: u
 /// Reset plus the complete active connection graph awaiting quiescence.
 #[must_use = "retain Reset and the active connection until quiescence"]
 pub struct PeripheralConnectionResetBarrier<'a, S: SchedulerRunInterruptStorage, const N: usize> {
-    barrier: LeControllerResetBarrier<'a, PeripheralConnectionState<'a, S, N>>,
+    barrier: LeControllerResetBarrier<'a, PeripheralConnectionState<radio::Radio<'a, S, N>>>,
 }
 
 /// One finite Reset-quiescence transition.
@@ -165,7 +171,11 @@ pub struct PeripheralConnectionCommandMismatch<
     S: SchedulerRunInterruptStorage,
     const N: usize,
 > {
-    _command: LeControllerClassifiedCommand<'a, 'command, PeripheralConnectionState<'a, S, N>>,
+    _command: LeControllerClassifiedCommand<
+        'a,
+        'command,
+        PeripheralConnectionState<radio::Radio<'a, S, N>>,
+    >,
 }
 
 /// Routed command outcome for one active peripheral connection.
@@ -230,7 +240,10 @@ pub enum PeripheralConnectionActiveStep<'a, S: SchedulerRunInterruptStorage, con
         reason: u8,
     },
     Continue(PeripheralConnectionActiveSession<'a, S, N>),
-    Published(PeripheralConnectionActiveSession<'a, S, N>),
+    Published(
+        PeripheralConnectionActiveSession<'a, S, N>,
+        Option<super::maintenance::PeripheralMaintenanceRun>,
+    ),
     Fault(PeripheralConnectionActiveFault<'a, S, N>),
 }
 
@@ -333,10 +346,31 @@ fn observe_remote_version_result(
     }
 }
 
-impl<'a, S: SchedulerRunInterruptStorage, const N: usize> PeripheralConnectionState<'a, S, N> {
+impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
+    PeripheralConnectionState<radio::Radio<'a, S, N>>
+{
     fn into_session(self, order: Order<'a, ()>) -> PeripheralConnectionActiveSession<'a, S, N> {
         PeripheralConnectionActiveSession {
             order: order.map_owner(|()| self.radio),
+            control: self.control,
+            encryption: self.encryption,
+            supervision: self.supervision,
+            termination: self.termination,
+            procedure: self.procedure,
+            progress_deadline: self.progress_deadline,
+            host_events: self.host_events,
+            acl: self.acl,
+            disconnect: self.disconnect,
+            read_remote_features_after_status: self.read_remote_features_after_status,
+            read_remote_version_after_status: self.read_remote_version_after_status,
+        }
+    }
+}
+
+impl<R> PeripheralConnectionState<R> {
+    fn map_radio<T>(self, map: impl FnOnce(R) -> T) -> PeripheralConnectionState<T> {
+        PeripheralConnectionState {
+            radio: map(self.radio),
             control: self.control,
             encryption: self.encryption,
             supervision: self.supervision,

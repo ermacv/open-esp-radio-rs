@@ -708,8 +708,8 @@ mod tests {
             .iter()
             .filter(|item| item.id.starts_with("phy-protocol-consumer-"))
             .count();
-        assert_eq!((wifi_items, phy_items, matrix_cells), (60, 76, 25));
-        assert_eq!(catalog.items.len(), 136);
+        assert_eq!((wifi_items, phy_items, matrix_cells), (60, 78, 27));
+        assert_eq!(catalog.items.len(), 138);
         let output = root.join("target/qualification/catalog/test-render");
         let first = render_domain(&catalog, &output, &root).unwrap();
         let second = render_domain(&catalog, &output, &root).unwrap();
@@ -838,7 +838,7 @@ scope-and-limitations = "No composition"
         assert!(rendered.contains("## Domain: `whole-radio`"));
         assert!(
             rendered.contains(
-                "Displayed rows: 347. Unique source facts: 344. Explicit projections: 5."
+                "Displayed rows: 356. Unique source facts: 345. Explicit projections: 17."
             )
         );
         assert!(rendered.contains("- Canonical source fact: `coex-timer-validation-bridge`"));

@@ -12,6 +12,8 @@ pub struct PeripheralControlDiagnostics {
     pub completed: u32,
     pub channel_map_updates: u32,
     pub last_opcode: Option<u8>,
+    /// Whether the encryption procedure was idle after the last RX dispatch.
+    pub encryption_idle: bool,
 }
 static STATE: Mutex<Cell<PeripheralControlDiagnostics>> =
     Mutex::new(Cell::new(PeripheralControlDiagnostics {
@@ -22,9 +24,18 @@ static STATE: Mutex<Cell<PeripheralControlDiagnostics>> =
         completed: 0,
         channel_map_updates: 0,
         last_opcode: None,
+        encryption_idle: true,
     }));
 pub fn snapshot() -> PeripheralControlDiagnostics {
     critical_section::with(|cs| STATE.borrow(cs).get())
+}
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn record_encryption_idle(idle: bool) {
+    critical_section::with(|cs| {
+        let mut state = STATE.borrow(cs).get();
+        state.encryption_idle = idle;
+        STATE.borrow(cs).set(state);
+    });
 }
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn record_received<const N: usize>(

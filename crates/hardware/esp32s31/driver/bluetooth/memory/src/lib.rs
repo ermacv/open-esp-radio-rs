@@ -170,9 +170,9 @@ pub use non_scanning_rx_memory::NonScanningRxMemoryModelAddress;
 pub use passive_scanning_memory::PassiveScanMemoryGraphModelAddress;
 
 pub use non_scanning_rx_memory::{
-    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, NonScanningRxMemoryBindError,
-    NonScanningRxMemoryBindFailure, NonScanningRxMemoryCpuOwned, NonScanningRxMemoryIdentity,
-    NonScanningRxMemoryStorage,
+    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT,
+    NonScanningRxMemoryBindError, NonScanningRxMemoryBindFailure, NonScanningRxMemoryCpuOwned,
+    NonScanningRxMemoryIdentity, NonScanningRxMemoryStorage,
 };
 
 pub use passive_scanning_event_image::{

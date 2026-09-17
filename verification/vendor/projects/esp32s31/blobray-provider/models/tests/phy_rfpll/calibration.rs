@@ -120,14 +120,17 @@ fn compiled_pbus_clear_matches_complete_rom_child() {
                     let vendor = run(&vendor, vendor_entry);
                     let rust = run(&rust, rust_entry);
                     assert_eq!(rust.return_value, 0, "production child failed {context}");
-                    let expected = pbus_effects(vendor.events);
-                    let actual = pbus_effects(rust.events);
+                    // The runtime executor polls readiness directly. Require
+                    // every delay as well as every access: a redundant settle
+                    // must not disappear through a comparison projection.
+                    let expected = vendor.events;
+                    let actual = rust.events;
                     assert_eq!(expected.len(), actual.len(), "DIFF effect count {context}");
                     for (index, (expected, actual)) in expected.iter().zip(&actual).enumerate() {
                         assert_eq!(expected, actual, "DIFF PBus child {context} effect={index}");
                     }
                     println!(
-                        "MATCH complete PBus child {context}; {} effects, readiness-wait timing excluded",
+                        "MATCH complete PBus child {context}; {} effects, including all readiness reads and delays",
                         actual.len()
                     );
                 }
@@ -142,37 +145,52 @@ fn compiled_pbus_timeout_preserves_unfinished_transaction() {
     let probe = input("OER_PHY_PROBE", None);
     let entry = "open_phy_calibration_trace_pbus_clear";
     let rust = image(&probe, None, entry);
-    let mut scenario = pbus_scenario(0, true, 0, 0xa5);
-    scenario.max_steps = 2_000_000;
-    scenario.device_models.pop();
-    scenario
-        .device_models
-        .push(Arc::new(DeviceModelSpec::ConstantRead {
-            id: "pbus-stuck".into(),
-            address: PBUS_STATUS,
-            width: 32,
-            value: 0x8000_0000,
-        }));
-    let result = execution::execute(&rust, &pbus_map(), entry, scenario)
-        .expect("production must return its own bounded timeout");
-    assert_eq!(
-        result.return_value, 2,
-        "timeout must not produce an accepted child completion"
-    );
-    // Debug-mode entry plus one command publication, with no transaction
-    // clearing, next command, or work-mode restoration after timeout.
-    assert_eq!(
-        result
+    for completed_commands in [0, 5, 11] {
+        let mut scenario = pbus_scenario(0, true, 0, 0xa5);
+        scenario.max_steps = 2_000_000;
+        scenario.device_models.pop();
+        scenario
+            .device_models
+            .push(Arc::new(DeviceModelSpec::SequenceRead {
+                id: "pbus-stuck-after-progress".into(),
+                address: PBUS_STATUS,
+                width: 32,
+                // More busy inputs than the production read budget: exhaustion
+                // must come from production, not from an exhausted fixture.
+                values: std::iter::repeat_n(0, completed_commands)
+                    .chain(std::iter::repeat_n(0x8000_0000, 20_000))
+                    .collect(),
+            }));
+        let result = execution::execute(&rust, &pbus_map(), entry, scenario)
+            .expect("production must return its own bounded timeout");
+        assert_eq!(
+            result.return_value, 2,
+            "timeout after {completed_commands} commands must not accept the child"
+        );
+        let stuck = result
             .events
             .iter()
-            .filter(|event| matches!(event, ExecutionEvent::Write { .. }))
-            .count(),
-        3
-    );
-    assert!(result.events.iter().all(|event| match event {
-        ExecutionEvent::Read { region, .. } | ExecutionEvent::Write { region, .. } =>
-            region == "pbus",
-        _ => true,
-    }));
-    println!("PASS bounded PBus timeout; no completion or work-mode restoration");
+            .position(|event| {
+                matches!(
+                    event,
+                    ExecutionEvent::Read { address, value, .. }
+                        if *address == PBUS_STATUS && *value == 0x8000_0000
+                )
+            })
+            .expect("the failing command must actually be observed busy");
+        // Once the unfinished command is observed, only its status may be
+        // polled. No acknowledgement, next command or work-mode restore.
+        assert!(result.events[stuck..].iter().all(|event| matches!(
+            event,
+            ExecutionEvent::Read { address, .. } if *address == PBUS_STATUS
+        )));
+        assert!(result.events.iter().all(|event| match event {
+            ExecutionEvent::Read { region, .. } | ExecutionEvent::Write { region, .. } =>
+                region == "pbus",
+            _ => true,
+        }));
+        println!(
+            "PASS bounded PBus timeout after {completed_commands} commands; unfinished command retained"
+        );
+    }
 }

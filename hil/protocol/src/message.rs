@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 142;
+pub const PROTOCOL_VERSION: u16 = 150;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -380,6 +380,9 @@ pub struct SessionReady {
 pub struct FeatureCapabilities {
     /// Bounded connectable advertising and peripheral execution observations.
     pub bluetooth_peripheral: bool,
+    /// Automatic production PHY maintenance with explicit diagnostic budgets.
+    #[serde(default)]
+    pub bluetooth_phy_maintenance: bool,
     pub bluetooth_dtm: bool,
     pub udp: bool,
     pub tcp: bool,

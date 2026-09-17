@@ -662,12 +662,20 @@ impl ControllerSchedulerEpoch {
         self.project_raw_ticks(captured.wrapping_controller_ticks())
     }
 
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn project_peripheral_event_start(
         self,
         window: crate::scheduler::SchedulerRawWindow,
     ) -> u32 {
         self.project_raw_ticks(window.start())
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn project_peripheral_event_end(
+        self,
+        window: crate::scheduler::SchedulerRawWindow,
+    ) -> u32 {
+        self.project_raw_ticks(window.end())
     }
 
     #[cfg(any(target_arch = "riscv32", test))]

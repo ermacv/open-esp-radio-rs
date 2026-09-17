@@ -535,10 +535,12 @@ impl<'state> PhyParamTrackingRfpllTransition<'state> {
         self.child.request()
     }
 
+    #[inline(always)]
     pub const fn action(&self) -> super::rfpll::thermal::Action {
         self.child.action()
     }
 
+    #[inline(always)]
     pub fn advance(
         &mut self,
         completion: super::rfpll::thermal::Completion,

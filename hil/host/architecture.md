@@ -6,8 +6,8 @@ contract. Operational setup and commands are in the
 
 `runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
 UART evidence. `linux-net/` contains only privileged fixture operations.
-[Linux Bluetooth setup](linux-bluetooth/README.md) installs the finite DTM
-adapter checker; its Rust
+[Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
+for finite DTM adapter checks and peripheral ACL/recovery workloads. Its Rust
 implementation belongs to the runner's `fixture/bluetooth/` module.
 
 Fixture installation has a separate ownership boundary. The general runner
@@ -481,3 +481,11 @@ The recursive [catalog contract](../scenarios/README.md) is checked independentl
 by the runner and qualification evaluator. Shared synthetic input documents
 exercise both readers; qualification never imports execution or validation
 implementation from the runner. Tests are adjacent files within each owner.
+
+The terminal DTM maintenance workload uses `session::reboot` to arm one expected
+new boot within an explicit interval. It sends no reset command. A fresh Hello
+at sequence zero is required; prior transport/protocol failures, an early/late
+boot or an additional reboot still fail the capture. All ordinary captures keep
+their unconditional unexpected-reboot rejection. The workload separately checks
+software-reset cause and peer DTM silence, so a changed boot ID alone is not RF
+shutdown evidence.

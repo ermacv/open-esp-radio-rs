@@ -1,0 +1,11 @@
+schema = 4
+id = "bluetooth-peripheral-missing-key"
+description = "Reject the first encryption attempt with missing-key, verify exact security evidence, then reconnect with a valid LTK and retire cold"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "encryption", "security-failure", "lifecycle"]
+
+[workload]
+kind = "bluetooth-security-failure"
+failure = "missing-key"

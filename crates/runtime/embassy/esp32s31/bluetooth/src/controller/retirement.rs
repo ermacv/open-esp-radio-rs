@@ -7,6 +7,8 @@ use super::ControllerCommandPhase;
 pub enum ControllerCommandRetirementError {
     /// The actor already transferred its owner to a terminal boundary.
     OwnerUnavailable,
+    /// Configured maintenance must preserve its policy through a continuation.
+    MaintenancePolicyActive,
     /// A radio, command or response lifecycle still owns the actor.
     NotIdle(ControllerCommandPhase),
     /// A role allocation/generation or the exact HCI epoch could not retire.
@@ -25,8 +27,29 @@ use {
 impl<'runtime, S: SchedulerRunInterruptStorage, const CAPACITY: usize>
     ControllerCommandTask<'runtime, S, CAPACITY>
 {
+    /// Change diagnostic thermal thresholds only while the command owner is idle.
+    /// Retains the configured maintenance policy and all original deadlines.
+    /// The caller must restore the returned setting before ending its experiment.
+    pub fn set_idle_phy_tracking_debug(
+        &mut self,
+        debug: oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
+    ) -> Result<
+        oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
+        ControllerCommandRetirementError,
+    > {
+        if self.owner.is_empty() {
+            return Err(ControllerCommandRetirementError::OwnerUnavailable);
+        }
+        match self.owner.current_mut() {
+            ControllerCommandState::Idle(idle) => Ok(idle.set_phy_tracking_debug(debug)),
+            state => Err(ControllerCommandRetirementError::NotIdle(state.phase())),
+        }
+    }
+
     /// Transfer the exact idle command authority for a quiescent maintenance
     /// window. HCI remains open and no hardware or PHY readiness is implied.
+    /// Configured maintenance actors use `take_idle_phy_maintenance` so extraction
+    /// cannot discard their original hard deadline. Terminal HCI retirement remains available.
     #[inline(never)]
     #[allow(
         clippy::result_large_err,
@@ -38,6 +61,12 @@ impl<'runtime, S: SchedulerRunInterruptStorage, const CAPACITY: usize>
         oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'runtime, S, CAPACITY>,
         (ControllerCommandRetirementError, Self),
     > {
+        if self.maintenance.is_some() {
+            return Err((
+                ControllerCommandRetirementError::MaintenancePolicyActive,
+                self,
+            ));
+        }
         let result = self.owner.try_transfer(|state| match state {
             ControllerCommandState::Idle(idle) => Ok(idle),
             state => Err((

@@ -9,6 +9,7 @@ pub(crate) enum PeripheralMissedAnchorDecision {
     EstablishmentPolicyRequired,
     Skip(LePeripheralConnectionEventDelta),
     DeltaUnavailable,
+    MaintenanceWindowMissed,
 }
 
 /// Select a later event when executor latency has closed the guarded start.
@@ -23,10 +24,14 @@ pub(crate) const fn decide_missed_anchor(
     late_start_guard_micros: u32,
     interval_micros: u32,
     attempted_delta: LePeripheralConnectionEventDelta,
+    restoring_maintenance: bool,
 ) -> PeripheralMissedAnchorDecision {
     let guarded_now = now.wrapping_add(late_start_guard_micros);
     if guarded_now.is_before(event_start) {
         return PeripheralMissedAnchorDecision::Run;
+    }
+    if restoring_maintenance {
+        return PeripheralMissedAnchorDecision::MaintenanceWindowMissed;
     }
     if matches!(state, LePeripheralConnectionState::Created) {
         return PeripheralMissedAnchorDecision::EstablishmentPolicyRequired;
@@ -69,7 +74,7 @@ mod tests {
     #[test]
     fn open_guarded_window_runs_without_changing_delta() {
         assert_eq!(
-            decide_missed_anchor(ESTABLISHED, at(900), at(1_000), 40, 30_000, delta(1)),
+            decide_missed_anchor(ESTABLISHED, at(900), at(1_000), 40, 30_000, delta(1), false),
             PeripheralMissedAnchorDecision::Run
         );
     }
@@ -77,7 +82,15 @@ mod tests {
     #[test]
     fn closed_established_window_jumps_over_all_elapsed_intervals() {
         assert_eq!(
-            decide_missed_anchor(ESTABLISHED, at(61_000), at(1_000), 40, 30_000, delta(1),),
+            decide_missed_anchor(
+                ESTABLISHED,
+                at(61_000),
+                at(1_000),
+                40,
+                30_000,
+                delta(1),
+                false
+            ),
             PeripheralMissedAnchorDecision::Skip(delta(4))
         );
     }
@@ -85,7 +98,15 @@ mod tests {
     #[test]
     fn recovery_accumulates_from_the_cancelled_candidate_delta() {
         assert_eq!(
-            decide_missed_anchor(ESTABLISHED, at(31_000), at(1_000), 40, 30_000, delta(4),),
+            decide_missed_anchor(
+                ESTABLISHED,
+                at(31_000),
+                at(1_000),
+                40,
+                30_000,
+                delta(4),
+                false
+            ),
             PeripheralMissedAnchorDecision::Skip(delta(6))
         );
     }
@@ -100,6 +121,7 @@ mod tests {
                 40,
                 30_000,
                 delta(1),
+                false
             ),
             PeripheralMissedAnchorDecision::Skip(delta(3))
         );
@@ -115,8 +137,44 @@ mod tests {
                 40,
                 30_000,
                 delta(1),
+                false
             ),
             PeripheralMissedAnchorDecision::EstablishmentPolicyRequired
         );
+    }
+
+    #[test]
+    fn maintenance_successor_never_uses_late_recovery_or_establishment_fallback() {
+        for state in [ESTABLISHED, LePeripheralConnectionState::Created] {
+            for start in [1000, u32::MAX - 10] {
+                let start = at(start);
+                assert_eq!(
+                    decide_missed_anchor(
+                        state,
+                        start.wrapping_add(u32::MAX - 100),
+                        start,
+                        40,
+                        30_000,
+                        delta(2),
+                        true
+                    ),
+                    PeripheralMissedAnchorDecision::Run
+                );
+                for late in [0, 1, 60_000] {
+                    assert_eq!(
+                        decide_missed_anchor(
+                            state,
+                            start.wrapping_add(late),
+                            start,
+                            40,
+                            30_000,
+                            delta(2),
+                            true
+                        ),
+                        PeripheralMissedAnchorDecision::MaintenanceWindowMissed
+                    );
+                }
+            }
+        }
     }
 }

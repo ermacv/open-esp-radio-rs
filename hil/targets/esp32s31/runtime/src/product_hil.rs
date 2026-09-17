@@ -1282,24 +1282,25 @@ async fn station_lifecycle_task(mut status: StationStatus) {
         match edge {
             StationLinkEdge::Connected => {
                 if !connected {
-                    let link = negotiated.filter(|snapshot| {
-                        matches!(snapshot.state, StationLinkState::Connected)
-                    });
-                    let security = link.and_then(|snapshot| snapshot.link_security).map(|security| {
-                        match security {
-                            oer_esp32s31_embassy_wifi::StationLinkSecurity::Open => {
-                                open_esp_radio_hil_protocol::StationLinkSecurity::Open
-                            }
-                            oer_esp32s31_embassy_wifi::StationLinkSecurity::Wpa2Personal => {
-                                open_esp_radio_hil_protocol::StationLinkSecurity::Wpa2Personal
-                            }
-                        }
-                    });
+                    let link = negotiated
+                        .filter(|snapshot| matches!(snapshot.state, StationLinkState::Connected));
+                    let security =
+                        link.and_then(|snapshot| snapshot.link_security)
+                            .map(|security| match security {
+                                oer_esp32s31_embassy_wifi::StationLinkSecurity::Open => {
+                                    open_esp_radio_hil_protocol::StationLinkSecurity::Open
+                                }
+                                oer_esp32s31_embassy_wifi::StationLinkSecurity::Wpa2Personal => {
+                                    open_esp_radio_hil_protocol::StationLinkSecurity::Wpa2Personal
+                                }
+                            });
                     publish_station_lifecycle(StationLifecycleEvent::Connected {
                         generation,
-                        association_bandwidth_mhz: link.and_then(|snapshot| snapshot.association_bandwidth_mhz),
+                        association_bandwidth_mhz: link
+                            .and_then(|snapshot| snapshot.association_bandwidth_mhz),
                         security,
-                    }).await;
+                    })
+                    .await;
                     connected = true;
                 }
             }

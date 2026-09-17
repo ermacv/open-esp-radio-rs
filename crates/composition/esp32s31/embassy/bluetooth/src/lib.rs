@@ -31,6 +31,12 @@
 //! command/timer owners remain retained; graceful ACL credit drain is separate.
 //! These transitions do not stop BTBB/DMA or release the shared PHY. Exclusive
 //! task HAL, PHY/DF and role-memory leases follow the actor through handoff and quarantine.
+//! Configured `run_with_phy_maintenance` additionally preserves a hard PHY
+//! deadline even through terminal quarantine. At expiry, typed shared-RF
+//! fail-stop closes HCI and the current S31 backend resets the full SoC because
+//! local active-DTM/all-RF quiescence is not proven. It never pauses DTM or
+//! synthesizes Host Test End. Normal idle/ACL maintenance borrows the matching
+//! platform and restores the same HCI, timer and IRQ owners.
 //! HCI retirement extracts their actual owners; rejection preserves the runnable
 //! actor. Cold start also returns `platform` beside `system`: retain it until
 //! `BluetoothHardwareRetired::try_retire_interrupts` removes the actual shared
@@ -51,8 +57,18 @@
 //! issues a new HCI generation whose old Host handles remain closed.
 //! `BluetoothHardwareTimerRetired::maintain_phy` instead executes due tracking
 //! with the same open HCI and powered counter epoch, then restores owners and
-//! routes. Maintenance requires an idle runner; active ACL/DTM windows are not
-//! automatically scheduled. Failed or cancelled physical work cannot resume.
+//! routes. This manual entry requires an idle runner. Its optional calibration
+//! debug policy temporarily selects the existing thermal thresholds, preserves
+//! real sensor readings and restores the original policy on success. Failed or
+//! cancelled physical work cannot resume. The automatic entry also admits ACL
+//! windows; active DTM stays non-preemptible.
+//!
+//! [`maintenance_observation`] records real PHY child completions and durations,
+//! physical return and the driver's guarded RUN publication. Boot aggregates
+//! survive idle/ACL transitions; timestamps describe the latest transaction,
+//! which has no RUN when performed in idle. A physical return does not count as
+//! restored RUN. Observations grant no RF authority, and measured maxima include
+//! scheduling/observer overhead without establishing worst-case time bounds.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -804,3 +820,6 @@ mod tests;
 
 #[cfg(any(test, target_arch = "riscv32"))]
 pub mod diagnostics;
+
+/// Measured production PHY handoff and guarded successor publication.
+pub mod maintenance_observation;

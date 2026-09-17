@@ -189,6 +189,22 @@ pub(crate) struct BlePhyRetiredMemory {
 
 #[cfg(target_arch = "riscv32")]
 impl BlePhyRetainedOwners {
+    pub(crate) fn set_tracking_debug(
+        &mut self,
+        debug: oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
+    ) -> oer_esp32s31_phy::state::PhyTemperatureTrackingDebug {
+        self._phy.set_tracking_debug(debug)
+    }
+    pub(crate) fn tracking_schedule_at(
+        &self,
+        now_micros: u64,
+    ) -> Result<
+        oer_esp32s31_phy::tracking::schedule::Schedule,
+        oer_esp32s31_phy::state::client::PhyTrackTimeError,
+    > {
+        self._phy.client_snapshot().tracking_schedule_at(now_micros)
+    }
+
     pub(crate) fn into_shutdown_parts(
         self,
     ) -> (

@@ -55,7 +55,7 @@ impl PeripheralConnectionSchedulerCompleted {
     /// exact completed event.
     pub(crate) fn prepare_recurring_event_candidate(
         self,
-        delta: LePeripheralConnectionEventDelta,
+        recurrence: crate::le::peripheral::connection::PeripheralConnectionRecurrence,
         epoch: ControllerSchedulerEpoch,
         scheduler_config: SchedulerSoftwareConfig,
         timing_policy: PeripheralConnectionRecurringTimingPolicy,
@@ -63,7 +63,7 @@ impl PeripheralConnectionSchedulerCompleted {
         PeripheralConnectionRecurringCandidateFailure,
         PeripheralConnectionRecurringEventCandidate,
     > {
-        prepare_recurring_event_candidate(self, delta, epoch, scheduler_config, timing_policy)
+        prepare_recurring_event_candidate(self, recurrence, epoch, scheduler_config, timing_policy)
     }
 }
 
@@ -226,9 +226,14 @@ impl PeripheralConnectionRecurringSchedulerCommittedRemainder {
     fn join_rx_publication(
         self,
         graph: oer_esp32s31_bluetooth_memory::PeripheralConnectionMemoryGraphRxPublished,
+        committed_window: SchedulerRawWindow,
     ) -> crate::le::peripheral::connection::PeripheralConnectionFirstEventRxPublished {
-        self.remainder
-            .join_recurring_rx_publication(graph, self.event, self.phase)
+        self.remainder.join_recurring_rx_publication(
+            graph,
+            self.event,
+            self.phase,
+            committed_window,
+        )
     }
 }
 
@@ -598,7 +603,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 );
             }
         };
-        let event = remainder.join_rx_publication(graph);
+        let event = remainder.join_rx_publication(graph, reservation.window());
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         ControlFlow::Continue((
             super::PeripheralConnectionSchedulerHeadPublished {

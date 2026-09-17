@@ -46,6 +46,23 @@ leaves the physical owner intact; a later client release remains possible.
 Cancellation after starting the consuming target operation is a different
 boundary and still requires the documented failure/reset handling.
 
+`run_target_bluetooth_phy_param_tracking_until` accepts a
+[`TrackingDeadline`](deadline.rs) in the executor's monotonic clock domain.
+It checks time before and after polling the actual tracking graph, and arms an
+independent wake for a suspended child. Expiry, clock loss/reversal, or an
+inconsistent timer consumes the retained Bluetooth client into a poisoned
+owner. Even a completed calibration cannot return an operational owner at or
+after the deadline. The absolute window starts at the caller's admission
+sample; delayed polling does not renew it.
+
+This is an execution guard, not a hardware preemption mechanism. A blocking
+calibration poll can overrun and is rejected when it returns. Admitting live
+protocol work still requires a measured execution bound and a separate reserve
+for IRQ/protocol restoration. The guard neither chooses BLE events nor bounds
+how long maintenance demand may remain deferred. The Bluetooth idle-maintenance
+composition accepts this optional deadline; `None` explicitly selects the
+existing unbounded idle operation.
+
 The Wi-Fi supervisor uses this read-only observation at completed role
 boundaries. Its existing `WifiStopped::maintain_phy` path requires stopped DMA
 and an inactive IRQ owner. A standalone connected station supports a MAC/RX/IRQ pause round trip,
@@ -261,7 +278,9 @@ parent state. As in the isolated memory profile, its projection removes one
 vendor installed-layout query: production owns that layout explicitly. No
 frequency-memory transaction or control write is removed. RFPLL completion
 remains committed if a later TXCAL fails; normal-owner recovery is still denied.
-This profile does not enable RFPLL in registered production policy. External
+This validation profile does not configure runtime policy. Registered production
+policy evaluates RFPLL demand before the remaining children; an evaluated
+thermal skip is distinct from a performed capacitor correction. External
 grant overrides, physical RFPLL qualification and hardware performance remain
 separate gates.
 

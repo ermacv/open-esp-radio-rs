@@ -1093,6 +1093,24 @@ where
         Ok(())
     }
 
+    /// Wait for an admissible active-peripheral packet without consuming it.
+    /// With occupied ACL storage, commands bypass queued ACL data in command
+    /// order; ACL remains in FIFO order until `acl_ready` becomes true. A wait
+    /// containing only blocked data stays pending and remains cancellation-safe.
+    pub async fn wait_active_peripheral_available<'epoch, Owner>(
+        &self,
+        ready: &LeControllerCommandReady<'epoch, Owner>,
+        acl_ready: bool,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        if !ready.accepts_endpoint(self) {
+            return Err(LeControllerEndpointMismatch);
+        }
+        self.transport()
+            .wait_active_peripheral_available(acl_ready)
+            .await;
+        Ok(())
+    }
+
     /// Consume and classify at most one Host command under affine authority.
     ///
     /// On success classification and authority remain inseparable in one
@@ -1133,11 +1151,15 @@ where
         }
     }
 
-    /// Consume one active-peripheral command or copy one Host ACL packet.
+    /// Consume one active-peripheral command or one admitted Host ACL packet.
+    /// `acl_ready` must describe the receiving owner's actual capacity. While
+    /// false, data remains queued and commands may pass it, preserving order
+    /// within each packet class. This never completes or drops blocked data.
     pub fn try_receive_active_peripheral_with_buffer<'epoch, 'buffer, Owner>(
         &self,
         ready: LeControllerCommandReady<'epoch, Owner>,
         live_handle: Option<ConnHandle>,
+        acl_ready: bool,
         buffer: &'buffer mut [u8],
         accept_acl: impl FnOnce(Owner, Result<LeHostAclPacket, LeHostAclPacketRejection>) -> Owner,
     ) -> LeControllerActivePeripheralIntake<'epoch, 'resources, 'buffer, Owner> {
@@ -1148,6 +1170,7 @@ where
             buffer,
             live_handle,
             self.bootstrap_config().le_acl_data_packet_length(),
+            acl_ready,
             ready,
             |ready, packet| ready.map_owner(|owner| accept_acl(owner, packet)),
         ) {

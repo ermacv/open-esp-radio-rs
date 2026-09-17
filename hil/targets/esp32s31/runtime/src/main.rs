@@ -221,8 +221,22 @@ use oer_esp32s31_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    #[cfg(not(feature = "open-radio-hil"))]
+    #[cfg(not(any(feature = "open-radio-hil", feature = "bluetooth-hil")))]
     let _ = info;
+    #[cfg(feature = "bluetooth-hil")]
+    {
+        use core::fmt::Write as _;
+        // Terminal-only output: retain the origin without depending on the
+        // stopped asynchronous HCI/console tasks or allocating a log queue.
+        let mut detail = heapless::String::<384>::new();
+        let _ = write!(&mut detail, "OPEN_RADIO_HIL panic info={info}");
+        // This ROM formatter supports %s, but not precision-limited %.*s.
+        let mut terminated = [0_u8; 385];
+        terminated[..detail.len()].copy_from_slice(detail.as_bytes());
+        unsafe {
+            ets_printf(c"%s\r\n".as_ptr(), terminated.as_ptr());
+        }
+    }
     #[cfg(feature = "open-radio-hil")]
     {
         console::panic_origin(info);

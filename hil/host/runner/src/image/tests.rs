@@ -99,7 +99,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 16);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 17);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -291,6 +291,11 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
         classify_flashed_capabilities(&features),
         Some(ImageClass::BluetoothDtm)
     );
+    features.phy_rx_hot_sram = true;
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::BluetoothDtm)
+    );
     features.udp = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
     assert!(
@@ -367,4 +372,30 @@ fn historical_rx_phy_images_round_trip_without_entering_the_current_catalog() {
         );
         assert!(historical.id().parse::<ImageClass>().is_err());
     }
+}
+
+#[test]
+fn automatic_bluetooth_image_has_a_distinct_flashed_identity() {
+    let features = FeatureCapabilities {
+        bluetooth_dtm: true,
+        bluetooth_peripheral: true,
+        bluetooth_phy_maintenance: true,
+        structured_evidence: true,
+        psram_task_stack: true,
+        ..FeatureCapabilities::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::BluetoothPhyMaintenance)
+    );
+    let mut incomplete = features;
+    incomplete.bluetooth_dtm = false;
+    incomplete.bluetooth_peripheral = false;
+    assert_eq!(classify_flashed_capabilities(&incomplete), None);
+    assert!(!ImageClass::BluetoothPhyMaintenance.requires_driver_observation());
+    assert!(
+        ImageClass::BluetoothPhyMaintenance
+            .runtime_features()
+            .contains("bluetooth-phy-maintenance")
+    );
 }

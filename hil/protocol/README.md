@@ -273,7 +273,7 @@ added to them. This evidence does not cover all PHY waits.
 `StationPhyTxWaits` precedes the correlated `StationPauseCompleted` when PHY
 operation timings are available. Both events use the pause request ID and the
 reliable event stream; no per-sample events are emitted. The separate detail
-keeps the existing 480-byte body limit, including worst-case integer encoding.
+keeps the 528-byte body limit, including worst-case integer encoding.
 The runner retrieves already received detail after completion and rejects
 missing detail or sequential wait totals exceeding the TX operation interval.
 An access-only pause has zero TX wait and SAR counts. With no timing observer,
@@ -368,3 +368,30 @@ execution and advancement are disjoint inside outer_sample. These counts/times
 cover only the selected calls, not the whole calibration or a random sample.
 Timing includes observer overhead and waits. Do not extrapolate sample totals as
 measured whole-operation cost. All region totals remain complete.
+
+
+### Encrypted ACL diagnostic
+
+`BluetoothPeripheral::EncryptedAcl` selects the fixed-key diagnostic Host before
+advertising in a fresh boot. It is exclusive with the calibration-traffic and
+ACL-backpressure Hosts. `BluetoothEncryptionEvidence` reports key requests,
+successful HCI key replies (including negative and deliberately wrong-key replies),
+Encryption Change, Key Refresh Complete events and faults. It never carries
+key bytes. The public `BLUETOOTH_TEST_*` and `BLUETOOTH_REFRESH_*` constants identify fixture material,
+not a pairing or bond-storage policy. Evidence uses wire protocol 150; runner and
+firmware must match. The body bound is 528 bytes, including the largest combined
+peripheral evidence record and worst-case integer encoding.
+
+The diagnostic Host accepts the initial identity once per connection, then the
+distinct refresh identity only after initial Encryption Change. During the
+pending refresh it rejects application data and requires the refresh event,
+not another initial Encryption Change. Disconnect clears this phase before
+reconnection; counters remain cumulative for the current boot.
+
+The optional `failure` field selects `missing-key` or `wrong-key` for the first
+initial LTK request only. The former uses the standard HCI negative reply; the
+latter replies with a fixed public key differing by one bit. After disconnect,
+subsequent connections receive the correct key. The Controller and its RF/CCM
+path are unchanged. Expected injections have separate counters; malformed
+requests, failed HCI replies, unexpected encryption success and application
+data before encryption still invalidate the scenario.

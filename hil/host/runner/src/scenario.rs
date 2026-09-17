@@ -164,6 +164,22 @@ impl PhyExpectation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Workload {
+    BluetoothMaintenanceDeadline,
+    BluetoothAclBackpressure,
+    BluetoothSecurityFailure {
+        failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
+        /// Diagnose plaintext control progress after initial key rejection.
+        #[serde(default)]
+        read_version_before_disconnect: bool,
+    },
+    BluetoothEncryptedAcl {
+        #[serde(default)]
+        key_refresh: bool,
+    },
+    BluetoothAclCalibration {
+        duration_millis: u16,
+        minimum_calibrations: u16,
+    },
     BluetoothDtm {
         boots: u8,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -185,6 +201,8 @@ pub enum Workload {
         /// Due PHY maintenance preserving HCI and the powered epoch between connections.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         maintain_between_connections: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        calibration_threshold: Option<u8>,
     },
     BootSmoke,
     MemoryBenchmark {

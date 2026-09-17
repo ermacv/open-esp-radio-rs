@@ -3,7 +3,9 @@ use super::*;
 const INITIATOR: [u8; 6] = [1, 2, 3, 4, 5, 6];
 const ADVERTISER: [u8; 6] = [7, 8, 9, 10, 11, 12];
 
-fn connection_request(channel_selection_two: bool) -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
+pub(super) fn connection_request(
+    channel_selection_two: bool,
+) -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
     let mut pdu = [0; LEGACY_CONNECT_IND_PDU_BYTES];
     pdu[0] = CONNECT_IND_TYPE
         | if channel_selection_two {

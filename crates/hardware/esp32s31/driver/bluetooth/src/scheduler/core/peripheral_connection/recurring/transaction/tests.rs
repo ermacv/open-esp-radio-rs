@@ -20,6 +20,133 @@ use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
 
 use super::{PeripheralConnectionRecurringCandidateError, prepare_recurring_protocol_proposal};
 
+#[test]
+fn maintenance_uses_the_same_anchor_channel_and_widening_as_the_omitted_events() {
+    use crate::le::peripheral::connection::PeripheralConnectionRecurrence;
+    for algorithm_two in [false, true] {
+        for (anchor, skipped) in [1_000, u32::MAX - 25_000]
+            .into_iter()
+            .flat_map(|anchor| [1, 2, 3, 10].map(|skipped| (anchor, skipped)))
+        {
+            let request = request_with_channel_selection(24, 4, algorithm_two);
+            let mut maintained = completed_event(request);
+            maintained.observe_valid_packet_header(0x05);
+            let original_phase = phase(anchor);
+            let packet_start = PeripheralConnectionPacketStartTiming::from_scheduler_micros(
+                anchor.wrapping_add(37),
+            );
+            let ControlFlow::Continue(candidate) = prepare_recurring_protocol_proposal(
+                maintained,
+                original_phase,
+                Some(&packet_start),
+                PeripheralConnectionRecurrence::Maintenance(
+                    LePeripheralConnectionEventDelta::from_skipped(skipped).unwrap(),
+                ),
+                epoch(anchor),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            ) else {
+                panic!("acknowledged connection admits a budgeted pause")
+            };
+            let ControlFlow::Continue(ordinary) = prepare_recurring_protocol_proposal(
+                completed_event(request),
+                original_phase,
+                Some(&packet_start),
+                LePeripheralConnectionEventDelta::from_skipped(skipped).unwrap(),
+                epoch(anchor),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            ) else {
+                panic!("ordinary missed-event recovery must remain available")
+            };
+            assert_eq!(candidate.proposal, ordinary.proposal);
+            assert_eq!(candidate.event_counter(), ordinary.event_counter());
+            let proposal = candidate.proposal;
+            let (cancelled, returned_phase, _) = candidate.cancel();
+            assert_eq!(returned_phase, original_phase);
+            let ControlFlow::Continue(retried) = prepare_recurring_protocol_proposal(
+                cancelled,
+                returned_phase,
+                Some(&packet_start),
+                PeripheralConnectionRecurrence::Maintenance(
+                    LePeripheralConnectionEventDelta::from_skipped(skipped).unwrap(),
+                ),
+                epoch(anchor),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            ) else {
+                panic!("cancelled preview must retain its eligibility")
+            };
+            assert_eq!(retried.proposal, proposal);
+            let completed = retried
+                .provisional
+                .commit()
+                .into_submitted()
+                .complete(LePeripheralConnectionEventPeerActivity::Missed);
+            let ControlFlow::Break(rejected) = prepare_recurring_protocol_proposal(
+                completed,
+                proposal.proposed_phase,
+                None,
+                PeripheralConnectionRecurrence::Maintenance(
+                    LePeripheralConnectionEventDelta::from_skipped(skipped).unwrap(),
+                ),
+                epoch(anchor),
+                SchedulerSoftwareConfig::reviewed_standalone(),
+                software_policy(),
+            ) else {
+                panic!("a second maintenance miss requires a serviced event")
+            };
+            assert_eq!(
+                rejected.error,
+                PeripheralConnectionRecurringCandidateError::Maintenance(
+                    oer_bluetooth_ll::connection::maintenance::SkipBlocked::RecoveryEventRequired
+                )
+            );
+            assert_eq!(rejected.completed.event_counter(), skipped + 1);
+            assert_eq!(rejected.original_phase, proposal.proposed_phase);
+        }
+    }
+}
+
+#[test]
+fn deliberate_skip_cannot_use_unintentional_recovery_to_bypass_initial_ack() {
+    use crate::le::peripheral::connection::PeripheralConnectionRecurrence;
+    let original_phase = phase(1_000);
+    let ControlFlow::Break(rejected) = prepare_recurring_protocol_proposal(
+        completed_event(request(24, 4)),
+        original_phase,
+        None,
+        PeripheralConnectionRecurrence::Maintenance(
+            LePeripheralConnectionEventDelta::from_skipped(1).unwrap(),
+        ),
+        epoch(0),
+        SchedulerSoftwareConfig::reviewed_standalone(),
+        software_policy(),
+    ) else {
+        panic!("initial peer activity alone cannot admit maintenance")
+    };
+    assert_eq!(
+        rejected.error,
+        PeripheralConnectionRecurringCandidateError::Maintenance(
+            oer_bluetooth_ll::connection::maintenance::SkipBlocked::InitialAcknowledgement
+        )
+    );
+    assert_eq!(rejected.completed.event_counter(), 0);
+    assert_eq!(rejected.original_phase, original_phase);
+    assert!(matches!(
+        prepare_recurring_protocol_proposal(
+            rejected.completed,
+            rejected.original_phase,
+            None,
+            LePeripheralConnectionEventDelta::from_skipped(1).unwrap(),
+            epoch(0),
+            SchedulerSoftwareConfig::reviewed_standalone(),
+            software_policy(),
+        ),
+        ControlFlow::Continue(_)
+    ));
+}
+
 fn request(interval_units: u16, central_sca: u8) -> LeLegacyConnectionRequest {
     request_with_channel_selection(interval_units, central_sca, true)
 }

@@ -907,7 +907,7 @@ fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
             bluetooth_sections.contains(item.section.as_str()) && item.source_fact.is_some()
         })
         .count();
-    assert_eq!((source_rows, bluetooth_projections), (137, 1));
+    assert_eq!((source_rows, bluetooth_projections), (136, 5));
     assert_eq!(
         catalog
             .references
@@ -946,8 +946,77 @@ fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
         parent.implementation,
         crate::model::ImplementationProof::Incomplete
     );
-    assert_eq!(parent.source_fact_refs, ["bluetooth-initial-phy-handoff"]);
+    assert!(parent.source_fact_refs.iter().any(|id| id == &handoff.id));
     assert_eq!(parent.source_contracts[0], handoff.source_contract);
+}
+
+#[test]
+fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let catalog = CatalogView::load(
+        &root,
+        &[
+            PathBuf::from("qualification/catalog/esp32s31/bluetooth-products.toml"),
+            PathBuf::from("qualification/catalog/esp32s31/whole-radio.toml"),
+        ],
+    )
+    .unwrap();
+    let domains = BTreeSet::from(["bluetooth", "phy", "whole-radio"]);
+    for (fact_id, expected) in [
+        ("bluetooth-idle-phy-maintenance", SourceStatus::Implemented),
+        ("bluetooth-periodic-phy-maintenance", SourceStatus::Partial),
+        ("bluetooth-idle-powered-release", SourceStatus::Implemented),
+        (
+            "bluetooth-same-storage-powered-restart",
+            SourceStatus::Implemented,
+        ),
+    ] {
+        let fact = &catalog.source_facts[fact_id];
+        assert_eq!(fact.status, expected);
+        let projected_domains = catalog
+            .items
+            .iter()
+            .filter(|item| item.source_fact.as_deref() == Some(fact_id))
+            .map(|item| {
+                assert_eq!(item.status, expected);
+                assert_eq!(item.source_paths, fact.source_contract.source_paths);
+                catalog
+                    .sections
+                    .iter()
+                    .find(|section| section.id == item.section)
+                    .unwrap()
+                    .domain
+                    .as_str()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(projected_domains, domains, "{fact_id}");
+        for parent_id in ["common-phy-baseband", "peripheral-acl"] {
+            let parent = &catalog.capabilities[parent_id];
+            assert!(parent.source_contracts.contains(&fact.source_contract));
+            assert_eq!(
+                parent.implementation,
+                crate::model::ImplementationProof::Incomplete
+            );
+        }
+    }
+    let teardown = &catalog.capabilities["powered-teardown"];
+    assert_eq!(
+        teardown.implementation,
+        crate::model::ImplementationProof::Incomplete
+    );
+    for fact_id in [
+        "bluetooth-idle-powered-release",
+        "bluetooth-same-storage-powered-restart",
+    ] {
+        assert!(
+            teardown
+                .source_contracts
+                .contains(&catalog.source_facts[fact_id].source_contract)
+        );
+    }
 }
 
 #[test]
@@ -990,7 +1059,7 @@ fn coex_and_whole_radio_catalogs_preserve_facets_without_program_promotion() {
             })
     };
     assert_eq!(item_counts(&coex_sections), (42, 1));
-    assert_eq!(item_counts(&whole_radio_sections), (28, 2));
+    assert_eq!(item_counts(&whole_radio_sections), (28, 6));
     assert_eq!(
         catalog
             .references

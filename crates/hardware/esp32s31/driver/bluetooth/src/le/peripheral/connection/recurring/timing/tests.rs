@@ -291,6 +291,69 @@ fn skipped_events_advance_nominal_phase_and_widening_by_the_same_delta() {
 }
 
 #[test]
+fn maintenance_skip_at_shortest_interval_reserves_the_actual_successor_window() {
+    use crate::le::peripheral::{
+        deadlines::Deadlines,
+        maintenance::{PeripheralMaintenanceBlocked, PeripheralMaintenanceBudget},
+    };
+    use core::num::NonZeroU32;
+
+    let epoch = epoch(0);
+    let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let policy = PeripheralConnectionRecurringTimingPolicy::new(
+        Some(PeripheralConnectionLocalSleepClockAccuracy::new(500).unwrap()),
+        PeripheralConnectionWindowWideningMode::SoftwareZeroAccumulatedUncertainty,
+    );
+    let plan = phase(10_000)
+        .plan(
+            request(6, 0),
+            LePeripheralConnectionEventDelta::from_skipped(1).unwrap(),
+            epoch,
+            config,
+            policy,
+        )
+        .unwrap();
+    let start = epoch.project_peripheral_event_start(plan.window());
+    let end = epoch.project_peripheral_event_end(plan.window());
+    let instant = crate::SchedulerInstant::from_image;
+    let n = |v| NonZeroU32::new(v).unwrap();
+    let admit = |execution, restoration, acquisition_delay: u64| {
+        PeripheralMaintenanceBudget::new(n(execution), n(restoration), n(2_000))
+            .unwrap()
+            .admit(
+                instant(10_000),
+                instant(start),
+                instant(end),
+                100_000,
+                100_000 + acquisition_delay,
+                config.late_start_guard_micros(),
+                Deadlines {
+                    supervision: None,
+                    procedure: None,
+                    termination: None,
+                },
+            )
+    };
+
+    // Even sampling at the previous anchor is optimistic: event completion
+    // consumes time too. One skip supplies two intervals, but preparation,
+    // clock widening and the late-start guard all precede the next anchor.
+    assert_eq!(plan.proposed_anchor().image(), 25_000);
+    assert_eq!(start - 10_000 - config.late_start_guard_micros(), 14_764);
+    assert_eq!(
+        admit(10_000, 5_000, 0).unwrap_err(),
+        PeripheralMaintenanceBlocked::WindowTooShort,
+    );
+    let accepted = admit(13_000, 1_500, 263).unwrap();
+    assert_eq!(accepted.restoration.expires_at_micros(), 114_763);
+    // Neither equality nor time spent acquiring the Controller sample is free.
+    assert_eq!(
+        admit(13_000, 1_500, 264).unwrap_err(),
+        PeripheralMaintenanceBlocked::WindowTooShort,
+    );
+}
+
+#[test]
 fn scheduler_positions_wrap_without_losing_packet_start_phase() {
     let request = request(24, 4);
     let packet_start = u32::MAX - 10_000;
@@ -442,4 +505,74 @@ fn actual_packet_start_resets_the_nominal_widening_phase() {
         corrected.window_widening_micros(),
         immediate.window_widening_micros()
     );
+}
+
+#[test]
+fn full_maintenance_budget_at_shortest_interval_needs_multiple_omissions() {
+    use crate::le::peripheral::{
+        deadlines::Deadlines,
+        maintenance::{PeripheralMaintenanceBlocked, PeripheralMaintenanceBudget},
+        supervision::PeripheralSupervisionDeadline,
+    };
+    use core::num::NonZeroU32;
+    let epoch = epoch(0);
+    let config = SchedulerSoftwareConfig::reviewed_standalone();
+    let policy = PeripheralConnectionRecurringTimingPolicy::new(
+        Some(PeripheralConnectionLocalSleepClockAccuracy::new(500).unwrap()),
+        PeripheralConnectionWindowWideningMode::SoftwareZeroAccumulatedUncertainty,
+    );
+    let n = |v| NonZeroU32::new(v).unwrap();
+    let budget = PeripheralMaintenanceBudget::new(n(20_000), n(5_000), n(2_000)).unwrap();
+    for anchor in [10_000, u32::MAX - 10_000] {
+        let instant = crate::SchedulerInstant::from_image;
+        let now = instant(anchor.wrapping_add(2_000)); // real event service consumes airtime
+        let mut limits = Deadlines {
+            supervision: None,
+            procedure: None,
+            termination: None,
+        };
+        for skipped in 0..=3 {
+            let plan = phase(anchor)
+                .plan(
+                    request(6, 0),
+                    LePeripheralConnectionEventDelta::from_skipped(skipped).unwrap(),
+                    epoch,
+                    config,
+                    policy,
+                )
+                .unwrap();
+            let start = instant(epoch.project_peripheral_event_start(plan.window()));
+            let end = instant(epoch.project_peripheral_event_end(plan.window()));
+            let admit = |limits| {
+                budget.admit(
+                    now,
+                    start,
+                    end,
+                    100_000,
+                    100_500,
+                    config.late_start_guard_micros(),
+                    limits,
+                )
+            };
+            if skipped < 3 {
+                assert_eq!(
+                    admit(limits).unwrap_err(),
+                    PeripheralMaintenanceBlocked::WindowTooShort
+                );
+            } else {
+                let window = admit(limits).unwrap();
+                assert_eq!(window.execution.expires_at_micros(), 120_500);
+                assert_eq!(window.restoration.expires_at_micros(), 125_500);
+                // Extra omissions may not borrow the protocol reserve.
+                limits.supervision = Some(PeripheralSupervisionDeadline::new(
+                    now,
+                    end.image().wrapping_sub(now.image()) + 2_000,
+                ));
+                assert_eq!(
+                    admit(limits).unwrap_err(),
+                    PeripheralMaintenanceBlocked::ProtocolDeadline
+                );
+            }
+        }
+    }
 }

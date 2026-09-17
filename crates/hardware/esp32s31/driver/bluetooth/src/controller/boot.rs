@@ -17,7 +17,7 @@ mod modem_timer_retirement;
 #[cfg(target_arch = "riscv32")]
 pub use modem_timer_retirement::ControllerModemTimerRetirementError;
 #[cfg(target_arch = "riscv32")]
-mod maintenance;
+pub(crate) mod maintenance;
 #[cfg(target_arch = "riscv32")]
 mod modem_timer;
 #[cfg(target_arch = "riscv32")]

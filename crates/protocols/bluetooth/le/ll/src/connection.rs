@@ -779,6 +779,7 @@ pub struct LePeripheralConnection {
     state: LePeripheralConnectionState,
     pending_channel_map: Option<PendingChannelMapUpdate>,
     pending_connection_update: Option<PendingConnectionUpdate>,
+    maintenance: maintenance::State,
 }
 
 impl LePeripheralConnection {
@@ -814,6 +815,7 @@ impl LePeripheralConnection {
             state: LePeripheralConnectionState::Created,
             pending_channel_map: None,
             pending_connection_update: None,
+            maintenance: maintenance::State::new(),
         }
     }
 
@@ -1146,6 +1148,7 @@ impl LePeripheralConnectionEventCompleted {
             channel_map,
             instant,
         });
+        self.connection.maintenance.instant_received();
         Ok(())
     }
 
@@ -1179,6 +1182,7 @@ impl LePeripheralConnectionEventCompleted {
         }
         self.connection.pending_connection_update =
             Some(PendingConnectionUpdate { timing, instant });
+        self.connection.maintenance.instant_received();
         Ok(())
     }
 
@@ -1223,6 +1227,7 @@ impl LePeripheralConnectionEventCompleted {
                 None => None,
             },
             connection_timing_transition,
+            maintenance_skip: false,
         }
     }
 
@@ -1242,6 +1247,7 @@ pub struct LePeripheralConnectionRecurringEventProvisional {
     channel: LeDataChannelIndex,
     channel_map_update_instant: Option<u16>,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
+    maintenance_skip: bool,
 }
 
 impl LePeripheralConnectionRecurringEventProvisional {
@@ -1296,9 +1302,13 @@ impl LePeripheralConnectionRecurringEventProvisional {
             channel,
             channel_map_update_instant: _,
             connection_timing_transition: _,
+            maintenance_skip,
         } = self;
         let skipped = delta.skipped();
         let mut connection = completed.connection;
+        if maintenance_skip {
+            connection.maintenance.commit_skip();
+        }
         connection.event_counter = event_counter;
         connection.selector = connection.selector.skip(skipped);
         let channel_map_updated = connection.apply_channel_map_for_target(event_counter, skipped);
@@ -1317,3 +1327,5 @@ impl LePeripheralConnectionRecurringEventProvisional {
 
 #[cfg(test)]
 mod tests;
+
+pub mod maintenance;

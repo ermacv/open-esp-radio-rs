@@ -461,20 +461,10 @@ impl LePeripheralEncryptionProcedure {
             self.state = state;
             return Err(LePeripheralEncryptionProcedureError::InvalidState);
         };
-        let length =
-            encryption
-                .decrypt_new_packet(header, packet)
-                .map_err(|error| match error {
-                    LeAclEncryptionError::MicMismatch => {
-                        LePeripheralEncryptionProcedureError::MicFailure
-                    }
-                    LeAclEncryptionError::BufferTooSmall
-                    | LeAclEncryptionError::PayloadTooLong
-                    | LeAclEncryptionError::PacketCounterExhausted => {
-                        LePeripheralEncryptionProcedureError::UnexpectedPhysicalChannelPdu
-                    }
-                })?;
-        if length != 1 || packet[0] != 0x06 {
+        let length = encryption
+            .decrypt_new_packet(header, packet)
+            .map_err(map_acl_receive_error)?;
+        if header & 0x03 != 0x03 || length != 1 || packet[0] != 0x06 {
             return Err(LePeripheralEncryptionProcedureError::UnexpectedPhysicalChannelPdu);
         }
         let mut response = [0; 5];
@@ -612,6 +602,7 @@ fn map_acl_receive_error(error: LeAclEncryptionError) -> LePeripheralEncryptionP
     match error {
         LeAclEncryptionError::MicMismatch => LePeripheralEncryptionProcedureError::MicFailure,
         LeAclEncryptionError::BufferTooSmall
+        | LeAclEncryptionError::InvalidEmptyPdu
         | LeAclEncryptionError::PayloadTooLong
         | LeAclEncryptionError::PacketCounterExhausted => {
             LePeripheralEncryptionProcedureError::UnexpectedPhysicalChannelPdu
@@ -623,6 +614,8 @@ fn map_acl_receive_error(error: LeAclEncryptionError) -> LePeripheralEncryptionP
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeAclEncryptionError {
     BufferTooSmall,
+    /// Only an LLID=01 zero-length Data PDU can bypass CCM.
+    InvalidEmptyPdu,
     PayloadTooLong,
     PacketCounterExhausted,
     MicMismatch,
@@ -678,12 +671,18 @@ impl LePeripheralAclEncryption {
     /// `packet` is the complete writable payload allocation and its first
     /// `plaintext_len` octets contain plaintext. The returned length includes
     /// the MIC. A retained encrypted allocation is retransmitted directly.
+    /// An Empty PDU (LLID=01, zero plaintext length) returns zero without
+    /// touching storage or consuming a counter; it has no MIC (Core Vol 6,
+    /// Part B, Section 2.4.1).
     pub fn encrypt_new_packet(
         &mut self,
         header: u8,
         packet: &mut [u8],
         plaintext_len: usize,
     ) -> Result<usize, LeAclEncryptionError> {
+        if plaintext_len == 0 {
+            return empty_pdu_length(header);
+        }
         validate_encrypt_buffer(packet.len(), plaintext_len)?;
         let counter = self.peripheral_transmit_counter.current()?;
         encrypt_ccm(
@@ -703,13 +702,18 @@ impl LePeripheralAclEncryption {
     ///
     /// On MIC failure the complete supplied payload is cleared and the counter
     /// is not advanced. The caller must terminate the connection with `0x3d`.
+    /// An Empty PDU returns zero without consuming a counter. A MIC-only
+    /// payload is malformed, not an authenticated Empty PDU.
     pub fn decrypt_new_packet(
         &mut self,
         header: u8,
         packet: &mut [u8],
     ) -> Result<usize, LeAclEncryptionError> {
         let encrypted_len = packet.len();
-        if encrypted_len < LE_ACL_MIC_BYTES {
+        if encrypted_len == 0 {
+            return empty_pdu_length(header);
+        }
+        if encrypted_len <= LE_ACL_MIC_BYTES {
             return Err(LeAclEncryptionError::BufferTooSmall);
         }
         let plaintext_len = encrypted_len - LE_ACL_MIC_BYTES;
@@ -740,6 +744,14 @@ impl LePeripheralAclEncryption {
 
     pub const fn next_central_transmit_counter(&self) -> Option<u64> {
         self.central_transmit_counter.0
+    }
+}
+
+fn empty_pdu_length(header: u8) -> Result<usize, LeAclEncryptionError> {
+    if header & 0x03 == 0x01 {
+        Ok(0)
+    } else {
+        Err(LeAclEncryptionError::InvalidEmptyPdu)
     }
 }
 
@@ -938,6 +950,77 @@ mod tests {
     }
 
     #[test]
+    fn empty_acl_pdus_neither_carry_a_mic_nor_consume_counters() {
+        let mut encryption = encryption();
+        for header in [0x01, 0x05, 0x09, 0x1d] {
+            let mut storage = [0xa5; 4];
+            assert_eq!(
+                encryption.encrypt_new_packet(header, &mut storage, 0),
+                Ok(0)
+            );
+            assert_eq!(storage, [0xa5; 4]);
+            assert_eq!(encryption.decrypt_new_packet(header, &mut []), Ok(0));
+        }
+        assert_eq!(encryption.next_peripheral_transmit_counter(), Some(0));
+        assert_eq!(encryption.next_central_transmit_counter(), Some(0));
+        // The first real packets must still use the published Core counter-zero samples.
+        let mut sent = [0x06, 0, 0, 0, 0];
+        encryption.encrypt_new_packet(0x03, &mut sent, 1).unwrap();
+        assert_eq!(sent, [0xa3, 0x4c, 0x13, 0xa4, 0x15]);
+        let mut received = [0x9f, 0xcd, 0xa7, 0xf4, 0x48];
+        assert_eq!(encryption.decrypt_new_packet(0x03, &mut received), Ok(1));
+        assert_eq!(received, [0x06, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn empty_exception_rejects_control_headers_and_mic_only_packets() {
+        let mut cipher = encryption();
+        for header in [0x00, 0x02, 0x03] {
+            assert_eq!(
+                cipher.encrypt_new_packet(header, &mut [], 0),
+                Err(LeAclEncryptionError::InvalidEmptyPdu)
+            );
+            assert_eq!(
+                cipher.decrypt_new_packet(header, &mut []),
+                Err(LeAclEncryptionError::InvalidEmptyPdu)
+            );
+        }
+        // Even a correctly calculated CCM tag for zero payload is not an ACL PDU.
+        let mut tag = [0; 4];
+        encrypt_ccm(
+            &SESSION_KEY,
+            &IV,
+            0,
+            CENTRAL_TO_PERIPHERAL_DIRECTION,
+            0x01,
+            &mut tag,
+            0,
+        );
+        assert_eq!(
+            cipher.decrypt_new_packet(0x01, &mut tag),
+            Err(LeAclEncryptionError::BufferTooSmall)
+        );
+        assert_eq!(cipher.next_central_transmit_counter(), Some(0));
+        assert_eq!(cipher.next_peripheral_transmit_counter(), Some(0));
+    }
+
+    #[test]
+    fn active_encryption_accepts_empty_ack_without_retiring_session() {
+        let mut procedure = established_procedure();
+        for _ in 0..8 {
+            assert_eq!(
+                procedure.receive_active_packet(0x01, &mut []),
+                Ok(LePeripheralEncryptedReceive::Plaintext { length: 0 })
+            );
+        }
+        assert!(procedure.is_active());
+        assert_eq!(procedure.termination_reason(), None);
+        let cipher = procedure.active_encryption().unwrap();
+        assert_eq!(cipher.next_central_transmit_counter(), Some(1));
+        assert_eq!(cipher.next_peripheral_transmit_counter(), Some(1));
+    }
+
+    #[test]
     fn session_key_matches_the_core_sample() {
         let key = LeLongTermKey::new(LTK).derive_session_key(LeSessionKeyDiversifier::new(SKD));
         assert_eq!(key.0, SESSION_KEY);
@@ -1050,13 +1133,13 @@ mod tests {
         assert_eq!(encryption.next_peripheral_transmit_counter(), Some(0));
 
         encryption.peripheral_transmit_counter = LeAclPacketCounter(Some(LE_PACKET_COUNTER_MAX));
-        let mut final_packet = [0; LE_ACL_MIC_BYTES];
+        let mut final_packet = [0; 1 + LE_ACL_MIC_BYTES];
         encryption
-            .encrypt_new_packet(0x01, &mut final_packet, 0)
+            .encrypt_new_packet(0x01, &mut final_packet, 1)
             .unwrap();
         assert_eq!(encryption.next_peripheral_transmit_counter(), None);
         assert_eq!(
-            encryption.encrypt_new_packet(0x01, &mut final_packet, 0),
+            encryption.encrypt_new_packet(0x01, &mut final_packet, 1),
             Err(LeAclEncryptionError::PacketCounterExhausted)
         );
     }
@@ -1121,6 +1204,40 @@ mod tests {
         let encryption = procedure.active_encryption().unwrap();
         assert_eq!(encryption.next_peripheral_transmit_counter(), Some(1));
         assert_eq!(encryption.next_central_transmit_counter(), Some(1));
+    }
+
+    #[test]
+    fn authenticated_data_cannot_substitute_for_start_control_response() {
+        let mut procedure = LePeripheralEncryptionProcedure::new();
+        procedure
+            .begin(&encryption_request(), peripheral_random())
+            .unwrap();
+        procedure.response_enqueued().unwrap();
+        procedure.observe_transmission_completion(true);
+        assert!(
+            procedure
+                .provide_long_term_key(LeLongTermKey::new(LTK))
+                .is_ok()
+        );
+        procedure.response_enqueued().unwrap();
+        // A valid MIC authenticates the LLID too. A data PDU containing 0x06
+        // still cannot complete the three-way control handshake.
+        let mut packet = [0x06, 0, 0, 0, 0];
+        encrypt_ccm(
+            &SESSION_KEY,
+            &IV,
+            0,
+            CENTRAL_TO_PERIPHERAL_DIRECTION,
+            0x02,
+            &mut packet,
+            1,
+        );
+        assert_eq!(
+            procedure.receive_encrypted_start_response(0x02, &mut packet),
+            Err(LePeripheralEncryptionProcedureError::UnexpectedPhysicalChannelPdu)
+        );
+        assert_eq!(procedure.termination_reason(), Some(0x3d));
+        assert!(!procedure.take_encryption_enabled());
     }
 
     #[test]

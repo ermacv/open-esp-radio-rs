@@ -1,0 +1,10 @@
+schema = 4
+id = "bluetooth-peripheral-encrypted-acl"
+description = "Two encrypted peripheral connections with fixed test LTK, exact ACL echoes, updates, peer Reset recovery and cold retirement"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "lifecycle"]
+
+[workload]
+kind = "bluetooth-encrypted-acl"

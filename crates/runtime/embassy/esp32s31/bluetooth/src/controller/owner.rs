@@ -112,6 +112,9 @@ pub(super) enum ControllerCommandState<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    PeripheralMaintenancePending(super::maintenance::Pending<'runtime, S, CAPACITY>),
+    PeripheralMaintenanceReady(super::maintenance::Ready<'runtime, S, CAPACITY>),
+    PeripheralMaintenanceFailed(super::maintenance::Failure<'runtime, S, CAPACITY>),
     Idle(ControllerIdleCommandTask<'runtime, S, CAPACITY>),
     IdleReset(ControllerIdleResetBarrier<'runtime, S, CAPACITY>),
     IdleResponse {
@@ -234,6 +237,11 @@ where
 {
     pub(super) const fn phase(&self) -> ControllerCommandPhase {
         match self {
+            Self::PeripheralMaintenancePending(_)
+            | Self::PeripheralMaintenanceReady(_)
+            | Self::PeripheralMaintenanceFailed(_) => {
+                ControllerCommandPhase::PeripheralConnectionActive
+            }
             Self::Idle(_) => ControllerCommandPhase::Idle,
             Self::IdleReset(_) => ControllerCommandPhase::IdleReset,
             Self::IdleResponse { .. } => ControllerCommandPhase::IdleResponse,
@@ -375,6 +383,7 @@ pub struct ControllerCommandTask<'runtime, S, const CAPACITY: usize>
 where
     S: SchedulerRunInterruptStorage,
 {
+    pub(super) maintenance: Option<super::maintenance::Schedule>,
     pub(super) advertising_rejected_packets: Option<u32>,
     pub(super) advertising_last_receive_rejection: Option<(
         u8,
@@ -395,6 +404,7 @@ where
     pub const fn new(idle: ControllerIdleCommandTask<'runtime, S, CAPACITY>) -> Self {
         Self {
             owner: ControllerOwnerSlot::new(ControllerCommandState::Idle(idle)),
+            maintenance: None,
             advertising_completion: None,
             advertising_rejected_packets: Some(0),
             advertising_last_receive_rejection: None,

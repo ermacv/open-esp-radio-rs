@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+mod security;
+
 #[cfg(target_arch = "riscv32")]
 use super::{
     PeripheralConnectionFirstEventRunning, PeripheralConnectionFirstEventRxPublished,
@@ -396,13 +398,16 @@ impl PeripheralConnectionCompletedEventRecurringRemainder {
         graph: PeripheralConnectionMemoryGraphRxPublished,
         event: LePeripheralConnectionEventPrepared,
         recurring_phase: PeripheralConnectionRecurringPhase,
+        committed_window: SchedulerRawWindow,
     ) -> PeripheralConnectionFirstEventRxPublished {
         PeripheralConnectionFirstEventRxPublished {
             graph,
             event,
             first_window: self.first_window,
             requested_window: self.requested_window,
-            resolved_window: self.resolved_window,
+            // Only final publication replaces the old completion's window.
+            // A cancelled proposal retains the old window with the old owner.
+            resolved_window: committed_window,
             recurring_phase,
         }
     }
@@ -434,6 +439,7 @@ impl PeripheralConnectionCompletedEvent {
         version: Option<oer_bluetooth_ll::control::LeVersionInformation>,
         random: &mut dyn super::super::PeripheralEncryptionRandomSource,
     ) -> Result<bool, oer_bluetooth_ll::control::LePeripheralControlError> {
+        let receive_mode_before = encryption.receive_mode();
         let acknowledged = self.graph.reclaim_transmission();
         control.observe_transmission_completion(acknowledged);
         encryption.observe_transmission_completion(acknowledged);
@@ -450,75 +456,27 @@ impl PeripheralConnectionCompletedEvent {
             let packet = *self.batch.packet(index).expect("bounded RX batch");
             let pdu = packet.as_bytes();
             let header = pdu[0];
-            let payload = &pdu[2..];
-            use oer_bluetooth_ll::security::{
-                LePeripheralEncryptedReceive as EncryptedReceive,
-                LePeripheralEncryptionReceiveMode as ReceiveMode,
-            };
-            match encryption.receive_mode() {
-                ReceiveMode::Plaintext => {
-                    if header & 0x03 == 0x03 && payload.first() == Some(&0x03) {
-                        if payload.len() != 23
-                            || encryption
-                                .begin(payload, random.next_encryption_random())
-                                .is_err()
-                        {
-                            encryption.fail_unexpected_physical_channel_pdu();
-                        }
-                    } else {
-                        self.dispatch_plaintext(control, acl, pdu, version)?;
-                    }
-                }
-                ReceiveMode::EncryptedStartResponse => {
-                    let mut encrypted = [0; u8::MAX as usize];
-                    encrypted[..payload.len()].copy_from_slice(payload);
-                    if encryption
-                        .receive_encrypted_start_response(header, &mut encrypted[..payload.len()])
-                        .is_err()
-                    {
-                        encryption.fail_unexpected_physical_channel_pdu();
-                    }
-                }
-                ReceiveMode::Encrypted => {
-                    let mut plaintext = [0; u8::MAX as usize];
-                    plaintext[..payload.len()].copy_from_slice(payload);
-                    match encryption.receive_active_packet(header, &mut plaintext[..payload.len()])
-                    {
-                        Ok(EncryptedReceive::PauseRequest) => {}
-                        Ok(EncryptedReceive::Plaintext { length }) => {
-                            let mut decoded = [0; u8::MAX as usize + 2];
-                            decoded[0] = header;
-                            decoded[1] = length as u8;
-                            decoded[2..2 + length].copy_from_slice(&plaintext[..length]);
-                            self.dispatch_plaintext(control, acl, &decoded[..2 + length], version)?;
-                        }
-                        Err(_) => encryption.fail_unexpected_physical_channel_pdu(),
-                    }
-                }
-                ReceiveMode::UnencryptedPauseResponse => {
-                    if header & 0x03 != 0x03
-                        || encryption
-                            .receive_unencrypted_pause_response(payload)
-                            .is_err()
-                    {
-                        encryption.fail_unexpected_physical_channel_pdu();
-                    }
-                }
-                ReceiveMode::RestartEncryptionRequest => {
-                    let valid = header & 0x03 == 0x03
-                        && payload.len() == 23
-                        && payload.first() == Some(&0x03);
-                    if !valid
-                        || encryption
-                            .begin(payload, random.next_encryption_random())
-                            .is_err()
-                    {
-                        encryption.fail_unexpected_physical_channel_pdu();
-                    }
-                }
-                ReceiveMode::Blocked => encryption.fail_unexpected_physical_channel_pdu(),
+            let mut decoded = [0; u8::MAX as usize + 2];
+            if let Some(plaintext) = security::decode(encryption, pdu, &mut decoded, || {
+                random.next_encryption_random()
+            }) {
+                self.dispatch_plaintext(control, acl, plaintext, version)?;
+            }
+            if encryption.termination_reason().is_none() {
+                self.event.observe_valid_packet_header(header);
             }
         }
+        if plaintext_receive_releases_recovery(
+            self.resolved_window,
+            self.receive_time(),
+            receive_mode_before,
+            encryption.receive_mode(),
+        ) && encryption.termination_reason().is_none()
+        {
+            self.event.observe_valid_plaintext_reception();
+        }
+        #[cfg(feature = "dtm-diagnostics")]
+        super::super::diagnostics::record_encryption_idle(encryption.is_idle());
         Ok(self.enqueue_transmission(control, encryption, acl))
     }
 
@@ -630,17 +588,10 @@ impl PeripheralConnectionCompletedEvent {
                     acl.fragment_enqueued(length);
                     return true;
                 }
-            } else if let Some(cipher) = encryption.active_encryption() {
-                let mut encrypted = [0; oer_bluetooth_ll::security::LE_ACL_MIC_BYTES];
-                let encrypted_len = cipher
-                    .encrypt_new_packet(0x01, &mut encrypted, 0)
-                    .expect("an encrypted empty Data PDU is exactly one MIC");
-                return self
-                    .graph
-                    .enqueue_acl_transmission(true, &encrypted[..encrypted_len])
-                    .expect("an encrypted empty Data PDU fits the connection TX allocation");
             }
         }
+        // With no queued payload the radio emits its ordinary Empty PDU.
+        // Even on an encrypted ACL it has no MIC and consumes no CCM counter.
         false
     }
 
@@ -788,3 +739,21 @@ impl PeripheralConnectionRecycledEvent {
 
 #[cfg(test)]
 mod tests;
+
+/// Valid-RX time is independent of payload delivery and anchor capture. Require
+/// it inside this completed event's actual reservation, including clock wrap.
+#[cfg(any(target_arch = "riscv32", test))]
+fn plaintext_receive_releases_recovery(
+    window: crate::scheduler::SchedulerRawWindow,
+    receive: oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime,
+    before: oer_bluetooth_ll::security::LePeripheralEncryptionReceiveMode,
+    after: oer_bluetooth_ll::security::LePeripheralEncryptionReceiveMode,
+) -> bool {
+    use oer_bluetooth_ll::security::LePeripheralEncryptionReceiveMode::Plaintext;
+    before == Plaintext
+        && after == Plaintext
+        && receive
+            .wrapping_controller_ticks()
+            .wrapping_sub(window.start())
+            < window.duration()
+}

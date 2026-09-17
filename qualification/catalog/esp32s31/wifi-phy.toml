@@ -21,6 +21,77 @@ source-paths = [
   "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
 ]
 
+[[source-facts]]
+id = "bluetooth-idle-phy-maintenance"
+status = "implemented"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "bluetooth-idle-phy-maintenance"
+composition = "production"
+scope = "Service a real due shared-PHY request from the idle Bluetooth Controller after command, role, timer and hardware-output admission, then atomically restore both original ISR owners and the same HCI, counter and role epochs"
+limits = "The caller supplies an idle runner and disables its routes; queued Host traffic waits. An optional absolute tracking deadline rejects expired work and late completion without returning a runnable owner, but cannot preempt a blocking poll or prove a full pause bound. Once polled, the consuming physical transition must reach a terminal result. Failure retains the unrouted owner frontier and cancellation requires external reset. This fact does not establish automatic active-role windows or thermal/RF qualification"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/maintenance.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs",
+  "crates/hardware/esp32s31/phy/src/tracking/deadline.rs",
+]
+
+[[source-facts]]
+id = "bluetooth-periodic-phy-maintenance"
+status = "partial"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "bluetooth-periodic-phy-maintenance"
+composition = "production"
+scope = "Idle-first periodic shared-PHY maintenance with bounded deferral throughout the Bluetooth Controller lifetime, a time-budgeted pause across eligible established ACL events per transaction, and no preemption of active DTM TX/RX"
+limits = "The idle subset is owned by bluetooth-idle-phy-maintenance. The configured production actor/runner now uses actual PHY due time, independent force/hard wakes, LL-gated budget-selected event omissions, exact active HCI/control/encryption/ACL ownership and a shared physical executor. Restoration retains its original deadline through RUN and rejects ordinary late-event recovery. Policy cannot be renewed by retry, raw idle extraction or configured re-entry. Active DTM has no preemption edge. Hard expiry is terminal for the entire shared PHY epoch; without proven local active-RF shutdown the ESP32-S31 backend closes HCI and resets the full SoC, without Host Test End or Host-dependent waiting. Active ACL HIL requires new physical maintenance and guarded RUN inside each connection. The four-credit calibration workload forces real common RX/Bluetooth TX branches at a 7.5-ms interval without replacing sensor samples, verifies payload and credit conservation, then restores thresholds and cold-retires the owner. The DTM deadline workload separately requires an autonomous digital-core software-reset boot and peer-observed packet silence before any DUT Host Reset/Test End. Repeatable DTM silence evidence requires a peer that completes Test End after zero-packet RX. Encrypted recovery, temperature-range RF quality and qualified worst-case execution/restoration/thermal bounds remain incomplete. Explicit engineering budgets are not qualified defaults"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/protocols/bluetooth/le/ll/src/connection/maintenance.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/maintenance.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/maintenance.rs",
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/peripheral_connection.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/retirement.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/maintenance.rs",
+  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/maintenance/actor.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs",
+  "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
+  "crates/adapters/esp-hal/esp32s31/radio/src/fail_stop.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
+]
+
+[[source-facts]]
+id = "bluetooth-idle-powered-release"
+status = "implemented"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "bluetooth-idle-powered-release"
+composition = "production"
+scope = "Release the standalone idle Controller through exact-epoch HCI retirement, task and role-memory extraction, timer drain, IRQ/output quiescence, last-client RF close, temperature power-down, Controller reset and captured clock/power restoration to the actual cold radio owner"
+limits = "All roles must first reach their idle retirement frontier. Failures retain the actual physical and allocation owners; a consuming physical future must reach a terminal result or require external reset. Software storage remains borrowed and its ISR reservation remains occupied. This does not implement arbitrary active/faulted-role shutdown, shared-radio arbitration or retained RF wake"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement.rs",
+]
+
+[[source-facts]]
+id = "bluetooth-same-storage-powered-restart"
+status = "implemented"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "bluetooth-same-storage-powered-restart"
+composition = "production"
+scope = "Restart after bluetooth-idle-powered-release using the returned cold radio, original BLE/DF and role allocations, exclusive runtime leases and continuous ISR storage reservation; restore both ISR owners atomically and issue a new HCI generation"
+limits = "Old Host handles, pending futures and ACL credit authorities remain closed. Failure retains its exact initialization frontier. No second StaticCell claim or general storage reclamation is available. This is standalone cold reconstruction, not retained wake, active connection continuity or hardware qualification"
+source-paths = [
+  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs",
+]
+
 [[capabilities]]
 id = "rf-bb-initialization"
 title = "RF and baseband initialization"
@@ -1732,10 +1803,7 @@ source-paths = []
 id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Periodic parameter/calibration tracking — Bluetooth"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "the retained client exposes read-only scheduling plus consuming due/periodic evaluation; Controller quiescence, target execution and restoration remain incomplete"
-source-paths = []
+source-fact = "bluetooth-periodic-phy-maintenance"
 
 [[items]]
 id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-ieee802154"
@@ -1812,11 +1880,8 @@ source-paths = []
 [[items]]
 id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-bluetooth"
 section = "phy-protocol-consumer-composition"
-title = "Complete last-client RF/analog shutdown — Bluetooth"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "the registered Bluetooth client can release while preserving the exact last-client fact; Controller/BTBB/IRQ/timer quiescence, physical-owner reunion and RF close remain absent"
-source-paths = []
+title = "Idle last-client RF/analog shutdown — Bluetooth"
+source-fact = "bluetooth-idle-powered-release"
 
 [[items]]
 id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-ieee802154"
@@ -1907,3 +1972,15 @@ status = "fail-closed"
 level = "lower-primitive"
 scope-and-limitations = "Failed target tracking consumes the unique request into a poisoned epoch. Target futures must reach a terminal result; cancellation requires out-of-band hardware reset rather than reuse of partial state."
 source-paths = []
+
+[[items]]
+id = "phy-protocol-consumer-idle-bluetooth-phy-maintenance"
+section = "phy-protocol-consumer-composition"
+title = "Idle Bluetooth PHY maintenance"
+source-fact = "bluetooth-idle-phy-maintenance"
+
+[[items]]
+id = "phy-protocol-consumer-bluetooth-same-storage-powered-restart"
+section = "phy-protocol-consumer-composition"
+title = "Bluetooth cold restart with original storage"
+source-fact = "bluetooth-same-storage-powered-restart"

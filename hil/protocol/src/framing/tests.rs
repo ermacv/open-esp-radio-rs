@@ -1706,6 +1706,7 @@ fn maximum_rx_gain_detail_fits_separate_frame_and_round_trips() {
         u32::MAX,
         Event::StationPhyRxGain(crate::PhyRxGainEvidence {
             execution: Some(crate::PhyRxGainExecutionEvidence {
+                quality: Some(crate::PhyRxGainQualityEvidence::default()),
                 minimum_searches: u32::MAX,
                 minimum_operations: u32::MAX,
                 outer_operations: u32::MAX,

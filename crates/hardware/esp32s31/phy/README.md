@@ -174,6 +174,15 @@ qualified maximum thermal deferral is implemented.
 
 ## Runtime sequence and timing
 
+A completed common RX calibration carries
+[`PhyRxGainDcQuality`](src/rx/gain_calibration/quality.rs) alongside its
+coefficients. It identifies convergence for every shared/Wi-Fi baseband gain,
+the six fine-code searches and the independent Wi-Fi radio search. Exhausting
+a baseband search retains its initial pair; radio/fine searches retain their
+last correction. These vendor-compatible outcomes complete the transaction,
+but do not mean every search converged. Completion flags describe lifecycle;
+quality remains a separate result. A skipped DC branch has no new quality.
+
 The source-derived tracking graph contains optional RFPLL work, BT/154 power
 and class calibration, Wi-Fi analog-I2C/power and class calibration, followed
 by temperature sampling. Decisions in this graph use retained temperature;

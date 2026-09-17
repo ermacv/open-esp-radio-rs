@@ -382,13 +382,14 @@ where
                                         ControllerCommandState::PeripheralConnectionActive(running),
                                     );
                                 }
-                                PeripheralConnectionActiveStep::Published(running) => {
+                                PeripheralConnectionActiveStep::Published(running, maintenance) => {
                                     self.store_retained_state(
                                         ControllerCommandPhase::PeripheralConnectionActive,
                                         ControllerCommandState::PeripheralConnectionActive(running),
                                     );
                                     return *output = Some(self.retain_boundary(
-                                        ControllerCommandBoundary::PeripheralConnectionActive,
+                                        maintenance.map_or(ControllerCommandBoundary::PeripheralConnectionActive,
+                                            ControllerCommandBoundary::PhyMaintenanceRestored),
                                     ));
                                 }
                                 PeripheralConnectionActiveStep::Fault(fault) => {

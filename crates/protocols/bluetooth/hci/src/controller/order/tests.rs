@@ -2156,6 +2156,7 @@ fn active_peripheral_acl_intake_copies_packet_and_returns_scratch_storage() {
         .try_receive_active_peripheral_with_buffer(
             ready,
             Some(ConnHandle::new(1)),
+            true,
             &mut scratch,
             |mut owner, packet| {
                 owner.packet = packet.ok();
@@ -2197,6 +2198,7 @@ fn active_peripheral_acl_intake_rejects_foreign_handle_without_losing_authority(
         .try_receive_active_peripheral_with_buffer(
             ready,
             Some(ConnHandle::new(1)),
+            true,
             &mut scratch,
             |owner, packet| {
                 assert_eq!(

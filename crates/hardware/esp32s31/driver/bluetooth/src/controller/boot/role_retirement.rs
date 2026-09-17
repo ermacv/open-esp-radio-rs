@@ -45,6 +45,15 @@ pub(super) struct ControllerRoleResources {
 #[cfg(any(target_arch = "riscv32", test))]
 impl ControllerRoleResources {
     pub(super) fn retirement_ready(&self) -> Result<(), ControllerRoleRetirementError> {
+        self.other_roles_ready()?;
+        use ControllerRoleRetirementError as Error;
+        if !self.peripheral_connection_resources.allocation_is_idle() {
+            return Err(Error::PeripheralConnection);
+        }
+        Ok(())
+    }
+
+    pub(super) fn other_roles_ready(&self) -> Result<(), ControllerRoleRetirementError> {
         use ControllerRoleRetirementError as Error;
         if !self.dtm_resources.session_is_idle() {
             return Err(Error::Dtm);
@@ -60,9 +69,6 @@ impl ControllerRoleResources {
         }
         if !self.passive_scan_resources.event_is_idle() {
             return Err(Error::Scanning);
-        }
-        if !self.peripheral_connection_resources.allocation_is_idle() {
-            return Err(Error::PeripheralConnection);
         }
         Ok(())
     }

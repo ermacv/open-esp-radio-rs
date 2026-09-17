@@ -3,6 +3,7 @@
 //! Boundary classification translates concrete runtime outcomes into the shared
 //! runner policy. The loop retains all borrowed owners across the same awaits.
 
+mod maintenance;
 mod retirement;
 pub use retirement::{
     BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,
@@ -174,6 +175,10 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
                 advertising_last_receive_rejection
             ),
         ),
+        ControllerCommandBoundary::PhyMaintenanceRestored(observation) => {
+            crate::maintenance_observation::restored(*observation);
+            record(Observed::PeripheralRun, format_args!("peripheral maintenance RUN"));
+        }
         ControllerCommandBoundary::PeripheralConnectionActive => {
             record(Observed::PeripheralRun, format_args!("peripheral RUN"))
         }
@@ -229,6 +234,9 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         ControllerCommandBoundary::NonCommand(_)
         | ControllerCommandBoundary::EndpointMismatch
         | ControllerCommandBoundary::HciFault(_)
+        | ControllerCommandBoundary::PhyMaintenanceIdle
+        | ControllerCommandBoundary::PhyMaintenancePeripheral
+        | ControllerCommandBoundary::PhyMaintenanceFailed(_)
         | ControllerCommandBoundary::ControllerTimeExhausted
         | ControllerCommandBoundary::FirstEventFailed(_)
         | ControllerCommandBoundary::FirstPreparationCleanupFault { .. }
@@ -261,6 +269,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         ControllerCommandBoundary::LegacyAdvertisingActive(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingActive
         | ControllerCommandBoundary::PeripheralConnectionActive
+        | ControllerCommandBoundary::PhyMaintenanceRestored(_)
         | ControllerCommandBoundary::PassiveScanningActive
         | ControllerCommandBoundary::PassiveScanMalformedPdu(_)
         | ControllerCommandBoundary::PassiveScanReportEncodingFault(_) => {
@@ -335,12 +344,14 @@ fn modem_step_requires_quarantine(step: &ModemDriveStep) -> bool {
 )]
 enum HardwareSelection<'packet, const SCHEDULER_CAPACITY: usize> {
     IdleRequested,
+    MaintenanceWake,
     Command(CommandBoundary<'packet, SCHEDULER_CAPACITY>),
     ModemTimer(ModemDriveStep),
     InterruptFault(BluetoothInterruptFault),
 }
 
 enum RetryGateSelection {
+    MaintenanceWake,
     RecheckCompleted,
     ModemTimer(ModemDriveStep),
     InterruptFault(BluetoothInterruptFault),
@@ -361,6 +372,20 @@ impl<
         PACKET_CAPACITY,
     >
 {
+    /// Set diagnostic thermal thresholds at the idle command boundary, preserving
+    /// maintenance deadlines. Restore the returned setting after the experiment.
+    pub fn set_idle_phy_tracking_debug(
+        &mut self,
+        debug: oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
+    ) -> Result<
+        oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
+        oer_esp32s31_bluetooth_embassy::controller::ControllerCommandRetirementError,
+    > {
+        self.command.as_mut().ok_or(
+            oer_esp32s31_bluetooth_embassy::controller::ControllerCommandRetirementError::OwnerUnavailable
+        )?.set_idle_phy_tracking_debug(debug)
+    }
+
     pub(super) fn new(
         task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<
             'static,
@@ -456,7 +481,7 @@ impl<
     /// timeline exhaustion or ISR fault closes HCI, disables all three routes and retains
     /// the exact cause forever inside this future.
     pub async fn run(mut self) -> ! {
-        self.drive_until_idle(core::future::pending()).await;
+        self.drive_until_idle(core::future::pending(), false).await;
         unreachable!("the permanent runner has no stop request")
     }
 
@@ -474,7 +499,7 @@ impl<
     /// it does not. Terminal faults retain their existing fail-stop quarantine.
     pub async fn run_until_idle(mut self, request: impl core::future::Future<Output = ()>) -> Self {
         {
-            let mut running = pin!(self.drive_until_idle(request));
+            let mut running = pin!(self.drive_until_idle(request, false));
             poll_fn(|cx| poll_idle_handoff(running.as_mut(), cx)).await;
         }
         self
@@ -491,14 +516,47 @@ impl<
                 .retirement_ready()
     }
 
-    async fn drive_until_idle(&mut self, request: impl core::future::Future<Output = ()>) {
+    async fn drive_until_idle(
+        &mut self,
+        request: impl core::future::Future<Output = ()>,
+        maintenance_handoff: bool,
+    ) -> bool {
         let mut request = core::pin::pin!(request);
         let mut requested = false;
         loop {
+            if let Some(error) = self
+                .command
+                .as_ref()
+                .expect("live actor")
+                .phy_maintenance_error()
+            {
+                crate::diagnostics::record(
+                    crate::diagnostics::BluetoothExecutionEvent::Terminal,
+                    format_args!("PHY maintenance: {:?}", error),
+                );
+                self.controller.close_transport();
+                let reason = if error == oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenanceError::HardDeadline {
+                    oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceHardDeadlineExceeded
+                } else {
+                    oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceFailed
+                };
+                oer_esp32s31_radio_platform_esp_hal::fail_stop_shared_phy(reason);
+            }
+            let hard_deadline = self
+                .command
+                .as_ref()
+                .expect("live actor")
+                .phy_maintenance_hard_deadline();
+            let maintenance_wake = self
+                .command
+                .as_ref()
+                .expect("live actor")
+                .phy_maintenance_wake_at();
             if self.recheck.status() == DtmControllerTimeRecheckStatus::TimelineExhausted {
                 self.controller.close_transport();
                 let routes = quarantine_routes(&mut self.interrupt);
-                retain_quarantine_forever(
+                retain_until_rf_deadline(
+                    hard_deadline,
                     BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::ControllerTimeExhausted {
                         _routes: routes,
                     },
@@ -524,22 +582,44 @@ impl<
                     let recheck = self.recheck.wait_until_absolute_recheck();
 
                     if primary_first {
-                        match select(interrupt_fault, select(recheck, modem)).await {
+                        match select(
+                            interrupt_fault,
+                            select(
+                                wait_maintenance_wake(maintenance_wake),
+                                select(recheck, modem),
+                            ),
+                        )
+                        .await
+                        {
                             Either::First(fault) => RetryGateSelection::InterruptFault(fault),
                             Either::Second(Either::First(())) => {
+                                RetryGateSelection::MaintenanceWake
+                            }
+                            Either::Second(Either::Second(Either::First(()))) => {
                                 RetryGateSelection::RecheckCompleted
                             }
-                            Either::Second(Either::Second(step)) => {
+                            Either::Second(Either::Second(Either::Second(step))) => {
                                 RetryGateSelection::ModemTimer(step)
                             }
                         }
                     } else {
-                        match select(interrupt_fault, select(modem, recheck)).await {
+                        match select(
+                            interrupt_fault,
+                            select(
+                                wait_maintenance_wake(maintenance_wake),
+                                select(modem, recheck),
+                            ),
+                        )
+                        .await
+                        {
                             Either::First(fault) => RetryGateSelection::InterruptFault(fault),
-                            Either::Second(Either::First(step)) => {
+                            Either::Second(Either::First(())) => {
+                                RetryGateSelection::MaintenanceWake
+                            }
+                            Either::Second(Either::Second(Either::First(step))) => {
                                 RetryGateSelection::ModemTimer(step)
                             }
-                            Either::Second(Either::Second(())) => {
+                            Either::Second(Either::Second(Either::Second(()))) => {
                                 RetryGateSelection::RecheckCompleted
                             }
                         }
@@ -547,6 +627,7 @@ impl<
                 };
 
                 match selection {
+                    RetryGateSelection::MaintenanceWake => {}
                     RetryGateSelection::RecheckCompleted => {
                         self.schedule.complete_recheck();
                         yield_now().await;
@@ -555,12 +636,13 @@ impl<
                         if modem_step_requires_quarantine(&step) {
                             self.controller.close_transport();
                             let routes = quarantine_routes(&mut self.interrupt);
-                            retain_quarantine_forever(BluetoothHardwareQuarantine::<
-                                SCHEDULER_CAPACITY,
-                            >::ModemTimer {
-                                _step: step,
-                                _routes: routes,
-                            })
+                            retain_until_rf_deadline(
+                                hard_deadline,
+                                BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::ModemTimer {
+                                    _step: step,
+                                    _routes: routes,
+                                },
+                            )
                             .await;
                         }
                         yield_now().await;
@@ -572,12 +654,13 @@ impl<
                         );
                         self.controller.close_transport();
                         let routes = quarantine_routes(&mut self.interrupt);
-                        retain_quarantine_forever(BluetoothHardwareQuarantine::<
-                            SCHEDULER_CAPACITY,
-                        >::InterruptFault {
-                            _fault: fault,
-                            _routes: routes,
-                        })
+                        retain_until_rf_deadline(
+                            hard_deadline,
+                            BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::InterruptFault {
+                                _fault: fault,
+                                _routes: routes,
+                            },
+                        )
                         .await;
                     }
                 }
@@ -604,6 +687,7 @@ impl<
                     .as_ref()
                     .expect("the live Controller loop retains its interrupt epoch");
                 let mut interrupt_fault = pin!(interrupt.wait_fault());
+                let mut maintenance_timer = pin!(wait_maintenance_wake(maintenance_wake));
                 let modem_driver = &self.modem_driver;
                 let modem_timer = self.modem_timer.as_mut().expect("live timer owner");
                 let mut modem = pin!(async {
@@ -629,6 +713,9 @@ impl<
                     if let Poll::Ready(fault) = interrupt_fault.as_mut().poll(cx) {
                         return Poll::Ready(HardwareSelection::InterruptFault(fault));
                     }
+                    if maintenance_timer.as_mut().poll(cx).is_ready() {
+                        return Poll::Ready(HardwareSelection::MaintenanceWake);
+                    }
                     if stop.as_mut().poll(cx).is_ready() {
                         return Poll::Ready(HardwareSelection::IdleRequested);
                     }
@@ -653,11 +740,27 @@ impl<
             };
 
             match selection {
+                HardwareSelection::MaintenanceWake => {}
+                HardwareSelection::Command(
+                    ControllerCommandBoundary::PhyMaintenanceIdle
+                    | ControllerCommandBoundary::PhyMaintenancePeripheral,
+                ) if maintenance_handoff => {
+                    if self
+                        .modem_timer
+                        .as_ref()
+                        .expect("live timer")
+                        .retirement_ready()
+                    {
+                        return true;
+                    }
+                    // Keep timer service live until its actual owner is drained.
+                    yield_now().await;
+                }
                 HardwareSelection::IdleRequested => {
                     // A command future can advance an owner before returning
                     // Pending. Recheck after dropping every losing future.
                     if self.software_idle() {
-                        return;
+                        return false;
                     }
                 }
                 HardwareSelection::Command(boundary) => match classify_command(
@@ -687,11 +790,14 @@ impl<
                             .expect("terminal quarantine retains the exact command actor");
                         self.controller.close_transport();
                         let routes = quarantine_routes(&mut self.interrupt);
-                        retain_quarantine_forever(BluetoothHardwareQuarantine::Command {
-                            _boundary: boundary,
-                            _actor: actor,
-                            _routes: routes,
-                        })
+                        retain_until_rf_deadline(
+                            hard_deadline,
+                            BluetoothHardwareQuarantine::Command {
+                                _boundary: boundary,
+                                _actor: actor,
+                                _routes: routes,
+                            },
+                        )
                         .await;
                     }
                 },
@@ -699,12 +805,13 @@ impl<
                     if modem_step_requires_quarantine(&step) {
                         self.controller.close_transport();
                         let routes = quarantine_routes(&mut self.interrupt);
-                        retain_quarantine_forever(BluetoothHardwareQuarantine::<
-                            SCHEDULER_CAPACITY,
-                        >::ModemTimer {
-                            _step: step,
-                            _routes: routes,
-                        })
+                        retain_until_rf_deadline(
+                            hard_deadline,
+                            BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::ModemTimer {
+                                _step: step,
+                                _routes: routes,
+                            },
+                        )
                         .await;
                     }
                     yield_now().await;
@@ -716,7 +823,8 @@ impl<
                     );
                     self.controller.close_transport();
                     let routes = quarantine_routes(&mut self.interrupt);
-                    retain_quarantine_forever(
+                    retain_until_rf_deadline(
+                        hard_deadline,
                         BluetoothHardwareQuarantine::<SCHEDULER_CAPACITY>::InterruptFault {
                             _fault: fault,
                             _routes: routes,
@@ -737,4 +845,24 @@ fn poll_idle_handoff<F: Future>(
     cx: &mut core::task::Context<'_>,
 ) -> Poll<F::Output> {
     future.poll(cx)
+}
+
+async fn wait_maintenance_wake(at: Option<u64>) {
+    match at {
+        Some(at) => embassy_time::Timer::at(embassy_time::Instant::from_micros(at)).await,
+        None => core::future::pending().await,
+    }
+}
+
+// A terminal actor can still retain autonomous RF hardware. Its quarantine
+// cannot discard the maintenance hard wake and leave RF running indefinitely.
+async fn retain_until_rf_deadline<T>(hard_deadline: Option<u64>, owners: T) -> ! {
+    if let Some(at) = hard_deadline {
+        let _owners = owners;
+        wait_maintenance_wake(Some(at)).await;
+        oer_esp32s31_radio_platform_esp_hal::fail_stop_shared_phy(
+            oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceHardDeadlineExceeded,
+        );
+    }
+    retain_quarantine_forever(owners).await
 }

@@ -19,8 +19,9 @@ use oer_esp32s31_bluetooth_memory::{
 };
 
 use crate::le::peripheral::connection::{
-    PeripheralConnectionPacketStartTiming, PeripheralConnectionRecurringPhase,
-    PeripheralConnectionRecurringTimingError, PeripheralConnectionRecurringTimingPolicy,
+    PeripheralConnectionPacketStartTiming, PeripheralConnectionRecurrence,
+    PeripheralConnectionRecurringPhase, PeripheralConnectionRecurringTimingError,
+    PeripheralConnectionRecurringTimingPolicy,
 };
 
 use oer_bluetooth_ll::connection::{
@@ -113,7 +114,7 @@ fn prepare_recurring_protocol_proposal(
     completed: LePeripheralConnectionEventCompleted,
     original_phase: PeripheralConnectionRecurringPhase,
     packet_start: Option<&PeripheralConnectionPacketStartTiming>,
-    delta: LePeripheralConnectionEventDelta,
+    recurrence: impl Into<PeripheralConnectionRecurrence>,
     epoch: ControllerSchedulerEpoch,
     scheduler_config: SchedulerSoftwareConfig,
     timing_policy: PeripheralConnectionRecurringTimingPolicy,
@@ -121,6 +122,8 @@ fn prepare_recurring_protocol_proposal(
     PeripheralConnectionRecurringProtocolFailure,
     PeripheralConnectionRecurringProtocolCandidate,
 > {
+    let recurrence = recurrence.into();
+    let delta = recurrence.delta();
     let error = if completed.establishment_failed() {
         Some(PeripheralConnectionRecurringCandidateError::EstablishmentFailed)
     } else if matches!(
@@ -140,7 +143,22 @@ fn prepare_recurring_protocol_proposal(
             error,
         });
     }
-    let provisional = completed.prepare_recurring_event(delta);
+    let provisional = match recurrence {
+        PeripheralConnectionRecurrence::Ordinary(_) => completed.prepare_recurring_event(delta),
+        PeripheralConnectionRecurrence::Maintenance(delta) => {
+            match completed.prepare_maintenance_event(delta) {
+                Ok(provisional) => provisional,
+                Err((error, completed)) => {
+                    return ControlFlow::Break(PeripheralConnectionRecurringProtocolFailure {
+                        completed,
+                        original_phase,
+                        delta,
+                        error: PeripheralConnectionRecurringCandidateError::Maintenance(error),
+                    });
+                }
+            }
+        }
+    };
     if provisional
         .connection_timing_transition()
         .is_some_and(|transition| transition.instant() != provisional.event_counter())
@@ -226,6 +244,8 @@ pub enum PeripheralConnectionRecurringCandidateError {
     ConnectionUpdateInstantSkipped,
     /// The Channel Map Update instant must be submitted rather than skipped.
     ChannelMapUpdateInstantSkipped,
+    /// Intentional maintenance cannot reuse late-event recovery admission.
+    Maintenance(oer_bluetooth_ll::connection::maintenance::SkipBlocked),
     Timing(PeripheralConnectionRecurringTimingError),
 }
 
@@ -266,7 +286,7 @@ pub struct PeripheralConnectionRecurringEventCandidate {
 #[cfg(target_arch = "riscv32")]
 pub(super) fn prepare_recurring_event_candidate(
     completed: PeripheralConnectionSchedulerCompleted,
-    delta: LePeripheralConnectionEventDelta,
+    recurrence: PeripheralConnectionRecurrence,
     epoch: ControllerSchedulerEpoch,
     scheduler_config: SchedulerSoftwareConfig,
     timing_policy: PeripheralConnectionRecurringTimingPolicy,
@@ -286,7 +306,7 @@ pub(super) fn prepare_recurring_event_candidate(
         event,
         phase,
         remainder.packet_start(),
-        delta,
+        recurrence,
         epoch,
         scheduler_config,
         timing_policy,
@@ -318,6 +338,13 @@ pub(super) fn prepare_recurring_event_candidate(
 
 #[cfg(target_arch = "riscv32")]
 impl PeripheralConnectionRecurringEventCandidate {
+    pub(crate) fn belongs_to(
+        &self,
+        resources: &crate::le::peripheral::connection::PeripheralConnectionRuntimeResources,
+    ) -> bool {
+        resources.can_restore_allocation(self.graph.identity(), self.graph.receive_identity())
+    }
+
     pub const fn event_counter(&self) -> u16 {
         self.protocol.event_counter()
     }

@@ -7,6 +7,8 @@ mod hci;
 mod model;
 #[cfg(target_os = "linux")]
 mod owner;
+#[cfg(target_os = "linux")]
+mod security_failure;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -39,6 +41,18 @@ struct Cli {
 enum Command {
     /// Print the exact finite interface understood by this helper.
     Capabilities,
+    /// Exercise one fixed initial-key refusal or mismatch, without sending application data.
+    SecurityFailure {
+        #[arg(long)]
+        adapter: model::Adapter,
+        #[arg(long)]
+        peer: model::PeerAddress,
+        #[arg(long)]
+        failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
+        /// After missing-key rejection, require remote-version completion before Disconnect.
+        #[arg(long)]
+        read_version_before_disconnect: bool,
+    },
     /// Check DTM v2 on LE 1M, channel 0, PRBS9, with 100 ms RX/TX windows.
     Check {
         #[arg(long)]
@@ -54,6 +68,12 @@ enum Command {
         hold_ms: u16,
         #[arg(long, value_enum, default_value = "peer-reset")]
         termination: TerminationArg,
+        /// Fixed public test LTK, encryption before either ACL echo.
+        #[arg(long)]
+        encrypted: bool,
+        /// Replace the public LTK between the two ACL echoes, on the same handle.
+        #[arg(long, requires = "encrypted")]
+        key_refresh: bool,
     },
 }
 
@@ -83,15 +103,56 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if let Command::SecurityFailure {
+        adapter,
+        peer,
+        failure,
+        read_version_before_disconnect,
+    } = command
+    {
+        let mut report = model::security_failure::Report::new(adapter, peer, failure);
+        report.read_version_before_disconnect = read_version_before_disconnect;
+        let result = (|| -> Result<()> {
+            if read_version_before_disconnect
+                && failure != open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey
+            {
+                return Err("remote-version diagnostic requires missing-key rejection".into());
+            }
+            let _signals = oer_process::install_signal_handlers()?;
+            #[cfg(target_os = "linux")]
+            {
+                owner::security_failure(adapter, peer, &mut report)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err("Bluetooth fixture requires Linux".into())
+            }
+        })();
+        if let Err(error) = result {
+            report.errors.push(error.to_string());
+        }
+        if let Err(error) = serde_json::to_writer(std::io::stdout().lock(), &report) {
+            eprintln!("cannot write security failure result: {error}");
+            std::process::exit(1);
+        }
+        if !report.passed(adapter, peer, failure) {
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Command::ConnectReset {
         adapter,
         peer,
         hold_ms,
         termination,
+        encrypted,
+        key_refresh,
     } = command
     {
         let termination = termination.into();
         let mut report = model::ConnectionReset::new(adapter, peer, hold_ms, termination);
+        report.encrypted = encrypted;
+        report.key_refresh = key_refresh;
         let result = (|| -> Result<()> {
             let _signals = oer_process::install_signal_handlers()?;
             #[cfg(target_os = "linux")]
@@ -110,7 +171,7 @@ fn main() {
             eprintln!("cannot write Bluetooth result: {error}");
             std::process::exit(1);
         }
-        if !report.passed(adapter, peer, hold_ms, termination) {
+        if !report.passed_profile(adapter, peer, hold_ms, termination, encrypted, key_refresh) {
             std::process::exit(1);
         }
         return;

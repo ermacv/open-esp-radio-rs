@@ -14,6 +14,7 @@ fn coarse_rx_observation_contains_only_phase_boundaries() {
 #[test]
 fn rx_execution_summary_is_single_and_scoped_to_the_active_child() {
     let execution = RxGainExecution {
+        quality: None,
         minimum_searches: 121,
         minimum_operations: 191,
         outer_operations: 58,

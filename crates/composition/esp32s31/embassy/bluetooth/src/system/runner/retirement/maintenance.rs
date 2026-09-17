@@ -30,13 +30,81 @@ pub struct BluetoothHardwareMaintenanceFailure<
     const PC: usize,
 > {
     error: BluetoothHardwareMaintenanceError,
-    _runner: BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
-    _interrupt: BluetoothInterruptDisabled,
-    _timer: Option<RetiredTimer<MT>>,
-    _registers:
-        Option<oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters>,
-    _lower: Option<ControllerPhyMaintenanceFailure<'static, PublishedStorage, SC, MT>>,
+    _owners: FailureOwners<MT, SC, H2C, C2H, PC>,
 }
+
+// A consumed command slot and its lower failure are mutually exclusive owners.
+// Preserve that distinction instead of reserving storage for both at once.
+#[allow(
+    dead_code,
+    reason = "sealed failure variants intentionally retain all owners"
+)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "mutually exclusive affine owners need no heap or duplicate storage"
+)]
+enum FailureOwners<
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> {
+    Runner {
+        runner: BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
+        interrupt: BluetoothInterruptDisabled,
+        timer: Option<RetiredTimer<MT>>,
+        registers:
+            Option<oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters>,
+    },
+    Physical {
+        remainder: MaintenanceRemainder<H2C, C2H, PC>,
+        interrupt: BluetoothInterruptDisabled,
+        lower: ControllerPhyMaintenanceFailure<'static, PublishedStorage, SC, MT>,
+    },
+}
+
+struct MaintenanceRemainder<const H2C: usize, const C2H: usize, const PC: usize> {
+    _controller: LeControllerCommandEndpoint<'static, CriticalSectionRawMutex, H2C, C2H, PC>,
+    _modem_driver: ModemTimerDriver<'static, CriticalSectionRawMutex>,
+    _packet: [u8; PC],
+    _recheck: DtmAbsoluteRecheck,
+    _advertising_delay: BluetoothAdvertisingDelaySource,
+    _wakers: &'static RuntimeWakers,
+    _schedule: HardwareRunnerSchedule,
+}
+impl<const H2C: usize, const C2H: usize, const PC: usize> MaintenanceRemainder<H2C, C2H, PC> {
+    fn retain<const MT: usize, const SC: usize>(
+        runner: BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
+    ) -> Self {
+        let BluetoothHardwareRunner {
+            command,
+            controller,
+            modem_timer,
+            modem_driver,
+            interrupt,
+            packet,
+            recheck,
+            advertising_delay,
+            wakers,
+            schedule,
+        } = runner;
+        assert!(
+            command.is_none() && modem_timer.is_none() && interrupt.is_none(),
+            "all extracted authorities are retained by the physical failure"
+        );
+        Self {
+            _controller: controller,
+            _modem_driver: modem_driver,
+            _packet: packet,
+            _recheck: recheck,
+            _advertising_delay: advertising_delay,
+            _wakers: wakers,
+            _schedule: schedule,
+        }
+    }
+}
+
 impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
     BluetoothHardwareMaintenanceFailure<MT, SC, H2C, C2H, PC>
 {
@@ -52,9 +120,13 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
     /// original ISR owners and the same HCI/task/timer epoch before routing.
     /// Not-due requests return `None`; they do not advance the tracking clock.
     /// Once polled, drive to completion; failure or cancellation requires reset.
+    /// An optional absolute tracking deadline guards PHY work only; callers
+    /// must reserve time for IRQ and protocol restoration separately.
     pub async fn maintain_phy<P: 'static>(
         self,
         platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, P>,
+        tracking_deadline: Option<oer_esp32s31_phy::tracking::deadline::TrackingDeadline>,
+        calibration_debug: Option<oer_esp32s31_phy::state::PhyTemperatureTrackingDebug>,
     ) -> Result<
         (
             BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
@@ -72,28 +144,36 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
             Err(error) => {
                 return Err(BluetoothHardwareMaintenanceFailure {
                     error: BluetoothHardwareMaintenanceError::Registers(error),
-                    _runner: runner,
-                    _interrupt: interrupt,
-                    _timer: Some(timer),
-                    _registers: None,
-                    _lower: None,
+                    _owners: FailureOwners::Runner {
+                        runner,
+                        interrupt,
+                        timer: Some(timer),
+                        registers: None,
+                    },
                 });
             }
         };
-        let idle = match take_idle(&mut runner) {
+        let mut idle = match take_idle(&mut runner) {
             Ok(idle) => idle,
             Err(error) => {
                 return Err(BluetoothHardwareMaintenanceFailure {
                     error: BluetoothHardwareMaintenanceError::Command(error),
-                    _runner: runner,
-                    _interrupt: interrupt,
-                    _timer: Some(timer),
-                    _registers: Some(registers),
-                    _lower: None,
+                    _owners: FailureOwners::Runner {
+                        runner,
+                        interrupt,
+                        timer: Some(timer),
+                        registers: Some(registers),
+                    },
                 });
             }
         };
-        let result = {
+        let old_debug = calibration_debug.map(|debug| idle.set_phy_tracking_debug(debug));
+        crate::maintenance_observation::begin(
+            embassy_time::Instant::now().as_micros(),
+            tracking_deadline.map(|d| d.expires_at_micros()),
+            None,
+        );
+        let mut result = {
             let mut clock = crate::EmbassyPhyTime;
             let mut work = core::pin::pin!(
                 registers.maintain_phy::<P, _, crate::EmbassyPhyTime, _, SC, MT, H2C, C2H, PC>(
@@ -101,11 +181,19 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
                     timer,
                     platform,
                     &mut runner.controller,
-                    &mut clock
+                    &mut clock,
+                    crate::maintenance_observation::Observer,
+                    tracking_deadline
                 )
             );
             core::future::poll_fn(|cx| poll_physical_release(work.as_mut(), cx)).await
         };
+        if let Ok(maintained) = &mut result {
+            crate::maintenance_observation::physical(maintained.outcome);
+            if let Some(debug) = old_debug {
+                maintained.task.set_phy_tracking_debug(debug);
+            }
+        }
         finish(runner, interrupt, result)
     }
 }
@@ -169,11 +257,11 @@ fn finish<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, 
         Err(lower) => {
             return Err(BluetoothHardwareMaintenanceFailure {
                 error: BluetoothHardwareMaintenanceError::Controller(*lower.error()),
-                _runner: runner,
-                _interrupt: interrupt,
-                _timer: None,
-                _registers: None,
-                _lower: Some(lower),
+                _owners: FailureOwners::Physical {
+                    remainder: MaintenanceRemainder::retain(runner),
+                    interrupt,
+                    lower,
+                },
             });
         }
     };
@@ -182,11 +270,12 @@ fn finish<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, 
     if let Err(error) = runner.recheck.reanchor_after_idle() {
         return Err(BluetoothHardwareMaintenanceFailure {
             error: BluetoothHardwareMaintenanceError::Recheck(error),
-            _runner: runner,
-            _interrupt: interrupt,
-            _timer: None,
-            _registers: None,
-            _lower: None,
+            _owners: FailureOwners::Runner {
+                runner,
+                interrupt,
+                timer: None,
+                registers: None,
+            },
         });
     }
     match interrupt.bind() {
@@ -195,11 +284,12 @@ fn finish<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, 
             let (error, interrupt) = failure.into_parts();
             return Err(BluetoothHardwareMaintenanceFailure {
                 error: BluetoothHardwareMaintenanceError::Bind(error),
-                _runner: runner,
-                _interrupt: interrupt,
-                _timer: None,
-                _registers: None,
-                _lower: None,
+                _owners: FailureOwners::Runner {
+                    runner,
+                    interrupt,
+                    timer: None,
+                    registers: None,
+                },
             });
         }
     }

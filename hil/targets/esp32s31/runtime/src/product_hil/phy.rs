@@ -71,6 +71,14 @@ fn rx_gain_evidence(
     open_esp_radio_hil_protocol::PhyRxGainEvidence {
         execution: report.rx_gain_execution.map(|execution| {
             open_esp_radio_hil_protocol::PhyRxGainExecutionEvidence {
+                quality: execution.quality.map(|quality| {
+                    open_esp_radio_hil_protocol::PhyRxGainQualityEvidence {
+                        shared_baseband: quality.shared_baseband(),
+                        wifi_baseband: quality.wifi_baseband(),
+                        wifi_fine: quality.wifi_fine(),
+                        wifi_radio: quality.wifi_radio(),
+                    }
+                }),
                 minimum_searches: execution.minimum_searches,
                 minimum_operations: execution.minimum_operations,
                 outer_operations: execution.outer_operations,

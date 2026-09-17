@@ -77,3 +77,58 @@ fn accepted_packet_establishes_without_inventing_a_missing_capture() {
     assert_eq!(activity, LePeripheralConnectionEventPeerActivity::Observed);
     assert_eq!(packet_start, None);
 }
+
+#[test]
+fn only_valid_plaintext_receive_inside_completed_window_releases_recovery() {
+    use crate::scheduler::SchedulerRawWindow;
+    use oer_bluetooth_ll::security::LePeripheralEncryptionReceiveMode::*;
+    use oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime;
+    for start in [100, u32::MAX - 100] {
+        let window =
+            SchedulerRawWindow::from_projected_scheduler_window(start, start.wrapping_add(200))
+                .unwrap();
+        for (delta, expected) in [
+            (u32::MAX, false),
+            (0, true),
+            (100, true),
+            (199, true),
+            (200, false),
+        ] {
+            let receive =
+                PeripheralConnectionReceiveTime::from_controller_ticks(start.wrapping_add(delta));
+            assert_eq!(
+                super::plaintext_receive_releases_recovery(window, receive, Plaintext, Plaintext),
+                expected
+            );
+            for protected in [
+                EncryptedStartResponse,
+                Encrypted,
+                UnencryptedPauseResponse,
+                RestartEncryptionRequest,
+                Blocked,
+            ] {
+                assert!(!super::plaintext_receive_releases_recovery(
+                    window, receive, protected, Plaintext
+                ));
+                assert!(!super::plaintext_receive_releases_recovery(
+                    window, receive, Plaintext, protected
+                ));
+            }
+        }
+        // The prior event's valid timestamp cannot release a later pause.
+        let next = SchedulerRawWindow::from_projected_scheduler_window(
+            start.wrapping_add(15_000),
+            start.wrapping_add(15_200),
+        )
+        .unwrap();
+        let prior = PeripheralConnectionReceiveTime::from_controller_ticks(start.wrapping_add(100));
+        let fresh =
+            PeripheralConnectionReceiveTime::from_controller_ticks(start.wrapping_add(15_100));
+        assert!(!super::plaintext_receive_releases_recovery(
+            next, prior, Plaintext, Plaintext
+        ));
+        assert!(super::plaintext_receive_releases_recovery(
+            next, fresh, Plaintext, Plaintext
+        ));
+    }
+}

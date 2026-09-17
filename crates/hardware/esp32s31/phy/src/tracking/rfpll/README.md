@@ -43,7 +43,10 @@ In particular, underflow can propagate into the mode byte, as in ROM. Matching
 that behavior does not qualify an out-of-range correction on physical RF.
 
 `target_port::rfpll::{search, correct}` uses the existing typed I2C bindings,
-bounded I2C completion waits and frequency-memory operations. The caller must
+direct bounded status polling and frequency-memory operations. Required 2-us
+entry and 5-us candidate settles use the short ROM delay backend. The admitted
+transaction completes in one poll without timer suspension. Its finite edge
+limits do not establish a wall-clock bound. The caller must
 already hold exclusive physical PHY access. This child does not acquire a
 coexistence grant, disable hardware frequency updates, change thermal reference
 state, or authorize traffic to resume after failure.
@@ -134,8 +137,8 @@ characterization. Tests also
 check that a bounded I2C timeout returns without restoring hardware control.
 See the [comparison contract](../../../../../../../verification/vendor/projects/esp32s31/blobray-provider/models/README.md).
 
-The comparison separates the production I2C executor's one-microsecond waits
-from the ROM's polling. It does not assert equal execution time or raw polling
+The comparison preserves every requested delay, including any unexpected
+executor-added one-microsecond wait. It does not assert equal execution time or raw polling
 traces. Alternative memory layouts, linked coexistence grants and physical RF behavior
 require separate evidence. The validation-only full-parent profile is described
 in the [tracking contract](../README.md).

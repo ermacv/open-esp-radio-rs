@@ -402,6 +402,7 @@ fn capture_serial(
                 Ok(message) => {
                     if let Some(boot_id) = state.health.boot_id
                         && boot_id != message.boot_id
+                        && !state.accept_expected_reboot(&message, Instant::now())
                     {
                         state.fail(LinkError::protocol(format!(
                             "target rebooted during capture: boot {boot_id} became {}",

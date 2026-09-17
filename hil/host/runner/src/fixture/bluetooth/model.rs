@@ -1,5 +1,8 @@
 //! Shared, versioned boundary between the unprivileged runner and finite helper.
 
+#[path = "security_failure_model.rs"]
+pub(crate) mod security_failure;
+
 use open_esp_radio_hil_protocol::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
 
@@ -127,6 +130,14 @@ pub(crate) struct ConnectionReset {
     pub(crate) adapter: String,
     pub(crate) peer: String,
     pub(crate) hold_ms: u16,
+    pub(crate) encrypted: bool,
+    pub(crate) key_refresh: bool,
+    pub(crate) refresh_command_status: bool,
+    pub(crate) key_refresh_complete: bool,
+    pub(crate) refresh_after_micros: Option<u64>,
+    pub(crate) encryption_command_status: bool,
+    pub(crate) encryption_change: bool,
+    pub(crate) encryption_after_micros: Option<u64>,
     pub(crate) termination: BluetoothPeripheralTermination,
     pub(crate) initial_powered: Option<bool>,
     pub(crate) initial_soft_blocked: Option<bool>,
@@ -194,6 +205,14 @@ impl ConnectionReset {
             adapter: adapter.to_string(),
             peer: peer.to_string(),
             hold_ms,
+            encrypted: false,
+            key_refresh: false,
+            refresh_command_status: false,
+            key_refresh_complete: false,
+            refresh_after_micros: None,
+            encryption_command_status: false,
+            encryption_change: false,
+            encryption_after_micros: None,
             termination,
             initial_powered: None,
             initial_soft_blocked: None,
@@ -234,12 +253,25 @@ impl ConnectionReset {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn passed(
         &self,
         adapter: Adapter,
         peer: PeerAddress,
         hold_ms: u16,
         termination: BluetoothPeripheralTermination,
+    ) -> bool {
+        self.passed_profile(adapter, peer, hold_ms, termination, false, false)
+    }
+
+    pub(crate) fn passed_profile(
+        &self,
+        adapter: Adapter,
+        peer: PeerAddress,
+        hold_ms: u16,
+        termination: BluetoothPeripheralTermination,
+        encrypted: bool,
+        key_refresh: bool,
     ) -> bool {
         let termination_complete = match termination {
             BluetoothPeripheralTermination::PeerReset => {
@@ -274,7 +306,16 @@ impl ConnectionReset {
             }
             BluetoothPeripheralTermination::LegacyPeerPowerOff => false,
         };
-        self.schema == CONNECTION_RESET_SCHEMA
+        (!key_refresh || encrypted)
+            && self.key_refresh == key_refresh
+            && self.refresh_command_status == key_refresh
+            && self.key_refresh_complete == key_refresh
+            && self.refresh_after_micros.is_some() == key_refresh
+            && self.encrypted == encrypted
+            && self.encryption_command_status == encrypted
+            && self.encryption_change == encrypted
+            && self.encryption_after_micros.is_some() == encrypted
+            && self.schema == CONNECTION_RESET_SCHEMA
             && self.adapter == adapter.to_string()
             && self.peer == peer.to_string()
             && self.hold_ms == hold_ms
@@ -298,7 +339,11 @@ impl ConnectionReset {
             && self.acl_payload_bytes
                 == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
             && self.acl_echo_hci_packets
-                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
+                == Some(if encrypted {
+                    11
+                } else {
+                    open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16
+                })
             && self.acl_echo_after_micros.is_some()
             && self.connection_update_complete
             && self.updated_interval_millis
@@ -309,7 +354,11 @@ impl ConnectionReset {
             && self.post_update_acl_sent
             && self.post_update_acl_echo_received
             && self.post_update_acl_echo_hci_packets
-                == Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
+                == Some(if encrypted {
+                    11
+                } else {
+                    open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16
+                })
             && self.post_update_acl_echo_after_micros.is_some()
             && termination_complete
             && self.connection_after_micros.is_some()
@@ -408,6 +457,94 @@ mod connection_reset_tests {
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.restored = true;
         assert!(report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            false
+        ));
+        report.encrypted = true;
+        report.acl_echo_hci_packets = Some(11);
+        report.post_update_acl_echo_hci_packets = Some(11);
+        report.encryption_command_status = true;
+        report.encryption_change = true;
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            false
+        ));
+        report.encryption_after_micros = Some(50);
+        assert!(report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            false
+        ));
+        assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
+        // Refresh cannot be inferred from initial encryption or an incomplete refresh report.
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            true
+        ));
+        report.key_refresh = true;
+        report.refresh_command_status = true;
+        report.key_refresh_complete = true;
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            true
+        ));
+        report.refresh_after_micros = Some(60);
+        assert!(report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            true
+        ));
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            false
+        ));
+        report.post_update_acl_echo_received = false;
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            true
+        ));
+        report.post_update_acl_echo_received = true;
+        report.key_refresh = false;
+        report.refresh_command_status = false;
+        report.key_refresh_complete = false;
+        report.refresh_after_micros = None;
+        report.encrypted = false;
+        report.acl_echo_hci_packets = Some(10);
+        report.post_update_acl_echo_hci_packets = Some(10);
+        report.encryption_command_status = false;
+        report.encryption_change = false;
+        report.encryption_after_micros = None;
         // An old unencrypted profile and an old helper report are not accepted.
         report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));

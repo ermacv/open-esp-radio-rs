@@ -11,8 +11,8 @@ use bt_hci::{
         Cmd,
         controller_baseband::SetEventMask,
         le::{
-            LeConnUpdate, LeCreateConn, LeReadChannelMap, LeReadRemoteFeatures, LeSetEventMask,
-            LeSetHostChannelClassification,
+            LeConnUpdate, LeCreateConn, LeEnableEncryption, LeReadChannelMap, LeReadRemoteFeatures,
+            LeSetEventMask, LeSetHostChannelClassification,
         },
         link_control::ReadRemoteVersionInformation,
     },
@@ -128,49 +128,16 @@ pub(super) fn run(
     termination: BluetoothPeripheralTermination,
     report: &mut ConnectionReset,
 ) -> Result<ConnectionRunOutcome> {
-    user.command(SetEventMask::new(
-        EventMask::new()
-            .enable_le_meta(true)
-            .enable_hardware_error(true)
-            .enable_disconnection_complete(true)
-            .enable_read_remote_version_information_complete(true),
-    ))?;
-    // Request the legacy completion only, so there is one exact peer/role check.
-    user.command(LeSetEventMask::new(
-        LeEventMask::new()
-            .enable_le_conn_complete(true)
-            .enable_le_conn_update_complete(true)
-            .enable_le_read_remote_features_page_0_complete(true),
-    ))?;
-    let command = LeCreateConn::new(
-        HciDuration::from_millis(60),
-        HciDuration::from_millis(30),
-        false,
-        AddrKind::PUBLIC,
-        BdAddr::new(peer.0),
-        AddrKind::PUBLIC,
-        HciDuration::from_millis(100),
-        HciDuration::from_millis(100),
-        0,
-        HciDuration::from_millis(2_000),
-        HciDuration::from_millis(0),
-        HciDuration::from_millis(0),
-    );
-    let started = Instant::now();
-    user.send_command(&command)?;
-    let deadline = started + Duration::from_secs(10);
-    let handle = loop {
-        let packet = user.receive(deadline)?;
-        if let Some(handle) = connection_created(&packet, peer)? {
-            break handle;
-        }
-    };
-    let connected = Instant::now();
+    let (handle, connected, elapsed) = connect(user, peer)?;
     report.connection_complete = true;
-    report.connection_after_micros = Some(connected.duration_since(started).as_micros() as u64);
+    report.connection_after_micros = Some(elapsed);
 
     read_remote_features(user, handle, report)?;
     read_remote_version(user, handle, report)?;
+
+    if report.encrypted {
+        enable_encryption(user, handle, report, false)?;
+    }
 
     let acl = AclPacket::new(
         handle,
@@ -256,6 +223,10 @@ pub(super) fn run(
         oer_process::sleep(Duration::from_millis(20))?;
     }
 
+    if report.key_refresh {
+        enable_encryption(user, handle, report, true)?;
+    }
+
     let post_update_acl = AclPacket::new(
         handle,
         AclPacketBoundary::FirstNonFlushable,
@@ -288,6 +259,54 @@ pub(super) fn run(
     }
     finish_connection(user, handle, hold_ms, termination, connected, report)?;
     Ok(ConnectionRunOutcome::Complete)
+}
+
+pub(super) fn connect(user: &Socket, peer: PeerAddress) -> Result<(ConnHandle, Instant, u64)> {
+    user.command(SetEventMask::new(
+        EventMask::new()
+            .enable_le_meta(true)
+            .enable_hardware_error(true)
+            .enable_encryption_change_v1(true)
+            .enable_encryption_key_refresh_complete(true)
+            .enable_disconnection_complete(true)
+            .enable_read_remote_version_information_complete(true),
+    ))?;
+    // Request the legacy completion only, so there is one exact peer/role check.
+    user.command(LeSetEventMask::new(
+        LeEventMask::new()
+            .enable_le_conn_complete(true)
+            .enable_le_conn_update_complete(true)
+            .enable_le_read_remote_features_page_0_complete(true),
+    ))?;
+    let command = LeCreateConn::new(
+        HciDuration::from_millis(60),
+        HciDuration::from_millis(30),
+        false,
+        AddrKind::PUBLIC,
+        BdAddr::new(peer.0),
+        AddrKind::PUBLIC,
+        HciDuration::from_millis(100),
+        HciDuration::from_millis(100),
+        0,
+        HciDuration::from_millis(2_000),
+        HciDuration::from_millis(0),
+        HciDuration::from_millis(0),
+    );
+    let started = Instant::now();
+    user.send_command(&command)?;
+    let deadline = started + Duration::from_secs(10);
+    let handle = loop {
+        let packet = user.receive(deadline)?;
+        if let Some(handle) = connection_created(&packet, peer)? {
+            break handle;
+        }
+    };
+    let connected = Instant::now();
+    Ok((
+        handle,
+        connected,
+        connected.duration_since(started).as_micros() as u64,
+    ))
 }
 
 fn read_remote_features(
@@ -781,6 +800,199 @@ mod tests {
             assert_eq!(report.peer_disconnect_reason, Some(reason));
             assert!(report.termination_after_connection_micros.is_some());
             assert!(!report.reset_completed);
+        }
+    }
+}
+
+fn enable_encryption(
+    user: &Socket,
+    handle: ConnHandle,
+    report: &mut ConnectionReset,
+    refresh: bool,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::{
+        BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
+        BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+    };
+    let started = Instant::now();
+    user.send_command(&LeEnableEncryption::new(
+        handle,
+        if refresh {
+            BLUETOOTH_REFRESH_RAND
+        } else {
+            BLUETOOTH_TEST_RAND
+        },
+        if refresh {
+            BLUETOOTH_REFRESH_EDIV
+        } else {
+            BLUETOOTH_TEST_EDIV
+        },
+        if refresh {
+            BLUETOOTH_REFRESH_LTK
+        } else {
+            BLUETOOTH_TEST_LTK
+        },
+    ))?;
+    let deadline = started + Duration::from_secs(5);
+    loop {
+        let packet = user.receive(deadline)?;
+        if observe_encryption_event(&packet, handle, report, refresh)? {
+            let elapsed = Some(started.elapsed().as_micros().try_into()?);
+            if refresh {
+                report.refresh_after_micros = elapsed;
+            } else {
+                report.encryption_after_micros = elapsed;
+            }
+            return Ok(());
+        }
+    }
+}
+
+fn observe_encryption_event(
+    packet: &[u8],
+    handle: ConnHandle,
+    report: &mut ConnectionReset,
+    refresh: bool,
+) -> Result<bool> {
+    if packet.first() != Some(&4) {
+        return Err("unexpected data before encryption completed".into());
+    }
+    let (event, rest) =
+        Event::from_hci_bytes(&packet[1..]).map_err(|e| format!("encryption event: {e:?}"))?;
+    if !rest.is_empty() {
+        return Err("trailing encryption event bytes".into());
+    }
+    match event {
+        Event::CommandStatus(status) if status.cmd_opcode == LeEnableEncryption::OPCODE => {
+            status
+                .status
+                .to_result()
+                .map_err(|e| format!("encryption command: {e:?}"))?;
+            let accepted = if refresh {
+                &mut report.refresh_command_status
+            } else {
+                &mut report.encryption_command_status
+            };
+            if *accepted {
+                return Err("duplicate encryption command status".into());
+            }
+            *accepted = true;
+        }
+        Event::EncryptionChangeV1(change) => {
+            change
+                .status
+                .to_result()
+                .map_err(|e| format!("encryption failed: {e:?}"))?;
+            if refresh
+                || report.encryption_change
+                || !report.encryption_command_status
+                || change.handle != handle
+                || change.enabled != bt_hci::param::EncryptionEnabledLevel::OnE0OrAesCcm
+            {
+                return Err(
+                    "encryption completion does not match active AES-CCM connection".into(),
+                );
+            }
+            report.encryption_change = true;
+            return Ok(true);
+        }
+        Event::EncryptionKeyRefreshComplete(complete) => {
+            if !refresh
+                || !report.encryption_change
+                || !report.refresh_command_status
+                || report.key_refresh_complete
+                || complete.handle != handle
+                || complete.status != bt_hci::param::Status::SUCCESS
+            {
+                return Err(
+                    "key refresh completion does not match active encrypted connection".into(),
+                );
+            }
+            report.key_refresh_complete = true;
+            return Ok(true);
+        }
+        Event::DisconnectionComplete(_) | Event::HardwareError(_) => {
+            return Err("link failed while enabling encryption".into());
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+#[cfg(test)]
+mod encryption_tests {
+    use super::*;
+    #[test]
+    fn refresh_requires_prior_encryption_new_status_and_exact_refresh_event() {
+        let handle = ConnHandle::new(1);
+        let status = [4, 0x0f, 4, 0, 1, 0x19, 0x20];
+        let refreshed = [4, 0x30, 3, 0, 1, 0];
+        let fresh = || {
+            ConnectionReset::new(
+                super::super::model::Adapter(0),
+                PeerAddress([1; 6]),
+                0,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+        };
+        let mut report = fresh();
+        observe_encryption_event(&status, handle, &mut report, true).unwrap();
+        assert!(observe_encryption_event(&refreshed, handle, &mut report, true).is_err());
+        for packet in [
+            vec![4, 0x30, 3, 0, 2, 0],             // wrong connection
+            vec![4, 0x30, 3, 0x06, 1, 0],          // failed refresh
+            vec![4, 0x30, 3, 0, 1, 0, 0],          // trailing bytes
+            vec![4, 0x08, 4, 0, 1, 0, 1], // a second initial Encryption Change is not refresh
+            vec![2, 1, 0, 0, 0],          // user data during refresh
+            vec![4, 0x0f, 4, 0x0c, 1, 0x19, 0x20], // rejected command
+        ] {
+            let mut report = fresh();
+            report.encryption_change = true;
+            observe_encryption_event(&status, handle, &mut report, true).unwrap();
+            assert!(observe_encryption_event(&packet, handle, &mut report, true).is_err());
+            assert!(!report.key_refresh_complete);
+        }
+        let mut report = fresh();
+        report.encryption_change = true;
+        assert!(observe_encryption_event(&refreshed, handle, &mut report, true).is_err());
+        observe_encryption_event(&status, handle, &mut report, true).unwrap();
+        assert!(observe_encryption_event(&status, handle, &mut report, true).is_err());
+        assert!(observe_encryption_event(&refreshed, handle, &mut report, false).is_err());
+        assert!(observe_encryption_event(&refreshed, handle, &mut report, true).unwrap());
+        assert!(report.key_refresh_complete);
+        assert!(observe_encryption_event(&refreshed, handle, &mut report, true).is_err());
+    }
+
+    #[test]
+    fn encryption_requires_ordered_status_and_exact_successful_handle_and_mode() {
+        let handle = ConnHandle::new(1);
+        let status = [4, 0x0f, 4, 0, 1, 0x19, 0x20];
+        let complete = [4, 0x08, 4, 0, 1, 0, 1];
+        let fresh = || {
+            ConnectionReset::new(
+                super::super::model::Adapter(0),
+                PeerAddress([1; 6]),
+                0,
+                BluetoothPeripheralTermination::PeerReset,
+            )
+        };
+        assert!(observe_encryption_event(&complete, handle, &mut fresh(), false).is_err());
+        let mut report = fresh();
+        assert!(!observe_encryption_event(&status, handle, &mut report, false).unwrap());
+        assert!(observe_encryption_event(&status, handle, &mut report, false).is_err());
+        assert!(observe_encryption_event(&complete, handle, &mut report, false).unwrap());
+        assert!(report.encryption_change);
+        for packet in [
+            vec![4, 0x08, 4, 0, 2, 0, 1],
+            vec![4, 0x08, 4, 0, 1, 0, 0],
+            vec![4, 0x08, 4, 0x06, 1, 0, 1],
+            vec![2, 1, 0, 0, 0],
+            vec![4, 0x08, 4, 0, 1, 0, 1, 0],
+        ] {
+            let mut report = fresh();
+            observe_encryption_event(&status, handle, &mut report, false).unwrap();
+            assert!(observe_encryption_event(&packet, handle, &mut report, false).is_err());
+            assert!(!report.encryption_change);
         }
     }
 }

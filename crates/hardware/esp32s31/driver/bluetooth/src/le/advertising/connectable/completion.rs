@@ -87,7 +87,10 @@ pub(crate) struct LegacyConnectableAdvertisingRecycleReady {
 impl LegacyConnectableAdvertisingRecycleReady {
     pub(crate) fn receive_observations(
         &self,
-    ) -> Option<[oer_esp32s31_bluetooth_memory::LeRxNodeObservation; 2]> {
+    ) -> Option<
+        [oer_esp32s31_bluetooth_memory::LeRxNodeObservation;
+            oer_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT],
+    > {
         self.item
             .memory
             .observe_receive_nodes_after_removal(&self.removal)

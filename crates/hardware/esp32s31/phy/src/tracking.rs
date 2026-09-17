@@ -1,6 +1,7 @@
 //! Periodic calibration and power-tracking state machines.
 
 pub mod calibration;
+pub mod deadline;
 pub mod i2c;
 pub mod inspection;
 pub mod observation;
@@ -14,3 +15,6 @@ pub mod temperature;
 pub mod maintenance;
 
 pub mod service;
+
+/// Terminal shared-PHY policy and its required hardware postcondition.
+pub mod fail_stop;

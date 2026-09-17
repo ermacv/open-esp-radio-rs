@@ -32,6 +32,8 @@ use zeroize::Zeroizing;
 
 use crate::Result;
 mod airtime;
+mod reboot;
+use reboot::{ExpectedReboot, RebootObservation};
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -52,6 +54,8 @@ struct ProtocolEvents {
 
 #[derive(Default)]
 struct ProtocolState {
+    expected_reboot: Option<ExpectedReboot>,
+    observed_reboot: Option<RebootObservation>,
     messages: Vec<Envelope<Event>>,
     health: ProtocolHealth,
     failure: Option<LinkError>,

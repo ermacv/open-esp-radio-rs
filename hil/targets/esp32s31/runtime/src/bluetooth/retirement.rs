@@ -336,13 +336,23 @@ pub(super) async fn run_active(
     credits: &super::HostAclCredits,
     console: &mut super::Console,
     announce: bool,
+    platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>>,
 ) -> (Runner<4, 1, 4, 4, 258>, u32, super::PeripheralOperation) {
     let requested = core::cell::Cell::new(None);
     let hardware = {
         let request = async {
-            requested.set(Some(console.run(hci, announce).await));
+            requested.set(Some(console.run(hci, credits, announce).await));
         };
+        #[cfg(not(feature = "bluetooth-phy-maintenance"))]
+        let _ = platform;
+        #[cfg(not(feature = "bluetooth-phy-maintenance"))]
         let mut running = core::pin::pin!(hardware.run_until_idle(request));
+        #[cfg(feature = "bluetooth-phy-maintenance")]
+        let mut running = core::pin::pin!(hardware.run_with_phy_maintenance_until_idle(
+            platform,
+            diagnostic_maintenance_policy(),
+            request
+        ));
         match embassy_futures::select::select(
             super::poll_with_stack_boundary(running.as_mut()),
             super::pump(hci, credits),
@@ -364,13 +374,23 @@ pub(super) async fn maintain(
     runner: Runner<4, 1, 4, 4, 258>,
     platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>>,
     hci: &super::Host,
+    calibration_threshold: Option<u8>,
 ) -> (
     Runner<4, 1, 4, 4, 258>,
     Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
 ) {
     let retired = retire(runner);
     let (runner, outcome) = {
-        let mut maintenance = core::pin::pin!(retired.maintain_phy(platform));
+        let mut maintenance = core::pin::pin!(retired.maintain_phy(
+            platform,
+            None,
+            calibration_threshold.map(|threshold| {
+                oer_esp32s31_phy::state::PhyTemperatureTrackingDebug {
+                    first: 3,
+                    second: threshold,
+                }
+            })
+        ));
         match super::poll_with_stack_boundary(maintenance.as_mut()).await {
             Ok(result) => result,
             Err(failure) => {
@@ -384,4 +404,17 @@ pub(super) async fn maintain(
         super::poll_with_stack_boundary(reset.as_mut()).await,
         outcome,
     )
+}
+
+/// Engineering admission values, not qualified thermal or blocking-poll bounds.
+/// The production actor owns all scheduling, LL decisions and RF transitions.
+#[cfg(feature = "bluetooth-phy-maintenance")]
+fn diagnostic_maintenance_policy()
+-> oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenancePolicy {
+    use core::num::NonZeroU32;
+    use oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceBudget;
+    use oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenancePolicy;
+    let n = |value| NonZeroU32::new(value).unwrap();
+    let budget = PeripheralMaintenanceBudget::new(n(20_000), n(5_000), n(2_000)).unwrap();
+    PhyMaintenancePolicy::new(budget, 200_000, 10_000_000).unwrap()
 }

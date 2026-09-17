@@ -400,6 +400,10 @@ impl LegacyConnectableAdvertisingMemoryGraphPrepared {
     /// controller-epoch window. This crate stores them but does not interpret
     /// controller time or reserve a common timeline slot. `raw_sequence_lead`
     /// is the same accepted reservation policy used for sequence authorization.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the exact advertising graph and pinned receive pool"
+    )]
     pub fn prepare_event_fields(
         self,
         raw_start: u32,
@@ -1049,7 +1053,8 @@ impl LegacyConnectableAdvertisingMemoryGraphCompletionObserved {
     pub fn observe_receive_nodes_after_removal(
         &self,
         removal: &BluetoothSchedulerSoftwareListRemovalReady,
-    ) -> Option<[crate::LeRxNodeObservation; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT]> {
+    ) -> Option<[crate::LeRxNodeObservation; crate::BLUETOOTH_NON_SCANNING_RX_STORAGE_NODE_COUNT]>
+    {
         if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO
             || removal.completed_head().address() != Some(self.scheduler_item_address())
         {

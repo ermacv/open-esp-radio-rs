@@ -107,9 +107,24 @@ impl PhyTimingEvidence {
     }
 }
 
+/// Per-search convergence of the most recently completed RX DC product.
+/// False baseband entries identify initial coefficient pairs reused after the
+/// iteration limit; false radio/fine entries retain the last correction.
+/// All-false is a completed product with no converged search, not missing data.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PhyRxGainQualityEvidence {
+    pub shared_baseband: [bool; 11],
+    pub wifi_baseband: [bool; 8],
+    pub wifi_fine: [bool; 6],
+    pub wifi_radio: bool,
+}
+
 /// Disjoint regions of the direct blocking RX-gain transaction.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyRxGainExecutionEvidence {
+    /// Present only for a completed DC-calibration product.
+    #[serde(default)]
+    pub quality: Option<PhyRxGainQualityEvidence>,
     pub minimum_searches: u32,
     pub minimum_operations: u32,
     pub outer_operations: u32,
@@ -150,7 +165,10 @@ impl PhyRxGainEvidence {
             (1, Some(execution)) => execution.is_valid(),
             _ => false,
         };
-        execution_fits && self.stages_fit(operation, &phases)
+        let quality_fits = self
+            .execution
+            .is_none_or(|execution| execution.quality.is_some() == (self.dc_phase.completed != 0));
+        execution_fits && quality_fits && self.stages_fit(operation, &phases)
     }
 
     fn stages_fit(self, operation: PhyOperationTiming, details: &[PhyOperationTiming]) -> bool {

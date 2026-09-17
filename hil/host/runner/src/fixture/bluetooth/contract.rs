@@ -4,9 +4,8 @@
 //! exercise the production LL response against this profile; matching the mask
 //! alone does not establish encrypted interoperability.
 
-pub const CONNECTION_RESET_SCHEMA: u32 = 10;
-pub const HELPER_CAPABILITIES: &str =
-    "schema=10 termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
+pub const CONNECTION_RESET_SCHEMA: u32 = 14;
+pub const HELPER_CAPABILITIES: &str = "schema=14 encrypted-acl=true key-refresh=true security-failure=missing-key,wrong-key post-rejection-version=true termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
 
 /// Encryption, Peripheral Feature Exchange, Ping and CSA #2.
 /// The peer must support the complete negotiated profile.

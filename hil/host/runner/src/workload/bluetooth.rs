@@ -1,5 +1,10 @@
 //! Independent RF observations with silence controls in both directions.
 
+pub(crate) mod backpressure;
+pub(crate) mod calibration;
+pub(crate) mod deadline;
+pub(crate) mod security_failure;
+
 use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BluetoothDtmOperation as Operation, BluetoothDtmResult,
@@ -196,6 +201,8 @@ impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PeripheralConfig {
+    pub encrypted: bool,
+    pub key_refresh: bool,
     pub boots: u8,
     pub connections: u8,
     pub hold_millis: u16,
@@ -203,6 +210,7 @@ pub(crate) struct PeripheralConfig {
     pub retire_after: bool,
     pub restart_between_connections: bool,
     pub maintain_between_connections: bool,
+    pub calibration_threshold: Option<u8>,
 }
 
 pub(crate) fn run_peripheral(
@@ -211,6 +219,8 @@ pub(crate) fn run_peripheral(
     context: &Context<'_>,
 ) -> Result<()> {
     let PeripheralConfig {
+        encrypted,
+        key_refresh,
         boots,
         connections,
         hold_millis,
@@ -218,6 +228,7 @@ pub(crate) fn run_peripheral(
         retire_after,
         restart_between_connections,
         maintain_between_connections,
+        calibration_threshold,
     } = config;
     let adapter = context
         .lab
@@ -228,7 +239,8 @@ pub(crate) fn run_peripheral(
         context.with_capture(&directory, |capture| {
             let mut cycles = Vec::new();
             let mut retirement = None;
-            let result = probe_peripheral(capture, adapter, config, &directory, &mut cycles)
+            let result = configure_encryption(capture, config.encrypted, None)
+                .and_then(|()| probe_peripheral(capture, adapter, config, &directory, &mut cycles))
                 .and_then(|()| {
                     if retire_after {
                         retirement = Some(
@@ -241,6 +253,8 @@ pub(crate) fn run_peripheral(
                 &directory.join("bluetooth-peripheral.json"),
                 &serde_json::json!({
                     "schema": 1,
+                    "encrypted": encrypted,
+                    "key_refresh": key_refresh,
                     "adapter": adapter.to_string(),
                     "connections": connections,
                     "hold_millis": hold_millis,
@@ -248,6 +262,7 @@ pub(crate) fn run_peripheral(
                     "retire_after": retire_after,
                     "restart_between_connections": restart_between_connections,
                     "maintain_between_connections": maintain_between_connections,
+                    "calibration_threshold": calibration_threshold,
                     "retirement": retirement,
                     "cycles": cycles,
                     "passed": result.is_ok(),
@@ -256,6 +271,33 @@ pub(crate) fn run_peripheral(
             )?;
             result
         })?;
+    }
+    Ok(())
+}
+
+pub(crate) fn configure_encryption(
+    capture: &SerialCapture,
+    enabled: bool,
+    failure: Option<open_esp_radio_hil_protocol::BluetoothSecurityFailure>,
+) -> Result<()> {
+    if enabled {
+        let caps = capture.request_capabilities(Duration::from_secs(10))?;
+        if !caps.features.bluetooth_peripheral {
+            return Err("firmware lacks Bluetooth peripheral control".into());
+        }
+        let configured =
+            capture.bluetooth_peripheral(BluetoothPeripheralOperation::EncryptedAcl {
+                enabled: true,
+                failure,
+            })?;
+        if !matches!(
+            configured.result,
+            open_esp_radio_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured {
+                enabled: true, failure: observed
+            } if observed == failure
+        ) {
+            return Err("encrypted ACL Host was not configured".into());
+        }
     }
     Ok(())
 }
@@ -273,12 +315,17 @@ fn probe_peripheral(
         termination,
         restart_between_connections,
         maintain_between_connections,
+        calibration_threshold,
         ..
     } = config;
     let caps = capture.request_capabilities(Duration::from_secs(10))?;
     if !caps.features.bluetooth_peripheral {
         return Err("firmware lacks Bluetooth peripheral control".into());
     }
+    let encryption_baseline = capture
+        .bluetooth_peripheral(BluetoothPeripheralOperation::Snapshot)?
+        .encryption
+        .unwrap_or_default();
     for cycle in 1..=connections {
         let start_operation = BluetoothPeripheralOperation::StartAdvertising {
             termination,
@@ -295,6 +342,7 @@ fn probe_peripheral(
         let address = start
             .started_address(start_operation)
             .ok_or("Bluetooth peripheral start omitted its public address")?;
+        let maintenance_baseline = start.phy_peripheral_maintenance;
         let baseline = PeripheralBaseline::from(&start);
         cycles.push(PeripheralCycle {
             start,
@@ -303,21 +351,35 @@ fn probe_peripheral(
             restart: None,
             maintenance: None,
         });
-        let fixture = bluetooth::connect_reset_in(
+        let fixture = bluetooth::connect_profile_in(
             &output.join(format!("connection-{cycle:03}")),
             adapter,
             bluetooth::model::PeerAddress(address),
             hold_millis,
             termination,
+            config.encrypted,
+            config.key_refresh,
         )?;
         cycles.last_mut().expect("cycle was inserted").fixture = Some(fixture);
 
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
             let snapshot = capture.bluetooth_peripheral(BluetoothPeripheralOperation::Snapshot)?;
+            // Preserve the actual failing observation in the workload report.
+            cycles.last_mut().expect("cycle was inserted").completion = Some(snapshot.clone());
             let complete = peripheral_cycle_complete(baseline, &snapshot, termination)?;
-            cycles.last_mut().expect("cycle was inserted").completion = Some(snapshot);
+            if complete && caps.features.bluetooth_phy_maintenance {
+                require_active_maintenance(maintenance_baseline, &snapshot)?;
+            }
             if complete {
+                if config.encrypted {
+                    require_encrypted_cycle(
+                        cycle,
+                        config.key_refresh,
+                        encryption_baseline,
+                        &snapshot,
+                    )?;
+                }
                 break;
             }
             if Instant::now() >= deadline {
@@ -329,8 +391,26 @@ fn probe_peripheral(
             oer_process::sleep(Duration::from_millis(100))?;
         }
         if maintain_between_connections && cycle < connections {
-            let maintained =
-                capture.bluetooth_peripheral(BluetoothPeripheralOperation::Maintain)?;
+            let operation = calibration_threshold
+                .map_or(BluetoothPeripheralOperation::Maintain, |threshold| {
+                    BluetoothPeripheralOperation::Calibrate { threshold }
+                });
+            let maintained = capture.bluetooth_peripheral(operation)?;
+            if calibration_threshold == Some(0) {
+                let m = maintained
+                    .phy_maintenance
+                    .as_ref()
+                    .ok_or("calibration measurement missing")?;
+                if m.invalid
+                    || m.common_calibrations <= u32::from(cycle - 1)
+                    || m.bluetooth_calibrations <= u32::from(cycle - 1)
+                    || m.latest_rx_quality.is_none()
+                    || m.rx_gain.completed == 0
+                    || m.tx_dc_pwdet.completed == 0
+                {
+                    return Err("required real calibration branches were not completed".into());
+                }
+            }
             let expected = u32::from(cycle);
             if !matches!(maintained.result, open_esp_radio_hil_protocol::BluetoothPeripheralResult::Maintained { cycles, .. } if cycles == expected)
             {
@@ -482,13 +562,18 @@ mod peripheral_tests {
     use super::*;
     use open_esp_radio_hil_protocol::BluetoothPeripheralResult;
 
-    fn evidence() -> BluetoothPeripheralEvidence {
+    pub(super) fn evidence() -> BluetoothPeripheralEvidence {
         BluetoothPeripheralEvidence {
             operation: BluetoothPeripheralOperation::Snapshot,
             result: BluetoothPeripheralResult::Snapshot,
             advertising_runs: 1,
             peripheral_runs: 0,
             peripheral_disconnections: 0,
+            phy_peripheral_maintenance: 0,
+            phy_maintenance: None,
+            calibration_traffic: None,
+            acl_backpressure: None,
+            encryption: None,
             connection_complete_events: 0,
             disconnection_complete_events: 0,
             connection_update_complete_events: 0,
@@ -671,6 +756,39 @@ mod peripheral_tests {
             assert_eq!(rf_loss.is_ok(), reason == Some(0x08));
         }
     }
+    #[test]
+    fn automatic_image_requires_new_physical_work_inside_each_acl_cycle() {
+        let mut current = evidence();
+        assert!(require_active_maintenance(0, &current).is_err());
+        current.phy_peripheral_maintenance = 3;
+        assert!(require_active_maintenance(3, &current).is_err());
+        assert!(require_active_maintenance(4, &current).is_err());
+        current.phy_peripheral_maintenance = 4;
+        assert!(require_active_maintenance(3, &current).is_err());
+        current.phy_maintenance = Some(
+            open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
+                restored: 3,
+                run_at_micros: Some(100),
+                restoration_deadline_micros: Some(200),
+                ..Default::default()
+            },
+        );
+        assert!(require_active_maintenance(3, &current).is_err());
+        current.phy_maintenance.as_mut().unwrap().restored = 4;
+        require_active_maintenance(3, &current).unwrap();
+        current.phy_maintenance.as_mut().unwrap().run_at_micros = None;
+        assert!(require_active_maintenance(3, &current).is_err());
+        // A subsequent idle transaction needs no RUN. The boot aggregate must
+        // still prove every earlier active transaction reached guarded RUN.
+        current
+            .phy_maintenance
+            .as_mut()
+            .unwrap()
+            .restoration_deadline_micros = None;
+        require_active_maintenance(3, &current).unwrap();
+        current.phy_maintenance.as_mut().unwrap().restored = 3;
+        assert!(require_active_maintenance(3, &current).is_err());
+    }
 }
 
 #[cfg(test)]
@@ -746,5 +864,197 @@ mod tests {
         assert!(validate(&counts, 10, None).is_ok());
         assert!(validate(&counts, 10, Some(100)).is_err());
         assert!(validate(&counts, 10, Some(0)).is_err());
+    }
+}
+
+fn require_active_maintenance(baseline: u32, current: &BluetoothPeripheralEvidence) -> Result<()> {
+    if current.phy_peripheral_maintenance <= baseline {
+        return Err(
+            "automatic PHY image completed the ACL cycle without active maintenance".into(),
+        );
+    }
+    let m = current
+        .phy_maintenance
+        .as_ref()
+        .ok_or("active maintenance timing missing")?;
+    if m.invalid
+        || m.restored != current.phy_peripheral_maintenance
+        || (m.restoration_deadline_micros.is_some() && m.run_at_micros.is_none())
+    {
+        return Err("physical maintenance did not complete its guarded RUN restoration".into());
+    }
+    Ok(())
+}
+
+fn require_encrypted_cycle(
+    cycle: u8,
+    key_refresh: bool,
+    baseline: open_esp_radio_hil_protocol::BluetoothEncryptionEvidence,
+    snapshot: &BluetoothPeripheralEvidence,
+) -> Result<()> {
+    let e = snapshot
+        .encryption
+        .ok_or("missing target encryption evidence")?;
+    let expected = u32::from(cycle);
+    if !e.enabled
+        || e.encrypted
+        || e.key_requests.checked_sub(baseline.key_requests)
+            != Some(expected * (1 + u32::from(key_refresh)))
+        || e.key_replies.checked_sub(baseline.key_replies)
+            != Some(expected * (1 + u32::from(key_refresh)))
+        || e.encryption_changes
+            .checked_sub(baseline.encryption_changes)
+            != Some(expected)
+        || e.key_refreshes.checked_sub(baseline.key_refreshes)
+            != Some(expected * u32::from(key_refresh))
+        || e.negative_replies != baseline.negative_replies
+        || e.wrong_key_replies != baseline.wrong_key_replies
+        || e.faults != 0
+    {
+        return Err(format!(
+            "encrypted cycle {cycle} missing exact key/encryption/retirement transitions: {e:?}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod encrypted_tests {
+    use super::*;
+    use open_esp_radio_hil_protocol::BluetoothEncryptionEvidence;
+    #[test]
+    fn recovery_keeps_failure_counters_and_requires_new_successful_encryption() {
+        for wrong in [false, true] {
+            let baseline = BluetoothEncryptionEvidence {
+                enabled: true,
+                key_requests: 1,
+                key_replies: u32::from(wrong),
+                negative_replies: u32::from(!wrong),
+                wrong_key_replies: u32::from(wrong),
+                ..Default::default()
+            };
+            let mut snapshot = peripheral_tests::evidence();
+            snapshot.encryption = Some(BluetoothEncryptionEvidence {
+                key_requests: 2,
+                key_replies: baseline.key_replies + 1,
+                encryption_changes: 1,
+                ..baseline
+            });
+            assert!(require_encrypted_cycle(1, false, baseline, &snapshot).is_ok());
+            assert!(require_encrypted_cycle(1, false, Default::default(), &snapshot).is_err());
+            snapshot.encryption.as_mut().unwrap().wrong_key_replies += 1;
+            assert!(require_encrypted_cycle(1, false, baseline, &snapshot).is_err());
+            snapshot.encryption = Some(baseline);
+            assert!(require_encrypted_cycle(1, false, baseline, &snapshot).is_err());
+            snapshot.encryption.as_mut().unwrap().key_requests = 0;
+            assert!(require_encrypted_cycle(1, false, baseline, &snapshot).is_err());
+        }
+    }
+
+    #[test]
+    fn refresh_gate_requires_both_keys_and_one_refresh_per_connection() {
+        let mut snapshot = peripheral_tests::evidence();
+        for cycle in [1, 2] {
+            let complete = BluetoothEncryptionEvidence {
+                enabled: true,
+                encrypted: false,
+                key_requests: cycle * 2,
+                key_replies: cycle * 2,
+                negative_replies: 0,
+                wrong_key_replies: 0,
+                encryption_changes: cycle,
+                key_refreshes: cycle,
+                faults: 0,
+            };
+            snapshot.encryption = Some(complete);
+            assert!(
+                require_encrypted_cycle(cycle as u8, true, Default::default(), &snapshot).is_ok()
+            );
+            assert!(
+                require_encrypted_cycle(cycle as u8, false, Default::default(), &snapshot).is_err()
+            );
+            for invalid in [
+                BluetoothEncryptionEvidence {
+                    key_requests: cycle,
+                    ..complete
+                },
+                BluetoothEncryptionEvidence {
+                    key_replies: cycle,
+                    ..complete
+                },
+                BluetoothEncryptionEvidence {
+                    encryption_changes: cycle * 2,
+                    ..complete
+                },
+                BluetoothEncryptionEvidence {
+                    key_refreshes: cycle - 1,
+                    ..complete
+                },
+                BluetoothEncryptionEvidence {
+                    encrypted: true,
+                    ..complete
+                },
+                BluetoothEncryptionEvidence {
+                    faults: 1,
+                    ..complete
+                },
+            ] {
+                snapshot.encryption = Some(invalid);
+                assert!(
+                    require_encrypted_cycle(cycle as u8, true, Default::default(), &snapshot)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn encrypted_gate_requires_exact_complete_transitions_after_retirement() {
+        let mut snapshot = peripheral_tests::evidence();
+        assert!(require_encrypted_cycle(1, false, Default::default(), &snapshot).is_err());
+        let complete = BluetoothEncryptionEvidence {
+            enabled: true,
+            encrypted: false,
+            key_requests: 1,
+            key_replies: 1,
+            negative_replies: 0,
+            wrong_key_replies: 0,
+            encryption_changes: 1,
+            key_refreshes: 0,
+            faults: 0,
+        };
+        snapshot.encryption = Some(complete);
+        assert!(require_encrypted_cycle(1, false, Default::default(), &snapshot).is_ok());
+        assert!(require_encrypted_cycle(2, false, Default::default(), &snapshot).is_err());
+        for invalid in [
+            BluetoothEncryptionEvidence {
+                enabled: false,
+                ..complete
+            },
+            BluetoothEncryptionEvidence {
+                encrypted: true,
+                ..complete
+            },
+            BluetoothEncryptionEvidence {
+                key_requests: 2,
+                ..complete
+            },
+            BluetoothEncryptionEvidence {
+                key_replies: 0,
+                ..complete
+            },
+            BluetoothEncryptionEvidence {
+                encryption_changes: 0,
+                ..complete
+            },
+            BluetoothEncryptionEvidence {
+                faults: 1,
+                ..complete
+            },
+        ] {
+            snapshot.encryption = Some(invalid);
+            assert!(require_encrypted_cycle(1, false, Default::default(), &snapshot).is_err());
+        }
     }
 }

@@ -1,0 +1,17 @@
+schema = 4
+id = "bluetooth-peripheral-phy-calibration"
+description = "Measure actual common RX and Bluetooth TX calibration with zero diagnostic thermal thresholds between ACL connections, restoring the original policy"
+image = "bluetooth-dtm"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "lifecycle", "phy-maintenance", "calibration"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 3
+hold_millis = 1000
+termination = "peer-reset"
+retire_after = true
+maintain_between_connections = true
+calibration_threshold = 0

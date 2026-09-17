@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn missing_key_version_diagnostic_is_separate_and_rejects_wrong_key_mode() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    assert!(matches!(
+        catalog
+            .get("bluetooth-peripheral-missing-key")
+            .unwrap()
+            .workload,
+        Workload::BluetoothSecurityFailure {
+            read_version_before_disconnect: false,
+            ..
+        }
+    ));
+    let mut diagnostic = catalog
+        .get("bluetooth-peripheral-missing-key-plaintext")
+        .unwrap()
+        .clone();
+    let Workload::BluetoothSecurityFailure {
+        ref mut failure,
+        read_version_before_disconnect: true,
+    } = diagnostic.workload
+    else {
+        panic!("separate diagnostic profile expected");
+    };
+    *failure = open_esp_radio_hil_protocol::BluetoothSecurityFailure::WrongKey;
+    assert!(diagnostic.validate().is_err());
+}
+
+#[test]
 fn ap_scheduler_policy_is_archived_and_restricted_to_standalone_ht() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
@@ -1218,6 +1247,7 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
             retire_after: false,
             restart_between_connections: false,
             maintain_between_connections: false,
+            calibration_threshold: None,
         };
         assert!(scenario.validate().is_err());
     }
@@ -1229,6 +1259,7 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
         retire_after: false,
         restart_between_connections: false,
         maintain_between_connections: false,
+        calibration_threshold: None,
     };
     scenario.validate().unwrap();
     scenario.workload = Workload::BluetoothPeripheral {
@@ -1239,6 +1270,7 @@ fn bluetooth_peripheral_recovery_is_bounded_and_uses_the_bluetooth_image() {
         retire_after: false,
         restart_between_connections: false,
         maintain_between_connections: false,
+        calibration_threshold: None,
     };
     assert!(scenario.validate().is_err());
 }
@@ -1557,6 +1589,7 @@ fn bluetooth_terminal_retirement_is_explicit_and_keeps_recovery_default() {
             retire_after: true,
             restart_between_connections: false,
             maintain_between_connections: false,
+            calibration_threshold: None,
             ..
         }
     ));
@@ -1570,6 +1603,7 @@ fn bluetooth_terminal_retirement_is_explicit_and_keeps_recovery_default() {
             retire_after: false,
             restart_between_connections: false,
             maintain_between_connections: false,
+            calibration_threshold: None,
             ..
         }
     ));
@@ -1601,4 +1635,96 @@ fn peripheral_inter_connection_lifecycle_requires_a_real_following_connection() 
         }
         assert!(scenario.validate().is_err());
     }
+}
+
+#[test]
+fn automatic_maintenance_rejects_manual_idle_extraction_before_running() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-peripheral-active-phy-maintenance")
+        .unwrap()
+        .clone();
+    scenario.validate().unwrap();
+    let Workload::BluetoothPeripheral {
+        maintain_between_connections,
+        ..
+    } = &mut scenario.workload
+    else {
+        panic!("peripheral workload");
+    };
+    *maintain_between_connections = true;
+    assert!(
+        scenario
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("manual inter-connection maintenance")
+    );
+    scenario.image = ImageClass::BluetoothDtm;
+    scenario.validate().unwrap();
+}
+
+#[test]
+fn calibration_measurement_requires_the_manual_idle_handoff() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-peripheral-phy-calibration")
+        .unwrap()
+        .clone();
+    scenario.validate().unwrap();
+    let Workload::BluetoothPeripheral {
+        maintain_between_connections,
+        ..
+    } = &mut scenario.workload
+    else {
+        panic!("peripheral workload")
+    };
+    *maintain_between_connections = false;
+    assert!(
+        scenario
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("requires manual")
+    );
+}
+
+#[test]
+fn active_calibration_and_deadline_require_automatic_maintenance() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    for name in [
+        "bluetooth-peripheral-acl-calibration",
+        "bluetooth-dtm-maintenance-deadline",
+    ] {
+        let mut scenario = catalog.get(name).unwrap().clone();
+        scenario.validate().unwrap();
+        scenario.image = ImageClass::BluetoothDtm;
+        assert!(scenario.validate().is_err());
+    }
+    let original = catalog.get("bluetooth-peripheral-acl-calibration").unwrap();
+    for (duration_millis, minimum_calibrations) in [(9999, 8), (20001, 8), (15000, 1), (15000, 21)]
+    {
+        let mut scenario = original.clone();
+        scenario.workload = Workload::BluetoothAclCalibration {
+            duration_millis,
+            minimum_calibrations,
+        };
+        assert!(scenario.validate().is_err());
+    }
+}
+
+#[test]
+fn acl_backpressure_uses_the_plain_bluetooth_image_and_requires_no_network() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-peripheral-acl-backpressure")
+        .unwrap()
+        .clone();
+    scenario.validate().unwrap();
+    scenario.image = ImageClass::BluetoothPhyMaintenance;
+    assert!(scenario.validate().is_err());
 }

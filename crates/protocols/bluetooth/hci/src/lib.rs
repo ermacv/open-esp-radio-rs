@@ -18,6 +18,13 @@
 //! returns [`LeControllerHciRetired`]. Rejected retirement preserves normal
 //! traffic and ACL credit return so the caller can finish draining the epoch.
 //!
+//! Active-peripheral intake leaves ACL data queued while the radio's packet
+//! owner is occupied. Commands may bypass that data, preserving FIFO order
+//! within each class, so Disconnect, Reset and Host credit returns remain live.
+//! Its readiness wait uses the same admission predicate and does not spin on
+//! blocked ACL alone. Queue storage covers all advertised initial TX credits;
+//! moving a packet into the radio owner does not complete its HCI credit.
+//!
 //! Graceful retirement can also authorize `restart_transport` on its exact
 //! endpoint. Both empty closed queues advance atomically to the next checked
 //! generation; bootstrap and initial command authority are renewed. Old Host

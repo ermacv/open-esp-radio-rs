@@ -2,6 +2,7 @@ use super::*;
 
 fn rx_execution() -> PhyRxGainExecutionEvidence {
     PhyRxGainExecutionEvidence {
+        quality: Some(crate::PhyRxGainQualityEvidence::default()),
         minimum_searches: 121,
         minimum_operations: 191,
         outer_operations: 58,
@@ -293,4 +294,26 @@ fn rx_regions_validate_disjoint_phases() {
     evidence.publish_phase = timing(20);
     evidence.dc_phase.completed = 0;
     assert!(!evidence.fits(timing(100)));
+}
+
+#[test]
+fn completed_dc_requires_quality_but_limit_outcomes_are_not_transport_failures() {
+    let timing = PhyOperationTiming {
+        started: 1,
+        completed: 1,
+        elapsed_micros: 100,
+        maximum_micros: 100,
+        ..Default::default()
+    };
+    let mut evidence = PhyRxGainEvidence {
+        dc_phase: timing,
+        execution: Some(rx_execution()),
+        ..Default::default()
+    };
+    // Every false result is still explicit completed-product evidence.
+    assert!(evidence.fits(timing));
+    evidence.execution.as_mut().unwrap().quality = None;
+    assert!(!evidence.fits(timing));
+    evidence.dc_phase = Default::default();
+    assert!(evidence.fits(timing));
 }

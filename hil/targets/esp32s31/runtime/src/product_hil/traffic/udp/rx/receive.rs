@@ -128,18 +128,19 @@ pub(super) async fn run(
         let received_at = Instant::now().as_micros();
         maximum_deadline_lateness =
             maximum_deadline_lateness.max(received_at.saturating_sub(deadline));
-        let (length, packet_sequence, endpoint, packet_identity, payload_fill_matches) = match received {
-            Ok(Ok(packet)) => packet,
-            Ok(Err(error)) => {
-                socket_errors = socket_errors.saturating_add(1);
-                last_socket_error = Some(error);
-                // A failed receive is not a reason to abandon the observation
-                // window, nor to monopolize the executor with immediate retries.
-                yield_now().await;
-                continue;
-            }
-            Err(_) => continue,
-        };
+        let (length, packet_sequence, endpoint, packet_identity, payload_fill_matches) =
+            match received {
+                Ok(Ok(packet)) => packet,
+                Ok(Err(error)) => {
+                    socket_errors = socket_errors.saturating_add(1);
+                    last_socket_error = Some(error);
+                    // A failed receive is not a reason to abandon the observation
+                    // window, nor to monopolize the executor with immediate retries.
+                    yield_now().await;
+                    continue;
+                }
+                Err(_) => continue,
+            };
         let Some(flow) = flows
             .iter_mut()
             .flatten()
@@ -148,9 +149,10 @@ pub(super) async fn run(
             unknown_packets = unknown_packets.saturating_add(1);
             continue;
         };
-        if flow.payload_identity.is_some_and(|expected| {
-            packet_identity != Some(expected) || !payload_fill_matches
-        }) {
+        if flow
+            .payload_identity
+            .is_some_and(|expected| packet_identity != Some(expected) || !payload_fill_matches)
+        {
             unknown_packets = unknown_packets.saturating_add(1);
             continue;
         }

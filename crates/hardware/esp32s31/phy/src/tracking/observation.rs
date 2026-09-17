@@ -140,6 +140,8 @@ pub struct Timing {
 /// RX-gain root actions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RxGainExecution {
+    /// Complete RX DC product quality; absent when that child did not complete.
+    pub quality: Option<crate::rx::gain_calibration::PhyRxGainDcQuality>,
     pub minimum_searches: u32,
     pub minimum_operations: u32,
     pub outer_operations: u32,

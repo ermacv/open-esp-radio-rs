@@ -34,6 +34,7 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
             features: FeatureCapabilities {
                 bluetooth_dtm: false,
                 bluetooth_peripheral: false,
+                bluetooth_phy_maintenance: false,
                 udp: true,
                 tcp: true,
                 rx: true,

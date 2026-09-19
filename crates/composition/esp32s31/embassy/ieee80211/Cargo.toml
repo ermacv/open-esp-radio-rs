@@ -61,14 +61,15 @@ static_cell = "2.1.1"
 # Hardware composition is target-only; the product resource profile and its
 # ownership tests also compile on the host without running esp-hal's build script.
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "rt", "unstable"] }
-oer-esp32s31-soc = { path = "../../../../adapters/esp-hal/esp32s31/soc", optional = true, features = ["psram-dma-diagnostic"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+oer-esp32s31-soc = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-wifi-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 
 [target.'cfg(not(target_arch = "riscv32"))'.dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [features]
+lifecycle-fault-injection = ["oer-esp32s31-phy/lifecycle-fault-injection"]
 # Experimental direct RX-gain transaction SRAM placement for the RXCAL A/B profile.
 phy-rx-hot-sram = ["oer-esp32s31-wifi-embassy/phy-rx-hot-sram"]
 default = ["owned-network"]
@@ -108,7 +109,7 @@ core0-rx-coarse-telemetry = [
     "oer-esp32s31-wifi-xarxa-upstream?/tx-phase-telemetry",
 ]
 tx-psram-dma-probe = [
-    "dep:oer-esp32s31-soc",
+    "oer-esp32s31-soc/psram-dma-diagnostic",
     "oer-esp32s31-wifi-dma/tx-psram-dma-probe",
 ]
 

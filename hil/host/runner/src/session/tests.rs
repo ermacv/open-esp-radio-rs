@@ -32,9 +32,14 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
         0,
         Event::Hello(Capabilities {
             features: FeatureCapabilities {
+                bluetooth_secure_gatt: false,
+                bluetooth_gatt: false,
+                phy_fault_injection: false,
                 bluetooth_dtm: false,
                 bluetooth_peripheral: false,
                 bluetooth_phy_maintenance: false,
+                bluetooth_watchdog_reset: false,
+                system_watchdog: false,
                 udp: true,
                 tcp: true,
                 rx: true,
@@ -106,6 +111,8 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         rx_delivery: None,
         network_scheduler: None,
         stack: StackUsage {
+            cpu0_irq: None,
+            cpu1_irq: None,
             cpu0: StackWatermark {
                 capacity_bytes: 1,
                 free_bytes: 1,
@@ -264,6 +271,8 @@ fn runtime_stack_policy_rejects_low_headroom_on_either_core() {
     };
     assert!(
         validate_stack_usage(StackUsage {
+            cpu0_irq: None,
+            cpu1_irq: None,
             cpu0: watermark,
             cpu1: watermark,
         })
@@ -275,11 +284,59 @@ fn runtime_stack_policy_rejects_low_headroom_on_either_core() {
     };
     assert!(
         validate_stack_usage(StackUsage {
+            cpu0_irq: None,
+            cpu1_irq: None,
             cpu0: watermark,
             cpu1: insufficient,
         })
         .is_err()
     );
+}
+
+#[test]
+fn irq_stack_reserve_is_checked_independently_on_each_hart() {
+    let healthy = StackWatermark {
+        capacity_bytes: 32768,
+        free_bytes: 4096,
+        used_bytes: 28672,
+        minimum_free_bytes: 4096,
+    };
+    let mut usage = StackUsage {
+        cpu0: healthy,
+        cpu1: healthy,
+        cpu0_irq: Some(healthy),
+        cpu1_irq: Some(healthy),
+    };
+    assert!(validate_stack_usage(usage).is_ok());
+    assert!(super::validation::validate_bluetooth_irq_stack(Some(healthy), None).is_ok());
+    assert!(super::validation::validate_bluetooth_irq_stack(None, None).is_err());
+    assert!(super::validation::validate_bluetooth_irq_stack(Some(healthy), Some(healthy)).is_err());
+    for cpu in [0, 1] {
+        let bad = StackWatermark {
+            free_bytes: 4095,
+            used_bytes: 28673,
+            ..healthy
+        };
+        assert!(super::validation::validate_bluetooth_irq_stack(Some(bad), None).is_err());
+        if cpu == 0 {
+            usage.cpu0_irq = Some(bad);
+        } else {
+            usage.cpu1_irq = Some(bad);
+        }
+        let error = validate_stack_usage(usage).unwrap_err().to_string();
+        assert!(error.contains(&format!("cpu{cpu}-irq")));
+        usage.cpu0_irq = Some(healthy);
+        usage.cpu1_irq = Some(healthy);
+    }
+    usage.cpu1_irq.as_mut().unwrap().used_bytes = 0;
+    assert!(
+        validate_stack_usage(usage)
+            .unwrap_err()
+            .to_string()
+            .contains("inconsistent cpu1-irq")
+    );
+    usage.cpu1_irq = None;
+    assert!(validate_stack_usage(usage).is_err());
 }
 
 #[test]

@@ -16,7 +16,7 @@ embedded-io = "0.7.1"
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-futures = "0.1.2"
 embedded-io-async = "0.7.0"
-trouble-host = { version = "=0.8.0", default-features = false, features = ["peripheral"] }
+trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "8d77d5c347f27a45314e297ac9376373d4f84ea3", default-features = false, features = ["peripheral"] }
 
 [lints]
 workspace = true

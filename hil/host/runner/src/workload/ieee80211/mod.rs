@@ -1,6 +1,7 @@
 pub(crate) mod access_point;
 pub(crate) mod capture;
 pub(crate) mod control;
+pub(crate) mod phy_watchdog;
 pub(crate) mod station_access_point;
 pub(crate) mod station_access_point_reconnect;
 pub(crate) mod station_ap_absence;

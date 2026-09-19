@@ -59,12 +59,16 @@ pub(crate) fn run() -> Result<()> {
             emit_json(&plan, true)
         }
         CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::BluetoothCheck { adapter },
+            command:
+                crate::cli::FixtureCommand::BluetoothCheck {
+                    adapter,
+                    dtm_version,
+                },
         } => {
             let _software = fixture::software::SoftwareLease::acquire_one(
                 open_esp_radio_hil_runner::fixture_install::Provider::LinuxBluetooth,
             )?;
-            fixture::bluetooth::check(&root, adapter)
+            fixture::bluetooth::check(&root, adapter, dtm_version)
         }
         CliCommand::Fixture {
             command:

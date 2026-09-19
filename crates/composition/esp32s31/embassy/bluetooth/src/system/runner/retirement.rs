@@ -88,6 +88,7 @@ pub struct BluetoothHardwareRetired<
     const C2H: usize,
     const PC: usize,
 > {
+    watchdog: &'static crate::WatchdogConfig,
     // Keep endpoint and scheduler borrows, without retaining empty command,
     // timer and IRQ state slots or an already-drained packet scratch buffer.
     _controller: LeControllerCommandEndpoint<'static, CriticalSectionRawMutex, H2C, C2H, PC>,
@@ -331,6 +332,7 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
                 assert!(self.runner.modem_timer.is_none());
                 assert!(self.runner.interrupt.is_none());
                 Ok(BluetoothHardwareRetired {
+                    watchdog: self.runner.watchdog,
                     _controller: self.runner.controller,
                     _modem_driver: self.runner.modem_driver,
                     _recheck: self.runner.recheck,
@@ -462,6 +464,7 @@ type RetiredBindings<const H2C: usize, const C2H: usize, const PC: usize> = (
     DtmAbsoluteRecheck,
     &'static RuntimeWakers,
     BluetoothInterruptDisabled,
+    &'static crate::WatchdogConfig,
 );
 
 /// Actual cold radio after RF close, Controller reset and clock restoration.
@@ -557,6 +560,9 @@ impl<
 > BluetoothHardwareRetiredWithPlatform<P, MT, SC, H2C, C2H, PC>
 {
     /// Finish last-client RF close and reset/clock release into cold ownership.
+    /// An ambiguous PHY-close failure requests system reset with all owners
+    /// retained. Preparation rejection and already-closed reunion failure
+    /// return their non-runnable frontiers instead.
     /// Once polled, drive to completion; cancellation retains the platform lease
     /// without implicit cleanup and does not authorize a new Controller epoch.
     pub async fn release_physical(
@@ -565,11 +571,13 @@ impl<
         BluetoothHardwareColdReleased<P, MT, SC, H2C, C2H, PC>,
         BluetoothHardwareShutdownFailure<P, MT, SC, H2C, C2H, PC>,
     > {
+        let protection = self._hardware.hardware.watchdog.shutdown();
         let BluetoothHardwareOutputReleased {
             hardware,
             _registers,
         } = self._hardware;
         let BluetoothHardwareRetired {
+            watchdog,
             _controller,
             _modem_driver,
             _recheck,
@@ -578,7 +586,14 @@ impl<
             _timer,
             _command,
         } = hardware;
-        let bindings = (_controller, _modem_driver, _recheck, _wakers, _interrupt);
+        let bindings = (
+            _controller,
+            _modem_driver,
+            _recheck,
+            _wakers,
+            _interrupt,
+            watchdog,
+        );
         let mut release = core::pin::pin!(
             _registers.release_physical::<P, _, crate::EmbassyPhyTime, SC, MT>(
                 _command,
@@ -589,14 +604,21 @@ impl<
         match core::future::poll_fn(|context| poll_physical_release(release.as_mut(), context))
             .await
         {
-            Ok(owner) => Ok(BluetoothHardwareColdReleased {
-                owner,
-                _bindings: bindings,
-            }),
-            Err(owner) => Err(BluetoothHardwareShutdownFailure {
-                owner,
-                _bindings: bindings,
-            }),
+            Ok(owner) => {
+                crate::WatchdogConfig::complete(protection);
+                Ok(BluetoothHardwareColdReleased {
+                    owner,
+                    _bindings: bindings,
+                })
+            }
+            Err(owner) => {
+                enforce_lifecycle(&owner, &bindings, owner.phy_hardware_ambiguous());
+                crate::WatchdogConfig::complete(protection);
+                Err(BluetoothHardwareShutdownFailure {
+                    owner,
+                    _bindings: bindings,
+                })
+            }
         }
     }
 }
@@ -641,6 +663,15 @@ fn poll_physical_release<F: core::future::Future>(
 }
 
 mod restart;
+
+// Borrow both retained halves rather than materializing another large failure
+// union. HCI is already retired; no Host acknowledgement or cleanup gates reset.
+fn enforce_lifecycle<E: ?Sized, B: ?Sized>(owner: &E, bindings: &B, hardware_ambiguous: bool) {
+    use oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop;
+    if let Some(reason) = SharedPhyFailStop::from_ambiguous_lifecycle(hardware_ambiguous) {
+        super::fail_stop::fail_stop_shared_phy(reason, (owner, bindings));
+    }
+}
 pub use restart::{BluetoothHardwareRestartError, BluetoothHardwareRestartFailure};
 
 mod maintenance;

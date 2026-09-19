@@ -47,7 +47,7 @@ use oer_esp32s31_bluetooth::{
     low_power::ControllerLowPowerHardwareInitializationFailure,
     phy::{
         ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
-        ControllerPhyTrackingFailure, PhyInitializationConfig,
+        PhyInitializationConfig,
     },
     resources::{BluetoothRadioHardware, BluetoothStopped},
     runtime_resources::ControllerRuntimeResources,
@@ -100,9 +100,6 @@ type PhyInitializationFailure<const MT: usize, const SC: usize> =
 type PhyClientAcquireFailure<const MT: usize, const SC: usize> =
     ControllerPhyClientAcquireFailure<Platform, MT, SC>;
 
-type PhyTrackingFailure<const MT: usize, const SC: usize> =
-    ControllerPhyTrackingFailure<Platform, MT, SC>;
-
 type InterruptPublicationFailure<const MT: usize, const SC: usize> =
     ControllerInterruptOwnerPublicationFailure<Platform, EspHalBluetoothInterruptStorage, MT, SC>;
 
@@ -114,6 +111,7 @@ type InterruptOwnersReady<const MT: usize, const SC: usize> =
 /// Recovered target facts, including the normal BLE-PHY policy, remain owned
 /// by the chip driver and cannot be overridden by an application.
 pub struct BluetoothColdStartConfig {
+    watchdog: &'static crate::WatchdogConfig,
     le_acl_data_packet_length: u16,
     total_num_le_acl_data_packets: u8,
     retained_calibration: Option<PhyCalibrationSnapshot>,
@@ -126,6 +124,7 @@ pub struct BluetoothColdStartConfig {
 impl BluetoothColdStartConfig {
     /// Bind all source-reviewed inputs for one non-cancellable cold start.
     pub const fn new(
+        watchdog: &'static crate::WatchdogConfig,
         le_acl_data_packet_length: u16,
         total_num_le_acl_data_packets: u8,
         retained_calibration: Option<PhyCalibrationSnapshot>,
@@ -134,6 +133,7 @@ impl BluetoothColdStartConfig {
         recheck_period: DtmRecheckPeriod,
     ) -> Self {
         Self {
+            watchdog,
             le_acl_data_packet_length,
             total_num_le_acl_data_packets,
             retained_calibration,
@@ -518,17 +518,6 @@ pub enum BluetoothColdStartError<
             PC,
         >,
     ),
-    /// Due initial parameter tracking failed and poisoned the powered epoch.
-    PhyTracking(
-        BluetoothReservedFailure<
-            BluetoothPoweredFailure<PhyTrackingFailure<MT, SC>>,
-            MT,
-            SC,
-            H2C,
-            C2H,
-            PC,
-        >,
-    ),
     /// The first runtime-relative recheck cannot fit the monotonic timeline.
     RecheckStart(
         BluetoothReservedFailure<
@@ -586,6 +575,7 @@ pub async fn start_esp32s31_bluetooth<
     BluetoothColdStartError<MT, SC, H2C, C2H, PC>,
 > {
     let BluetoothColdStartConfig {
+        watchdog,
         le_acl_data_packet_length,
         total_num_le_acl_data_packets,
         retained_calibration,
@@ -772,9 +762,11 @@ pub async fn start_esp32s31_bluetooth<
     let (platform, hardware) = owners.into_parts();
 
     let stopped = BluetoothStopped::from_hardware(platform, hardware);
+    let mut protection = Some(watchdog.startup());
     let clocked = match stopped.enable_clocks() {
         Ok(clocked) => clocked,
         Err(failure) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::Clock(reserved_powered(
                 failure, memory, slot,
             )));
@@ -786,6 +778,7 @@ pub async fn start_esp32s31_bluetooth<
     let low_power = match scheduler.initialize_modem_lp_timer_hardware() {
         Ok(low_power) => low_power,
         Err(failure) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::LowPower(reserved_powered(
                 failure, memory, slot,
             )));
@@ -805,6 +798,14 @@ pub async fn start_esp32s31_bluetooth<
     {
         Ok(registered) => registered,
         Err(failure) => {
+            if let Some(reason) =
+                oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::from_ambiguous_lifecycle(
+                    failure.phy_hardware_ambiguous(),
+                )
+            {
+                crate::system::fail_stop_shared_phy(reason, (&failure, &memory, &slot));
+            }
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::PhyInitialization(
                 reserved_powered(failure, memory, slot),
             ));
@@ -814,6 +815,7 @@ pub async fn start_esp32s31_bluetooth<
     let acquisition = match registered.acquire_phy_client(&mut clock) {
         Ok(acquisition) => acquisition,
         Err(failure) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::PhyClientAcquire(reserved_powered(
                 failure, memory, slot,
             )));
@@ -828,9 +830,10 @@ pub async fn start_esp32s31_bluetooth<
         {
             Ok(initialized) => initialized,
             Err(failure) => {
-                return Err(BluetoothColdStartError::PhyTracking(reserved_powered(
-                    failure, memory, slot,
-                )));
+                crate::system::fail_stop_shared_phy(
+                    oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::LifecycleFailed,
+                    (&failure, &memory, &slot),
+                );
             }
         },
     };
@@ -862,6 +865,7 @@ pub async fn start_esp32s31_bluetooth<
     let recheck = match DtmAbsoluteRecheck::after_period(recheck_period) {
         Ok(recheck) => recheck,
         Err(error) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::RecheckStart(
                 BluetoothReservedFailure::new(
                     BluetoothRecheckStartFailure {
@@ -888,6 +892,7 @@ pub async fn start_esp32s31_bluetooth<
     ) {
         Ok(published) => published,
         Err(failure) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::InterruptPublication(
                 BluetoothReservedFailure::new(failure, slot),
             ));
@@ -896,14 +901,18 @@ pub async fn start_esp32s31_bluetooth<
     let bound = match published.bind_hci(hci) {
         Ok(bound) => bound,
         Err(failure) => {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
             return Err(BluetoothColdStartError::HciBind(
                 BluetoothReservedFailure::new(failure, slot),
             ));
         }
     };
-    let crate::BluetoothSystemReady { system, platform } = slot
-        .compose(bound, recheck)
-        .map_err(BluetoothColdStartError::SystemBuild)?;
+    let crate::BluetoothSystemReady { system, platform } =
+        slot.compose(bound, recheck, watchdog).map_err(|failure| {
+            crate::WatchdogConfig::complete(protection.take().unwrap());
+            BluetoothColdStartError::SystemBuild(failure)
+        })?;
+    crate::WatchdogConfig::complete(protection.take().unwrap());
 
     Ok(BluetoothColdStartOutput {
         calibration_identity,

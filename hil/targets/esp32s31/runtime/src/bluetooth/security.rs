@@ -45,18 +45,34 @@ pub(super) fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 pub(super) fn configure(enabled: bool, failure: Option<BluetoothSecurityFailure>) {
+    #[cfg(target_arch = "riscv32")]
+    oer_esp32s31_bluetooth::le::peripheral::rx_fault::configure(
+        enabled && failure == Some(BluetoothSecurityFailure::ActiveDataMic),
+    );
     ENABLED.store(enabled, Ordering::Relaxed);
     INJECTION.store(
         match failure {
             None => 0,
             Some(BluetoothSecurityFailure::MissingKey) => 1,
             Some(BluetoothSecurityFailure::WrongKey) => 2,
+            Some(BluetoothSecurityFailure::MissingRefreshKey) => 3,
+            Some(BluetoothSecurityFailure::ActiveDataMic) => 0,
         },
         Ordering::Relaxed,
     );
 }
 pub(super) fn snapshot() -> BluetoothEncryptionEvidence {
+    #[cfg(target_arch = "riscv32")]
+    let injection = oer_esp32s31_bluetooth::le::peripheral::rx_fault::snapshot();
     BluetoothEncryptionEvidence {
+        #[cfg(target_arch = "riscv32")]
+        mic_injections: injection.injections,
+        #[cfg(target_arch = "riscv32")]
+        mic_injection_armed: injection.armed,
+        #[cfg(not(target_arch = "riscv32"))]
+        mic_injections: 0,
+        #[cfg(not(target_arch = "riscv32"))]
+        mic_injection_armed: false,
         enabled: enabled(),
         encrypted: ENCRYPTED.load(Ordering::Relaxed),
         key_requests: REQUESTS.load(Ordering::Relaxed),
@@ -113,23 +129,30 @@ pub(super) fn observe(packet: &ControllerToHostPacket<'_>) -> Option<(ConnHandle
             if key.is_none() {
                 increment(&FAULTS);
             }
-            let injected = if key.is_some() && PHASE.load(Ordering::Relaxed) == START_PENDING {
-                match INJECTION.swap(0, Ordering::Relaxed) {
-                    1 => Some(BluetoothSecurityFailure::MissingKey),
-                    2 => Some(BluetoothSecurityFailure::WrongKey),
-                    _ => None,
-                }
-            } else {
-                None
+            let injected = match (
+                key.is_some(),
+                PHASE.load(Ordering::Relaxed),
+                INJECTION.load(Ordering::Relaxed),
+            ) {
+                (true, START_PENDING, 1) => Some(BluetoothSecurityFailure::MissingKey),
+                (true, START_PENDING, 2) => Some(BluetoothSecurityFailure::WrongKey),
+                (true, REFRESH_PENDING, 3) => Some(BluetoothSecurityFailure::MissingRefreshKey),
+                _ => None,
             };
+            if injected.is_some() {
+                INJECTION.store(0, Ordering::Relaxed);
+            }
             let key = match injected {
-                Some(BluetoothSecurityFailure::MissingKey) => None,
+                Some(
+                    BluetoothSecurityFailure::MissingKey
+                    | BluetoothSecurityFailure::MissingRefreshKey,
+                ) => None,
                 Some(BluetoothSecurityFailure::WrongKey) => {
                     let mut wrong = BLUETOOTH_TEST_LTK;
                     wrong[0] ^= 1;
                     Some(wrong)
                 }
-                None => key,
+                None | Some(BluetoothSecurityFailure::ActiveDataMic) => key,
             };
             Some((request.handle, KeyReply { key, injected }))
         }
@@ -161,6 +184,10 @@ pub(super) fn observe(packet: &ControllerToHostPacket<'_>) -> Option<(ConnHandle
             None
         }
         HciEvent::Le(LeEvent::LeConnectionComplete(_)) | HciEvent::DisconnectionComplete(_) => {
+            #[cfg(target_arch = "riscv32")]
+            if matches!(event, HciEvent::DisconnectionComplete(_)) {
+                oer_esp32s31_bluetooth::le::peripheral::rx_fault::configure(false);
+            }
             ENCRYPTED.store(false, Ordering::Relaxed);
             PHASE.store(IDLE, Ordering::Relaxed);
             None
@@ -210,7 +237,12 @@ pub(super) async fn reply(
 #[cfg(any(target_arch = "riscv32", test))]
 fn record_reply(reply: KeyReply) {
     match (reply.key, reply.injected) {
-        (None, Some(BluetoothSecurityFailure::MissingKey)) => increment(&NEGATIVE_REPLIES),
+        (
+            None,
+            Some(
+                BluetoothSecurityFailure::MissingKey | BluetoothSecurityFailure::MissingRefreshKey,
+            ),
+        ) => increment(&NEGATIVE_REPLIES),
         (Some(_), injected) => {
             increment(&REPLIES);
             if injected == Some(BluetoothSecurityFailure::WrongKey) {
@@ -356,7 +388,9 @@ mod tests {
             let (_, reply) = event(&request).unwrap();
             assert_eq!(reply.injected, Some(failure));
             match failure {
-                BluetoothSecurityFailure::MissingKey => assert_eq!(reply.key, None),
+                BluetoothSecurityFailure::MissingKey
+                | BluetoothSecurityFailure::MissingRefreshKey => assert_eq!(reply.key, None),
+                BluetoothSecurityFailure::ActiveDataMic => panic!("not a key injection"),
                 BluetoothSecurityFailure::WrongKey => {
                     assert_ne!(reply.key, Some(BLUETOOTH_TEST_LTK))
                 }
@@ -370,6 +404,42 @@ mod tests {
         assert_eq!(snapshot().negative_replies, 1);
         assert_eq!(snapshot().wrong_key_replies, 1);
         assert_eq!(snapshot().faults, 7);
+        // Refresh injection survives the initial valid reply and is consumed exactly once.
+        let before = snapshot();
+        event(&[5, 4, 0, 1, 0, 0x13]);
+        configure(true, Some(BluetoothSecurityFailure::MissingRefreshKey));
+        request[5..13].copy_from_slice(&BLUETOOTH_TEST_RAND);
+        request[13..].copy_from_slice(&BLUETOOTH_TEST_EDIV.to_le_bytes());
+        let (_, initial) = event(&request).unwrap();
+        assert_eq!(initial.key, Some(BLUETOOTH_TEST_LTK));
+        assert_eq!(initial.injected, None);
+        record_reply(initial);
+        event(&[8, 4, 0, 1, 0, 1]);
+        request[5..13].copy_from_slice(&BLUETOOTH_REFRESH_RAND);
+        request[13..].copy_from_slice(&BLUETOOTH_REFRESH_EDIV.to_le_bytes());
+        let (_, rejected) = event(&request).unwrap();
+        assert_eq!(rejected.key, None);
+        assert_eq!(
+            rejected.injected,
+            Some(BluetoothSecurityFailure::MissingRefreshKey)
+        );
+        record_reply(rejected);
+        assert!(!snapshot().encrypted);
+        event(&[5, 4, 0, 1, 0, 6]);
+        // A fresh connection recovers with the initial LTK and no residual injection.
+        request[5..13].copy_from_slice(&BLUETOOTH_TEST_RAND);
+        request[13..].copy_from_slice(&BLUETOOTH_TEST_EDIV.to_le_bytes());
+        let (_, recovered) = event(&request).unwrap();
+        assert_eq!(recovered.key, Some(BLUETOOTH_TEST_LTK));
+        assert_eq!(recovered.injected, None);
+        record_reply(recovered);
+        event(&[8, 4, 0, 1, 0, 1]);
+        assert!(snapshot().encrypted);
+        assert_eq!(snapshot().negative_replies, before.negative_replies + 1);
+        assert_eq!(snapshot().key_replies, before.key_replies + 2);
+        assert_eq!(snapshot().encryption_changes, before.encryption_changes + 2);
+        assert_eq!(snapshot().key_refreshes, before.key_refreshes);
+        assert_eq!(snapshot().faults, before.faults);
         configure(false, None);
     }
 }

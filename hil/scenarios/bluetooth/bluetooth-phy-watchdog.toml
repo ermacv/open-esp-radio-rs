@@ -1,0 +1,10 @@
+schema = 4
+id = "bluetooth-phy-watchdog"
+description = "Real PHY calibration completion/restoration faults and cancellation; autonomous reset, fresh ACL and ordinary disconnect control"
+image = "bluetooth-watchdog-reset"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "phy", "watchdog", "fault-injection"]
+
+[workload]
+kind = "bluetooth-phy-watchdog"

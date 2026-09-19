@@ -404,8 +404,9 @@ pub enum TargetBluetoothPhyRegisterError {
 ///
 /// The borrowed platform and register capabilities return to their outer
 /// Controller, but this type exposes no retry or state extractor. Any failure
-/// may follow an ambiguous hardware edge; the outer Controller must retain its
-/// own fail-stop state until reset.
+/// may follow an ambiguous hardware edge. The outer Controller must retain its
+/// non-runnable frontier; [`Self::failure_cleanup_completed`] distinguishes
+/// executed terminal cleanup from an epoch requiring shared-PHY escalation.
 #[must_use = "failed Bluetooth PHY registration retains the poisoned transition"]
 pub struct TargetBluetoothPhyRegisterFailure {
     transition: PhyRegisterTransition,
@@ -414,6 +415,12 @@ pub struct TargetBluetoothPhyRegisterFailure {
 }
 
 impl TargetBluetoothPhyRegisterFailure {
+    /// Whether the real target transition completed its failure cleanup.
+    /// This does not authorize retry or mint a registered owner.
+    pub fn failure_cleanup_completed(&self) -> bool {
+        self.transition.failure_cleanup_completed()
+    }
+
     /// Inspect the exact terminal failure.
     pub const fn error(&self) -> TargetBluetoothPhyRegisterError {
         self.error
@@ -626,6 +633,12 @@ pub struct TargetPhyRegisterFailure<P> {
 }
 
 impl<P> TargetPhyRegisterFailure<P> {
+    /// Whether the real target transition completed its failure cleanup.
+    /// The powered radio remains owned by this failure until explicitly consumed.
+    pub fn failure_cleanup_completed(&self) -> bool {
+        self.attempt.transition.failure_cleanup_completed()
+    }
+
     pub const fn error(&self) -> TargetPhyRegisterError {
         self.error
     }
@@ -2367,13 +2380,19 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
     ) -> Result<PhyCalibrationTrackingCompletion, Self::Error> {
         self.observer.operation_started();
         let completion = match transition.action() {
-            PhyCalibrationTrackingAction::ClearPbus => calibration::clear_pbus::<D::ShortDelay, _>(
-                transition
-                    .begin_pbus_clear()
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                self.registers,
-                &mut *self.observer,
-            )?,
+            PhyCalibrationTrackingAction::ClearPbus => {
+                let completed = calibration::clear_pbus::<D::ShortDelay, _>(
+                    transition
+                        .begin_pbus_clear()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.registers,
+                    &mut *self.observer,
+                )?;
+                #[cfg(feature = "lifecycle-fault-injection")]
+                crate::fault_injection::checkpoint(crate::fault_injection::Boundary::Calibration)
+                    .await;
+                completed
+            }
             PhyCalibrationTrackingAction::CalibrateDcode => {
                 use crate::tracking::observation::{Event, Operation};
                 self.observer

@@ -3,6 +3,12 @@
 
 //! Application configuration for the bounded Controller smoke sequences.
 
+#[cfg(feature = "gatt-application")]
+pub mod gatt;
+
+#[cfg(feature = "secure-gatt-application")]
+pub mod security;
+
 use bt_hci::{
     cmd::le::LeSetAdvParams,
     param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration},

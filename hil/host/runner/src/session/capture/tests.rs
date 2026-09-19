@@ -1227,6 +1227,8 @@ fn result_events(rx_frames: u32) -> Vec<Event> {
             text_truncated: 0,
         }),
         EvidenceRecord::Stack(StackUsage {
+            cpu0_irq: None,
+            cpu1_irq: None,
             cpu0: watermark,
             cpu1: watermark,
         }),

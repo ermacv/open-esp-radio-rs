@@ -28,16 +28,21 @@ impl Requirements {
         let mut required = Self::default();
         match &scenario.workload {
             Workload::BluetoothDtm { .. }
+            | Workload::BluetoothGatt
+            | Workload::BluetoothSecureGatt
+            | Workload::BluetoothPhyWatchdog
             | Workload::BluetoothPeripheral { .. }
             | Workload::BluetoothAclCalibration { .. }
-            | Workload::BluetoothAclBackpressure
+            | Workload::BluetoothAclBackpressure { .. }
             | Workload::BluetoothEncryptedAcl { .. }
             | Workload::BluetoothSecurityFailure { .. }
+            | Workload::BluetoothWatchdogReset
             | Workload::BluetoothMaintenanceDeadline => {
                 required.bluetooth_adapter = true;
                 return required;
             }
             Workload::BootSmoke
+            | Workload::SystemWatchdog
             | Workload::Timebase { .. }
             | Workload::MemoryBenchmark { .. }
             | Workload::Ieee802154EventStatus { .. }
@@ -58,6 +63,7 @@ impl Requirements {
                 required.laptop_client = true
             }
             Workload::Tcp { .. }
+            | Workload::WifiPhyWatchdog
             | Workload::Icmp { .. }
             | Workload::StationReconnect { .. }
             | Workload::StationApLoss { .. }

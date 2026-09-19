@@ -33,6 +33,10 @@ use crate::{
 #[derive(Debug)]
 #[must_use = "a classified HCI command must be routed or answered exactly once"]
 pub enum LeControllerCommandClassification {
+    /// Standard LE Rand, serviced by composition-owned entropy.
+    Random(crate::LeRandCommand),
+    /// LE Rand had a nonempty parameter body.
+    MalformedRandom(crate::LeRandCommandCompleteEvent),
     /// A validated Disconnect command awaits the active connection lifecycle.
     Disconnect(LeDisconnectCommand),
     /// Disconnect had an invalid parameter body.
@@ -79,6 +83,7 @@ impl LeControllerCommandClassification {
     /// Opcode retained by this exact classification result.
     pub const fn opcode(&self) -> Opcode {
         match self {
+            Self::Random(_) | Self::MalformedRandom(_) => crate::LeRandCommand::OPCODE,
             Self::Disconnect(_) | Self::MalformedDisconnect(_) => LeDisconnectCommand::OPCODE,
             Self::ReadRemoteFeatures(_) | Self::MalformedReadRemoteFeatures(_) => {
                 LeReadRemoteFeaturesCommand::OPCODE
@@ -138,6 +143,17 @@ impl<'epoch> HciEpochBound<'epoch, LeDtmCommand> {
 pub fn classify_le_controller_command(
     command: HciCommandPacket<'_>,
 ) -> LeControllerCommandClassification {
+    if command.opcode() == crate::LeRandCommand::OPCODE {
+        return if command.parameters().is_empty() {
+            LeControllerCommandClassification::Random(crate::LeRandCommand(()))
+        } else {
+            LeControllerCommandClassification::MalformedRandom(
+                crate::LeRandCommandCompleteEvent::error(
+                    bt_hci::param::Error::INVALID_HCI_PARAMETERS,
+                ),
+            )
+        };
+    }
     match LeDisconnectCommand::decode(command) {
         Ok(command) => return LeControllerCommandClassification::Disconnect(command),
         Err(LeDisconnectDecodeError::Malformed) => {

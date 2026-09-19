@@ -88,6 +88,16 @@ pub struct ControllerPhysicalShutdownFailure<'runtime, P, S, const SC: usize, co
 }
 
 impl<P, S, const SC: usize, const MT: usize> ControllerPhysicalShutdownFailure<'_, P, S, SC, MT> {
+    /// Whether the retained failure has an ambiguous shared-PHY hardware state.
+    /// Client rejection precedes RF close; hardware reunion follows proven close.
+    /// This fact selects no platform reset or watchdog mechanism.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        match &self._stage {
+            Stage::Rf { _failure, .. } => _failure.hardware_ambiguous(),
+            Stage::Client { .. } | Stage::Hardware { .. } => false,
+        }
+    }
+
     pub const fn error(&self) -> ControllerPhysicalShutdownError {
         self.error
     }

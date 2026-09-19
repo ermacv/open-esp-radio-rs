@@ -11,6 +11,10 @@ pub(crate) fn enable_stack_checks(
         .env(
             "OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES",
             budget.runtime_cpu1_minimum_free_bytes.to_string(),
+        )
+        .env(
+            "OPEN_RADIO_IRQ_STACK_MINIMUM_FREE_BYTES",
+            budget.runtime_irq_minimum_free_bytes.to_string(),
         );
 }
 pub(crate) fn analyze_elf_stack(

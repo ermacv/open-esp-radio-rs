@@ -1502,6 +1502,7 @@ pub async fn run(
     platform: EspHalRadioPeripheral,
     trng: Trng,
     l1_cache: &'static L1CachePerformanceCounters,
+    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
     #[cfg(not(any(
@@ -1609,6 +1610,7 @@ pub async fn run(
     #[cfg(feature = "driver-observation")]
     let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = RadioConfig::new(
+        crate::watchdog::wifi(watchdog),
         station_mac,
         access_point_mac,
         PhyCalibrationIdentity {

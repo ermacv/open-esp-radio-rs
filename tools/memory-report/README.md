@@ -26,14 +26,30 @@ Select the retained `runtime.elf` from the completed HIL image or standalone
 firmware bundle reported by its builder. Image/network selections and build IDs
 change output paths; an old Cargo cache path does not identify the selected
 firmware. The policy must match that image's composition.
+HIL images use `hil/targets/esp32s31/stack.toml`; standalone examples use
+`platform/esp32s31/stack.toml`. The HIL policy also reviews harness-owned frames.
 
 Every command supports `--format human|json`. `stdout` contains only the
 selected report; errors are written to `stderr`.
 
 `stack` requires nonempty compiler-emitted `.stack_sizes` metadata. A missing or
 empty section fails instead of claiming a successful audit without measured frames.
-Target policy owns a
-review threshold, a hard per-frame limit, the compiler move limit and runtime
+Report schema 2 separately inventories defined text symbols by linked address,
+counting aliases once. It reports measured and unmeasured groups, Rust-mangled
+and other linked text, absolute declarations (such as ROM functions), other
+text definitions, and metadata entries without a matching text symbol. Linked
+coverage is `complete`, `incomplete`, or `unavailable` when there are no linked
+text symbols. A zero-byte frame counts as measured. Absolute declarations do
+not contribute to linked-code coverage.
+
+This is a symbol inventory, not proof that every compiled function has metadata:
+stripped symbols and inlined code are outside that inventory. Rust names can
+also identify naked assembly functions; other text symbols can identify vector
+tables rather than callable functions. Missing entries remain visible without
+automatic exemptions or inferred zero-byte frames. The command's budget audit
+and exit status check measured frames only; consult `coverage` separately.
+Target policy schema 4 owns separate task and dedicated-IRQ runtime headroom
+reserves, a review threshold, a hard per-frame limit, the compiler move limit and runtime
 headroom. Generated async `poll` functions are included. Local frames do not
 prove indirect call chains, so HIL stack painting remains independently
 mandatory.
@@ -48,7 +64,12 @@ secondary core's stack; it does not prove the aggregate call-chain bound.
 Every frame above the review threshold must match a `reviewed_frames` policy
 entry and stay below its individual ceiling. A new large frame or growth of a
 reviewed frame therefore fails the build instead of producing an unactioned
-warning.
+warning. Multiple matching rules fail with their selectors and the frame
+identity, including below the review threshold: policy order must not choose
+an allowance or execution stack. A rule may match multiple monomorphizations;
+an unused rule does not by itself fail an image with a different composition.
+The report lists the actual measured addresses matched by every rule, including
+unused rules, small frames and all sides of an ambiguous match.
 
 The analyzer reports linker-region capacity, allocated sections, explicit
 reservations, genuinely unassigned address space, policy-attributed consumers

@@ -215,6 +215,7 @@ impl<
             PACKET_CAPACITY,
         >,
         recheck: DtmAbsoluteRecheck,
+        watchdog: &'static crate::WatchdogConfig,
     ) -> Result<
         BluetoothSystemReady<
             P,
@@ -233,7 +234,7 @@ impl<
         >,
     > {
         let owner = self.owner.write(owner);
-        compose_esp32s31_bluetooth_system(owner, self.wakers, recheck)
+        compose_esp32s31_bluetooth_system(owner, self.wakers, recheck, watchdog)
     }
 }
 

@@ -186,6 +186,11 @@ The helper `capabilities` and sudoers validation subprocesses each have a
 five-second execution deadline; timeout is an installation/preparation failure.
 Bluetooth preparation and execution share the versioned contract in
 [`bluetooth/contract.rs`](runner/src/fixture/bluetooth/contract.rs).
+Synchronous HCI command receive failures report the command identity, elapsed
+time, packet count and last event identity in the helper's existing error
+report. They do not record event payloads or keys, retry commands, or extend
+the two-second deadline when unrelated events arrive. A DTM Test End timeout
+is a peer-check failure, not evidence that the DUT has stopped transmitting.
 
 Like every Cargo alias, `cargo hil` may compile the runner before it can print
 the plan. That Cargo startup is not an installer plan step. Missing helper

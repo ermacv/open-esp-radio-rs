@@ -10,6 +10,8 @@ description = "Allocation-free Rust ESP32-S31 PHY state machines"
 [features]
 default = []
 validation-probes = []
+# Destructive, one-shot lifecycle fault injection. Never enabled by default.
+lifecycle-fault-injection = []
 # Experimental placement discriminator for the direct RX-gain transaction.
 # It changes code placement only; the recovered algorithm and waits are shared.
 rx-gain-hot-sram = []

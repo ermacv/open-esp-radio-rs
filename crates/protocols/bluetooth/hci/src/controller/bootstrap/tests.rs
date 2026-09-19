@@ -252,11 +252,11 @@ fn read_bd_addr_converts_canonical_identity_at_the_hci_boundary() {
     let mut bootstrap = LeControllerBootstrap::new(config);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
-    let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadBdAddr);
+    let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadBdAddr, false);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
 }
@@ -274,19 +274,21 @@ fn active_radio_rejects_random_address_without_replacing_epoch_state() {
     let rejected = BdAddr::new([0xc7, 6, 5, 4, 3, 2]);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetRandomAddress(retained))
+            .dispatch_owned(OwnedBootstrapCommand::LeSetRandomAddress(retained), false)
             .status(),
         Status::SUCCESS
     );
 
-    let response = bootstrap
-        .dispatch_owned_while_radio_active(OwnedBootstrapCommand::LeSetRandomAddress(rejected));
+    let response = bootstrap.dispatch_owned_while_radio_active(
+        OwnedBootstrapCommand::LeSetRandomAddress(rejected),
+        false,
+    );
     assert_eq!(response.status(), HciError::CMD_DISALLOWED.to_status());
     assert_eq!(bootstrap.requested_random_address(), Some(retained));
 }
@@ -435,7 +437,7 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
     let mut bootstrap = LeControllerBootstrap::new(config);
 
     let before_reset =
-        bootstrap.dispatch_owned(OwnedBootstrapCommand::SetEventMask(EventMask::new()));
+        bootstrap.dispatch_owned(OwnedBootstrapCommand::SetEventMask(EventMask::new()), false);
     assert_eq!(before_reset.status(), HciError::CMD_DISALLOWED.to_status());
     assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
@@ -451,7 +453,7 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
 
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
@@ -528,12 +530,13 @@ fn supported_commands_report_matches_the_closed_operational_inventory() {
     let mut bootstrap = LeControllerBootstrap::new(config);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
 
-    let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadLocalSupportedCommands);
+    let response =
+        bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadLocalSupportedCommands, false);
     assert_eq!(response.opcode(), ReadLocalSupportedCmds::OPCODE);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(response.as_bytes().len(), 70);
@@ -666,6 +669,10 @@ fn dispatch_test_packet(
     command: HciCommandPacket<'_>,
 ) -> super::BootstrapCommandCompleteEvent {
     match classify_le_controller_command(command) {
+        LeControllerCommandClassification::Random(_)
+        | LeControllerCommandClassification::MalformedRandom(_) => {
+            panic!("LE Rand is a platform service, not software bootstrap")
+        }
         LeControllerCommandClassification::Disconnect(_)
         | LeControllerCommandClassification::MalformedDisconnect(_)
         | LeControllerCommandClassification::ReadRemoteFeatures(_)
@@ -677,7 +684,9 @@ fn dispatch_test_packet(
         | LeControllerCommandClassification::MalformedLongTermKeyReply(_) => {
             command_error(crate::LeDisconnectCommand::OPCODE, HciError::UNKNOWN_CMD)
         }
-        LeControllerCommandClassification::Bootstrap(command) => bootstrap.dispatch_owned(command),
+        LeControllerCommandClassification::Bootstrap(command) => {
+            bootstrap.dispatch_owned(command, false)
+        }
         LeControllerCommandClassification::MalformedBootstrap(response) => response,
         LeControllerCommandClassification::Dtm(command) => {
             command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)

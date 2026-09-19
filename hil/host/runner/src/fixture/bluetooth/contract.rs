@@ -5,7 +5,7 @@
 //! alone does not establish encrypted interoperability.
 
 pub const CONNECTION_RESET_SCHEMA: u32 = 14;
-pub const HELPER_CAPABILITIES: &str = "schema=14 encrypted-acl=true key-refresh=true security-failure=missing-key,wrong-key post-rejection-version=true termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
+pub const HELPER_CAPABILITIES: &str = "schema=17 dtm-check=v1,v2 encrypted-acl=true key-refresh=true security-failure=missing-key,wrong-key,missing-refresh-key,active-data-mic post-rejection-version=true termination=peer-reset,peer-rfkill,target-disconnect,target-reset";
 
 /// Encryption, Peripheral Feature Exchange, Ping and CSA #2.
 /// The peer must support the complete negotiated profile.

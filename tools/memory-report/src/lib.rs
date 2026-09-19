@@ -17,8 +17,9 @@ pub use policy::{
 };
 pub use render::{MemoryDiff, diff, render_audit, render_diff, render_report};
 pub use stack::{
-    ExecutionStack, StackBudget, StackFrame, StackReport, StackSourceLocation, analyze_stack,
-    audit_stack, render_stack_report,
+    ExecutionStack, StackBudget, StackCoverage, StackCoverageFunction, StackCoverageOrigin,
+    StackCoverageStatus, StackFrame, StackReport, StackReviewedRuleMatches, StackSourceLocation,
+    analyze_stack, audit_stack, render_stack_report,
 };
 use thiserror::Error;
 

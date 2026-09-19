@@ -5,8 +5,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
+    SystemWatchdog,
     BluetoothDtm,
+    BluetoothGatt,
+    BluetoothSecureGatt,
     BluetoothPhyMaintenance,
+    BluetoothWatchdogReset,
+    DiagnosticPhyFault,
     BootSmoke,
     Performance,
     Correctness,
@@ -31,9 +36,14 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 22] = [
+        Self::BluetoothSecureGatt,
+        Self::BluetoothGatt,
+        Self::SystemWatchdog,
+        Self::DiagnosticPhyFault,
         Self::BluetoothDtm,
         Self::BluetoothPhyMaintenance,
+        Self::BluetoothWatchdogReset,
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -53,8 +63,13 @@ impl ImageClass {
 
     pub const fn id(self) -> &'static str {
         match self {
+            Self::SystemWatchdog => "system-watchdog",
             Self::BluetoothDtm => "bluetooth-dtm",
+            Self::BluetoothGatt => "bluetooth-gatt",
+            Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::BluetoothPhyMaintenance => "bluetooth-phy-maintenance",
+            Self::BluetoothWatchdogReset => "bluetooth-watchdog-reset",
+            Self::DiagnosticPhyFault => "diagnostic-phy-fault",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
@@ -77,11 +92,24 @@ impl ImageClass {
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
+            Self::BluetoothGatt => "bluetooth-gatt,psram-task-stack,code-psram,profile-psram-data",
+            Self::BluetoothSecureGatt => {
+                "bluetooth-secure-gatt,psram-task-stack,code-psram,profile-psram-data"
+            }
+            Self::SystemWatchdog => {
+                "system-watchdog,psram-task-stack,code-psram,profile-psram-data"
+            }
+            Self::DiagnosticPhyFault => {
+                "open-radio-hil,driver-observation,phy-fault-injection,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::BluetoothDtm => {
                 "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data"
             }
             Self::BluetoothPhyMaintenance => {
                 "bluetooth-phy-maintenance,psram-task-stack,code-psram,profile-psram-data"
+            }
+            Self::BluetoothWatchdogReset => {
+                "bluetooth-watchdog-reset,psram-task-stack,code-psram,profile-psram-data"
             }
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
@@ -135,8 +163,13 @@ impl ImageClass {
 
     pub const fn runtime_profile(self) -> &'static str {
         match self {
-            Self::BluetoothDtm
+            Self::SystemWatchdog
+            | Self::BluetoothGatt
+            | Self::BluetoothSecureGatt
+            | Self::BluetoothDtm
+            | Self::DiagnosticPhyFault
             | Self::BluetoothPhyMaintenance
+            | Self::BluetoothWatchdogReset
             | Self::BootSmoke
             | Self::Performance
             | Self::Correctness
@@ -177,8 +210,12 @@ impl ImageClass {
     pub const fn requires_driver_observation(self) -> bool {
         !matches!(
             self,
-            Self::BluetoothDtm
+            Self::SystemWatchdog
+                | Self::BluetoothGatt
+                | Self::BluetoothSecureGatt
+                | Self::BluetoothDtm
                 | Self::BluetoothPhyMaintenance
+                | Self::BluetoothWatchdogReset
                 | Self::BootSmoke
                 | Self::Performance
                 | Self::DiagnosticTaskResidence

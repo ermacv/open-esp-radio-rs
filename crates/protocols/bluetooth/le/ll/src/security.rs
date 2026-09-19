@@ -409,6 +409,17 @@ impl LePeripheralEncryptionProcedure {
         )
     }
 
+    /// Admit ordinary control traffic, or the required PIN or Key Missing termination.
+    ///
+    /// A rejected refresh keeps data and unrelated control blocked. Its
+    /// `LL_TERMINATE_IND(0x06)` must still reach the reliable TX owner after
+    /// encryption has paused; admitting this packet does not reopen plaintext ACL.
+    pub fn permits_control_pdu(&self, payload: &[u8]) -> bool {
+        !self.blocks_unrelated_transmission()
+            || (matches!(self.state, LePeripheralEncryptionState::TerminationRequired)
+                && payload == [0x02, 0x06])
+    }
+
     /// Install the Host's LTK and retain a new unencrypted `LL_START_ENC_REQ`.
     pub fn provide_long_term_key(
         &mut self,
@@ -1406,5 +1417,22 @@ mod tests {
         procedure.reject_long_term_key().unwrap();
         assert_eq!(procedure.termination_reason(), Some(0x06));
         assert_eq!(procedure.pending_response(), None);
+        assert!(procedure.blocks_unrelated_transmission());
+        assert!(procedure.permits_control_pdu(&[0x02, 0x06]));
+        for payload in [
+            &[0x0d, 0x06][..],
+            &[0x02, 0x13],
+            &[0x0c],
+            &[0x02, 0x06, 0],
+            &[],
+        ] {
+            assert!(!procedure.permits_control_pdu(payload));
+        }
+        procedure.observe_transmission_completion(true);
+        assert_eq!(procedure.termination_reason(), Some(0x06));
+        assert!(!procedure.is_idle());
+        assert!(procedure.active_encryption().is_none());
+        assert!(!procedure.take_encryption_enabled());
+        assert!(!procedure.take_encryption_refreshed());
     }
 }

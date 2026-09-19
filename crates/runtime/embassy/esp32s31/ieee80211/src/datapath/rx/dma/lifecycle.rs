@@ -539,6 +539,10 @@ impl<
     /// The default policy is zero-sized and admits the complete physical
     /// staging slot. Changing it consumes the owner so a policy cannot be
     /// swapped while a DMA transaction is in progress.
+    /// The selected credit policy is validated against both pool and queue at
+    /// the next service entry, before any hardware or ownership changes. The
+    /// default reserves one credit and rejects a one-credit domain; such a
+    /// profile must explicitly install [`UnreservedRxStageAdmission`].
     pub fn with_stage_admission_policy<P>(
         self,
         admission: P,

@@ -65,7 +65,8 @@ fn occupied_network_pool_retains_staging_owner_until_credit_return() {
     let pool = RxStagePool::<1, CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, 1, CAPACITY, 1>::new();
     let (sender, receiver) = queue.split();
-    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_stage_admission_policy(UnreservedRxStageAdmission);
     embassy_futures::block_on(producer.service(&mut hardware)).unwrap();
 
     let resources = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 1>::new()));

@@ -4,7 +4,7 @@
 mod active;
 #[cfg(all(test, not(target_arch = "riscv32")))]
 #[path = "peripheral/active/acl.rs"]
-mod active_acl;
+pub(crate) mod active_acl;
 #[cfg(all(test, not(target_arch = "riscv32")))]
 #[path = "peripheral/active/host_events.rs"]
 mod active_host_events;
@@ -102,3 +102,7 @@ pub use active::{
 
 #[cfg(feature = "dtm-diagnostics")]
 pub mod diagnostics;
+
+/// Explicit diagnostic input corruption; absent from ordinary builds.
+#[cfg(feature = "rx-fault-injection")]
+pub mod rx_fault;

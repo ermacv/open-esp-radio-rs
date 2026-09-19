@@ -45,6 +45,32 @@ zero RX count is valid here because this check has no coordinated transmitter.
 No qualification claim follows from this fixture check. Other PHYs, extended
 advertising and ISO/Audio are outside this finite check.
 
+### Explicit DTM v1 diagnostic
+
+For a controlled comparison of command versions on the same adapter, select
+the v1 profile explicitly:
+
+```console
+cargo hil fixture bluetooth-check --adapter hci0 --dtm-version v1
+```
+
+The default remains v2. Both profiles use LE 1M, channel 0, 100 ms RX/TX
+windows, 37-byte PRBS9 TX packets and the same two-second command deadline.
+The selected profile must advertise its RX, TX and Test End commands. A missing
+command, rejection or timeout fails the check; the helper never retries or
+switches versions. Reset, exclusive adapter ownership and verified restoration
+are unchanged. Reinstall with `cargo hil fixture install --provider linux-bluetooth`
+after updating its interface; installation adds only an exact v1 check grant for each admitted
+adapter, not arbitrary command or timeout access.
+
+Check report schema 2 records `dtm_version` and both advertised command profiles.
+The runner requires the reported version to match the requested version.
+DTM RF and watchdog scenarios continue to require v2; a passing diagnostic v1
+check is not substituted for their peer evidence. The helper uses a local typed
+TX v1 command correction because the pinned `bt-hci 0.10.1` assigns that command
+the Read Supported States opcode; its parameters and completion handling still
+use `bt-hci`. Socket tests exercise the corrected TX command bytes.
+
 ## Connection loss fixture
 
 With a public-address LE peripheral already advertising, run:
@@ -269,12 +295,12 @@ and intentionally corrupted MIC tests remain separate requirements;
 a passed plaintext scenario or an advertised feature bit cannot substitute for
 this evidence.
 
-## Initial-key failure fixtures
+## Key failure fixtures
 
 `cargo hil run bluetooth-peripheral-missing-key` and
 `cargo hil run bluetooth-peripheral-wrong-key` use the same leased helper.
 Its finite `security-failure --adapter hci0 --peer <address> --failure
-missing-key|wrong-key` command accepts no custom key or opcode. Install it through
+missing-key|wrong-key|missing-refresh-key|active-data-mic` command accepts no custom key or opcode. Install it through
 `cargo hil fixture install --provider linux-bluetooth --adapter hci0`.
 
 The target diagnostic Host injects exactly one negative LTK reply or one reply
@@ -295,7 +321,27 @@ requirements; the diagnostic is not a substitute in qualification. A version
 completion may come from the central's cache and alone does not prove a fresh
 over-the-air exchange or application-data progress.
 
-Security-failure reports use schema 2 and retain at most 64 incoming HCI
+`cargo hil run bluetooth-peripheral-missing-refresh-key` first requires a
+successful initial Encryption Change on the same handle, then requests the
+distinct replacement LTK. The target Host rejects that second key request.
+Both endpoints must observe termination with PIN or Key Missing (`0x06`);
+the helper never sends Disconnect to manufacture that result. A failed Key
+Refresh Complete may precede disconnect and must also carry `0x06`; successful
+refresh, supervision timeout and application delivery fail the probe. The
+initial and refresh command admissions are recorded separately. This finite
+mode requires the current helper capability contract and matching installer policy.
+
+`cargo hil run bluetooth-peripheral-active-data-mic` requires successful initial
+encryption, then sends the fixed ACL payload. The target's explicit diagnostic
+feature corrupts one received data MIC before production authentication. It
+must report exactly one injection, no Host ACL delivery and reason `0x3d`.
+The peer must observe timeout `0x08` after sending data, without a local
+Disconnect or any received application data. The scenario then requires a fresh
+encrypted connection with exact echoes and cold retirement. This tests the
+target's response to corrupted RX input, not transmission of a bad MIC over RF.
+The finite helper mode requires schema 16 and matching installation rules.
+
+Security-failure reports use schema 4 and retain at most 64 incoming HCI
 packets, each bounded to 258 bytes, with monotonic times relative to submission
 of LE Enable Encryption. This chronology is not an RF capture. The complete
 probe retains its eight-second deadline, including the optional version read;
@@ -312,11 +358,62 @@ fails the probe.
 Each scenario then reconnects in the same target boot/HCI epoch, starts normal
 encryption and checks both exact fragmented echoes, connection/channel-map
 updates, peer Reset recovery and cold retirement. There are three repetitions.
-Preflight checks password-free admission of both failure modes and the separate
+Preflight checks password-free admission of all three failure modes and the separate
 version diagnostic using an invalid peer
 address, rejected by the CLI parser before any adapter acquisition. A successful
 `sudo -l` listing alone is not proof of password-free execution.
 Reports retain both peer evidence and target snapshots, including partial
-failures. These probes cover initial-key rejection and handshake MIC failure;
-they do not establish missing-key handling during refresh or corrupted data MIC
-handling in an already encrypted session, SMP, pairing or secure GATT.
+failures. A failed peer command triggers a bounded target snapshot before the
+capture closes; a failed snapshot is reported separately and never replaces the
+original error. Refresh completion errors retain the exact peer HCI status and
+actual/expected handles. These probes cover initial-key rejection, missing refresh keys and handshake
+MIC failure; they do not establish corrupted data MIC handling in an already
+encrypted session, SMP, pairing or secure GATT.
+
+## Secure Trouble GATT fixture
+
+Run `cargo hil run bluetooth-trouble-secure-gatt` from the repository root;
+no interactive terminal or stdin response is required, including over SSH.
+It uses the dedicated, initially powered-off adapter and ordinary kernel/BlueZ
+path, not the helper's exclusive HCI channel. No helper reinstall is needed for
+this path. BlueZ D-Bus access, `busctl`, `/dev/rfkill` access and a DUT without an
+existing BlueZ device record are required. A preexisting record is never deleted
+or adopted, even if it is unpaired or left after an interrupted earlier run.
+
+The fixture registers its own `DisplayYesNo` agent on the same bus connection
+that issues `Pair`; it does not replace the default desktop agent. It accepts
+callbacks only from that BlueZ owner for the selected DUT and rejects other
+pairing methods. BlueZ restart invalidates ownership. Read/write/notification
+verification uses BlueZ GATT; notifications are received through `AcquireNotify`,
+not inferred from a cached characteristic value.
+
+The scenario first verifies that plaintext value reads/writes and CCCD writes
+receive security errors. It then explicitly declines one Numeric Comparison
+attempt. The positive attempt compares the independent numbers received from
+the DUT's framed USB console and the selected BlueZ agent callback. Only a match
+produces explicit positive replies to both peers; the DUT reply is bound to the
+exact boot and pending request. Missing, invalid, stale or different challenges
+cannot be accepted. This is an automated HIL test operator, not proof of human
+presence or a production auto-pairing policy. The standalone application's
+manual console remains unchanged. The agent callback has a 25-second limit and
+D-Bus calls a 35-second limit.
+
+After authenticated enrollment it checks value reads/writes and independently
+received notifications, disconnects, and repeats using the retained bond without
+a new comparison. It then requests full physical Controller cold shutdown and
+restart while retaining the application's RAM store. The SoC boot must remain
+unchanged, the old HCI handle must be closed, and a fresh Host must resume
+authenticated encryption without pairing. The characteristic resets to zero;
+the bond does not. The DUT has one RAM-only bond slot. BlueZ may temporarily
+persist the peer bond on Linux; cleanup disconnects, removes only the record
+whose absence was checked before this experiment, verifies removal, unregisters
+the agent, and restores power/rfkill. Any cleanup error prevents PASS. Forced
+process death can leave a record: the next run refuses it rather than silently
+deleting unknown state. Review that exact record before manually removing it.
+
+`trouble-secure-gatt.json` retains value-only snapshots, independent peer
+observations, comparison identities, the automated confirmation mode and cleanup
+results. No LTK/IRK is exported.
+The source scenario is not hardware qualification. It does not prove power-loss
+bond persistence, storage-fault recovery, RF quality or terminal-fault/cancellation
+disposition during retirement.

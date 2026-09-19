@@ -1,4 +1,4 @@
-//! Initial-key rejection or mismatch, then encrypted recovery in the same HCI epoch.
+//! Initial-key failure or missing refresh key, then encrypted recovery in the same HCI epoch.
 use super::{PeripheralConfig, configure_encryption, probe_peripheral};
 use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
@@ -50,6 +50,7 @@ pub(crate) fn run(
                 PeripheralConfig {
                     encrypted: true,
                     key_refresh: false,
+                    encrypted_maintenance: false,
                     boots: 1,
                     connections: 1,
                     hold_millis: 0,
@@ -96,7 +97,10 @@ fn wait_failure(
 
 fn complete_failure(e: &Evidence, failure: Failure) -> Result<bool> {
     let s = e.encryption.ok_or("missing encryption failure evidence")?;
-    let missing = failure == Failure::MissingKey;
+    let missing = matches!(failure, Failure::MissingKey | Failure::MissingRefreshKey);
+    let refresh = u32::from(failure == Failure::MissingRefreshKey);
+    let mic = u32::from(failure == Failure::ActiveDataMic);
+    let wrong = u32::from(failure == Failure::WrongKey);
     if e.terminal
         || e.saturated
         || e.host_event_faults != 0
@@ -104,7 +108,7 @@ fn complete_failure(e: &Evidence, failure: Failure) -> Result<bool> {
         || s.faults != 0
         || !s.enabled
         || s.encrypted
-        || s.encryption_changes != 0
+        || s.encryption_changes > refresh + mic
         || s.key_refreshes != 0
         || e.host_acl_received_packets != 0
         || e.host_acl_queued_packets != 0
@@ -118,10 +122,11 @@ fn complete_failure(e: &Evidence, failure: Failure) -> Result<bool> {
         || e.connection_complete_events > 1
         || e.disconnection_complete_events > 1
         || e.peripheral_disconnections > 1
-        || s.key_requests > 1
-        || s.key_replies > u32::from(!missing)
+        || s.key_requests > 1 + refresh
+        || s.key_replies > refresh + u32::from(!missing)
         || s.negative_replies > u32::from(missing)
-        || s.wrong_key_replies > u32::from(!missing)
+        || s.wrong_key_replies > wrong
+        || s.mic_injections > mic
     {
         return Err(
             "unexpected data, success, fault or lifecycle edge during rejected encryption".into(),
@@ -130,11 +135,21 @@ fn complete_failure(e: &Evidence, failure: Failure) -> Result<bool> {
     let complete = e.connection_complete_events == 1
         && e.disconnection_complete_events == 1
         && e.peripheral_disconnections == 1
-        && s.key_requests == 1
-        && s.key_replies == u32::from(!missing)
+        && s.key_requests == 1 + refresh
+        && s.key_replies == refresh + u32::from(!missing)
+        && s.encryption_changes == refresh + mic
         && s.negative_replies == u32::from(missing)
-        && s.wrong_key_replies == u32::from(!missing);
-    if complete && e.last_disconnect_reason != Some(if missing { 0x13 } else { 0x3d }) {
+        && s.wrong_key_replies == wrong
+        && s.mic_injections == mic
+        && !s.mic_injection_armed;
+    if complete
+        && e.last_disconnect_reason
+            != Some(match failure {
+                Failure::MissingKey => 0x13,
+                Failure::WrongKey | Failure::ActiveDataMic => 0x3d,
+                Failure::MissingRefreshKey => 6,
+            })
+    {
         return Err("key failure did not produce its exact target disconnect reason".into());
     }
     Ok(complete)
@@ -146,19 +161,32 @@ mod tests {
     use open_esp_radio_hil_protocol::BluetoothEncryptionEvidence;
     #[test]
     fn failure_requires_real_rejection_or_mic_failure_and_zero_application_delivery() {
-        for failure in [Failure::MissingKey, Failure::WrongKey] {
-            let missing = failure == Failure::MissingKey;
+        for failure in [
+            Failure::MissingKey,
+            Failure::WrongKey,
+            Failure::MissingRefreshKey,
+            Failure::ActiveDataMic,
+        ] {
+            let missing = matches!(failure, Failure::MissingKey | Failure::MissingRefreshKey);
+            let mic = u32::from(failure == Failure::ActiveDataMic);
+            let refresh = u32::from(failure == Failure::MissingRefreshKey);
             let mut e = super::super::peripheral_tests::evidence();
             e.connection_complete_events = 1;
             e.disconnection_complete_events = 1;
             e.peripheral_disconnections = 1;
-            e.last_disconnect_reason = Some(if missing { 0x13 } else { 0x3d });
+            e.last_disconnect_reason = Some(match failure {
+                Failure::MissingKey => 0x13,
+                Failure::WrongKey | Failure::ActiveDataMic => 0x3d,
+                Failure::MissingRefreshKey => 6,
+            });
             e.encryption = Some(BluetoothEncryptionEvidence {
                 enabled: true,
-                key_requests: 1,
-                key_replies: u32::from(!missing),
+                key_requests: 1 + refresh,
+                key_replies: refresh + u32::from(!missing),
+                encryption_changes: refresh + mic,
+                mic_injections: mic,
                 negative_replies: u32::from(missing),
-                wrong_key_replies: u32::from(!missing),
+                wrong_key_replies: u32::from(failure == Failure::WrongKey),
                 ..Default::default()
             });
             assert!(complete_failure(&e, failure).unwrap());
@@ -169,7 +197,7 @@ mod tests {
             bad.host_acl_received_packets = 1;
             assert!(complete_failure(&bad, failure).is_err());
             let mut bad = e.clone();
-            bad.encryption.as_mut().unwrap().encryption_changes = 1;
+            bad.encryption.as_mut().unwrap().encryption_changes = refresh + mic + 1;
             assert!(complete_failure(&bad, failure).is_err());
             let mut bad = e.clone();
             bad.encryption.as_mut().unwrap().key_requests = 0;
@@ -177,6 +205,14 @@ mod tests {
             let mut bad = e.clone();
             bad.encryption.as_mut().unwrap().faults = 1;
             assert!(complete_failure(&bad, failure).is_err());
+            if failure == Failure::ActiveDataMic {
+                let mut missing = e.clone();
+                missing.encryption.as_mut().unwrap().mic_injections = 0;
+                assert!(!complete_failure(&missing, failure).unwrap());
+                let mut armed = e.clone();
+                armed.encryption.as_mut().unwrap().mic_injection_armed = true;
+                assert!(!complete_failure(&armed, failure).unwrap());
+            }
         }
     }
 }

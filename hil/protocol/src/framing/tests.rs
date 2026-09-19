@@ -1,5 +1,38 @@
 use super::*;
+
+#[test]
+fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
+    let expected = Envelope::new(
+        77,
+        9,
+        0,
+        8,
+        Event::BluetoothGatt(crate::BluetoothGattEvidence {
+            address: Some([1, 2, 3, 4, 5, 6]),
+            connected: true,
+            connections: 3,
+            disconnections: 2,
+            reads: 6,
+            writes: 3,
+            value: 0x73,
+            cpu0_stack: Some(crate::StackWatermark {
+                capacity_bytes: 65536,
+                free_bytes: 32768,
+                used_bytes: 32768,
+                minimum_free_bytes: 4096,
+            }),
+            ..Default::default()
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let bytes = encoder.encode(&expected).unwrap();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed::<Event>(bytes, |frame| observed = Some(frame.unwrap()));
+    assert_eq!(observed, Some(expected));
+}
 mod airtime;
+mod secure_gatt;
 use crate::{
     Command, Completion, Direction, Envelope, Event, FlowConfig, Ieee802154EdEventProbeEvidence,
     Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop, Ieee802154EventStatusProbeEvidence,
@@ -799,6 +832,8 @@ fn stack_usage_query_and_correlated_response_round_trip() {
         0,
         9,
         Event::StackUsage(StackUsage {
+            cpu0_irq: None,
+            cpu1_irq: None,
             cpu0: StackWatermark {
                 capacity_bytes: 100,
                 free_bytes: 50,
@@ -817,6 +852,35 @@ fn stack_usage_query_and_correlated_response_round_trip() {
     let mut observed = None;
     decoder.feed(frame, |result| observed = Some(result.unwrap()));
     assert_eq!(observed, Some(response));
+}
+
+#[test]
+fn dedicated_irq_stacks_round_trip_with_explicit_inactive_hart() {
+    let watermark = StackWatermark {
+        capacity_bytes: 32768,
+        free_bytes: 30000,
+        used_bytes: 2768,
+        minimum_free_bytes: 4096,
+    };
+    for cpu1 in [None, Some(watermark)] {
+        let response = Envelope::new(
+            7,
+            3,
+            0,
+            9,
+            Event::InterruptStackUsage {
+                cpu0: Some(watermark),
+                cpu1,
+            },
+        );
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&response).unwrap(), |result| {
+            observed = Some(result.unwrap())
+        });
+        assert_eq!(observed, Some(response));
+    }
 }
 
 #[test]
@@ -1724,6 +1788,38 @@ fn maximum_rx_gain_detail_fits_separate_frame_and_round_trips() {
     let mut observed = None;
     decoder.feed(encoder.encode(&expected).unwrap(), |result| {
         observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
+fn platform_boot_evidence_round_trips_without_a_radio_command() {
+    for reset_reason in [
+        crate::ResetReason::Other,
+        crate::ResetReason::Software,
+        crate::ResetReason::MainWatchdog1,
+    ] {
+        let expected = Envelope::new(
+            7,
+            2,
+            0,
+            3,
+            Event::BootStatus(crate::BootEvidence { reset_reason }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
+            observed = Some(frame.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
+    let expected = Envelope::new(7, 2, 0, 3, Command::GetBootStatus);
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
+        observed = Some(frame.unwrap())
     });
     assert_eq!(observed, Some(expected));
 }

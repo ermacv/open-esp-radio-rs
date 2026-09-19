@@ -14,4 +14,73 @@ pub enum SharedPhyFailStop {
     MaintenanceHardDeadlineExceeded,
     /// Maintenance or restoration became ambiguous; ordinary recovery is forbidden.
     MaintenanceFailed,
+    /// RF close, wake or initialization failed without a completed safe cleanup.
+    LifecycleFailed,
+}
+
+impl SharedPhyFailStop {
+    /// Apply the common policy to a retained close/wake/initialization failure.
+    /// The input must come from its physical owner, not from a generic error
+    /// code or the presence of pending work. `None` grants no resume authority.
+    pub const fn from_ambiguous_lifecycle(hardware_ambiguous: bool) -> Option<Self> {
+        if hardware_ambiguous {
+            Some(Self::LifecycleFailed)
+        } else {
+            None
+        }
+    }
+}
+
+/// Retained physical frontier of a rejected or failed maintenance operation.
+/// These facts do not select a watchdog peripheral or release any owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaintenanceFailureStage {
+    /// No PHY execution began; original quiesced hardware remains retained.
+    Admission,
+    /// Executed PHY work did not return a valid owner.
+    Execution,
+    /// PHY work settled, but the required restoration did not complete.
+    Restoration,
+}
+
+impl MaintenanceFailureStage {
+    /// Only execution/restoration failure invalidates this maintenance epoch.
+    pub const fn shared_phy_failure(self) -> Option<SharedPhyFailStop> {
+        match self {
+            Self::Admission => None,
+            Self::Execution | Self::Restoration => Some(SharedPhyFailStop::MaintenanceFailed),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SharedPhyFailStop;
+
+    #[test]
+    fn admission_and_incomplete_restoration_have_distinct_dispositions() {
+        use super::MaintenanceFailureStage;
+        assert_eq!(
+            MaintenanceFailureStage::Admission.shared_phy_failure(),
+            None
+        );
+        for stage in [
+            MaintenanceFailureStage::Execution,
+            MaintenanceFailureStage::Restoration,
+        ] {
+            assert_eq!(
+                stage.shared_phy_failure(),
+                Some(SharedPhyFailStop::MaintenanceFailed)
+            );
+        }
+    }
+
+    #[test]
+    fn only_ambiguous_lifecycle_requires_shared_phy_escalation() {
+        assert_eq!(SharedPhyFailStop::from_ambiguous_lifecycle(false), None);
+        assert_eq!(
+            SharedPhyFailStop::from_ambiguous_lifecycle(true),
+            Some(SharedPhyFailStop::LifecycleFailed)
+        );
+    }
 }

@@ -2,12 +2,13 @@ use oer_esp32s31_pac::RadioHardware;
 
 use super::{
     ColdOwner, ControllerHalBorrow, ControllerPublicAddress, ControllerRandomAddress,
-    RxMemoryListInitialPublication, TaskOwnerReuniteError,
+    RxMemoryListInitialPublication, RxPacketControl, TaskOwnerReuniteError,
     execute_rx_memory_list_initial_publication,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RxListPublicationStep {
+    PacketControl(RxPacketControl),
     CurrentHead,
     NextHeadCleared,
     InitialControlReset,
@@ -19,6 +20,11 @@ struct RecordingRxListPublication {
 }
 
 impl RxMemoryListInitialPublication for RecordingRxListPublication {
+    fn prepare_packet_control(&mut self, policy: RxPacketControl) {
+        self.steps
+            .push(RxListPublicationStep::PacketControl(policy));
+    }
+
     fn reset_initial_control(&mut self) {
         assert_eq!(
             self.steps.last(),
@@ -40,16 +46,44 @@ impl RxMemoryListInitialPublication for RecordingRxListPublication {
 fn receive_list_publication_resets_control_after_both_pointer_operations() {
     let mut transaction = RecordingRxListPublication::default();
 
-    execute_rx_memory_list_initial_publication(&mut transaction);
+    execute_rx_memory_list_initial_publication(
+        &mut transaction,
+        RxPacketControl::ControllerDefault,
+    );
 
     assert_eq!(
         transaction.steps,
         [
+            RxListPublicationStep::PacketControl(RxPacketControl::ControllerDefault),
             RxListPublicationStep::CurrentHead,
             RxListPublicationStep::NextHeadCleared,
             RxListPublicationStep::InitialControlReset,
         ]
     );
+}
+
+#[test]
+fn software_connection_policy_precedes_rx_and_is_replaced_when_the_role_changes() {
+    let mut transaction = RecordingRxListPublication::default();
+    // First connection event, recurring event (including PHY restoration),
+    // then a return to advertising/scanning on the same powered task epoch.
+    for policy in [
+        RxPacketControl::SoftwareConnection,
+        RxPacketControl::SoftwareConnection,
+        RxPacketControl::ControllerDefault,
+    ] {
+        let before = transaction.steps.len();
+        execute_rx_memory_list_initial_publication(&mut transaction, policy);
+        assert_eq!(
+            &transaction.steps[before..],
+            [
+                RxListPublicationStep::PacketControl(policy),
+                RxListPublicationStep::CurrentHead,
+                RxListPublicationStep::NextHeadCleared,
+                RxListPublicationStep::InitialControlReset,
+            ],
+        );
+    }
 }
 
 #[test]

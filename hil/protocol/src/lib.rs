@@ -6,6 +6,16 @@
 //! the firmware adapter and the qualification manifest that selects it.
 
 mod bluetooth;
+mod bluetooth_gatt;
+pub use bluetooth_gatt::BluetoothGattEvidence;
+mod bluetooth_secure_gatt;
+pub use bluetooth_secure_gatt::{
+    BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
+};
+mod system;
+pub use system::{BootEvidence, ResetReason, WatchdogTestMode};
+mod phy_fault;
+pub use phy_fault::{PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase};
 mod framing;
 #[cfg(feature = "async-io")]
 mod io;

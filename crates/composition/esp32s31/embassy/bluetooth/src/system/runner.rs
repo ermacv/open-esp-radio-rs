@@ -3,8 +3,10 @@
 //! Boundary classification translates concrete runtime outcomes into the shared
 //! runner policy. The loop retains all borrowed owners across the same awaits.
 
+mod fail_stop;
 mod maintenance;
 mod retirement;
+pub(crate) use fail_stop::fail_stop_shared_phy;
 pub use retirement::{
     BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,
     BluetoothHardwareMaintenanceError, BluetoothHardwareMaintenanceFailure,
@@ -19,7 +21,8 @@ use crate::{
     BluetoothInterruptFault, BluetoothInterruptRuntime,
     runner_policy::{
         CommandBoundaryAction, CommandBoundaryClass, HardwareRunnerSchedule,
-        ModemTimerTransitionClass, modem_timer_requires_quarantine, reduce_command_boundary,
+        ModemTimerTransitionClass, classify_peripheral_fault, modem_timer_requires_quarantine,
+        reduce_command_boundary, terminal_maintenance_reason,
     },
 };
 
@@ -107,6 +110,8 @@ pub struct BluetoothHardwareRunner<
     const PACKET_CAPACITY: usize,
 > {
     command: Option<ControllerCommandTask<'static, PublishedStorage, SCHEDULER_CAPACITY>>,
+    watchdog: &'static crate::WatchdogConfig,
+    restoration_protection: Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
     controller: LeControllerCommandEndpoint<
         'static,
         CriticalSectionRawMutex,
@@ -230,13 +235,22 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         ControllerCommandBoundary::IdleRestored(_) => {
             CommandBoundaryClass::IdleRestored
         }
+        ControllerCommandBoundary::PhyMaintenanceRestored(_) => CommandBoundaryClass::PhyRestored,
         ControllerCommandBoundary::Retryable(_) => CommandBoundaryClass::Retryable,
+        ControllerCommandBoundary::PhyMaintenanceFailed(error) => {
+            CommandBoundaryClass::SharedPhyFailed(terminal_maintenance_reason(*error))
+        }
+        ControllerCommandBoundary::PeripheralConnectionActiveFailStop(fault) => {
+            classify_peripheral_fault(fault.cause())
+        }
+        ControllerCommandBoundary::PeripheralConnectionActiveResetFailStop(fault) => {
+            classify_peripheral_fault(fault.cause())
+        }
         ControllerCommandBoundary::NonCommand(_)
         | ControllerCommandBoundary::EndpointMismatch
         | ControllerCommandBoundary::HciFault(_)
         | ControllerCommandBoundary::PhyMaintenanceIdle
         | ControllerCommandBoundary::PhyMaintenancePeripheral
-        | ControllerCommandBoundary::PhyMaintenanceFailed(_)
         | ControllerCommandBoundary::ControllerTimeExhausted
         | ControllerCommandBoundary::FirstEventFailed(_)
         | ControllerCommandBoundary::FirstPreparationCleanupFault { .. }
@@ -252,8 +266,6 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | ControllerCommandBoundary::LegacyConnectableAdvertisingActiveFailStop(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingPendingFailStop(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingStoppingFailStop(_)
-        | ControllerCommandBoundary::PeripheralConnectionActiveFailStop(_)
-        | ControllerCommandBoundary::PeripheralConnectionActiveResetFailStop(_)
         | ControllerCommandBoundary::PeripheralConnectionCommandEndpointMismatch(_)
         | ControllerCommandBoundary::PeripheralConnectionFirstFailStop(_)
         | ControllerCommandBoundary::PeripheralConnectionResetFailStop(_)
@@ -269,7 +281,6 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         ControllerCommandBoundary::LegacyAdvertisingActive(_)
         | ControllerCommandBoundary::LegacyConnectableAdvertisingActive
         | ControllerCommandBoundary::PeripheralConnectionActive
-        | ControllerCommandBoundary::PhyMaintenanceRestored(_)
         | ControllerCommandBoundary::PassiveScanningActive
         | ControllerCommandBoundary::PassiveScanMalformedPdu(_)
         | ControllerCommandBoundary::PassiveScanReportEncodingFault(_) => {
@@ -372,6 +383,20 @@ impl<
         PACKET_CAPACITY,
     >
 {
+    /// Install the independent SoC entropy service before polling the Host.
+    ///
+    /// This enables standard HCI LE Rand for this epoch. The caller-owned
+    /// service outlives the runner, including Reset, radio maintenance and
+    /// checked physical cold release/restart. Install once before the first
+    /// Host, not again for each reconstructed Host or Controller generation.
+    /// Rebinding or installation after bootstrap starts is rejected unchanged.
+    pub fn install_entropy(
+        &mut self,
+        entropy: &'static crate::entropy::BluetoothEntropy<'static>,
+    ) -> Result<(), oer_bluetooth_hci::LeRandomSourceAlreadyConfigured> {
+        self.controller.install_random_source(entropy)
+    }
+
     /// Set diagnostic thermal thresholds at the idle command boundary, preserving
     /// maintenance deadlines. Restore the returned setting after the experiment.
     pub fn set_idle_phy_tracking_debug(
@@ -403,9 +428,12 @@ impl<
         interrupt: BluetoothInterruptRuntime,
         recheck: DtmAbsoluteRecheck,
         wakers: &'static RuntimeWakers,
+        watchdog: &'static crate::WatchdogConfig,
     ) -> Self {
         let modem_driver = wakers.modem_timer().driver();
         Self {
+            watchdog,
+            restoration_protection: None,
             command: Some(ControllerCommandTask::new(task)),
             controller,
             modem_timer: Some(modem_timer),
@@ -535,12 +563,7 @@ impl<
                     format_args!("PHY maintenance: {:?}", error),
                 );
                 self.controller.close_transport();
-                let reason = if error == oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenanceError::HardDeadline {
-                    oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceHardDeadlineExceeded
-                } else {
-                    oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceFailed
-                };
-                oer_esp32s31_radio_platform_esp_hal::fail_stop_shared_phy(reason);
+                fail_stop_shared_phy(terminal_maintenance_reason(error), self);
             }
             let hard_deadline = self
                 .command
@@ -763,44 +786,61 @@ impl<
                         return false;
                     }
                 }
-                HardwareSelection::Command(boundary) => match classify_command(
-                    &boundary,
-                    self.command
-                        .as_ref()
-                        .expect("live actor")
-                        .advertising_completion(),
-                    self.command
-                        .as_ref()
-                        .expect("live actor")
-                        .advertising_rejected_packets(),
-                    self.command
-                        .as_ref()
-                        .expect("live actor")
-                        .advertising_last_receive_rejection(),
-                ) {
-                    CommandBoundaryAction::Continue => yield_now().await,
-                    CommandBoundaryAction::GateRetry => {
-                        self.schedule.arm_retry();
-                        yield_now().await;
+                HardwareSelection::Command(boundary) => {
+                    match classify_command(
+                        &boundary,
+                        self.command
+                            .as_ref()
+                            .expect("live actor")
+                            .advertising_completion(),
+                        self.command
+                            .as_ref()
+                            .expect("live actor")
+                            .advertising_rejected_packets(),
+                        self.command
+                            .as_ref()
+                            .expect("live actor")
+                            .advertising_last_receive_rejection(),
+                    ) {
+                        CommandBoundaryAction::Continue => yield_now().await,
+                        CommandBoundaryAction::CompleteRestoration => {
+                            // Actor resume alone is not proof: wait for the
+                            // guarded RUN boundary or proven idle restoration.
+                            if let Some(protection) = self.restoration_protection.take() {
+                                crate::WatchdogConfig::complete(protection);
+                            }
+                            yield_now().await;
+                        }
+                        CommandBoundaryAction::GateRetry => {
+                            self.schedule.arm_retry();
+                            yield_now().await;
+                        }
+                        CommandBoundaryAction::FailStopSharedPhy(reason) => {
+                            self.controller.close_transport();
+                            // The boundary may borrow packet storage from `self`.
+                            // The borrowed runner remains on this diverging frame;
+                            // transfer only the boundary, never reconstruct owners.
+                            fail_stop_shared_phy(reason, boundary);
+                        }
+                        CommandBoundaryAction::Quarantine => {
+                            let actor = self
+                                .command
+                                .take()
+                                .expect("terminal quarantine retains the exact command actor");
+                            self.controller.close_transport();
+                            let routes = quarantine_routes(&mut self.interrupt);
+                            retain_until_rf_deadline(
+                                hard_deadline,
+                                BluetoothHardwareQuarantine::Command {
+                                    _boundary: boundary,
+                                    _actor: actor,
+                                    _routes: routes,
+                                },
+                            )
+                            .await;
+                        }
                     }
-                    CommandBoundaryAction::Quarantine => {
-                        let actor = self
-                            .command
-                            .take()
-                            .expect("terminal quarantine retains the exact command actor");
-                        self.controller.close_transport();
-                        let routes = quarantine_routes(&mut self.interrupt);
-                        retain_until_rf_deadline(
-                            hard_deadline,
-                            BluetoothHardwareQuarantine::Command {
-                                _boundary: boundary,
-                                _actor: actor,
-                                _routes: routes,
-                            },
-                        )
-                        .await;
-                    }
-                },
+                }
                 HardwareSelection::ModemTimer(step) => {
                     if modem_step_requires_quarantine(&step) {
                         self.controller.close_transport();
@@ -858,10 +898,10 @@ async fn wait_maintenance_wake(at: Option<u64>) {
 // cannot discard the maintenance hard wake and leave RF running indefinitely.
 async fn retain_until_rf_deadline<T>(hard_deadline: Option<u64>, owners: T) -> ! {
     if let Some(at) = hard_deadline {
-        let _owners = owners;
         wait_maintenance_wake(Some(at)).await;
-        oer_esp32s31_radio_platform_esp_hal::fail_stop_shared_phy(
+        fail_stop_shared_phy(
             oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceHardDeadlineExceeded,
+            owners,
         );
     }
     retain_quarantine_forever(owners).await

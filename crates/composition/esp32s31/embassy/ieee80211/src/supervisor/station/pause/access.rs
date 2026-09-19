@@ -193,19 +193,25 @@ pub(super) async fn round_trip(
         };
         let before = access.wifi_mac_hal().station_receive_policy_snapshot();
         let owner = role.take().expect("paused logical PHY owner");
-        let (owner, returned, outcome) = match oer_wifi_embassy::await_stack_boundary!(
-            owner.maintain_phy::<EmbassyPhyDelay, _, _>(
-                access,
-                request,
-                &mut clock,
-                observations.observer()
-            )
-        ) {
+        let work = owner.maintain_phy::<EmbassyPhyDelay, _, _>(
+            access,
+            request,
+            &mut clock,
+            observations.observer(),
+        );
+        #[cfg(feature = "lifecycle-fault-injection")]
+        let work = oer_esp32s31_phy::fault_injection::drive(work);
+        let (owner, returned, outcome) = match oer_wifi_embassy::await_stack_boundary!(work) {
             Ok(result) => result,
             Err(failure) => return Err(retain_tracking(storage, republish, failure)),
         };
         *role = Some(owner);
         access = returned;
+        #[cfg(feature = "lifecycle-fault-injection")]
+        oer_esp32s31_phy::fault_injection::checkpoint(
+            oer_esp32s31_phy::fault_injection::Boundary::Restoration,
+        )
+        .await;
         if outcome.is_some() {
             let stopped = {
                 let mut mac = access.wifi_mac_hal();

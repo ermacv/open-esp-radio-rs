@@ -1,3 +1,4 @@
+#[cfg(feature = "firmware")]
 fn main() {
     oer_firmware::linker::configure_runtime(
         "open-esp-radio-esp32s31-bluetooth-controller-example",
@@ -7,3 +8,6 @@ fn main() {
         true,
     );
 }
+
+#[cfg(not(feature = "firmware"))]
+fn main() {}

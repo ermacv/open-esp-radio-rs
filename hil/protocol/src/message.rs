@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 150;
+pub const PROTOCOL_VERSION: u16 = 160;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -378,11 +378,26 @@ pub struct SessionReady {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FeatureCapabilities {
+    /// Numeric-Comparison-only application, RAM bonds and explicit UI decisions.
+    #[serde(default)]
+    pub bluetooth_secure_gatt: bool,
+    /// Plaintext Trouble GATT application with observation-only HIL control.
+    #[serde(default)]
+    pub bluetooth_gatt: bool,
     /// Bounded connectable advertising and peripheral execution observations.
     pub bluetooth_peripheral: bool,
     /// Automatic production PHY maintenance with explicit diagnostic budgets.
     #[serde(default)]
     pub bluetooth_phy_maintenance: bool,
+    /// Diagnostic MWDT reset during DTM; not automatic PHY deadline enforcement.
+    #[serde(default)]
+    pub bluetooth_watchdog_reset: bool,
+    /// Independent SoC deadline diagnostic; requires no radio protocol.
+    #[serde(default)]
+    pub system_watchdog: bool,
+    /// Destructive checkpoints in actual PHY maintenance; diagnostic only.
+    #[serde(default)]
+    pub phy_fault_injection: bool,
     pub bluetooth_dtm: bool,
     pub udp: bool,
     pub tcp: bool,
@@ -1131,12 +1146,27 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
+    /// Restart the secure application Controller epoch, retaining RAM bonds.
+    RestartBluetoothGatt {
+        epoch: u32,
+    },
+    QueryBluetoothSecureGatt,
+    ConfirmBluetoothGatt(crate::BluetoothNumericDecision),
+    /// Observe the shared Trouble application; does not access HCI directly.
+    QueryBluetoothGatt,
+    /// Diagnostic image only; tests the SoC deadline service, not RF cessation.
+    SystemWatchdogTest(crate::WatchdogTestMode),
+    /// Query the current platform boot without changing any radio state.
+    GetBootStatus,
+    PhyFault(crate::PhyFaultCommand),
     BluetoothPeripheral(crate::BluetoothPeripheralOperation),
     BluetoothDtm(crate::BluetoothDtmOperation),
     GetCapabilities,
     /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
     /// query is valid only outside an active traffic session.
     QueryStackUsage,
+    /// Sample dedicated IRQ stacks on their own harts in thread mode.
+    QueryInterruptStackUsage,
     /// Return boot-lifetime transport and serialized-text health counters.
     QueryLinkHealth,
     /// Compare alarm deadlines with the monotonic clock before initializing
@@ -2380,6 +2410,10 @@ impl StackWatermark {
 pub struct StackUsage {
     pub cpu0: StackWatermark,
     pub cpu1: StackWatermark,
+    /// Own-hart measurements of dedicated IRQ stacks. `None` means this image
+    /// shares that hart's task stack; it never means a failed measurement.
+    pub cpu0_irq: Option<StackWatermark>,
+    pub cpu1_irq: Option<StackWatermark>,
 }
 
 /// Aggregate cooperative network scheduler evidence collected since boot.
@@ -2430,6 +2464,14 @@ pub struct Finished {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
+    BluetoothGatt(crate::BluetoothGattEvidence),
+    BluetoothSecureGatt(crate::BluetoothSecureGattEvidence),
+    /// UI decision queued once, not a successful pairing acknowledgement.
+    BluetoothGattDecisionRecorded(crate::BluetoothNumericDecision),
+    /// The explicit test budget is armed (or completed for `Complete`).
+    SystemWatchdogTest(crate::WatchdogTestMode),
+    BootStatus(crate::BootEvidence),
+    PhyFault(crate::PhyFaultEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),
     BluetoothDtm(crate::BluetoothDtmEvidence),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.
@@ -2442,6 +2484,12 @@ pub enum Event {
     Initialized,
     /// Correlated response to [`Command::QueryStackUsage`].
     StackUsage(StackUsage),
+    /// `None` denotes no dedicated stack on that hart (shared task stack or inactive hart).
+    /// A failed measurement must reject/fail rather than return `None`.
+    InterruptStackUsage {
+        cpu0: Option<StackWatermark>,
+        cpu1: Option<StackWatermark>,
+    },
     /// Correlated response to [`Command::QueryLinkHealth`].
     LinkHealth(LinkHealth),
     /// Correlated response to [`Command::ProbeTimebase`].

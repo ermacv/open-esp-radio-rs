@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 
 # Primary thread stack bounds. Dedicated SRAM interrupt stacks have separate
 # placement checks.
@@ -25,12 +25,22 @@ max_move_bytes = 4096
 # allocations change the CPU0 capacity or CPU1 is deliberately resized.
 runtime_cpu0_minimum_free_bytes = 16384
 runtime_cpu1_minimum_free_bytes = 4096
+# Engineering reserve for dedicated SRAM IRQ stacks; not a worst-case proof.
+runtime_irq_minimum_free_bytes = 4096
 
 reported_frame_count = 30
 
 # These are async owner graphs, not local packet arrays. Their executor and
 # call-chain use is independently bounded by the runtime high-water check.
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
+[[reviewed_frames]]
+function_contains = "::bluetooth_gatt::__task_task::__task_task_inner_function"
+source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
+max_bytes = 8704
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the single-core GATT task transfers the affine cold-start result into the Trouble Host and matching hardware runner. Its live polling is separated by an opaque poll boundary; packet and Host storage remain bounded and statically retained. This construction frame runs on the 192-KiB CPU0 task stack, never the IRQ stack; the GATT workload requires the 16-KiB task reserve and independent IRQ watermark on every snapshot"
+
+
 [[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "open-esp-radio-wifi-sta-0.1.0/src/station.rs"]
@@ -132,7 +142,7 @@ reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck i
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/concurrent.rs"]
 max_bytes = 17408
-reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier while retaining the installed physical IRQ epoch across the logical role boundary; the 48-KiB hard ceiling, 4-KiB move limit and 192-KiB runtime stack painting remain independent bounds"
+reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier while retaining the installed physical IRQ epoch across the logical role boundary; the 50-KiB hard ceiling, 4-KiB move limit and 192-KiB runtime stack painting remain independent bounds"
 
 [[reviewed_frames]]
 function_contains = "::run_station_access_point_service::{closure#0}"
@@ -162,7 +172,7 @@ reason = "chip station supervisor retains the typed dual-VIF role return, shared
 function_contains = "::run_standalone_scan::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/role_dispatch.rs"]
 max_bytes = 11264
-reason = "standalone scan retains the role-neutral owner, continuous live RX ring and installed physical IRQ epoch across its asynchronous channel dwell while the shared RX BlockAck allocator remains statically rooted; the 48-KiB hard ceiling, 4-KiB move limit and runtime PSRAM-stack painting independently bound the complete call chain"
+reason = "standalone scan retains the role-neutral owner, continuous live RX ring and installed physical IRQ epoch across its asynchronous channel dwell while the shared RX BlockAck allocator remains statically rooted; the 50-KiB hard ceiling, 4-KiB move limit and runtime PSRAM-stack painting independently bound the complete call chain"
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::StationTask<"
@@ -273,10 +283,10 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "the Bluetooth HIL loop retains one live or cold epoch, the old closed Host probes and the next initialized owner across repeated powered restarts. Actor, shutdown, registration and restart have separate poll frames; the loop uses the fixed 192-KiB CPU0 stack and every connection/restart must preserve 16-KiB measured headroom"
 
 [[reviewed_frames]]
-function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"
+function_contains = "::product_hil::__wifi_role_task_task::"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 10496
-reason = "static Embassy PSRAM storage owns the Wi-Fi role dispatcher future including the explicit paired-role request; it is not allocated on either CPU stack"
+reason = "the Embassy poll wrapper executes the Wi-Fi role dispatcher including the paired-role request; this limit bounds its compiler-measured local frame separately from the future retained in static PSRAM storage"
 
 [[reviewed_frames]]
 function_contains = "::retirement::physical::ControllerColdReleased<"

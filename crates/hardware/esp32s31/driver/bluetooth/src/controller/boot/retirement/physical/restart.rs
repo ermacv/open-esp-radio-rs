@@ -82,6 +82,21 @@ impl<
     pub const fn error(&self) -> &ControllerRestartError<S::RestartError> {
         &self.error
     }
+
+    /// Whether the retained restart failed inside PHY execution without safe
+    /// cleanup. Preflight, client policy and publication errors are not PHY
+    /// execution failures and retain their existing non-runnable owners.
+    pub fn phy_hardware_ambiguous(&self) -> bool {
+        match &self._stage {
+            Stage::Phy(failure) => failure.phy_hardware_ambiguous(),
+            Stage::Tracking(_) => true,
+            Stage::Before(_)
+            | Stage::Clock(_)
+            | Stage::LowPower(_)
+            | Stage::Acquire(_)
+            | Stage::Storage(_) => false,
+        }
+    }
 }
 
 /// Fresh powered Controller endpoints using the original statically borrowed slots.

@@ -273,15 +273,19 @@ The same exact correspondence identifies
 with the default and custom aborted-opcode writers, its complete body identifies
 the word at `BTMAC_BLE_PHY_INIT + 0x4ac` with a narrower reviewed
 contract. Bit 0 selects the custom aborted-opcode path. Link-state refresh
-independently replaces bit 1, clearing it exactly when both private connection
-flags are set and setting it on every other path. The register is therefore
-published as `CONNECTION_ABORT_CONTROL` with field accessors; the inner
-hardware meaning of bit 1 remains deliberately unnamed.
+independently replaces bit 1, clearing it when the second private connection flag is set,
+independently of the first, and setting it otherwise. The register is published as
+`CONNECTION_ABORT_CONTROL` with field accessors.
 
-This MMIO fact is not a blocker for an unencrypted first event. It belongs to
-the later connection link-state refresh/encryption transition, which must
-consume semantic connection state and choose one PAC accessor. No raw
-register image or private vendor flag layout is allowed to cross into the
+The default opcode tables contain `0x02`, the plaintext `LL_TERMINATE_IND`
+opcode. Software CCM ciphertext can have that same first byte. The connection
+RX publication therefore clears `LINK_STATE_CONTROL` before publishing the
+head, leaving opcode interpretation to the authenticated software LL decoder.
+This policy is reapplied on every connection publication, including after PHY
+restoration. Advertising and scanning RX publication restore the initialization
+policy. The [HAL transaction](../../../../../crates/hardware/esp32s31/hal/src/bluetooth.rs)
+owns that sequencing; cold BLE PHY initialization retains its reviewed vendor
+images. Neither raw register images nor private vendor flags cross into the
 portable Link Layer.
 
 ## Completion recycle and recurring-event facts

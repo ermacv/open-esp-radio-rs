@@ -17226,7 +17226,7 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
             </field>
             <field>
               <name>LINK_STATE_CONTROL</name>
-              <description>The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved.</description>
+              <description>The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

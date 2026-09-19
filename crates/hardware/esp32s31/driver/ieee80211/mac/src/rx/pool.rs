@@ -35,6 +35,12 @@ pub enum RxStageError {
 pub enum RxStageTransactionError {
     Stage(RxStageError),
     Ring(RxRingError),
+    /// Admission must leave at least one ordinary credit in both domains.
+    InvalidCreditReserve {
+        reserved: usize,
+        pool_slots: usize,
+        queue_depth: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

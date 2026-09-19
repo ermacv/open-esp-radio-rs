@@ -36,7 +36,6 @@ pub(super) fn fail(error: &Error) -> ! {
         Error::LowPower(f) => failure!("low power", f.failure().failure.error()),
         Error::PhyInitialization(f) => failure!("PHY registration", f.failure().failure.error()),
         Error::PhyClientAcquire(f) => failure!("PHY client", f.failure().failure.error()),
-        Error::PhyTracking(f) => failure!("PHY tracking", f.failure().failure.error()),
         Error::RecheckStart(f) => failure!("time recheck", f.failure().error()),
         Error::HciBind(f) => failure!("HCI binding", f.failure().error()),
         Error::InterruptPublication(f) => failure!("interrupt publication", f.failure().error()),

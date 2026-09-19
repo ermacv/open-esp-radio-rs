@@ -72,6 +72,10 @@ fn execute_workload_inner(
     use std::time::Duration;
 
     match &selected.workload {
+        Workload::BluetoothGatt => crate::workload::bluetooth::gatt::run(output, context),
+        Workload::BluetoothSecureGatt => {
+            crate::workload::bluetooth::secure_gatt::run(output, context)
+        }
         Workload::BluetoothDtm {
             boots,
             minimum_packets,
@@ -92,31 +96,51 @@ fn execute_workload_inner(
             output,
             context,
         ),
-        Workload::BluetoothEncryptedAcl { key_refresh } => {
-            crate::workload::bluetooth::run_peripheral(
-                crate::workload::bluetooth::PeripheralConfig {
-                    boots: 1,
-                    connections: 2,
-                    hold_millis: 0,
-                    termination:
-                        open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
-                    retire_after: true,
-                    restart_between_connections: false,
-                    maintain_between_connections: false,
-                    calibration_threshold: None,
-                    encrypted: true,
-                    key_refresh: *key_refresh,
-                },
-                output,
-                context,
-            )
+        Workload::BluetoothEncryptedAcl {
+            key_refresh,
+            active_maintenance,
+        } => crate::workload::bluetooth::run_peripheral(
+            crate::workload::bluetooth::PeripheralConfig {
+                boots: 1,
+                connections: 2,
+                hold_millis: if *active_maintenance { 1000 } else { 0 },
+                termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+                retire_after: true,
+                restart_between_connections: false,
+                maintain_between_connections: false,
+                calibration_threshold: None,
+                encrypted: true,
+                key_refresh: *key_refresh,
+                encrypted_maintenance: *active_maintenance,
+            },
+            output,
+            context,
+        ),
+        Workload::BluetoothAclBackpressure { active_maintenance } => {
+            crate::workload::bluetooth::backpressure::run(output, context, *active_maintenance)
         }
-        Workload::BluetoothAclBackpressure => {
-            crate::workload::bluetooth::backpressure::run(output, context)
+        Workload::BluetoothMaintenanceDeadline => crate::workload::bluetooth::deadline::run(
+            output,
+            context,
+            open_esp_radio_hil_protocol::ResetReason::Software,
+        ),
+        Workload::BluetoothWatchdogReset => crate::workload::bluetooth::deadline::run(
+            output,
+            context,
+            open_esp_radio_hil_protocol::ResetReason::MainWatchdog1,
+        ),
+        Workload::SystemWatchdog => crate::workload::system::watchdog::run(output, context),
+        Workload::BluetoothPhyWatchdog => {
+            crate::workload::bluetooth::phy_watchdog::run(output, context)
         }
-        Workload::BluetoothMaintenanceDeadline => {
-            crate::workload::bluetooth::deadline::run(output, context)
-        }
+        Workload::WifiPhyWatchdog => crate::workload::ieee80211::phy_watchdog::run(
+            output,
+            context,
+            selected
+                .link
+                .expect("validated PHY watchdog has a link expectation")
+                .phy,
+        ),
         Workload::BluetoothAclCalibration {
             duration_millis,
             minimum_calibrations,
@@ -139,6 +163,7 @@ fn execute_workload_inner(
             crate::workload::bluetooth::PeripheralConfig {
                 encrypted: false,
                 key_refresh: false,
+                encrypted_maintenance: false,
                 boots: *boots,
                 connections: *connections,
                 hold_millis: *hold_millis,

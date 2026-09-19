@@ -1,0 +1,11 @@
+schema = 4
+id = "bluetooth-peripheral-encrypted-phy-maintenance"
+description = "Require encrypted ACL progress before and after automatic PHY maintenance on the same connection, repeat after peer Reset, then retire cold"
+image = "bluetooth-phy-maintenance"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "phy-maintenance", "lifecycle"]
+
+[workload]
+kind = "bluetooth-encrypted-acl"
+active_maintenance = true

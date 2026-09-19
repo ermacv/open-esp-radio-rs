@@ -1,0 +1,16 @@
+schema = 4
+id = "bluetooth-peripheral-maintenance-restart"
+description = "Guarded PHY maintenance and continued ACL in three connections, cold release/restart between them, old HCI closure and final cold retirement"
+image = "bluetooth-phy-maintenance"
+isolation = "reset"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "lifecycle", "phy-maintenance", "restart"]
+
+[workload]
+kind = "bluetooth-peripheral"
+boots = 1
+connections = 3
+hold_millis = 3000
+termination = "peer-reset"
+restart_between_connections = true
+retire_after = true

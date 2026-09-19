@@ -103,6 +103,8 @@ impl<
     /// is used. Old Host handles remain closed while a new Host facade receives
     /// the next HCI generation. All three IRQ routes activate only after both
     /// register owners and the complete task/timer/HCI state are restored.
+    /// Failed PHY execution without completed cleanup requests system reset;
+    /// other failures retain their non-runnable owners in the returned error.
     ///
     /// Once polled, drive to completion; cancellation does not release powered
     /// reservations. A retained ISR fault rejects restart before initialization.
@@ -114,15 +116,13 @@ impl<
         BluetoothHardwareRestartFailure<P, MT, SC, H2C, C2H, PC>,
     > {
         if let Some(fault) = self._bindings.4.fault() {
-            return Err(BluetoothHardwareRestartFailure {
-                error: BluetoothHardwareRestartError::PriorInterruptFault(fault),
-                _retained: Retained::Cold(self),
-            });
+            return Err(retain_prior_fault(self, fault));
         }
         let Self {
             owner,
             mut _bindings,
         } = self;
+        let protection = _bindings.5.startup();
         let mut clock = crate::EmbassyPhyTime;
         let outcome = {
             let mut restart =
@@ -131,9 +131,48 @@ impl<
                     config,
                     &mut clock
                 ));
-            core::future::poll_fn(|context| poll_physical_release(restart.as_mut(), context)).await
+            let mut outcome = None;
+            core::future::poll_fn(|context| poll_into(restart.as_mut(), &mut outcome, context))
+                .await;
+            outcome.expect("completed physical restart")
         };
-        finish_outcome(outcome, _bindings)
+        finish_outcome(outcome, _bindings, protection)
+    }
+}
+
+// Keep the child's large output in future storage rather than returning a
+// second owner graph through the enclosing composition's poll frame.
+#[inline(never)]
+fn poll_into<F: core::future::Future>(
+    future: core::pin::Pin<&mut F>,
+    output: &mut Option<F::Output>,
+    context: &mut core::task::Context<'_>,
+) -> core::task::Poll<()> {
+    match poll_physical_release(future, context) {
+        core::task::Poll::Pending => core::task::Poll::Pending,
+        core::task::Poll::Ready(value) => {
+            *output = Some(value);
+            core::task::Poll::Ready(())
+        }
+    }
+}
+
+// Construct the large rejected-owner union outside the physical poll frame.
+#[inline(never)]
+fn retain_prior_fault<
+    P: 'static,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+>(
+    owner: BluetoothHardwareColdReleased<P, MT, SC, H2C, C2H, PC>,
+    fault: BluetoothInterruptFault,
+) -> BluetoothHardwareRestartFailure<P, MT, SC, H2C, C2H, PC> {
+    BluetoothHardwareRestartFailure {
+        error: BluetoothHardwareRestartError::PriorInterruptFault(fault),
+        _retained: Retained::Cold(owner),
     }
 }
 
@@ -165,7 +204,7 @@ fn finish<
             },
         });
     }
-    let (controller, modem_driver, recheck, wakers, interrupt) = bindings;
+    let (controller, modem_driver, recheck, wakers, interrupt, watchdog) = bindings;
     let interrupt = match interrupt.bind() {
         Ok(interrupt) => interrupt,
         Err(failure) => {
@@ -174,7 +213,14 @@ fn finish<
                 error: BluetoothHardwareRestartError::Routes(error),
                 _retained: Retained::Initialized {
                     _owner: owner,
-                    _bindings: (controller, modem_driver, recheck, wakers, interrupt),
+                    _bindings: (
+                        controller,
+                        modem_driver,
+                        recheck,
+                        wakers,
+                        interrupt,
+                        watchdog,
+                    ),
                 },
             });
         }
@@ -193,7 +239,7 @@ fn finish<
             host_acl_credits,
             runners: BluetoothRunners {
                 hardware: BluetoothHardwareRunner::new(
-                    task, controller, timer, interrupt, recheck, wakers,
+                    task, controller, timer, interrupt, recheck, wakers, watchdog,
                 ),
             },
         },
@@ -218,6 +264,7 @@ fn finish_outcome<
         ControllerRestartFailure<'static, P, PublishedStorage, SC, MT>,
     >,
     bindings: RetiredBindings<H2C, C2H, PC>,
+    protection: oer_esp32s31_soc::watchdog::DeadlineLease<'static>,
 ) -> Result<
     BluetoothSystemReady<P, MT, SC, H2C, C2H, PC>,
     BluetoothHardwareRestartFailure<P, MT, SC, H2C, C2H, PC>,
@@ -225,6 +272,8 @@ fn finish_outcome<
     let restarted = match outcome {
         Ok(owner) => owner,
         Err(owner) => {
+            super::enforce_lifecycle(&owner, &bindings, owner.phy_hardware_ambiguous());
+            crate::WatchdogConfig::complete(protection);
             return Err(BluetoothHardwareRestartFailure {
                 error: BluetoothHardwareRestartError::Controller(*owner.error()),
                 _retained: Retained::Hardware {
@@ -234,5 +283,7 @@ fn finish_outcome<
             });
         }
     };
-    finish(restarted, bindings)
+    let result = finish(restarted, bindings);
+    crate::WatchdogConfig::complete(protection);
+    result
 }

@@ -145,7 +145,7 @@ fn bootstrap_command_is_owned_without_advancing_software_state() {
     assert!(command.is_reset());
     assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
-    let response = bootstrap.dispatch_owned(command);
+    let response = bootstrap.dispatch_owned(command, false);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
 }
@@ -173,14 +173,14 @@ fn active_reset_can_be_held_until_the_session_policy_dispatches_it() {
     let mut bootstrap = bootstrap();
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     let requested_mask = EventMask::new().enable_hardware_error(true);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask))
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
             .status(),
         Status::SUCCESS
     );
@@ -193,7 +193,10 @@ fn active_reset_can_be_held_until_the_session_policy_dispatches_it() {
     assert!(reset.is_reset());
     assert_eq!(bootstrap.event_mask(), requested_mask);
 
-    assert_eq!(bootstrap.dispatch_owned(reset).status(), Status::SUCCESS);
+    assert_eq!(
+        bootstrap.dispatch_owned(reset, false).status(),
+        Status::SUCCESS
+    );
     assert_eq!(bootstrap.event_mask(), EventMask::new());
 }
 
@@ -203,13 +206,13 @@ fn malformed_known_bootstrap_is_owned_without_touching_an_epoch() {
     let requested_mask = EventMask::new().enable_hardware_error(true);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask))
+            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
             .status(),
         Status::SUCCESS
     );

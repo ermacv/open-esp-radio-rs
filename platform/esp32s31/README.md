@@ -40,6 +40,14 @@ CPU startup policy and second-core application entry remain in HIL. The shared
 linker also supports the HIL control profiles with SRAM data or inherited SRAM
 thread stacks. These board/profile sizes are not universal chip capabilities.
 
+Each dedicated IRQ stack is painted once during its first installation, before
+IRQ admission. Reinstalling vectors preserves the paint. Thread-mode callers
+can sample only their current hart through
+`stacks::current_hart_interrupt_stack_free_bytes`; it masks local interrupts
+for the bounded SRAM scan and restores their prior enable state. It rejects
+sampling from the IRQ stack or before initialization. Measurements describe
+observed writes, not the maximum possible depth or unwritten stack reservations.
+
 From the repository root:
 
 ```console

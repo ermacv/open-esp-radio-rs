@@ -75,26 +75,32 @@ fn endpoint_projects_host_acl_segmentation_and_credit_policy() {
     assert_eq!(
         resources
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     assert_eq!(
         resources
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::HostBufferSize {
-                acl_data_packet_length: NonZeroU16::new(2).unwrap(),
-                total_acl_data_packets: NonZeroU16::new(3).unwrap(),
-            })
+            .dispatch_owned(
+                OwnedBootstrapCommand::HostBufferSize {
+                    acl_data_packet_length: NonZeroU16::new(2).unwrap(),
+                    total_acl_data_packets: NonZeroU16::new(3).unwrap(),
+                },
+                false
+            )
             .status(),
         Status::SUCCESS
     );
     assert_eq!(
         resources
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetControllerToHostFlowControl(
-                ControllerToHostFlowControl::AclOnSyncOff,
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetControllerToHostFlowControl(
+                    ControllerToHostFlowControl::AclOnSyncOff,
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -112,7 +118,7 @@ fn advertising_reports_honor_masks_and_retain_backpressure() {
     assert_eq!(
         resources
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
@@ -136,9 +142,10 @@ fn advertising_reports_honor_masks_and_retain_backpressure() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new().enable_le_meta(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(EventMask::new().enable_le_meta(true),),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -146,9 +153,12 @@ fn advertising_reports_honor_masks_and_retain_backpressure() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
-                LeEventMask::new().enable_le_adv_report(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new().enable_le_adv_report(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -187,7 +197,7 @@ fn peripheral_connection_events_honor_their_standard_masks() {
     assert_eq!(
         resources
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset)
+            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
@@ -226,9 +236,12 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
-                LeEventMask::new().enable_le_conn_complete(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new().enable_le_conn_complete(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -243,9 +256,10 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new().enable_le_meta(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(EventMask::new().enable_le_meta(true),),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -278,11 +292,14 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
-                LeEventMask::new()
-                    .enable_le_conn_complete(true)
-                    .enable_le_conn_update_complete(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new()
+                        .enable_le_conn_complete(true)
+                        .enable_le_conn_update_complete(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -313,11 +330,14 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new()
-                    .enable_le_meta(true)
-                    .enable_read_remote_version_information_complete(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new()
+                        .enable_le_meta(true)
+                        .enable_read_remote_version_information_complete(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -345,9 +365,12 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
-                LeEventMask::new().enable_le_long_term_key_request(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new().enable_le_long_term_key_request(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -377,9 +400,12 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new().enable_encryption_change_v1(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new().enable_encryption_change_v1(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -406,9 +432,12 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new().enable_encryption_key_refresh_complete(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new().enable_encryption_key_refresh_complete(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );
@@ -435,11 +464,14 @@ fn peripheral_connection_events_honor_their_standard_masks() {
         endpoints
             .controller
             .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
-                EventMask::new()
-                    .enable_le_meta(true)
-                    .enable_disconnection_complete(true),
-            ))
+            .dispatch_owned(
+                OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new()
+                        .enable_le_meta(true)
+                        .enable_disconnection_complete(true),
+                ),
+                false
+            )
             .status(),
         Status::SUCCESS
     );

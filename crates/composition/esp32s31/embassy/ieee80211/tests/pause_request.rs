@@ -1,4 +1,6 @@
 //! Exercise the production request channel, including cancellation and epoch end.
+#[path = "../src/maintenance_policy.rs"]
+mod maintenance_policy;
 #[allow(
     dead_code,
     reason = "host tests include the request module without its target-only supervisor consumer"

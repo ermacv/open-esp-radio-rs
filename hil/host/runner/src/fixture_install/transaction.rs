@@ -1360,9 +1360,17 @@ mod linux {
                         "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter}"
                     ));
                     lines.push(format!(
+                        "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter} --dtm-version v1"
+                    ));
+                    lines.push(format!(
                         "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth connect-reset --adapter {adapter} --peer * --hold-ms * --termination *"
                     ));
-                    for failure in ["missing-key", "wrong-key"] {
+                    for failure in [
+                        "missing-key",
+                        "wrong-key",
+                        "missing-refresh-key",
+                        "active-data-mic",
+                    ] {
                         lines.push(format!(
                             "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth security-failure --adapter {adapter} --peer * --failure {failure}"
                         ));

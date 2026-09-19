@@ -1089,19 +1089,27 @@ fn policy_never_grants_installer_runner_or_wildcard_adapter() {
     assert!(policy.contains("--adapter hci0"));
     assert!(policy.contains("--adapter hci2"));
     for adapter in ["hci0", "hci2"] {
+        assert!(policy.contains(&format!("check --adapter {adapter}\n")));
+        assert!(policy.contains(&format!("check --adapter {adapter} --dtm-version v1\n")));
         assert!(policy.contains(&format!(
             "security-failure --adapter {adapter} --peer * --failure missing-key --read-version-before-disconnect\n"
         )));
         assert!(!policy.contains(&format!(
             "security-failure --adapter {adapter} --peer * --failure wrong-key --read-version-before-disconnect"
         )));
-        for failure in ["missing-key", "wrong-key"] {
+        for failure in [
+            "missing-key",
+            "wrong-key",
+            "missing-refresh-key",
+            "active-data-mic",
+        ] {
             assert!(policy.contains(&format!(
                 "security-failure --adapter {adapter} --peer * --failure {failure}\n"
             )));
         }
     }
     assert!(!policy.contains("--failure *"));
+    assert!(!policy.contains("--dtm-version *"));
     assert!(!policy.contains("hci*"));
     assert!(!policy.contains("fixture-install"));
     assert!(!policy.contains("cargo"));

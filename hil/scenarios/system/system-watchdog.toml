@@ -1,0 +1,10 @@
+schema = 4
+id = "system-watchdog"
+description = "SoC deadline completion, stuck synchronous poll, cancellation, lost completion and late restoration; reset evidence only, no RF assertion"
+image = "system-watchdog"
+isolation = "reset"
+repetitions = 3
+tags = ["watchdog", "soc", "fault-injection"]
+
+[workload]
+kind = "system-watchdog"

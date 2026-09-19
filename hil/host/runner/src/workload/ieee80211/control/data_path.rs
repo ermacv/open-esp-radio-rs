@@ -41,7 +41,7 @@ struct HostReceipt {
     bytes: u64,
 }
 
-pub(super) fn prove_station_data_path(
+pub(in crate::workload::ieee80211) fn prove_station_data_path(
     capture: &SerialCapture,
     context: &Context<'_>,
     timeout: Duration,

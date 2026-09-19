@@ -179,10 +179,13 @@ mod tests;
 pub(crate) enum FixtureCommand {
     /// Print the finite probe workload without touching any fixture.
     ProbePlan,
-    /// Execute a bounded DTM v2 command check and restore the Linux adapter.
+    /// Execute a bounded DTM command check and restore the Linux adapter.
     BluetoothCheck {
         #[arg(long, default_value = "hci0")]
         adapter: crate::fixture::bluetooth::model::Adapter,
+        /// v1 is an explicit diagnostic; production RF scenarios always use v2.
+        #[arg(long, value_enum, default_value = "v2")]
+        dtm_version: crate::fixture::bluetooth::model::DtmVersion,
     },
     /// Connect to a public LE peer, reset the adapter and archive restoration evidence.
     BluetoothConnectReset {

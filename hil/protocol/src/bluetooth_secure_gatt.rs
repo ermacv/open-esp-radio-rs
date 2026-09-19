@@ -1,0 +1,43 @@
+//! Value-only observations and explicit UI decisions for the secure application.
+//! No key material, HCI commands or fabricated security transitions cross HIL.
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BluetoothNumericChallenge {
+    pub id: u64,
+    /// Display as six decimal digits, including leading zeroes.
+    pub number: u32,
+}
+
+/// An explicit application decision, bound to the boot by its command envelope.
+/// A HIL test operator may supply it; this alone does not prove human consent.
+/// Recording it does not prove pairing, encryption or bond-store completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BluetoothNumericDecision {
+    pub challenge: BluetoothNumericChallenge,
+    pub accept: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BluetoothSecureGattEvidence {
+    /// Application-owned sequence; boot identity is unchanged by cold restart.
+    pub epoch: u32,
+    pub restarting: bool,
+    /// Checked physical cold-owner returns, not HCI Reset completions.
+    pub cold_releases: u32,
+    pub old_hci_closed: bool,
+    pub traffic: crate::BluetoothGattEvidence,
+    /// Live unanswered prompt, not the last prompt observed in a log.
+    pub comparison: Option<BluetoothNumericChallenge>,
+    pub comparisons: u32,
+    pub accepted: u32,
+    pub declined: u32,
+    pub bonds_stored: u32,
+    pub bonds_resumed: u32,
+    pub pairing_failures: u32,
+    pub rejected: u32,
+    /// Host queue acceptance, not independent peer reception.
+    pub notifications_queued: u32,
+    /// Host/application/Reset failure retains physical execution, without restart.
+    pub application_stopped: bool,
+}

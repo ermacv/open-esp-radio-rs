@@ -5,6 +5,7 @@ mod calibration_traffic;
 mod command_pump;
 mod retirement;
 mod security;
+mod watchdog;
 
 use bt_hci::{
     ControllerToHostPacket,
@@ -56,7 +57,7 @@ use open_esp_radio_hil_protocol::{
     BluetoothDtmResult as Outcome, BluetoothPeripheralOperation as PeripheralOperation,
     BluetoothPeripheralResult as PeripheralResult,
     BluetoothPeripheralTermination as PeripheralTermination, Capabilities, Command, Envelope,
-    Event, FeatureCapabilities, FrameDecoder, FrameEncoder, LinkHealth, RejectReason,
+    Event, FeatureCapabilities, FrameDecoder, FrameEncoder, LinkHealth, RejectReason, ResetReason,
     bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 use static_cell::StaticCell;
@@ -333,6 +334,8 @@ pub(super) fn start(
     platform: EspHalRadioPlatform,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
+    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    watchdog: Option<watchdog::DtmWatchdog>,
 ) -> ! {
     let platform = PLATFORM.init(platform);
     let entropy = esp_hal::rng::TrngSource::new(rng);
@@ -342,7 +345,10 @@ pub(super) fn start(
     drop(entropy);
     let hardware = BluetoothRadioHardware::take().expect("unique Bluetooth hardware");
     executor.run(|spawner| {
-        spawner.spawn(task(platform, hardware, usb, boot_id).expect("Bluetooth task allocation"));
+        spawner.spawn(
+            task(platform, hardware, usb, boot_id, watchdog, service)
+                .expect("Bluetooth task allocation"),
+        );
     })
 }
 
@@ -352,6 +358,8 @@ async fn task(
     hardware: BluetoothRadioHardware,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot_id: u64,
+    watchdog: Option<watchdog::DtmWatchdog>,
+    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
 ) {
     // Diagnostic assumption: the board's retained main XTAL meets the BLE
     // 500-ppm limit. Use the broadest permitted bound, including margin over
@@ -366,6 +374,7 @@ async fn task(
                 0x0d, 0xffff, 1,
             ));
     let config = BluetoothColdStartConfig::new(
+        crate::watchdog::bluetooth(service),
         251,
         4,
         None,
@@ -392,7 +401,8 @@ async fn task(
         output.platform,
         usb,
         boot_id,
-        output.calibration_identity
+        output.calibration_identity,
+        watchdog
     ));
     poll_with_stack_boundary(session.as_mut()).await;
 }
@@ -408,8 +418,9 @@ async fn run_session(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot_id: u64,
     identity: oer_esp32s31_phy::PhyCalibrationIdentity,
+    watchdog: Option<watchdog::DtmWatchdog>,
 ) {
-    let mut console = Console::new(usb, boot_id);
+    let mut console = Console::new(usb, boot_id, watchdog);
     let mut cycles = 0u32;
     let mut maintenance_cycles = 0u32;
     let mut calibration_debug = None;
@@ -499,7 +510,19 @@ async fn run_session(
                         _ => None,
                     }
                 ));
-                poll_with_stack_boundary(maintenance.as_mut()).await
+                #[cfg(not(feature = "phy-fault-injection"))]
+                let result = poll_with_stack_boundary(maintenance.as_mut()).await;
+                #[cfg(feature = "phy-fault-injection")]
+                let result = match embassy_futures::select::select(
+                    poll_with_stack_boundary(maintenance.as_mut()),
+                    console.phy_fault_control(),
+                )
+                .await
+                {
+                    embassy_futures::select::Either::First(result) => result,
+                    embassy_futures::select::Either::Second(never) => match never {},
+                };
+                result
             };
             maintenance_cycles = maintenance_cycles
                 .checked_add(1)
@@ -532,8 +555,10 @@ async fn run_session(
             };
             continue;
         }
-        let mut shutdown = core::pin::pin!(retirement::shutdown(hardware, platform));
-        let cold = poll_with_stack_boundary(shutdown.as_mut()).await;
+        let cold = {
+            let mut shutdown = core::pin::pin!(retirement::shutdown(hardware, platform));
+            poll_with_stack_boundary(shutdown.as_mut()).await
+        };
         if operation == PeripheralOperation::Retire {
             let mut terminal = core::pin::pin!(retirement::finish(
                 cold,
@@ -544,8 +569,10 @@ async fn run_session(
             ));
             poll_with_stack_boundary(terminal.as_mut()).await;
         }
-        let mut restart = core::pin::pin!(retirement::restart(cold, identity));
-        let ready = poll_with_stack_boundary(restart.as_mut()).await;
+        let ready = {
+            let mut restart = core::pin::pin!(retirement::restart(cold, identity));
+            poll_with_stack_boundary(restart.as_mut()).await
+        };
         let (old_commands_closed, old_events_closed, old_acl_credits_closed) =
             retirement::probe_closed(&hci, &host_acl_credits).await;
         cycles = cycles.checked_add(1).expect("restart counter");
@@ -728,6 +755,7 @@ async fn execute_peripheral_termination(hci: &Host, buffer: &mut <Host as Contro
 }
 
 struct Console {
+    watchdog: Option<watchdog::DtmWatchdog>,
     usb: UsbSerialJtag<'static, Async>,
     boot_id: u64,
     sequence: u32,
@@ -740,9 +768,46 @@ struct Console {
 }
 
 impl Console {
+    /// During a physical fault, service only its diagnostic control. Do not
+    /// poll HCI or reconstruct the consumed runner to answer unrelated work.
+    #[cfg(feature = "phy-fault-injection")]
+    async fn phy_fault_control(&mut self) -> core::convert::Infallible {
+        loop {
+            let mut byte = [0u8; 1];
+            if !matches!(self.usb.read(&mut byte).await, Ok(1)) {
+                core::future::pending::<()>().await;
+                continue;
+            }
+            let Some(command) = self.decode_command(&byte) else {
+                continue;
+            };
+            let control = match command.body {
+                Command::PhyFault(
+                    control @ (open_esp_radio_hil_protocol::PhyFaultCommand::Status
+                    | open_esp_radio_hil_protocol::PhyFaultCommand::Release),
+                ) if command.session_id == 0 && command.validate_target(self.boot_id).is_ok() => {
+                    Some(control)
+                }
+                _ => None,
+            };
+            let response = control
+                .map(crate::phy_fault::control)
+                .unwrap_or(Event::Rejected(RejectReason::InvalidState));
+            let accepted = matches!(response, Event::PhyFault(_));
+            self.send_frame(None, command.request_id, response).await;
+            if let Some(control) = control {
+                crate::phy_fault::after_response(control, accepted);
+            }
+        }
+    }
     #[inline(never)]
-    fn new(usb: esp_hal::peripherals::USB_DEVICE<'static>, boot_id: u64) -> Self {
+    fn new(
+        usb: esp_hal::peripherals::USB_DEVICE<'static>,
+        boot_id: u64,
+        watchdog: Option<watchdog::DtmWatchdog>,
+    ) -> Self {
         Self {
+            watchdog,
             usb: UsbSerialJtag::new(usb).into_async(),
             boot_id,
             sequence: 0,
@@ -825,6 +890,8 @@ impl Console {
                 bluetooth_dtm: true,
                 bluetooth_peripheral: true,
                 bluetooth_phy_maintenance: cfg!(feature = "bluetooth-phy-maintenance"),
+                bluetooth_watchdog_reset: cfg!(feature = "bluetooth-watchdog-reset"),
+                phy_fault_injection: cfg!(feature = "phy-fault-injection"),
                 phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
                 structured_evidence: true,
                 psram_task_stack: true,
@@ -875,7 +942,12 @@ impl Console {
                 Ok(()) if command.session_id != 0 => Event::Rejected(RejectReason::InvalidState),
                 Ok(()) => match command.body {
                     Command::GetCapabilities => Event::Hello(Self::capabilities()),
+                    Command::GetBootStatus => Event::BootStatus(crate::system::boot_evidence()),
                     Command::QueryLinkHealth => self.link_health(),
+                    Command::QueryInterruptStackUsage => Event::InterruptStackUsage {
+                        cpu0: super::stack_evidence::current_irq_snapshot(),
+                        cpu1: None,
+                    },
                     _ => Event::Rejected(RejectReason::InvalidState),
                 },
             };
@@ -914,8 +986,7 @@ impl Console {
                     hci,
                     0,
                     Event::BluetoothDtm(Evidence {
-                        software_reset_boot: esp_hal::system::reset_reason()
-                            == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
+                        reset_reason: platform_reset_reason(),
                         operation: Operation::Reset,
                         result: Outcome::LeaseExpired,
                         rx_diagnostics: rx_diagnostics(),
@@ -952,6 +1023,36 @@ impl Console {
                 continue;
             }
             let response = match command.body {
+                Command::PhyFault(control) => {
+                    if matches!(
+                        control,
+                        open_esp_radio_hil_protocol::PhyFaultCommand::Arm(_)
+                    ) {
+                        if active
+                            || !self.peripheral_probe
+                            || PERIPHERAL_HOST_EVENTS
+                                .connection_live
+                                .load(Ordering::Relaxed)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else {
+                            let response = crate::phy_fault::control(control);
+                            let armed = matches!(response, Event::PhyFault(_));
+                            self.send(hci, request, response).await;
+                            if armed {
+                                return (request, PeripheralOperation::Calibrate { threshold: 0 });
+                            }
+                            continue;
+                        }
+                    } else {
+                        let response = crate::phy_fault::control(control);
+                        let accepted = matches!(response, Event::PhyFault(_));
+                        self.send(hci, request, response).await;
+                        crate::phy_fault::after_response(control, accepted);
+                        continue;
+                    }
+                }
+                Command::GetBootStatus => Event::BootStatus(crate::system::boot_evidence()),
                 Command::BluetoothPeripheral(
                     operation @ PeripheralOperation::EncryptedAcl { enabled, failure },
                 ) => {
@@ -1068,6 +1169,10 @@ impl Console {
                 }
                 Command::GetCapabilities => Event::Hello(capabilities),
                 Command::QueryLinkHealth => self.link_health(),
+                Command::QueryInterruptStackUsage => Event::InterruptStackUsage {
+                    cpu0: super::stack_evidence::current_irq_snapshot(),
+                    cpu1: None,
+                },
                 Command::BluetoothPeripheral(operation) => {
                     let execution = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
                     let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
@@ -1163,6 +1268,9 @@ impl Console {
                                 active =
                                     matches!(operation, Operation::Receive | Operation::Transmit);
                                 lease = active.then(|| Instant::now() + Duration::from_secs(30));
+                                if active && let Some(watchdog) = self.watchdog.as_mut() {
+                                    watchdog.arm_once();
+                                }
                             }
                             _ => {
                                 // A cancelled HCI exchange has uncertain state. Attempt Reset,
@@ -1172,8 +1280,7 @@ impl Console {
                                     hci,
                                     request,
                                     Event::BluetoothDtm(Evidence {
-                                        software_reset_boot: esp_hal::system::reset_reason()
-                                            == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
+                                        reset_reason: platform_reset_reason(),
                                         operation,
                                         result,
                                         rx_diagnostics: rx_diagnostics(),
@@ -1184,8 +1291,7 @@ impl Console {
                             }
                         }
                         Event::BluetoothDtm(Evidence {
-                            software_reset_boot: esp_hal::system::reset_reason()
-                                == Some(esp_hal::rtc_cntl::SocResetReason::CoreSw),
+                            reset_reason: platform_reset_reason(),
                             operation,
                             result,
                             rx_diagnostics: rx_diagnostics(),
@@ -1414,14 +1520,7 @@ fn maintenance_measurements() -> Option<open_esp_radio_hil_protocol::BluetoothPh
             transactions: m.transactions,
             restored: m.restored,
             common_calibrations: m.common_calibrations,
-            latest_rx_quality: m.latest_rx_quality.map(|quality| {
-                open_esp_radio_hil_protocol::PhyRxGainQualityEvidence {
-                    shared_baseband: quality.shared_baseband(),
-                    wifi_baseband: quality.wifi_baseband(),
-                    wifi_fine: quality.wifi_fine(),
-                    wifi_radio: quality.wifi_radio(),
-                }
-            }),
+            latest_rx_quality: m.latest_rx_quality.map(crate::phy_evidence::rx_quality),
             bluetooth_calibrations: m.bluetooth_calibrations,
             maximum_execution_micros: m.maximum_execution_micros,
             maximum_restoration_micros: m.maximum_restoration_micros,
@@ -1441,4 +1540,15 @@ fn maintenance_measurements() -> Option<open_esp_radio_hil_protocol::BluetoothPh
             invalid: m.invalid,
         },
     )
+}
+
+fn platform_reset_reason() -> ResetReason {
+    crate::system::boot_evidence().reset_reason
+}
+
+#[cfg(feature = "bluetooth-watchdog-reset")]
+pub(super) fn diagnostic_watchdog(
+    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+) -> Option<watchdog::DtmWatchdog> {
+    Some(watchdog::DtmWatchdog::new(service))
 }

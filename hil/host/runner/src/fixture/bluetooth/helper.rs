@@ -3,6 +3,8 @@
 #[cfg(target_os = "linux")]
 mod connection_reset;
 #[cfg(target_os = "linux")]
+mod dtm;
+#[cfg(target_os = "linux")]
 mod hci;
 mod model;
 #[cfg(target_os = "linux")]
@@ -41,7 +43,7 @@ struct Cli {
 enum Command {
     /// Print the exact finite interface understood by this helper.
     Capabilities,
-    /// Exercise one fixed initial-key refusal or mismatch, without sending application data.
+    /// Exercise one fixed initial-key failure or missing refresh key, without sending application data.
     SecurityFailure {
         #[arg(long)]
         adapter: model::Adapter,
@@ -53,10 +55,12 @@ enum Command {
         #[arg(long)]
         read_version_before_disconnect: bool,
     },
-    /// Check DTM v2 on LE 1M, channel 0, PRBS9, with 100 ms RX/TX windows.
+    /// Check DTM on LE 1M, channel 0, PRBS9, with 100 ms RX/TX windows.
     Check {
         #[arg(long)]
         adapter: model::Adapter,
+        #[arg(long, value_enum, default_value = "v2")]
+        dtm_version: model::DtmVersion,
     },
     /// Connect to one public LE peer and execute one finite termination mode.
     ConnectReset {
@@ -176,10 +180,14 @@ fn main() {
         }
         return;
     }
-    let Command::Check { adapter } = command else {
+    let Command::Check {
+        adapter,
+        dtm_version,
+    } = command
+    else {
         unreachable!()
     };
-    let mut report = model::Check::new(adapter);
+    let mut report = model::Check::new(adapter, dtm_version);
     let result = (|| -> Result<()> {
         let _signals = oer_process::install_signal_handlers()?;
         #[cfg(target_os = "linux")]
@@ -198,7 +206,7 @@ fn main() {
         eprintln!("cannot write Bluetooth result: {error}");
         std::process::exit(1);
     }
-    if !report.passed(adapter) {
+    if !report.passed(adapter, dtm_version) {
         std::process::exit(1);
     }
 }
@@ -207,6 +215,36 @@ fn main() {
 mod cli_tests {
     use super::*;
     use clap::Parser as _;
+
+    #[test]
+    fn dtm_profile_defaults_to_v2_and_rejects_unbounded_arguments() {
+        let args = ["helper", "check", "--adapter", "hci0"];
+        assert!(matches!(
+            Cli::try_parse_from(args).unwrap().command,
+            Command::Check {
+                dtm_version: model::DtmVersion::V2,
+                ..
+            }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(args.into_iter().chain(["--dtm-version", "v1"]))
+                .unwrap()
+                .command,
+            Command::Check {
+                dtm_version: model::DtmVersion::V1,
+                ..
+            }
+        ));
+        for tail in [
+            ["--dtm-version", "auto"],
+            ["--dtm-version", "v3"],
+            ["--timeout-ms", "5000"],
+            ["--opcode", "0x201e"],
+            ["--output", "/etc/test"],
+        ] {
+            assert!(Cli::try_parse_from(args.into_iter().chain(tail)).is_err());
+        }
+    }
 
     #[test]
     fn finite_reset_command_rejects_unbounded_or_arbitrary_arguments() {

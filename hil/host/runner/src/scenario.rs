@@ -127,6 +127,7 @@ pub enum WifiOperation {
     Stop,
     Start,
     Restart,
+    MaintenanceRestart,
     Retained,
     Scan,
     Monitor,
@@ -141,6 +142,7 @@ impl WifiOperation {
             Self::Stop => "stop",
             Self::Start => "start",
             Self::Restart => "restart",
+            Self::MaintenanceRestart => "maintenance-restart",
             Self::Retained => "retained",
             Self::Scan => "scan",
             Self::Monitor => "monitor",
@@ -164,8 +166,19 @@ impl PhyExpectation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Workload {
+    /// Three plaintext ATT connection cycles on one Trouble/Controller epoch.
+    BluetoothGatt,
+    /// Interactive Numeric Comparison, denied plaintext ATT and bonded reconnect.
+    BluetoothSecureGatt,
+    BluetoothPhyWatchdog,
+    WifiPhyWatchdog,
+    SystemWatchdog,
     BluetoothMaintenanceDeadline,
-    BluetoothAclBackpressure,
+    BluetoothWatchdogReset,
+    BluetoothAclBackpressure {
+        #[serde(default)]
+        active_maintenance: bool,
+    },
     BluetoothSecurityFailure {
         failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
         /// Diagnose plaintext control progress after initial key rejection.
@@ -175,6 +188,9 @@ pub enum Workload {
     BluetoothEncryptedAcl {
         #[serde(default)]
         key_refresh: bool,
+        /// Require ordered encrypted traffic before and after live PHY maintenance.
+        #[serde(default)]
+        active_maintenance: bool,
     },
     BluetoothAclCalibration {
         duration_millis: u16,

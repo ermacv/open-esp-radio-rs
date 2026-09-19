@@ -314,7 +314,7 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "LINK_STATE_CONTROL"
-description = "The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."
+description = "The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication."
 bitOffset = 1
 bitWidth = 1
 
@@ -791,7 +791,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL.LINK_STATE_CONTROL"
-sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
+sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL", "HIL_S31_SOFTWARE_CCM_OPCODE_ABORT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

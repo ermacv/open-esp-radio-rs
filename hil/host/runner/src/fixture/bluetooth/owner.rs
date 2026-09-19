@@ -7,8 +7,7 @@ use super::{
 };
 use bt_hci::cmd::{
     controller_baseband::Reset,
-    info::{ReadBdAddr, ReadLocalSupportedCmds, ReadLocalVersionInformation},
-    le::{LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
+    info::{ReadBdAddr, ReadLocalVersionInformation},
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -289,25 +288,7 @@ pub(super) fn check(adapter: Adapter, report: &mut Check) -> Result<()> {
                 "{:?}",
                 user.command(ReadLocalVersionInformation::new())?
             ));
-            let mask = user.command(ReadLocalSupportedCmds::new())?;
-            report.dtm_v2_advertised =
-                mask.le_receiver_test_v2() && mask.le_transmitter_test_v2() && mask.le_test_end();
-            if !report.dtm_v2_advertised {
-                return Err("adapter does not advertise DTM v2 RX/TX/Test End".into());
-            }
-            user.command(LeReceiverTestV2::new(0, 1, 0))?;
-            report.rx_started = true;
-            oer_process::sleep(Duration::from_millis(100))?;
-            report.rx_packets = Some(user.command(LeTestEnd::new())?);
-            user.command(LeTransmitterTestV2::new(0, 37, 0, 1))?;
-            report.tx_started = true;
-            oer_process::sleep(Duration::from_millis(100))?;
-            let count = user.command(LeTestEnd::new())?;
-            if count != 0 {
-                return Err("transmitter Test End returned a nonzero receiver count".into());
-            }
-            report.tx_test_end = true;
-            Ok(())
+            super::dtm::check(user, report)
         },
         Owner::restore,
     );
@@ -379,7 +360,7 @@ mod tests {
     #[test]
     fn partial_acquisition_failure_restores_the_mutated_owner() {
         let mut unblocked = false;
-        let mut report = Check::new(Adapter(0));
+        let mut report = Check::new(Adapter(0), super::super::model::DtmVersion::V2);
         checked_lifetime(
             &mut unblocked,
             &mut report,
@@ -396,11 +377,11 @@ mod tests {
         assert!(!unblocked);
         assert!(report.restored);
         assert_eq!(report.errors, ["exclusive channel busy"]);
-        assert!(!report.passed(Adapter(0)));
+        assert!(!report.passed(Adapter(0), super::super::model::DtmVersion::V2));
     }
     #[test]
     fn restoration_failure_is_retained_alongside_original_error() {
-        let mut report = Check::new(Adapter(0));
+        let mut report = Check::new(Adapter(0), super::super::model::DtmVersion::V2);
         checked_lifetime(
             &mut (),
             &mut report,

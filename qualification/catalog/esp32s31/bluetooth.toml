@@ -881,7 +881,7 @@ limitations = "Only the exact declared scope is represented; source coverage doe
 [[capabilities]]
 id = "trouble-host-integration"
 title = "Trouble BLE Host integration"
-scope = "Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
+scope = "Pinned Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
 implementation = "complete"
 host = "covered"
 async = "incomplete"
@@ -904,7 +904,7 @@ security = [
 ]
 composition = "trouble-host-integration"
 level = "composed-product"
-activation-boundary = "Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
+activation-boundary = "Pinned Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS"
 limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
 
 [[capabilities]]
@@ -3103,7 +3103,7 @@ section = "bluetooth-hci-host-boundary"
 title = "Read Local Supported Commands"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The standard 64-octet bitmap declares the closed production classifier's exact bootstrap, legacy advertising/scanning, DTM, connected Disconnect/remote-information, LTK reply/negative-reply and Host ACL-credit inventory. Unsupported neighboring commands remain clear."
+scope-and-limitations = "The standard 64-octet bitmap declares the closed production classifier's exact bootstrap, legacy advertising/scanning, DTM, connected Disconnect/remote-information, LTK reply/negative-reply and Host ACL-credit inventory. LE Rand is advertised only when composition attaches an independent entropy source before bootstrap. Unsupported neighboring commands remain clear."
 source-paths = []
 
 [[items]]

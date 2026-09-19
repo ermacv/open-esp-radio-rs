@@ -1,0 +1,16 @@
+schema = 4
+id = "wifi-phy-watchdog"
+description = "Real connected PHY faults; autonomous reset, new-boot bidirectional UDP, rejected admission without reset"
+image = "diagnostic-phy-fault"
+isolation = "reset"
+repetitions = 3
+data_plane = "split-radio-network"
+tags = ["wifi", "phy", "watchdog", "fault-injection"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "wifi-phy-watchdog"
+
+[criteria]

@@ -10,6 +10,12 @@ The [capability matrix](FEATURES.md) distinguishes implemented primitives from
 composed services. The [tracking contract](src/tracking/README.md) is the
 canonical reference for demand, admission, cancellation and restoration.
 
+The opt-in `lifecycle-fault-injection` feature exposes destructive one-shot
+checkpoints in real maintenance. It owns no timer, reset mechanism or transport;
+the caller must provide independent termination. Default builds omit its code.
+See the [HIL checkpoint contract](../../../../hil/targets/esp32s31/README.md)
+for the exact injected boundaries and evidence limits.
+
 ## Terminology and phases
 
 | Term | Meaning in this module |
@@ -242,6 +248,24 @@ bounded attempts and typed timeout failure. Its I2C commands use direct status
 reads with the same edge budget, and DC/IQ readiness samples directly on first
 and subsequent attempts. The finite observation bounds are correctness limits,
 not elapsed-time guarantees.
+
+The execution limits have different scopes:
+
+| Mechanism | Established bound | Limitation |
+| --- | --- | --- |
+| [Direct bus polling](src/executor/wait/poll.rs) and [target executor](src/target_executor.rs) | Finite observations per PBus/I2C operation; typed failure on exhaustion | Requires each MMIO access to return; nested operations have separate observation budgets |
+| [DC/IQ estimator](src/calibration/estimator.rs) | Finite readiness samples, then measurement/start cleanup on missing-ready | Cleanup and settle calls must themselves return |
+| [Calibration executor](src/target_port/calibration.rs) | Root operation accounting and finite gain-state loops | Operation counts do not bound IRQ interference or a stalled bus access |
+| [RFPLL search](src/tracking/rfpll/search.rs) | Both search directions terminate after finite samples, including unrecognized status values | Its finite state graph still invokes synchronous bus and settle operations |
+| [Transaction deadline](src/tracking/deadline.rs) | Rejects expired entry and a result returned at or after the absolute deadline | The executor cannot interrupt a child that never returns from `poll` |
+
+The BLE and Wi-Fi compositions arm the independent SoC deadline service around
+physical lifecycle transactions and retain its lease until checked restoration.
+The board/application supplies explicit engineering budgets; PHY owns no timer
+or reset peripheral. Hardware reset does not by itself establish a qualified
+RF-cessation bound. A pending-future timeout, observed calibration maximum and
+finite loop count cannot establish that stronger guarantee either. Failed or
+expired work cannot manufacture runnable ownership.
 
 Timing qualification must cover the complete action-to-hardware path, including
 executor-added waits, readiness retries, failure cleanup and the selected

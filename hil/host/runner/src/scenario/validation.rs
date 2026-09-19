@@ -183,21 +183,45 @@ impl Scenario {
         }
         if matches!(
             self.image,
-            ImageClass::BluetoothDtm | ImageClass::BluetoothPhyMaintenance
+            ImageClass::BluetoothDtm
+                | ImageClass::BluetoothGatt
+                | ImageClass::BluetoothSecureGatt
+                | ImageClass::BluetoothPhyMaintenance
+                | ImageClass::BluetoothWatchdogReset
         ) != matches!(
             self.workload,
             Workload::BluetoothDtm { .. }
+                | Workload::BluetoothGatt
+                | Workload::BluetoothSecureGatt
+                | Workload::BluetoothPhyWatchdog
                 | Workload::BluetoothPeripheral { .. }
                 | Workload::BluetoothAclCalibration { .. }
-                | Workload::BluetoothAclBackpressure
+                | Workload::BluetoothAclBackpressure { .. }
                 | Workload::BluetoothEncryptedAcl { .. }
                 | Workload::BluetoothSecurityFailure { .. }
+                | Workload::BluetoothWatchdogReset
                 | Workload::BluetoothMaintenanceDeadline
         ) {
             return self
                 .criteria_error("Bluetooth workloads require their exclusive firmware image");
         }
+        if (self.image == ImageClass::BluetoothGatt)
+            != matches!(self.workload, Workload::BluetoothGatt)
+        {
+            return self.criteria_error("Trouble GATT requires its exclusive Host image");
+        }
+        if (self.image == ImageClass::BluetoothSecureGatt)
+            != matches!(self.workload, Workload::BluetoothSecureGatt)
+        {
+            return self
+                .criteria_error("Secure GATT requires its exclusive authenticated Host image");
+        }
         let boot_smoke_image = self.image == ImageClass::BootSmoke;
+        if (self.image == ImageClass::SystemWatchdog)
+            != matches!(self.workload, Workload::SystemWatchdog)
+        {
+            return self.criteria_error("SoC watchdog requires its exclusive radio-free image");
+        }
         if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke image accepts only boot-smoke workload",
@@ -399,6 +423,7 @@ impl Scenario {
                 | Workload::StationApLoss { .. }
                 | Workload::StationApAbsence { .. }
                 | Workload::WifiRole { .. }
+                | Workload::WifiPhyWatchdog
                 | Workload::MonitorCapture { .. }
                 | Workload::StationAccessPoint { .. }
                 | Workload::StationAccessPointReconnect { .. }
@@ -456,6 +481,26 @@ impl Scenario {
             }
         }
         match &self.workload {
+            Workload::SystemWatchdog => {
+                if self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self
+                        .criteria_error("SoC watchdog accepts no radio link or traffic criteria");
+                }
+            }
+            Workload::WifiPhyWatchdog => {
+                if self.image != ImageClass::DiagnosticPhyFault
+                    || self.data_plane
+                        != open_esp_radio_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
+                    || self.link.is_none()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error("PHY watchdog requires its diagnostic image, explicit link and split data plane");
+                }
+            }
             Workload::BluetoothSecurityFailure {
                 failure,
                 read_version_before_disconnect: true,
@@ -464,9 +509,41 @@ impl Scenario {
                     "plaintext verification requires initial missing-key rejection",
                 );
             }
-            Workload::BluetoothAclBackpressure
-            | Workload::BluetoothEncryptedAcl { .. }
-            | Workload::BluetoothSecurityFailure { .. } => {
+            Workload::BluetoothEncryptedAcl {
+                active_maintenance,
+                key_refresh,
+            } => {
+                let image = if *active_maintenance {
+                    ImageClass::BluetoothPhyMaintenance
+                } else {
+                    ImageClass::BluetoothDtm
+                };
+                if self.image != image
+                    || (*active_maintenance && *key_refresh)
+                    || self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "encrypted ACL requires its selected maintenance image, no combined refresh and no Wi-Fi criteria",
+                    );
+                }
+            }
+            Workload::BluetoothAclBackpressure { active_maintenance } => {
+                let image = if *active_maintenance {
+                    ImageClass::BluetoothPhyMaintenance
+                } else {
+                    ImageClass::BluetoothDtm
+                };
+                if self.image != image
+                    || self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error("ACL backpressure requires its selected maintenance image and no Wi-Fi criteria");
+                }
+            }
+            Workload::BluetoothSecurityFailure { .. } => {
                 if self.image != ImageClass::BluetoothDtm
                     || self.link.is_some()
                     || self.criteria != Criteria::default()
@@ -477,15 +554,34 @@ impl Scenario {
                     );
                 }
             }
-            Workload::BluetoothMaintenanceDeadline => {
-                if self.image != ImageClass::BluetoothPhyMaintenance
+            Workload::BluetoothMaintenanceDeadline
+            | Workload::BluetoothPhyWatchdog
+            | Workload::BluetoothWatchdogReset => {
+                let expected = if matches!(
+                    self.workload,
+                    Workload::BluetoothWatchdogReset | Workload::BluetoothPhyWatchdog
+                ) {
+                    ImageClass::BluetoothWatchdogReset
+                } else {
+                    ImageClass::BluetoothPhyMaintenance
+                };
+                if self.image != expected
                     || self.link.is_some()
                     || self.criteria != Criteria::default()
                     || self.evidence != EvidenceConfig::default()
                 {
                     return self.criteria_error(
-                        "DTM deadline requires automatic maintenance and no Wi-Fi criteria",
+                        "Bluetooth reset/PHY workload requires its exact image and no station criteria",
                     );
+                }
+            }
+            Workload::BluetoothGatt | Workload::BluetoothSecureGatt => {
+                if self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self
+                        .criteria_error("GATT uses only its ATT peer and application evidence");
                 }
             }
             Workload::BluetoothAclCalibration {
@@ -798,7 +894,12 @@ impl Scenario {
                 bounded(*timeout_seconds, 10, 180, self, "timeout_seconds")?;
                 if let Some(cycles) = cycles {
                     bounded(*cycles, 1, 10, self, "cycles")?;
-                    if !matches!(operation, WifiOperation::Restart | WifiOperation::Retained) {
+                    if !matches!(
+                        operation,
+                        WifiOperation::Restart
+                            | WifiOperation::MaintenanceRestart
+                            | WifiOperation::Retained
+                    ) {
                         return Err(format!(
                             "{}: cycles is supported only by the Wi-Fi radio restart workload",
                             self.source.display(),

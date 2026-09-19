@@ -7,6 +7,7 @@
 mod construction;
 mod quarantine;
 mod runner;
+pub(crate) use runner::fail_stop_shared_phy;
 
 pub use construction::{
     BluetoothInterruptCompositionFailure, BluetoothSystemBuildError,
@@ -143,7 +144,7 @@ impl<
         PACKET_CAPACITY,
     >
 {
-    /// Consume this exact Controller epoch into a released Trouble Host stack.
+    /// Consume this exact Controller epoch into the pinned Trouble Host stack.
     ///
     /// The returned `stack.runner()` and `hardware.run()` futures must be
     /// polled concurrently. Peripheral and GATT application handles are

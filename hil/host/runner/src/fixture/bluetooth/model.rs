@@ -32,6 +32,14 @@ impl std::fmt::Display for Adapter {
     }
 }
 
+/// Explicit command profile; v1 is diagnostic only, never an automatic fallback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DtmVersion {
+    V1,
+    V2,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Check {
@@ -41,6 +49,8 @@ pub(crate) struct Check {
     pub(crate) version: Option<String>,
     pub(crate) initial_powered: Option<bool>,
     pub(crate) initial_soft_blocked: Option<bool>,
+    pub(crate) dtm_version: DtmVersion,
+    pub(crate) dtm_v1_advertised: bool,
     pub(crate) dtm_v2_advertised: bool,
     pub(crate) rx_started: bool,
     pub(crate) rx_packets: Option<u16>,
@@ -51,14 +61,16 @@ pub(crate) struct Check {
 }
 
 impl Check {
-    pub(crate) fn new(adapter: Adapter) -> Self {
+    pub(crate) fn new(adapter: Adapter, dtm_version: DtmVersion) -> Self {
         Self {
-            schema: 1,
+            schema: 2,
             adapter: adapter.to_string(),
             address: None,
             version: None,
             initial_powered: None,
             initial_soft_blocked: None,
+            dtm_version,
+            dtm_v1_advertised: false,
             dtm_v2_advertised: false,
             rx_started: false,
             rx_packets: None,
@@ -70,14 +82,18 @@ impl Check {
     }
 
     /// This proves command acceptance only; packet reception needs an RF peer.
-    pub(crate) fn passed(&self, adapter: Adapter) -> bool {
-        self.schema == 1
+    pub(crate) fn passed(&self, adapter: Adapter, dtm_version: DtmVersion) -> bool {
+        self.schema == 2
+            && self.dtm_version == dtm_version
             && self.adapter == adapter.to_string()
             && self.address.is_some()
             && self.version.is_some()
             && self.initial_powered.is_some()
             && self.initial_soft_blocked.is_some()
-            && self.dtm_v2_advertised
+            && match dtm_version {
+                DtmVersion::V1 => self.dtm_v1_advertised,
+                DtmVersion::V2 => self.dtm_v2_advertised,
+            }
             && self.rx_started
             && self.rx_packets.is_some()
             && self.tx_started
@@ -383,9 +399,9 @@ mod tests {
     }
     #[test]
     fn mask_alone_and_incomplete_cleanup_cannot_pass() {
-        let mut report = Check::new(Adapter(0));
+        let mut report = Check::new(Adapter(0), DtmVersion::V2);
         report.dtm_v2_advertised = true;
-        assert!(!report.passed(Adapter(0)));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2));
         report.address = Some("test".into());
         report.version = Some("test".into());
         report.initial_powered = Some(false);
@@ -394,15 +410,23 @@ mod tests {
         report.rx_packets = Some(0);
         report.tx_started = true;
         report.tx_test_end = true;
-        assert!(!report.passed(Adapter(0)));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2));
         report.restored = true;
-        assert!(report.passed(Adapter(0)));
-        assert!(!report.passed(Adapter(1)));
-        report.schema = 2;
-        assert!(!report.passed(Adapter(0)));
+        assert!(report.passed(Adapter(0), DtmVersion::V2));
+        assert!(!report.passed(Adapter(1), DtmVersion::V2));
         report.schema = 1;
+        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        report.schema = 2;
+        report.dtm_v1_advertised = true;
+        assert!(!report.passed(Adapter(0), DtmVersion::V1));
+        report.dtm_version = DtmVersion::V1;
+        assert!(report.passed(Adapter(0), DtmVersion::V1));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        report.dtm_v1_advertised = false;
+        assert!(!report.passed(Adapter(0), DtmVersion::V1));
+        report.dtm_version = DtmVersion::V2;
         report.errors.push("reset failed".into());
-        assert!(!report.passed(Adapter(0)));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2));
     }
 }
 

@@ -104,6 +104,8 @@ impl HciControllerResponse for BootstrapCommandCompleteEvent {
 /// byte scratch buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeControllerCommandComplete {
+    /// Standard LE Rand completion, with redacted Debug output.
+    Random(crate::LeRandCommandCompleteEvent),
     /// Immediate status for an admitted or rejected Disconnect command.
     DisconnectStatus(LeDisconnectCommandStatusEvent),
     /// Immediate status for an admitted or rejected remote-feature request.
@@ -133,6 +135,7 @@ impl HciControllerResponse for LeControllerCommandComplete {
 
     fn as_bytes(&self) -> &[u8] {
         match self {
+            Self::Random(response) => response.as_bytes(),
             Self::DisconnectStatus(response) => response.as_bytes(),
             Self::ReadRemoteFeaturesStatus(response) => response.as_bytes(),
             Self::ReadRemoteVersionInformationStatus(response) => response.as_bytes(),
@@ -150,6 +153,12 @@ impl HciControllerResponse for LeControllerCommandComplete {
 impl From<BootstrapCommandCompleteEvent> for LeControllerCommandComplete {
     fn from(response: BootstrapCommandCompleteEvent) -> Self {
         Self::Bootstrap(response)
+    }
+}
+
+impl From<crate::LeRandCommandCompleteEvent> for LeControllerCommandComplete {
+    fn from(response: crate::LeRandCommandCompleteEvent) -> Self {
+        Self::Random(response)
     }
 }
 

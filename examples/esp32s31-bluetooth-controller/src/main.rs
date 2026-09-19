@@ -14,21 +14,13 @@ use bt_hci::{
     cmd::le::{LeSetAdvData, LeSetAdvEnable, LeSetRandomAddr},
     param::BdAddr,
 };
-#[cfg(feature = "advertising-smoke")]
-use open_esp_radio_esp32s31_bluetooth_controller_example::AdvertisingSmokeCase;
-#[cfg(feature = "trouble-gatt")]
-use open_esp_radio_esp32s31_bluetooth_controller_example::{
-    TROUBLE_GATT_DEVICE_NAME, TROUBLE_GATT_SERVICE_UUID, TROUBLE_GATT_VALUE_UUID,
-    encode_trouble_gatt_advertising,
-};
-
-#[cfg(feature = "trouble-gatt")]
-use bt_hci::param::AdvChannelMap;
 #[cfg(not(feature = "trouble-gatt"))]
 use bt_hci::{
     cmd::{SyncCmd, controller_baseband::Reset},
     controller::Controller,
 };
+#[cfg(feature = "advertising-smoke")]
+use open_esp_radio_esp32s31_bluetooth_controller_example::AdvertisingSmokeCase;
 
 #[cfg(feature = "trouble-gatt")]
 use embassy_time::Duration;
@@ -75,8 +67,6 @@ use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPl
 use static_cell::StaticCell;
 
 #[cfg(feature = "trouble-gatt")]
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-#[cfg(feature = "trouble-gatt")]
 use trouble_host::prelude::*;
 
 const MODEM_TIMER_CAPACITY: usize = 4;
@@ -109,16 +99,31 @@ static RADIO_PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
 static BLUETOOTH_STORAGE: BluetoothStorage = BluetoothStorage::new();
 #[cfg(feature = "trouble-gatt")]
 static TROUBLE_RESOURCES: StaticCell<TroubleResources> = StaticCell::new();
+#[cfg(feature = "trouble-gatt")]
+static ENTROPY: StaticCell<oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy<'static>> =
+    StaticCell::new();
 
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
+    #[cfg(not(feature = "trouble-secure-gatt"))]
     esp_println::logger::init_logger_from_env();
     esp_println::println!("open-radio: application entered");
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    #[cfg(feature = "trouble-gatt")]
+    let entropy = oer_esp32s31_soc::entropy::Entropy::new(peripherals.RNG);
+    #[cfg(feature = "trouble-secure-gatt")]
+    let boot = u64::from_le_bytes(entropy.random_bytes().expect("console boot entropy"));
+    #[cfg(feature = "trouble-gatt")]
+    let entropy =
+        ENTROPY.init(oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy::new(entropy));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
 
+    static WATCHDOG: StaticCell<oer_esp32s31_soc::watchdog::DeadlineWatchdog> = StaticCell::new();
+    let watchdog = WATCHDOG.init(oer_esp32s31_soc::watchdog::DeadlineWatchdog::new(
+        peripherals.TIMG1,
+    ));
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
     let platform = RADIO_PLATFORM.init(EspHalRadioPlatform::new(
@@ -141,8 +146,16 @@ extern "C" fn runtime_main() -> ! {
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
     executor.run(|spawner| {
         spawner.spawn(
-            bluetooth_controller_task(platform, hardware)
-                .expect("Bluetooth Controller task storage must be available once"),
+            bluetooth_controller_task(
+                platform,
+                hardware,
+                watchdog,
+                #[cfg(feature = "trouble-gatt")]
+                entropy,
+                #[cfg(feature = "trouble-secure-gatt")]
+                (peripherals.USB_DEVICE, boot),
+            )
+            .expect("Bluetooth Controller task storage must be available once"),
         );
     })
 }
@@ -151,6 +164,13 @@ extern "C" fn runtime_main() -> ! {
 async fn bluetooth_controller_task(
     platform: &'static EspHalRadioPlatform,
     hardware: BluetoothRadioHardware,
+    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    #[cfg(feature = "trouble-gatt")]
+    entropy: &'static oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy<'static>,
+    #[cfg(feature = "trouble-secure-gatt")] console: (
+        esp_hal::peripherals::USB_DEVICE<'static>,
+        u64,
+    ),
 ) {
     let dtm = DtmRuntimeConfig::new(
         DtmSchedulerAllocationConfig::new(0, 0, 0),
@@ -163,7 +183,19 @@ async fn bluetooth_controller_task(
     );
     let recheck_period = DtmRecheckPeriod::from_duration(Duration::from_micros(50))
         .expect("the Controller-time recheck period must be nonzero");
-    let config = BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
+    // Board-selected engineering limits, not qualified timing bounds.
+    use core::num::NonZeroU32;
+    use oer_esp32s31_soc::watchdog::DeadlineBudget;
+    static WATCHDOG_CONFIG: StaticCell<oer_esp32s31_bluetooth_integration::WatchdogConfig> =
+        StaticCell::new();
+    let watchdog = WATCHDOG_CONFIG.init(oer_esp32s31_bluetooth_integration::WatchdogConfig::new(
+        watchdog,
+        DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
+        DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
+        DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
+    ));
+    let config =
+        BluetoothColdStartConfig::new(watchdog, 251, 4, None, dtm, passive_scan, recheck_period);
     #[cfg(feature = "trouble-gatt")]
     let config = config.with_peripheral_connection(
         PeripheralConnectionRuntimeConfig::new(PeripheralConnectionDefaultTxPowerDbm::new(0))
@@ -186,99 +218,71 @@ async fn bluetooth_controller_task(
     };
     #[cfg(feature = "trouble-gatt")]
     {
+        #[cfg(feature = "trouble-secure-gatt")]
+        let mut bonds = open_esp_radio_esp32s31_bluetooth_controller_example::security::bonds::RamBondStore::<1>::new();
         let resources = TROUBLE_RESOURCES.init(HostResources::new());
         let system = output.system.into_trouble(resources);
         let stack = system.stack;
-        let hardware_runner = system.hardware;
+        let mut hardware_runner = system.hardware;
+        hardware_runner
+            .install_entropy(entropy)
+            .expect("fresh HCI entropy binding");
         let mut host_runner = stack.runner();
-        let mut peripheral = stack.peripheral();
+        #[cfg(not(feature = "trouble-secure-gatt"))]
+        let application =
+            open_esp_radio_esp32s31_bluetooth_controller_example::gatt::run(&stack, |event| {
+                esp_println::println!("open-radio: Trouble {:?}", event)
+            });
 
-        let appearance = [0x00, 0x00];
-        let mut value_storage = [0_u8; 1];
-        let mut table: AttributeTable<'_, NoopRawMutex, 10> = AttributeTable::new();
-        let mut gap = table.add_service(Service::new(0x1800_u16));
-        let _ = gap.add_characteristic_ro(0x2a00_u16, TROUBLE_GATT_DEVICE_NAME);
-        let _ = gap.add_characteristic_ro(0x2a01_u16, &appearance);
-        gap.build();
-        table.add_service(Service::new(0x1801_u16));
-        let value = table
-            .add_service(Service::new(TROUBLE_GATT_SERVICE_UUID))
-            .add_characteristic(
-                TROUBLE_GATT_VALUE_UUID,
-                &[CharacteristicProp::Read, CharacteristicProp::Write],
-                0_u8,
-                &mut value_storage,
-            )
-            .build();
-        let server = AttributeServer::<NoopRawMutex, DefaultPacketPool, 10, 1>::new(table);
-
+        #[cfg(feature = "trouble-secure-gatt")]
         let application = async {
-            let mut adv_data = [0_u8; 31];
-            let mut scan_data = [0_u8; 31];
-            let (adv_data_len, scan_data_len) =
-                encode_trouble_gatt_advertising(&mut adv_data, &mut scan_data);
-            let parameters = AdvertisementParameters {
-                channel_map: Some(AdvChannelMap::CHANNEL_37),
-                ..Default::default()
+            use open_esp_radio_esp32s31_bluetooth_controller_example::security::{
+                comparison::NumericComparison,
+                console::{self, Observations},
+                gatt,
             };
-
-            loop {
-                esp_println::println!("open-radio: Trouble advertising");
-                let advertiser = peripheral
-                    .advertise(
-                        &parameters,
-                        Advertisement::ConnectableScannableUndirected {
-                            adv_data: &adv_data[..adv_data_len],
-                            scan_data: &scan_data[..scan_data_len],
-                        },
-                    )
-                    .await
-                    .unwrap_or_else(|error| panic!("Trouble advertising failed: {:?}", error));
-                let connection = advertiser
-                    .accept()
-                    .await
-                    .unwrap_or_else(|error| panic!("Trouble accept failed: {:?}", error));
-                let connection = connection
-                    .with_attribute_server(&server)
-                    .unwrap_or_else(|error| panic!("Trouble GATT attach failed: {:?}", error));
-                esp_println::println!("open-radio: Trouble GATT connected");
-
-                loop {
-                    match connection.next().await {
-                        GattConnectionEvent::Disconnected { reason } => {
-                            esp_println::println!(
-                                "open-radio: Trouble GATT disconnected reason={:?}",
-                                reason
-                            );
-                            break;
-                        }
-                        GattConnectionEvent::Gatt {
-                            event: GattEvent::Write(event),
-                        } if event.handle() == value.handle => {
-                            event
-                                .accept()
-                                .expect("the writable characteristic accepts writes")
-                                .send()
-                                .await;
-                            let current: u8 = connection
-                                .get(&value)
-                                .expect("the characteristic value remains typed");
-                            esp_println::println!("open-radio: Trouble GATT value={}", current);
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            let comparison = NumericComparison::new();
+            let observations = Observations::new();
+            let mut usb = esp_hal::usb::usb_serial_jtag::UsbSerialJtag::new(console.0).into_async();
+            embassy_futures::select::select(
+                gatt::run(&stack, &mut bonds, &comparison, |event| {
+                    observations.signal(event)
+                }),
+                console::run(&mut usb, console.1, &comparison, &observations),
+            )
+            .await
         };
 
         let mut hardware = core::pin::pin!(hardware_runner.run());
-        match embassy_futures::select::select3(host_runner.run(), application, hardware.as_mut())
-            .await
+        let mut host = core::pin::pin!(host_runner.run());
+        let mut application = core::pin::pin!(application);
+        match embassy_futures::select::select3(
+            host.as_mut(),
+            application.as_mut(),
+            hardware.as_mut(),
+        )
+        .await
         {
             embassy_futures::select::Either3::First(result) => {
                 panic!("Trouble Host runner stopped: {:?}", result)
             }
-            embassy_futures::select::Either3::Second(never) => match never {},
+            embassy_futures::select::Either3::Second(result) => {
+                #[cfg(not(feature = "trouble-secure-gatt"))]
+                panic!("Trouble GATT application stopped: {:?}", result);
+                #[cfg(feature = "trouble-secure-gatt")]
+                {
+                    // No automatic reset or re-enrollment after a console or
+                    // store failure. Keep Host/hardware polling so cancellation
+                    // can finish normal disconnect/advertising-stop requests.
+                    esp_println::println!("secure application stopped: {:?}", result);
+                    match embassy_futures::select::select(host.as_mut(), hardware.as_mut()).await {
+                        embassy_futures::select::Either::First(result) => {
+                            panic!("Trouble Host stopped during cleanup: {:?}", result)
+                        }
+                        embassy_futures::select::Either::Second(never) => match never {},
+                    }
+                }
+            }
             embassy_futures::select::Either3::Third(never) => match never {},
         }
     }

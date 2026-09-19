@@ -97,7 +97,7 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
         forbid_features(&graph, &["cooperative-scheduler-telemetry"])?;
     }
     for (overlay, expected) in [(None, false), (Some("driver-observation"), true)] {
-        let graph = hil_graph(ctx, overlay)?;
+        let graph = hil_wifi_graph(ctx, overlay)?;
         forbid_features(
             &graph,
             &[
@@ -127,7 +127,7 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
         ("mac-irq-telemetry", "mac-irq-diagnostics", true),
     ] {
         if package_feature(
-            &hil_graph(ctx, Some(overlay))?,
+            &hil_wifi_graph(ctx, Some(overlay))?,
             INTEGRATION_PACKAGE,
             feature,
         )? != expected
@@ -138,18 +138,12 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-fn hil_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::Graph> {
+fn hil_wifi_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::Graph> {
     let manifest = ctx.root.join(HIL_RUNTIME);
     let direct = cargo::metadata_no_deps(ctx, &manifest)?;
     let package = package_for_manifest(&direct, &manifest)?;
     let profiles = declared_profiles(package)?;
-    let [base] = profiles.as_slice() else {
-        return Err(format!(
-            "HIL runtime must declare exactly one shared supported feature profile, found {}",
-            profiles.len()
-        )
-        .into());
-    };
+    let base = hil_wifi_profile(&profiles)?;
     let features = overlay.map_or_else(|| base.to_owned(), |overlay| format!("{base},{overlay}"));
     cargo::metadata(
         ctx,
@@ -162,4 +156,38 @@ fn hil_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::Graph
         Some(TARGET),
         true,
     )
+}
+
+// Wi-Fi overlays apply only to the shared Wi-Fi runtime, not the separately
+// compiled Bluetooth applications declared by the same firmware package.
+fn hil_wifi_profile(profiles: &[String]) -> Result<&str> {
+    let mut matching = profiles.iter().filter(|profile| {
+        profile
+            .split(',')
+            .any(|feature| feature == "open-radio-hil")
+    });
+    match (matching.next(), matching.next()) {
+        (Some(profile), None) => Ok(profile),
+        _ => Err("HIL runtime must declare exactly one open-radio-hil feature profile".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hil_wifi_profile;
+
+    #[test]
+    fn wifi_overlays_select_the_explicit_profile_independently_of_order() {
+        let profiles = vec![
+            "bluetooth-secure-gatt,code-psram".into(),
+            "open-radio-hil,upstream-network,code-psram".into(),
+            "bluetooth-gatt,code-psram".into(),
+        ];
+        assert_eq!(hil_wifi_profile(&profiles).unwrap(), profiles[1]);
+        assert!(hil_wifi_profile(&profiles[..1]).is_err());
+        assert!(hil_wifi_profile(&["not-open-radio-hil".into()]).is_err());
+        let mut ambiguous = profiles;
+        ambiguous.push("open-radio-hil,another-profile".into());
+        assert!(hil_wifi_profile(&ambiguous).is_err());
+    }
 }

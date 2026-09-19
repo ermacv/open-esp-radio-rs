@@ -2,8 +2,9 @@
 
 pub(crate) mod att;
 pub(crate) mod model;
+pub(crate) mod secure_gatt;
 
-use model::{Adapter, Check};
+use model::{Adapter, Check, DtmVersion};
 use open_esp_radio_hil_protocol::BluetoothPeripheralTermination;
 use std::{
     fs,
@@ -12,7 +13,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub(crate) fn check(root: &Path, adapter: Adapter) -> crate::Result<()> {
+pub(crate) fn check(root: &Path, adapter: Adapter, dtm_version: DtmVersion) -> crate::Result<()> {
     let _lease = crate::lab::lock::acquire_bluetooth(adapter)?;
     let directory = root.join("target/hil/fixture-checks");
     fs::create_dir_all(&directory)?;
@@ -23,7 +24,7 @@ pub(crate) fn check(root: &Path, adapter: Adapter) -> crate::Result<()> {
         ))
         .tempdir_in(directory)?
         .keep();
-    let result = run_in(&output, adapter);
+    let result = run_profile_in(&output, adapter, dtm_version);
     crate::emit_json(
         &serde_json::from_slice::<serde_json::Value>(&fs::read(output.join("result.json"))?)?,
         true,
@@ -32,6 +33,14 @@ pub(crate) fn check(root: &Path, adapter: Adapter) -> crate::Result<()> {
 }
 
 pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
+    run_profile_in(output, adapter, DtmVersion::V2)
+}
+
+fn run_profile_in(
+    output: &Path,
+    adapter: Adapter,
+    dtm_version: DtmVersion,
+) -> crate::Result<Check> {
     fs::create_dir_all(output)?;
     let mut command = Command::new("sudo");
     command
@@ -45,6 +54,9 @@ pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
         .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
+    if dtm_version == DtmVersion::V1 {
+        command.args(["--dtm-version", "v1"]);
+    }
     // The helper has its own bounded operations and receives SIGTERM before
     // escalation. Keep enough grace for Reset, re-registration and restoration.
     let result = (|| -> crate::Result<Check> {
@@ -56,6 +68,7 @@ pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
         checked_report(
             status.success(),
             adapter,
+            dtm_version,
             &fs::read(output.join("helper.json"))?,
         )
         .map_err(|error| format!("{error}; evidence: {}", output.display()).into())
@@ -63,9 +76,10 @@ pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
     let report = fs::read(output.join("helper.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Check>(&bytes).ok())
-        .unwrap_or_else(|| Check::new(adapter));
+        .unwrap_or_else(|| Check::new(adapter, dtm_version));
     let summary = serde_json::json!({
-        "schema": 1, "adapter": adapter.to_string(), "output": output,
+        "schema": 2, "adapter": adapter.to_string(), "output": output,
+        "dtm_version": dtm_version,
         "passed": result.is_ok(), "rf_verified": false,
         "error": result.as_ref().err().map(ToString::to_string),
         "helper": report,
@@ -74,13 +88,19 @@ pub(crate) fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
     result
 }
 
-fn checked_report(success: bool, adapter: Adapter, bytes: &[u8]) -> crate::Result<Check> {
+fn checked_report(
+    success: bool,
+    adapter: Adapter,
+    dtm_version: DtmVersion,
+    bytes: &[u8],
+) -> crate::Result<Check> {
     let report: Check = serde_json::from_slice(bytes).map_err(|error| {
         format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with cargo hil fixture install --provider linux-bluetooth")
     })?;
-    if !success || !report.passed(adapter) {
+    if !success || !report.passed(adapter, dtm_version) {
         return Err(format!(
-            "Bluetooth check failed or incomplete: {}",
+            "Bluetooth check failed, incomplete, or profile mismatch (expected {dtm_version:?}, received {:?}): {}",
+            report.dtm_version,
             report.errors.join("; ")
         )
         .into());
@@ -138,6 +158,8 @@ pub(crate) fn preflight_security_failure(adapter: Adapter) -> crate::Result<()> 
     for (failure, read_version) in [
         ("missing-key", false),
         ("wrong-key", false),
+        ("missing-refresh-key", false),
+        ("active-data-mic", false),
         ("missing-key", true),
     ] {
         let mut command = Command::new("sudo");
@@ -315,7 +337,7 @@ pub(crate) fn connect_profile_in(
     result.map_err(|error| format!("{error}; evidence: {}", output.display()).into())
 }
 
-/// Execute the finite initial-key failure probe through the installed, leased helper.
+/// Execute the finite key failure probe through the installed, leased helper.
 pub(crate) fn security_failure_in(
     output: &Path,
     adapter: Adapter,
@@ -339,6 +361,8 @@ pub(crate) fn security_failure_in(
             match failure {
                 Failure::MissingKey => "missing-key",
                 Failure::WrongKey => "wrong-key",
+                Failure::MissingRefreshKey => "missing-refresh-key",
+                Failure::ActiveDataMic => "active-data-mic",
             },
         ])
         .stdin(Stdio::null())
@@ -399,9 +423,17 @@ mod tests {
     }
     #[test]
     fn absent_or_partial_helper_evidence_cannot_pass() {
-        assert!(checked_report(true, Adapter(0), b"").is_err());
-        let report = Check::new(Adapter(0));
-        assert!(checked_report(true, Adapter(0), &serde_json::to_vec(&report).unwrap()).is_err());
+        assert!(checked_report(true, Adapter(0), DtmVersion::V2, b"").is_err());
+        let report = Check::new(Adapter(0), DtmVersion::V2);
+        assert!(
+            checked_report(
+                true,
+                Adapter(0),
+                DtmVersion::V2,
+                &serde_json::to_vec(&report).unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -414,12 +446,50 @@ mod tests {
             require_helper_capabilities(true, format!("{expected}extra\n").as_bytes()).is_err()
         );
     }
+
+    #[test]
+    fn checked_report_rejects_other_profile_old_schema_and_failed_exit() {
+        let mut report = Check::new(Adapter(0), DtmVersion::V1);
+        report.address = Some("peer".into());
+        report.version = Some("version".into());
+        report.initial_powered = Some(false);
+        report.initial_soft_blocked = Some(true);
+        report.dtm_v1_advertised = true;
+        report.dtm_v2_advertised = true;
+        report.rx_started = true;
+        report.rx_packets = Some(0);
+        report.tx_started = true;
+        report.tx_test_end = true;
+        report.restored = true;
+        let bytes = serde_json::to_vec(&report).unwrap();
+        assert!(checked_report(true, Adapter(0), DtmVersion::V1, &bytes).is_ok());
+        assert!(checked_report(false, Adapter(0), DtmVersion::V1, &bytes).is_err());
+        assert!(checked_report(true, Adapter(0), DtmVersion::V2, &bytes).is_err());
+        let mut old = serde_json::to_value(&report).unwrap();
+        old["schema"] = 1.into();
+        old.as_object_mut().unwrap().remove("dtm_version");
+        old.as_object_mut().unwrap().remove("dtm_v1_advertised");
+        assert!(
+            checked_report(
+                true,
+                Adapter(0),
+                DtmVersion::V2,
+                &serde_json::to_vec(&old).unwrap()
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn helper_failure_exposes_the_controller_error() {
-        let mut report = Check::new(Adapter(0));
+        let mut report = Check::new(Adapter(0), DtmVersion::V2);
         report.errors.push("RX rejected: command disallowed".into());
-        let error =
-            checked_report(false, Adapter(0), &serde_json::to_vec(&report).unwrap()).unwrap_err();
+        let error = checked_report(
+            false,
+            Adapter(0),
+            DtmVersion::V2,
+            &serde_json::to_vec(&report).unwrap(),
+        )
+        .unwrap_err();
         assert!(
             error
                 .to_string()

@@ -2,10 +2,7 @@ use super::*;
 use crate::datapath::DatapathRxProgress;
 use oer_esp32s31_wifi_dma::rx_storage::RxDmaStorage;
 use oer_esp32s31_wifi_mac::{
-    rx::pool::{
-        RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
-        VENDOR_LARGE_RX_SLOT_COUNT,
-    },
+    rx::pool::{RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError},
     rx::{PUBLIC_HEADER_SIZE, RxDma, RxRingError, RxRingLive},
 };
 
@@ -16,6 +13,9 @@ const BUDGET_UNITS: usize = 32;
 ///
 /// No owner is moved out of the caller. The helper is inlined into the
 /// adapter's existing hot-text wrapper and introduces no scheduling edge.
+/// An invalid credit reserve returns [`RxStageTransactionError::InvalidCreditReserve`]
+/// before any hardware access or ownership change. A valid policy is sampled
+/// once and remains fixed for this transaction, including capacity refreshes.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub fn service<
@@ -46,6 +46,10 @@ where
     P: Admission,
     O: Hooks,
 {
+    // Reject an impossible policy before sampling hardware or changing any
+    // descriptor, lease, publisher or counter. Capacity never chooses policy.
+    let credits = admission.credit_policy().validate(STAGE_SLOTS, E::DEPTH)?;
+    let reserved = credits.critical_reserved_credits();
     let hardware_buffer_full_before = if hooks.observing() {
         hardware.buffer_full_count()
     } else {
@@ -157,12 +161,6 @@ where
     // finite service transaction runs, so the local values are safe
     // lower bounds. Refresh only at the reserve boundary instead of
     // rescanning all 32 stage slots for every completed frame.
-    let reserved =
-        if STAGE_SLOTS >= VENDOR_LARGE_RX_SLOT_COUNT && E::DEPTH >= VENDOR_LARGE_RX_SLOT_COUNT {
-            admission.critical_reserved_credits()
-        } else {
-            0
-        };
     let service_budget = frontier.min(BUDGET_UNITS);
     let mut admitted = 0_usize;
     let mut admitted_descriptors = 0_usize;
@@ -401,7 +399,10 @@ where
                     "detach",
                     match error {
                         RxStageTransactionError::Ring(error) => *error,
-                        RxStageTransactionError::Stage(_) => RxRingError::Corrupt,
+                        RxStageTransactionError::Stage(_)
+                        | RxStageTransactionError::InvalidCreditReserve { .. } => {
+                            RxRingError::Corrupt
+                        }
                     },
                     unit_observation.head_index,
                     unit_descriptor_count,

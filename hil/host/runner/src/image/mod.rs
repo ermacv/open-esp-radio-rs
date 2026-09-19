@@ -45,23 +45,69 @@ struct ImageCapabilitySignature {
 pub(crate) fn classify_flashed_capabilities(
     features: &FeatureCapabilities,
 ) -> Option<crate::image::ImageClass> {
-    if features.bluetooth_dtm || features.bluetooth_peripheral || features.bluetooth_phy_maintenance
+    if features.bluetooth_secure_gatt {
+        let expected = FeatureCapabilities {
+            bluetooth_secure_gatt: true,
+            structured_evidence: true,
+            psram_task_stack: true,
+            ..FeatureCapabilities::default()
+        };
+        return (*features == expected).then_some(ImageClass::BluetoothSecureGatt);
+    }
+    if features.bluetooth_gatt {
+        let expected = FeatureCapabilities {
+            bluetooth_gatt: true,
+            structured_evidence: true,
+            psram_task_stack: true,
+            ..FeatureCapabilities::default()
+        };
+        return (*features == expected).then_some(ImageClass::BluetoothGatt);
+    }
+    if features.system_watchdog {
+        let expected = FeatureCapabilities {
+            system_watchdog: true,
+            structured_evidence: true,
+            psram_task_stack: true,
+            ..FeatureCapabilities::default()
+        };
+        return (*features == expected).then_some(ImageClass::SystemWatchdog);
+    }
+    if features.bluetooth_dtm
+        || features.bluetooth_peripheral
+        || features.bluetooth_phy_maintenance
+        || features.bluetooth_watchdog_reset
     {
+        if features.bluetooth_phy_maintenance && features.bluetooth_watchdog_reset {
+            return None;
+        }
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
             bluetooth_peripheral: true,
             bluetooth_phy_maintenance: features.bluetooth_phy_maintenance,
+            bluetooth_watchdog_reset: features.bluetooth_watchdog_reset,
+            phy_fault_injection: features.phy_fault_injection,
             // Sealed older Bluetooth images retain their original placement.
             phy_rx_hot_sram: features.phy_rx_hot_sram,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
+        if features.phy_fault_injection && !features.bluetooth_watchdog_reset {
+            return None;
+        }
         return (*features == expected).then_some(if features.bluetooth_phy_maintenance {
             ImageClass::BluetoothPhyMaintenance
+        } else if features.bluetooth_watchdog_reset {
+            ImageClass::BluetoothWatchdogReset
         } else {
             ImageClass::BluetoothDtm
         });
+    }
+    if features.phy_fault_injection {
+        let mut control = *features;
+        control.phy_fault_injection = false;
+        return (classify_flashed_capabilities(&control) == Some(ImageClass::Correctness))
+            .then_some(ImageClass::DiagnosticPhyFault);
     }
     if features.phy_rx_hot_sram {
         let mut control = *features;
@@ -454,7 +500,12 @@ fn build_resolved(
 
     let runtime_features = if matches!(
         class,
-        ImageClass::BluetoothDtm | ImageClass::BluetoothPhyMaintenance
+        ImageClass::SystemWatchdog
+            | ImageClass::BluetoothGatt
+            | ImageClass::BluetoothSecureGatt
+            | ImageClass::BluetoothDtm
+            | ImageClass::BluetoothPhyMaintenance
+            | ImageClass::BluetoothWatchdogReset
     ) {
         class.runtime_features().to_owned()
     } else {
@@ -866,8 +917,12 @@ fn audit_radio_observers<'a>(
 ) -> Result<()> {
     if matches!(
         class,
-        ImageClass::BluetoothDtm
+        ImageClass::SystemWatchdog
+            | ImageClass::BluetoothGatt
+            | ImageClass::BluetoothSecureGatt
+            | ImageClass::BluetoothDtm
             | ImageClass::BluetoothPhyMaintenance
+            | ImageClass::BluetoothWatchdogReset
             | ImageClass::BootSmoke
             | ImageClass::DiagnosticMemoryBenchmark
     ) {
@@ -876,6 +931,7 @@ fn audit_radio_observers<'a>(
     let aggregate_required = matches!(
         class,
         ImageClass::Correctness
+            | ImageClass::DiagnosticPhyFault
             | ImageClass::DiagnosticMacIrq
             | ImageClass::DiagnosticTxWait
             | ImageClass::DiagnosticTaskPoll

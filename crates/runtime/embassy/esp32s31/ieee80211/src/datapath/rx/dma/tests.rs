@@ -607,6 +607,11 @@ impl RxPipelineObserver for RecordingRxObserver {
 struct OneShotNarrowAdmission(AtomicU32);
 
 impl Esp32s31RxStageAdmissionPolicy for OneShotNarrowAdmission {
+    fn credit_policy(&self) -> RxStageCreditPolicy {
+        // This length-admission fixture has a one-credit queue.
+        RxStageCreditPolicy::new(0)
+    }
+
     fn maximum_payload_length(
         &self,
         _unit: Esp32s31RxCompletedUnit,
@@ -647,6 +652,11 @@ impl Esp32s31RxStageAdmissionPolicy for OneShotNarrowAdmission {
 struct CountingUnavailableAdmission(AtomicU32);
 
 impl Esp32s31RxStageAdmissionPolicy for CountingUnavailableAdmission {
+    fn credit_policy(&self) -> RxStageCreditPolicy {
+        // This consumer-credit fixture intentionally has a one-credit queue.
+        RxStageCreditPolicy::new(0)
+    }
+
     fn unavailable_disposition(
         &self,
         preview: Esp32s31RxCompletedUnitPreview,
@@ -1251,7 +1261,8 @@ fn finite_service_discards_a_descriptor_chain_without_copying_it() {
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
-        .with_pipeline_observer(&observer);
+        .with_pipeline_observer(&observer)
+        .with_stage_admission_policy(UnreservedRxStageAdmission);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1657,7 +1668,8 @@ fn immediate_sink_dispatches_in_order_frames_directly_and_returns_staging_credit
 
 fn exercise_negotiated_rx_block_ack(in_order: bool) {
     const COUNT: usize = 4;
-    const STAGED_DEPTH: usize = 3;
+    // Three ordinary frames plus the now-explicit critical reserve.
+    const STAGED_DEPTH: usize = 4;
     const STAGE_CAPACITY: usize = 192;
     const MPDU: usize = 26 + 8 + 8 + 4 + 8;
     const SIGNAL: usize = MPDU + 4;
@@ -1835,7 +1847,8 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
-        .with_pipeline_observer(&observer);
+        .with_pipeline_observer(&observer)
+        .with_stage_admission_policy(UnreservedRxStageAdmission);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1988,7 +2001,8 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_stage_admission_policy(UnreservedRxStageAdmission);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -2011,6 +2025,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
         .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
+mod credit_policy;
 mod pause;
 mod transaction;
 

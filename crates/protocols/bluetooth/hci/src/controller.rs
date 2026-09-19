@@ -7,6 +7,7 @@ pub(super) mod bootstrap;
 pub(super) mod classification;
 pub(super) mod le;
 pub(super) mod order;
+pub(super) mod random;
 pub(super) mod response;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -190,6 +191,7 @@ where
             host,
             controller: LeControllerCommandEndpoint {
                 transport,
+                random_source: None,
                 bootstrap: &mut self.bootstrap,
                 legacy_advertising: &mut self.legacy_advertising,
                 legacy_scanning: &mut self.legacy_scanning,

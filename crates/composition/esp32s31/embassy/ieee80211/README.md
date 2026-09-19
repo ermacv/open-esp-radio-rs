@@ -46,13 +46,40 @@ not automatically establish the corresponding AP or combined-role property.
   before any later internal request. The consumed public typestate is not
   recreated by dropping its future.
 - A planning rejection occurs before materialization and returns the original
-  request and idle control capability. An error after owner movement is
-  `Faulted`; it retains/quarantines the physical frontier and does not return a
-  restartable role.
+  request and idle control capability. Errors after owner movement retain the
+  physical frontier, either in `Faulted` or through terminal system escalation;
+  neither returns a restartable role.
 - Maintenance failure after the role is paused does not promise restoration.
   Admission failure, PHY failure and checked-access release failure retain
   different owner frontiers; failure or cancellation after the hardware edge
   requires reset rather than reuse.
+- Connected and stopped-role maintenance request system reset for an invalid
+  PHY, unconfirmed MAC/RX stop or failed hardware restoration. The composition
+  borrows the retained failure until the SoC adapter's diverging reset request;
+  it does not await an application response or release DMA/IRQ owners first.
+  Admission rejection, peer-notification errors and ownership failures at an
+  already-stopped MAC/paused RX boundary keep their rejection/quarantine paths.
+  Explicit release/cycling and restart also escalate ambiguous RF close/wake,
+  registration without completed cleanup, and failed initial tracking/channel
+  execution. Preparation failures, completed registration cleanup, closed-RF
+  reunion failures, remaining shared clients and unexecuted pending tracking
+  retain their exact non-runnable lifecycle owners without reset.
+  Initial cold start uses the same classification; even a non-escalated start
+  failure is retained in the lifecycle fault slot rather than dropped when
+  reporting `NewError::RadioStart`.
+  Radio drivers do not own watchdog/reset peripherals. `RadioConfig` requires
+  caller-owned static `WatchdogConfig` storage binding the SoC TIMG1 service
+  and explicit startup, maintenance and shutdown budgets. A lease covers the
+  full physical operation (including quiescence and restoration); cancellation
+  cannot disable it. The shutdown budget also covers a retained close/wake
+  cycle. No qualified defaults or measured RF-stop time bound are supplied.
+  Cold start arms before the physical driver entry and completes at its ready
+  owner. Connected maintenance arms before requesting TX drain; it completes
+  only after checked RX/MAC/IRQ restoration and worker handoff, or a retained
+  safe rejection. Radio restart uses a shutdown lease through cold release and
+  a separate startup lease through owner reconstruction. Retained close/wake
+  uses one uninterrupted shutdown lease. Waiting for an automatic maintenance
+  demand does not arm a physical lease.
 - Releasing a stopped Wi-Fi PHY client while Bluetooth or IEEE 802.15.4 still
   has a client returns a physically powered shared radio. A final client may
   run RF close and cold reunion. Once that async close is polled, it must reach

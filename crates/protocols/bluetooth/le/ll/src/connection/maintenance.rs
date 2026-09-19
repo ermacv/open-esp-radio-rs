@@ -154,15 +154,15 @@ impl LePeripheralConnectionEventCompleted {
             instant.wrapping_sub(next) < skipped
                 || instant.wrapping_sub(1).wrapping_sub(next) < skipped
         };
-        if let Some(update) = self.connection.pending_connection_update {
-            if protected(update.instant) {
-                return Err(SkipBlocked::InstantProcedure);
-            }
+        if let Some(update) = self.connection.pending_connection_update
+            && protected(update.instant)
+        {
+            return Err(SkipBlocked::InstantProcedure);
         }
-        if let Some(update) = self.connection.pending_channel_map {
-            if protected(update.instant) {
-                return Err(SkipBlocked::InstantProcedure);
-            }
+        if let Some(update) = self.connection.pending_channel_map
+            && protected(update.instant)
+        {
+            return Err(SkipBlocked::InstantProcedure);
         }
         if (self.connection.pending_connection_update.is_some()
             || self.connection.pending_channel_map.is_some())

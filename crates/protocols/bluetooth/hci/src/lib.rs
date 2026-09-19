@@ -36,6 +36,12 @@
 //! subset for Host initialization and reports the complete production command
 //! inventory through the standard 64-octet Supported Commands bitmap;
 //! Link-Layer commands remain owned by an outer router.
+//! Standard LE Rand is a separate platform service: composition explicitly
+//! attaches a borrowed [`LeRandomSource`] before bootstrap. Only a bound
+//! endpoint advertises it. All role routers preserve ordinary response order;
+//! output backpressure retains the sampled bytes without sampling again.
+//! Entropy failure returns Hardware Failure, not successful placeholder data.
+//! The portable layer neither imports a hardware RNG nor owns its power state.
 //! The separate closed LE DTM codec normalizes Receiver/Transmitter Test v1 and
 //! v2 plus Test End into owned semantic commands. Its reviewed idle/active
 //! session policy retains start/Test End ownership for a hardware runner and
@@ -94,6 +100,11 @@
 extern crate std;
 
 mod controller;
+
+pub use controller::random::{
+    LeRandCommand, LeRandCommandCompleteEvent, LeRandomSource, LeRandomSourceAlreadyConfigured,
+    LeRandomUnavailable,
+};
 mod transport;
 mod wire;
 

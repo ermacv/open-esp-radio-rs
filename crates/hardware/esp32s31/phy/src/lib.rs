@@ -38,6 +38,8 @@
 extern crate std;
 
 pub mod executor;
+#[cfg(feature = "lifecycle-fault-injection")]
+pub mod fault_injection;
 #[cfg(target_arch = "riscv32")]
 pub mod target_executor;
 #[cfg(target_arch = "riscv32")]

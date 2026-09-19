@@ -43,6 +43,13 @@ pub(super) fn observations(
             Event::Evidence(EvidenceRecord::Stack(value)) => stack(&mut records, &session, value),
             Event::Evidence(EvidenceRecord::Link(value)) => link(&mut records, &session, value),
             Event::StackUsage(value) => stack(&mut records, &request, value),
+            Event::InterruptStackUsage { cpu0, cpu1 } => {
+                stack_values(
+                    &mut records,
+                    &request,
+                    [("cpu0-irq", cpu0), ("cpu1-irq", cpu1)],
+                );
+            }
             Event::LinkHealth(value) => link(&mut records, &request, value),
             Event::MemoryBenchmarkCompleted(value) => {
                 for (name, count) in [
@@ -298,7 +305,25 @@ fn transport(records: &mut BTreeMap<String, Measurement>, prefix: &str, value: T
 }
 
 fn stack(records: &mut BTreeMap<String, Measurement>, prefix: &str, value: StackUsage) {
-    for (core, watermark) in [("cpu0", value.cpu0), ("cpu1", value.cpu1)] {
+    stack_values(
+        records,
+        prefix,
+        [
+            ("cpu0", Some(value.cpu0)),
+            ("cpu1", Some(value.cpu1)),
+            ("cpu0-irq", value.cpu0_irq),
+            ("cpu1-irq", value.cpu1_irq),
+        ],
+    );
+}
+
+fn stack_values<const N: usize>(
+    records: &mut BTreeMap<String, Measurement>,
+    prefix: &str,
+    values: [(&str, Option<open_esp_radio_hil_protocol::StackWatermark>); N],
+) {
+    for (core, watermark) in values {
+        let Some(watermark) = watermark else { continue };
         for (name, bytes) in [
             ("capacity", watermark.capacity_bytes),
             ("free", watermark.free_bytes),

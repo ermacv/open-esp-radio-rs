@@ -512,6 +512,9 @@ type ProductionRadioResources = (
 );
 
 enum ProductionRadioLifecycleFault {
+    ColdStart {
+        _failure: RadioStartFailure<EspHalRadioPeripheral>,
+    },
     ShutdownQuiesce {
         _failure: maintenance::Failure,
     },
@@ -555,6 +558,7 @@ static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
 > = EmbassyWifiSupervisorControlResources::new();
 
 struct ProductionWifiEpochRunner {
+    watchdog: &'static crate::WatchdogConfig,
     trng: Trng,
     station_control: &'static StationControlResources<CriticalSectionRawMutex>,
     monitor_capture: &'static CaptureResources,
@@ -860,6 +864,7 @@ pub async fn new(
     diagnostics_event!("open-radio: cold PHY start");
 
     let crate::RadioConfig {
+        watchdog,
         access_point_airtime,
         station_mac,
         access_point_mac,
@@ -887,6 +892,7 @@ pub async fn new(
         wifi_start,
         WifiMacStartConfig::new(MAC_HANDSHAKE_SAMPLE_LIMIT, station_mac, access_point_mac),
     );
+    let mut protection = Some(watchdog.startup());
     let ready = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyPhyDelay, _>(
         owned,
         radio_start,
@@ -894,7 +900,18 @@ pub async fn new(
         NoopPhyTargetObserver,
         &mut phy_clock,
     ))
-    .map_err(|_| NewError::RadioStart)?;
+    .map_err(|failure| {
+        crate::maintenance_policy::enforce(
+            &failure,
+            oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::from_ambiguous_lifecycle(
+                failure.phy_hardware_ambiguous(),
+            ),
+        );
+        RADIO_LIFECYCLE_FAULT.init(ProductionRadioLifecycleFault::ColdStart { _failure: failure });
+        crate::WatchdogConfig::complete(protection.take().expect("startup protection"));
+        NewError::RadioStart
+    })?;
+    crate::WatchdogConfig::complete(protection.take().expect("startup protection"));
     let station_interface = WifiConfig::station(WifiStationConfig::new(station_mac))
         .validate(oer_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
         .map_err(|_| NewError::StationRole)?
@@ -956,6 +973,7 @@ pub async fn new(
     let monitor = initialize_monitor_resources(monitor_memory)
         .map_err(|MonitorResourcesError::InUse| NewError::MonitorResources)?;
     let connected_datapath = initialize_connected_datapath_mailbox(
+        watchdog,
         #[cfg(feature = "connected-datapath-cycle-telemetry")]
         connected_datapath_poll_observer,
     );
@@ -1036,6 +1054,7 @@ pub async fn new(
         &RADIO_SUPERVISOR_CONTROL,
         configuration,
         ProductionWifiEpochRunner {
+            watchdog,
             trng,
             // The control storage itself is reusable after a clean station
             // epoch. Only its static reference is acquired once; each epoch

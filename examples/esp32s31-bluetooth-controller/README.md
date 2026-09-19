@@ -54,6 +54,7 @@ cargo xtask build firmware bluetooth-controller
 cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/ttyACM0
 cargo xtask build firmware bluetooth-controller --features advertising-smoke
 cargo xtask build firmware bluetooth-controller --features trouble-gatt
+cargo xtask build firmware bluetooth-controller --features trouble-secure-gatt
 ```
 
 The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
@@ -83,8 +84,12 @@ scheduler RUN, repeated events or RF transmission. Use scheduler evidence and a
 BLE observer for those claims. Add `--flash --monitor --port /dev/ttyACM0` to the `xtask` advertising command
 to flash this variant and open the monitor.
 
-`trouble-gatt` replaces the direct command/read loops with the released
-`trouble-host` 0.8.0 peripheral Host. The application consumes the production
+`trouble-gatt` replaces the direct command/read loops with the pinned
+[OER Trouble fork](https://github.com/ermacv/trouble/tree/oer/numeric-comparison),
+based on `trouble-host` 0.8.0. Manifests pin an exact commit, not the branch tip.
+The fork adds an opt-in `PairingPolicy::NumericComparisonOnly` for new pairing;
+the plaintext profile does not enable it or claim security qualification.
+The application consumes the production
 `BluetoothSystem` through `into_trouble`, then polls the Trouble runner and the
 exact hardware runner concurrently. It repeatedly advertises as
 `open-radio-gatt`, accepts one connection and exposes service `0xfff0` with the
@@ -100,7 +105,101 @@ measurements or assigned product identity. `trouble-gatt` and
 `advertising-smoke` are mutually exclusive because each consumes the sole Host
 side of the HCI transport.
 
-Repository checks compile this complete target composition and host tests
-verify its fixed advertising/profile payload. An on-air connection, ATT
-read/write and reconnection still require the Bluetooth HIL interoperability
-cell and are not established by a successful build.
+`src/gatt.rs` is the actual application used by both this binary and the
+separate `bluetooth-gatt` HIL image. Its observer receives values only and never
+owns HCI or supplies ATT replies. The library-only `gatt-application` feature
+excludes standalone `firmware` dependencies, linker setup and panic/logging
+handlers; HIL supplies its own board entry. Host tests exercise the actual attribute
+table and fixed advertising payload. Run `cargo hil run bluetooth-trouble-gatt`
+from the repository root to exercise Linux ATT discovery, read/write and three
+graceful disconnect/reconnect cycles without reconstructing the Controller.
+The value survives these connections. HIL records task/IRQ stack headroom and
+correlates application observations with independent ATT replies.
+
+This profile is explicitly plaintext. It does not establish pairing, protected
+ATT access, notifications, persistent bonds or coordinated Host/Controller
+shutdown. Those properties must not be inferred from a successful baseline run.
+
+Both Trouble entry points retain a caller-owned SoC entropy service and install
+its `BluetoothEntropy` binding before polling the Host. Standard HCI LE Rand
+then supplies the security-enabled Host's seed without a radio-to-RNG dependency
+or another Trouble extension. Enabling the Host's security feature alone does
+not make this plaintext attribute table protected.
+
+## Authenticated GATT profile
+
+`trouble-secure-gatt` composes `security::gatt::run`, an exclusively owned USB
+console and the same Host/Controller runners. The library-only
+`secure-gatt-application` feature exposes that application without board entry.
+It requires LE Secure Connections Numeric Comparison with `DisplayYesNo`;
+Just Works, passkey entry, OOB and legacy pairing are not fallbacks. The pinned
+Host rejects SC peers offering keys shorter than 128 bits.
+
+The caller owns an asynchronous `BondStore`, bounded `RamBondStore`, and affine
+Numeric Comparison requests independently of the Host. Store insertion rejects
+unauthenticated records, duplicates and capacity exhaustion without evicting
+existing keys. The standalone profile reserves one bond slot. RAM records live
+outside Host resources but disappear on reset
+or power loss; no persistent backend is implemented. Importing authenticated
+metadata does not prove the original pairing method: imported records must
+come from trusted Numeric Comparison enrollment. Bond changes work without
+Controller privacy; the fork issues resolving-list commands only when privacy
+is explicitly enabled. This profile does not enable address privacy.
+
+Connect a peer capable of Numeric Comparison to `open-radio-gatt` and request
+pairing. Compare the six-digit numbers on **both** devices. The USB console
+prints a challenge and this reply format (replace all three identifiers with
+the displayed values):
+
+```text
+confirm <16-hex-boot> <request-id> <six-digit-number> yes
+confirm <16-hex-boot> <request-id> <six-digit-number> no
+```
+
+Only an explicit matching `yes` confirms locally; the peer must also confirm.
+Wrong/stale boot IDs, request IDs and numbers are rejected. Dropping a request
+invalidates queued replies; transport loss never confirms it. Ordinary firmware
+logging is disabled while the console exclusively owns USB. Console observations
+may coalesce and are diagnostics, not a lossless HIL evidence stream.
+
+The service/characteristic UUIDs remain `0xfff0`/`0xfff1`. Value reads/writes and
+CCCD writes require authenticated encryption. Application authorization also
+requires successful bond-store insertion; restoring a connection requires the
+matching stored bond and authenticated encryption. Compound ATT value reads
+cannot bypass this gate. Subscribed writes queue notifications containing the
+new one-byte value; queueing is not proof of peer reception. Discovery remains
+public, the value survives reconnects and subscriptions are connection-local.
+
+A full store accepts known peers only. Lost keys, failed pairing or rejected
+confirmation disconnect without silent re-enrollment or key replacement. Store
+errors stop the application; the outer composition keeps Host and hardware
+polling so normal disconnect/advertising cancellation can progress. Restarting
+the application requires a fresh Host restored from the retained store, since
+a cancelled insert may already have committed. The standalone console has no
+Controller-restart or bond-deletion command;
+power cycling clears this RAM-only standalone profile.
+
+The reusable `security::epoch::run` owns one Host epoch and borrows the
+application's store and comparison sequence. On a stop request or failure it
+drops all application/Host producers, obtains the Controller through the fork's
+`Stack::into_controller`, and awaits HCI Reset while draining old events. Its
+result distinguishes a requested stop, application/Host failure and Reset
+failure. It is not physical retirement: the caller keeps polling hardware and
+must complete timer, HCI, IRQ, platform and PHY release before cold restart.
+Drive consuming transitions to completion; cancellation does not free radio
+owners. The secure HIL composition exercises this sequence, reuses the same
+Host storage for a fresh Host and restores the retained RAM bond. Controller
+restart therefore preserves trust without new pairing; SoC reset does not.
+
+Host tests and firmware builds do not qualify pairing or bonded reconnect over
+RF. The `bluetooth-trouble-gatt` HIL scenario remains plaintext. The separate
+automated `bluetooth-trouble-secure-gatt` scenario composes this secure
+application with framed observations and explicit decisions after comparing
+independent DUT/BlueZ numbers. It does not prove human presence or change this
+standalone profile's manual consent boundary; see its
+[fixture contract](../../hil/host/linux-bluetooth/README.md#secure-trouble-gatt-fixture).
+Neither source scenario establishes current hardware qualification.
+
+```console
+cargo test --manifest-path examples/esp32s31-bluetooth-controller/Cargo.toml --no-default-features --features secure-gatt-application --lib
+```

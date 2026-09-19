@@ -13,6 +13,11 @@ use crate::{AuditReport, Error, Result};
 const STACK_SIZES_SECTION: &str = ".stack_sizes";
 const DEFAULT_REPORTED_FRAME_COUNT: usize = 20;
 
+mod coverage;
+pub use coverage::{
+    StackCoverage, StackCoverageFunction, StackCoverageOrigin, StackCoverageStatus,
+};
+
 /// Target-owned policy applied to compiler-emitted stack-frame metadata.
 ///
 /// This intentionally limits an individual function frame. LLVM's
@@ -30,6 +35,7 @@ pub struct StackBudget {
     pub max_move_bytes: u64,
     pub runtime_cpu0_minimum_free_bytes: u32,
     pub runtime_cpu1_minimum_free_bytes: u32,
+    pub runtime_irq_minimum_free_bytes: u32,
     #[serde(default = "default_reported_frame_count")]
     pub reported_frame_count: usize,
     #[serde(default)]
@@ -74,9 +80,9 @@ impl StackBudget {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 3 {
+        if self.schema != 4 {
             return Err(Error::InvalidPolicy(format!(
-                "unsupported stack policy schema {}; expected 3",
+                "unsupported stack policy schema {}; expected 4",
                 self.schema
             )));
         }
@@ -95,7 +101,10 @@ impl StackBudget {
                 "stack warning threshold must not exceed the hard frame budget".into(),
             ));
         }
-        if self.runtime_cpu0_minimum_free_bytes == 0 || self.runtime_cpu1_minimum_free_bytes == 0 {
+        if self.runtime_cpu0_minimum_free_bytes == 0
+            || self.runtime_cpu1_minimum_free_bytes == 0
+            || self.runtime_irq_minimum_free_bytes == 0
+        {
             return Err(Error::InvalidPolicy(
                 "runtime minimum free stack budgets must be greater than zero".into(),
             ));
@@ -150,9 +159,19 @@ pub struct StackReport {
     pub warn_frame_bytes: u64,
     pub max_frame_bytes: u64,
     pub measured_frame_count: usize,
+    pub coverage: StackCoverage,
+    pub reviewed_rule_matches: Vec<StackReviewedRuleMatches>,
     pub largest_frames: Vec<StackFrame>,
     pub violations: Vec<StackFrame>,
     pub audit: AuditReport,
+}
+
+/// All measured addresses matched by a policy rule, including small frames.
+#[derive(Clone, Debug, Serialize)]
+pub struct StackReviewedRuleMatches {
+    pub index: usize,
+    pub function_contains: String,
+    pub addresses: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -251,16 +270,48 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         });
     }
 
+    let coverage = coverage::analyze(&elf, &frames_by_address);
+    let mut reviewed_rule_matches = budget
+        .reviewed_frames
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| StackReviewedRuleMatches {
+            index,
+            function_contains: rule.function_contains.clone(),
+            addresses: Vec::new(),
+        })
+        .collect::<Vec<_>>();
     let measured_frame_count = frames_by_address.len();
     let mut frames = frames_by_address.into_values().collect::<Vec<_>>();
     frames.sort_by_key(|frame| (core::cmp::Reverse(frame.size), frame.address));
     let mut violations = Vec::new();
     let mut audit = AuditReport::default();
     for frame in &frames {
-        let reviewed = budget
+        let matches = budget
             .reviewed_frames
             .iter()
-            .find(|reviewed| reviewed_frame_matches(frame, reviewed));
+            .enumerate()
+            .filter(|(_, reviewed)| reviewed_frame_matches(frame, reviewed))
+            .collect::<Vec<_>>();
+        for (index, _) in &matches {
+            reviewed_rule_matches[*index].addresses.push(frame.address);
+        }
+        if matches.len() > 1 {
+            violations.push(frame.clone());
+            let selectors = matches
+                .iter()
+                .map(|(index, reviewed)| {
+                    format!("reviewed_frames[{index}] `{}`", reviewed.function_contains)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            audit.errors.push(format!(
+                "frame {} at {:#x} matches multiple reviewed rules: {selectors}; narrow the selectors instead of relying on policy order",
+                compact_function(frame), frame.address,
+            ));
+            continue;
+        }
+        let reviewed = matches.first().map(|(_, reviewed)| *reviewed);
         if let Some(stack) = reviewed.and_then(|reviewed| reviewed.execution_stack.as_ref()) {
             let capacity = elf
                 .symbols()
@@ -335,8 +386,11 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         .take(budget.reported_frame_count)
         .collect::<Vec<_>>();
 
+    for rule in &mut reviewed_rule_matches {
+        rule.addresses.sort_unstable();
+    }
     Ok(StackReport {
-        schema: 1,
+        schema: 2,
         elf: elf_path.to_owned(),
         stack_start,
         stack_end,
@@ -344,6 +398,8 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         warn_frame_bytes: budget.warn_frame_bytes,
         max_frame_bytes: budget.max_frame_bytes,
         measured_frame_count,
+        coverage,
+        reviewed_rule_matches,
         largest_frames,
         violations,
         audit,
@@ -373,7 +429,7 @@ pub fn audit_stack(report: &StackReport) -> Result<()> {
 
 pub fn render_stack_report(report: &StackReport) -> String {
     let mut output = format!(
-        "Stack-frame report: {}\n\nstack={:#010x}..{:#010x} capacity={}\nwarn-frame={} max-frame={} measured-frames={}\n\nLargest frames\n",
+        "Stack-frame report: {}\n\nstack={:#010x}..{:#010x} capacity={}\nwarn-frame={} max-frame={} measured-frames={}\n\n",
         report.elf.display(),
         report.stack_end,
         report.stack_start,
@@ -382,6 +438,36 @@ pub fn render_stack_report(report: &StackReport) -> String {
         bytes(report.max_frame_bytes),
         report.measured_frame_count,
     );
+    output.push_str(&format!(
+        "Linked text symbol coverage: {:?} ({}/{} address groups measured)\nUnmeasured symbol groups: {}; metadata without a text symbol: {}\nCoverage is independent of the measured-frame budget audit; it is not call-chain or IRQ-stack evidence.\n\n",
+        report.coverage.linked_text_status, report.coverage.measured_linked_text_addresses,
+        report.coverage.linked_text_addresses, report.coverage.unmeasured_functions.len(),
+        report.coverage.metadata_without_text_symbol.len(),
+    ));
+    for function in &report.coverage.unmeasured_functions {
+        output.push_str(&format!(
+            "  unmeasured {:?} {:#010x}: {}\n",
+            function.origin,
+            function.address,
+            function.functions.join(" | ")
+        ));
+    }
+    for address in &report.coverage.metadata_without_text_symbol {
+        output.push_str(&format!(
+            "  metadata without text symbol: {address:#010x}\n"
+        ));
+    }
+    output.push_str("\nReviewed rule matches (all measured frames)\n");
+    for rule in &report.reviewed_rule_matches {
+        output.push_str(&format!(
+            "  [{}] {}: {} addresses {:?}\n",
+            rule.index,
+            rule.function_contains,
+            rule.addresses.len(),
+            rule.addresses
+        ));
+    }
+    output.push_str("\nLargest measured frames\n");
     for frame in &report.largest_frames {
         output.push_str(&format!(
             "  {:>10}  {:#010x}  {}{}\n",
@@ -391,7 +477,7 @@ pub fn render_stack_report(report: &StackReport) -> String {
             compact_source(frame),
         ));
     }
-    output.push('\n');
+    output.push_str("\nMeasured-frame budget audit only\n");
     output.push_str(&crate::render_audit(&report.audit));
     output
 }

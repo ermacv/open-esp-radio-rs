@@ -96,6 +96,15 @@ pub enum PhyInitializationError {
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyInitializationFailure<P, MT, SC> {
+    /// Whether registration lacks a completed target failure cleanup.
+    /// A power prerequisite rejection occurs before registration starts.
+    pub fn phy_hardware_ambiguous(&self) -> bool {
+        match &self.failure {
+            PhyInitializationFailure::Power(_) => false,
+            PhyInitializationFailure::Registration(failure) => !failure.failure_cleanup_completed(),
+        }
+    }
+
     /// Inspect the power prerequisite or lower target-registration failure.
     pub const fn error(&self) -> PhyInitializationError {
         match &self.failure {

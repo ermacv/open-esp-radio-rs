@@ -10,27 +10,7 @@ use embassy_sync::{
     signal::Signal,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PauseError {
-    Unavailable,
-    Busy,
-    Interrupted,
-    MacStop,
-    RxBusy,
-    RxPause,
-    IrqPause,
-    RxResume,
-    IrqResume,
-    RegisterReclaim,
-    PhyAdmission,
-    PhyRelease,
-    RegisterRepublish,
-    PhyTracking,
-    MacRestoration,
-    ReceivePolicyChanged,
-    PeerNotification,
-    InvalidDuration,
-}
+pub use crate::maintenance_policy::PauseError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PauseOperation {

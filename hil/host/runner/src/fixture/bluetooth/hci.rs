@@ -157,10 +157,26 @@ impl Socket {
     }
 
     pub(super) fn command<C: SyncCmd>(&self, command: C) -> Result<C::Return> {
+        self.command_with_timeout(command, Duration::from_secs(2))
+    }
+
+    fn command_with_timeout<C: SyncCmd>(&self, command: C, timeout: Duration) -> Result<C::Return> {
+        let started = Instant::now();
         self.send_command(&command)?;
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = started + timeout;
+        let mut received_packets = 0_u64;
+        let mut last_event = String::from("none");
         loop {
-            let packet = self.receive(deadline)?;
+            let packet = self.receive(deadline).map_err(|error| {
+                format!(
+                    "HCI {:?} ({}): {error}; elapsed={} us, received_packets={received_packets}, last_event={last_event}",
+                    C::OPCODE,
+                    std::any::type_name::<C>(),
+                    started.elapsed().as_micros(),
+                )
+            })?;
+            received_packets = received_packets.saturating_add(1);
+            last_event = command_event_summary(&packet);
             if let Some(value) = completion::<C>(&packet)? {
                 return Ok(value);
             }
@@ -181,6 +197,24 @@ impl Socket {
                 return Ok(value);
             }
         }
+    }
+}
+
+/// Retain only the last event's identity, never its payload: this socket also
+/// carries pairing keys and ACL data. Unrelated traffic cannot grow diagnostic
+/// storage or extend the original command deadline.
+fn command_event_summary(packet: &[u8]) -> String {
+    if packet.first() != Some(&4) {
+        return format!("non-event H4 kind {:?}", packet.first());
+    }
+    match Event::from_hci_bytes(&packet[1..]) {
+        Ok((Event::CommandComplete(event), _)) => {
+            format!("CommandComplete {:?}", event.cmd_opcode)
+        }
+        Ok((Event::CommandStatus(event), _)) => {
+            format!("CommandStatus {:?} {:?}", event.cmd_opcode, event.status)
+        }
+        _ => format!("event code {:?}", packet.get(1)),
     }
 }
 
@@ -450,6 +484,46 @@ mod tests {
         assert!(completion::<LeTestEnd>(&[4, 14, 6, 1, 0x1f, 0x20, 0, 42]).is_err());
         assert!(completion::<LeTestEnd>(&[4, 14, 6, 1, 0x1f, 0x20, 0, 42, 0, 0]).is_err());
         assert!(completion::<LeTestEnd>(&[4, 15, 4, 0x0c, 1, 0x1f, 0x20]).is_err());
+    }
+    #[test]
+    fn missing_completion_reports_command_and_unrelated_event_without_retry() {
+        let (client, server) = std::os::unix::net::UnixDatagram::pair().unwrap();
+        client.set_nonblocking(true).unwrap();
+        server.set_nonblocking(true).unwrap();
+        // A successful status does not complete Test End, nor does a Reset
+        // completion. Neither may renew the original deadline or trigger retry.
+        server.send(&[4, 15, 4, 0, 1, 0x1f, 0x20]).unwrap();
+        server.send(&[4, 14, 4, 1, 3, 12, 0]).unwrap();
+        let error = Socket(client.into())
+            .command_with_timeout(LeTestEnd::new(), Duration::from_millis(20))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("LeTestEnd"), "{error}");
+        assert!(error.contains("HCI response timeout"), "{error}");
+        assert!(error.contains("received_packets=2"), "{error}");
+        assert!(error.contains("last_event=CommandComplete"), "{error}");
+        let mut request = [0; 64];
+        assert_eq!(server.recv(&mut request).unwrap(), 4);
+        assert_eq!(&request[..4], &[1, 0x1f, 0x20, 0]);
+        assert_eq!(
+            server.recv(&mut request).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn command_diagnostics_do_not_include_event_payloads() {
+        // Arbitrary vendor event payloads can contain private controller data.
+        let secret = b"private-controller-data";
+        let mut event = vec![4, 0xff, secret.len() as u8];
+        event.extend_from_slice(secret);
+        assert_eq!(command_event_summary(&event), "event code Some(255)");
+        // CommandComplete's return parameters are not logged either.
+        let mut event = vec![4, 14, (3 + secret.len()) as u8, 1, 3, 12];
+        event.extend_from_slice(secret);
+        let summary = command_event_summary(&event);
+        assert!(summary.starts_with("CommandComplete"), "{summary}");
+        assert!(!summary.contains("private"), "{summary}");
     }
     #[test]
     fn management_ignores_other_adapters_and_checks_status_and_length() {

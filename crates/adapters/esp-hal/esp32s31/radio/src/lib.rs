@@ -26,10 +26,6 @@ mod bluetooth_route_policy;
 
 #[cfg(feature = "esp32s31")]
 mod esp32s31;
-#[cfg(feature = "esp32s31")]
-mod fail_stop;
-#[cfg(feature = "esp32s31")]
-pub use fail_stop::fail_stop_shared_phy;
 
 #[cfg(feature = "esp32s31")]
 pub use coordinator::BluetoothPlatformBusy;

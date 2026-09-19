@@ -535,10 +535,10 @@ impl PeripheralConnectionCompletedEvent {
                 .expect("the retained response matches the encryption procedure state");
             return true;
         }
-        if encryption.blocks_unrelated_transmission() {
-            return false;
-        }
         if let Some(response) = control.pending_response() {
+            if !encryption.permits_control_pdu(response.as_bytes()) {
+                return false;
+            }
             let mut encrypted = [0; 27];
             let payload = if let Some(cipher) = encryption.active_encryption() {
                 let plaintext_len = response.as_bytes().len();
@@ -561,6 +561,9 @@ impl PeripheralConnectionCompletedEvent {
                 return true;
             }
         } else {
+            if encryption.blocks_unrelated_transmission() {
+                return false;
+            }
             let maximum = if encryption.is_active() {
                 oer_bluetooth_ll::security::LE_LEGACY_ENCRYPTED_PLAINTEXT_BYTES
             } else {

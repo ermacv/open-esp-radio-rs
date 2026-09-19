@@ -1,4 +1,5 @@
 use super::*;
+mod bluetooth;
 use crate::{
     hil::{HilEvidenceIndex, RepositoryState, ScenarioCatalog},
     model::{

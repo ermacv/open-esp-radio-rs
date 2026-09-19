@@ -7,10 +7,29 @@ ownership remains in `crates/hardware/esp32s31/pac`.
 
 The private source modules follow the resources and operations they own:
 
+`watchdog` is the public, non-radio TIMG1 deadline service. The board passes
+its peripheral singleton once and retains the service in stable storage.
+Each explicit nonzero `DeadlineBudget` arms a single non-cloneable lease.
+Completion before the deadline disarms; cancellation, forgotten leases,
+stale completion and late completion never disarm or renew it. There is no
+periodic feed or timeout default. The pinned HAL uses XTAL; sleep and clock
+changes while armed are unsupported. Reserve TIMG1 exclusively, including
+independently constructible HAL Wdt handles. Expiry needs no task or ISR.
+These are engineering limits, not measured worst-case reset/RF-off bounds.
+
 - `cache/maintenance.rs`: validates the borrowed PSRAM range and delegates
   writeback to HAL before a DMA reader observes memory.
 - `cache/performance.rs`: cache counter snapshots and the retained CACHE witness.
 - `flash/mmu.rs`: flash MMU operations with the retained SPI0 witness.
+- `reset.rs`: a diverging system-reset request through HAL. The calling
+  composition owns the failure policy and retains any live resources; this
+  mechanism has no radio dependency and does not arm a watchdog or establish
+  a reset-latency bound.
+- `entropy.rs`: owns RNG and the independent LP TRNG source. Fixed-size reads
+  borrow that owner and release their temporary HAL reader before returning.
+  No radio role or PHY epoch supplies its lifetime. Read pacing assumes a
+  running CPU cycle counter; this is not a fault-time bound or an entropy
+  quality qualification.
 - `dma/mem2mem/descriptor.rs`: descriptor images, burst sizing, chain construction,
   and descriptor validation; its host tests live in `descriptor/tests.rs`.
 - `dma/mem2mem/registers.rs`: typed upstream AXI-GDMA register operations,

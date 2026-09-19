@@ -904,9 +904,11 @@ fn observe_encryption_event(
                 || complete.handle != handle
                 || complete.status != bt_hci::param::Status::SUCCESS
             {
-                return Err(
-                    "key refresh completion does not match active encrypted connection".into(),
-                );
+                return Err(format!(
+                    "key refresh completion mismatch: status=0x{:02x}, handle={}, expected={}, refresh={}, initial_encrypted={}, admitted={}, duplicate={}",
+                    complete.status.into_inner(), complete.handle.raw(), handle.raw(),
+                    refresh, report.encryption_change, report.refresh_command_status, report.key_refresh_complete,
+                ).into());
             }
             report.key_refresh_complete = true;
             return Ok(true);
@@ -961,6 +963,30 @@ mod encryption_tests {
         assert!(observe_encryption_event(&refreshed, handle, &mut report, true).unwrap());
         assert!(report.key_refresh_complete);
         assert!(observe_encryption_event(&refreshed, handle, &mut report, true).is_err());
+    }
+
+    #[test]
+    fn refresh_failure_preserves_exact_peer_status_and_handle_in_error() {
+        for status in [0x06, 0x08, 0x3d] {
+            let mut report = ConnectionReset::new(
+                super::super::model::Adapter(0),
+                PeerAddress([1; 6]),
+                0,
+                BluetoothPeripheralTermination::PeerReset,
+            );
+            report.encryption_change = true;
+            report.refresh_command_status = true;
+            let error = observe_encryption_event(
+                &[4, 0x30, 3, status, 1, 0],
+                ConnHandle::new(1),
+                &mut report,
+                true,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains(&format!("status=0x{status:02x}, handle=1, expected=1")));
+            assert!(!report.key_refresh_complete);
+        }
     }
 
     #[test]

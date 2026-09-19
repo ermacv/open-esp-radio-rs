@@ -1,4 +1,4 @@
-//! Fixed initial-key failure probe. No application data is sent on the failed link.
+//! Fixed initial-key or refresh-key failure probe. No application data is sent on the failed link.
 use super::{Adapter, PeerAddress};
 use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,9 @@ pub(crate) struct Report {
     pub initial_soft_blocked: Option<bool>,
     pub connected: bool,
     pub command_status: bool,
+    pub initial_command_status: bool,
+    pub initial_encrypted: bool,
+    pub acl_sent: bool,
     pub encryption_failure: Option<u8>,
     pub disconnect_requested: bool,
     pub disconnect_command_status: bool,
@@ -36,7 +39,7 @@ pub(crate) struct Observation {
 impl Report {
     pub fn new(adapter: Adapter, peer: PeerAddress, failure: Failure) -> Self {
         Self {
-            schema: 2,
+            schema: 4,
             adapter: adapter.to_string(),
             peer: peer.to_string(),
             failure,
@@ -48,6 +51,9 @@ impl Report {
             initial_soft_blocked: None,
             connected: false,
             command_status: false,
+            initial_command_status: false,
+            initial_encrypted: false,
+            acl_sent: false,
             encryption_failure: None,
             disconnect_requested: false,
             disconnect_command_status: false,
@@ -58,7 +64,7 @@ impl Report {
         }
     }
     pub fn passed(&self, adapter: Adapter, peer: PeerAddress, failure: Failure) -> bool {
-        self.schema == 2
+        self.schema == 4
             && self.adapter == adapter.to_string()
             && self.peer == peer.to_string()
             && self.failure == failure
@@ -66,6 +72,10 @@ impl Report {
             && self.initial_soft_blocked.is_some()
             && self.connected
             && self.command_status
+            && self.initial_command_status == (failure == Failure::MissingRefreshKey)
+            && self.initial_encrypted
+                == matches!(failure, Failure::MissingRefreshKey | Failure::ActiveDataMic)
+            && self.acl_sent == (failure == Failure::ActiveDataMic)
             && self.completed_after_micros.is_some()
             && self.restored
             && self.errors.is_empty()
@@ -83,8 +93,20 @@ impl Report {
                         && self.disconnect_command_status
                         && self.disconnect_reason == Some(0x16)
                 }
+                Failure::MissingRefreshKey => {
+                    matches!(self.encryption_failure, None | Some(6))
+                        && !self.disconnect_requested
+                        && !self.disconnect_command_status
+                        && self.disconnect_reason == Some(6)
+                }
                 Failure::WrongKey => {
                     matches!(self.encryption_failure, None | Some(8))
+                        && !self.disconnect_requested
+                        && !self.disconnect_command_status
+                        && self.disconnect_reason == Some(8)
+                }
+                Failure::ActiveDataMic => {
+                    self.encryption_failure.is_none()
                         && !self.disconnect_requested
                         && !self.disconnect_command_status
                         && self.disconnect_reason == Some(8)
@@ -100,7 +122,12 @@ mod tests {
     fn exact_failure_and_restoration_are_required() {
         let adapter = Adapter(0);
         let peer = PeerAddress([1; 6]);
-        for failure in [Failure::MissingKey, Failure::WrongKey] {
+        for failure in [
+            Failure::MissingKey,
+            Failure::WrongKey,
+            Failure::MissingRefreshKey,
+            Failure::ActiveDataMic,
+        ] {
             let mut r = Report::new(adapter, peer, failure);
             r.initial_powered = Some(false);
             r.initial_soft_blocked = Some(true);
@@ -115,6 +142,16 @@ mod tests {
                     r.disconnect_reason = Some(0x16);
                 }
                 Failure::WrongKey => r.disconnect_reason = Some(8),
+                Failure::ActiveDataMic => {
+                    r.initial_encrypted = true;
+                    r.acl_sent = true;
+                    r.disconnect_reason = Some(8);
+                }
+                Failure::MissingRefreshKey => {
+                    r.initial_command_status = true;
+                    r.initial_encrypted = true;
+                    r.disconnect_reason = Some(6);
+                }
             }
             assert!(!r.passed(adapter, peer, failure));
             r.restored = true;

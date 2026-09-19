@@ -18,7 +18,7 @@ use crate::{
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);
 const DEFAULT_SCAN_DWELL_MILLIS: u16 = 200;
-mod data_path;
+pub(super) mod data_path;
 
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
@@ -39,7 +39,7 @@ pub(crate) fn run(
 
     fs::create_dir_all(output)?;
     context.with_capture(output, |capture| {
-        qualify(capture, context, operation, &options, phy)
+        qualify(capture, context, operation, &options, phy, output)
     })?;
     eprintln!("wifi_{}=PASS", operation.id());
     eprintln!("uart_log={}", output.join("uart.log").display());
@@ -52,6 +52,7 @@ fn qualify(
     operation: Operation,
     options: &Config,
     phy: PhyExpectation,
+    output: &Path,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context, options.timeout)?;
     if !capabilities.features.wifi_role_control {
@@ -59,7 +60,10 @@ fn qualify(
     }
     report_stack(capture, options.timeout, "connected")?;
 
-    if matches!(operation, Operation::Restart | Operation::Retained) {
+    if matches!(
+        operation,
+        Operation::Restart | Operation::MaintenanceRestart | Operation::Retained
+    ) {
         context.lab.station_fixture.require_phy(phy)?;
         if context.settings.data_plane
             != open_esp_radio_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
@@ -76,13 +80,22 @@ fn qualify(
             initial.event_cursor_after,
         )?;
         let mut station_link_generation = initial.generation;
+        if operation == Operation::MaintenanceRestart {
+            maintenance_before_restart(
+                capture,
+                context,
+                options.timeout,
+                initial.event_cursor_after,
+                &output.join("maintenance-initial"),
+            )?;
+        }
         let mut stopped =
             stop_station_for_lifecycle(capture, options.timeout, station_link_generation)?;
         report_stack(capture, options.timeout, "station-stopped")?;
         let mut last_phy_registration_generation = None;
         for cycle in 1..=options.restart_cycles {
             let lifecycle_generation = match operation {
-                Operation::Restart => {
+                Operation::Restart | Operation::MaintenanceRestart => {
                     let restarted = capture.wait_wifi_radio_restart(
                         capture.request_radio_restart()?,
                         options.timeout,
@@ -134,6 +147,15 @@ fn qualify(
                 connected.event_cursor_after,
             )?;
             if cycle < options.restart_cycles {
+                if operation == Operation::MaintenanceRestart {
+                    maintenance_before_restart(
+                        capture,
+                        context,
+                        options.timeout,
+                        connected.event_cursor_after,
+                        &output.join(format!("maintenance-{cycle}")),
+                    )?;
+                }
                 stopped =
                     stop_station_for_lifecycle(capture, options.timeout, station_link_generation)?;
             }
@@ -375,6 +397,36 @@ fn qualify(
     Ok(())
 }
 
+fn maintenance_before_restart(
+    capture: &SerialCapture,
+    context: &Context<'_>,
+    timeout: Duration,
+    cursor: usize,
+    output: &Path,
+) -> Result<()> {
+    fs::create_dir_all(output)?;
+    use crate::workload::traffic::maintenance;
+    maintenance::require(capture)?;
+    maintenance::run(
+        capture,
+        open_esp_radio_hil_protocol::StationPauseOperation::Calibration,
+        false,
+        1,
+        Duration::ZERO,
+        output,
+        serde_json::json!({"scope": "connected calibration before cold restart"}),
+    )?;
+    capture.require_station_unchanged_since(cursor)?;
+    data_path::prove_station_data_path(
+        capture,
+        context,
+        timeout,
+        "after-maintenance-before-restart",
+        cursor,
+    )?;
+    capture.require_station_unchanged_since(cursor)
+}
+
 pub(crate) fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
     let usage = capture.query_stack_usage(timeout)?;
     eprintln!(
@@ -457,7 +509,7 @@ fn start_connected_station(
     Ok((evidence, connected))
 }
 
-fn require_station_link(
+pub(super) fn require_station_link(
     connected: StationConnectionObservation,
     phy: PhyExpectation,
 ) -> Result<()> {

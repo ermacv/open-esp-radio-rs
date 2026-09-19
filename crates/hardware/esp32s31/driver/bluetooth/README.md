@@ -81,6 +81,16 @@ waits and terminal quarantine. Feature gates apply to both the owners and
 their unit suites in adjacent child files.
 The separate [`memory`](memory/) crate retains controller-SRAM codecs.
 
+The [composed peripheral host tests](src/scheduler/core/peripheral_connection/recurring/transaction/tests/lifecycle.rs)
+drive the production completion spine, LL recurrence, ACL owner, HCI credit
+transport and maintenance/deadline admission together. They cover delayed and
+unfinished scheduler wakes, post-unlink waits, saturated ACL queues, Instant
+protection, cancelled maintenance proposals, clock wrap and late credit returns
+after disconnection. Run them with `cargo test -p oer-esp32s31-bluetooth lifecycle`.
+Hardware observations are scripted; these tests do not execute the RISC-V
+active-session coordinator or establish physical DMA/IRQ quiescence. Those
+boundaries require target evidence independently.
+
 Controller time uses the HAL period's software conversion selector. The
 standalone profile has two raw ticks per microsecond; its hardware divider is
 a separate setting. Scheduler epoch updates retain fractional raw ticks, and
@@ -277,20 +287,30 @@ accepts the positive or negative HCI reply only for that live request and
 handle. An accepted new packet advances its counter once, while a radio
 retransmission reuses the retained ciphertext. RX authentication and decryption
 precede ordinary LL dispatch; nonempty TX control and ACL packets are encrypted
-while the session is active. Empty acknowledgements retain zero payload length,
+while the session is active. Connection RX publication selects software-owned
+control-PDU interpretation before exposing the RX head: ciphertext beginning
+with `0x02` must not trigger the hardware's plaintext termination-opcode path.
+The HAL reapplies this policy after PHY restoration and restores the default
+policy when another RX role is published. Empty acknowledgements retain zero payload length,
 carry no MIC and consume no encryption counter. The radio's ordinary empty TX
 path also serves encrypted connections. RX empty acknowledgements neither
 consume Host ACL credits nor advance the encryption handshake, including while
 waiting for the Host LTK; they cannot revive a failed session. The
 [`completion/security`](src/le/peripheral/connection/completion/security.rs)
 boundary authenticates nonempty packets before dispatch and seals the session
-on a MIC or forbidden-PDU failure. These rules follow Bluetooth Core Vol 6,
+on a MIC or forbidden-PDU failure. Diagnostic firmware can explicitly enable
+`rx-fault-injection` to corrupt one copied active-data MIC before this same
+authenticator. Its owner arms the request before admission and disarms it on
+disconnect; the diagnostic snapshot counts actual injections. This optional
+feature is absent from ordinary builds and does not simulate an RF error.
+These rules follow Bluetooth Core Vol 6,
 Part B [Data Physical Channel PDU and encryption procedures](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html).
 Restart replaces session material
 and resets both counters only after the encrypted pause response and the peer's
 unencrypted response, then publishes Encryption Key Refresh Complete. Initial
 start publishes Encryption Change. MIC or physical-channel sequence failure
-retires the link with `0x3d`; a missing restart LTK sends reliable termination
+retires the link with `0x3d`; a missing restart LTK keeps ordinary data/control
+blocked while admitting only the required reliable termination
 reason `0x06`. Reset, disconnection and fault owners retain and destroy the
 session keys with the connection. LE Encryption is advertised, and the two LTK
 reply commands are present in Read Local Supported Commands. Pairing, SMP and

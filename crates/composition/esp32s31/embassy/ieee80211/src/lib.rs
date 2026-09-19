@@ -7,7 +7,34 @@
 //! runner. Board firmware owns credentials, IP policy and sockets; it does not
 //! assemble PAC, DMA, ISR or role transactions. The [`resources`] profile is also
 //! available on the host for product resource and ownership validation.
+//!
+//! Connected and stopped-role PHY maintenance use the shared-PHY terminal
+//! policy: an invalid PHY owner, unconfirmed MAC/RX stop or failed hardware
+//! restoration requests system reset while retaining the failed frontier.
+//! The composition selects that response through the non-radio SoC adapter;
+//! neither PHY nor MAC/DMA drivers depend on a reset/watchdog mechanism.
+//! Rejected requests and physical admission, peer-notification errors, and
+//! ownership faults at an already-quiesced frontier retain their existing
+//! rejection/quarantine behavior. They do not authorize automatic restart.
+//! Explicit shutdown/cycling and restart use the same policy: ambiguous RF
+//! close/wake, incomplete registration cleanup and failed initial tracking or
+//! channel execution request reset. Unchanged preparation, completed cleanup,
+//! closed-RF reunion, shared-client and pending-work failures retain their
+//! non-runnable lifecycle owners without escalation.
+//! Initial cold start applies the same classification and retains rejected
+//! hardware in the lifecycle fault slot instead of discarding its owner.
+//! [`RadioConfig`] additionally requires a stable caller-owned [`WatchdogConfig`]
+//! and explicit startup, maintenance and shutdown budgets. Its SoC TIMG1 lease
+//! starts before quiescence and remains armed through hardware restoration.
+//! Cancellation leaves the timer armed; no periodic feed or default exists.
+//! This does not qualify a worst-case reset-to-RF-off bound.
 
+#[cfg(any(test, target_arch = "riscv32"))]
+mod maintenance_policy;
+#[cfg(target_arch = "riscv32")]
+mod watchdog;
+#[cfg(target_arch = "riscv32")]
+pub use watchdog::WatchdogConfig;
 mod network_diagnostics;
 pub mod resources;
 
@@ -280,6 +307,7 @@ impl ConnectedDatapathPollObserver {
 /// responsibility; credentials are supplied separately to `start_station`.
 #[cfg(target_arch = "riscv32")]
 pub struct RadioConfig {
+    pub(crate) watchdog: &'static WatchdogConfig,
     pub(crate) access_point_airtime: Option<
         oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
     >,
@@ -299,12 +327,14 @@ pub struct RadioConfig {
 #[cfg(target_arch = "riscv32")]
 impl RadioConfig {
     pub const fn new(
+        watchdog: &'static WatchdogConfig,
         station_mac: oer_radio::wifi::WifiMacAddress,
         access_point_mac: oer_radio::wifi::WifiMacAddress,
         calibration: oer_esp32s31_phy::PhyCalibrationIdentity,
         initial_channel: oer_ieee80211::channel::WifiChannel,
     ) -> Self {
         Self {
+            watchdog,
             station_mac,
             access_point_airtime: None,
             access_point_mac,

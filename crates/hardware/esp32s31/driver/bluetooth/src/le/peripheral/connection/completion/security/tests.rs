@@ -199,3 +199,52 @@ fn wrong_host_ltk_fails_the_real_start_decoder_before_any_application_delivery()
     assert!(receive(&mut procedure, &DATA).is_none());
     assert!(receive(&mut established(), &DATA).is_some());
 }
+
+#[test]
+fn ciphertext_matching_terminate_opcode_authenticates_and_keeps_acl_alive() {
+    // Core sample key/diversifier with IVp 35 00 af de. These CCM packets were
+    // independently generated with AESCCM (four-octet MIC), not the LL encoder.
+    // The on-air 02 is encrypted START_ENC_RSP, not LL_TERMINATE_IND.
+    let mut procedure = Procedure::new();
+    let mut decoded = [0; 257];
+    assert!(
+        decode(&mut procedure, &REQUEST, &mut decoded, || {
+            LePeripheralEncryptionRandom::new(
+                [0x79, 0x68, 0x57, 0x46, 0x35, 0x24, 0x13, 0x02],
+                [0x35, 0x00, 0xaf, 0xde],
+            )
+        })
+        .is_none()
+    );
+    procedure.response_enqueued().unwrap();
+    procedure.observe_transmission_completion(true);
+    assert!(
+        procedure
+            .provide_long_term_key(LeLongTermKey::new(LTK))
+            .is_ok()
+    );
+    procedure.response_enqueued().unwrap();
+    assert_eq!(
+        receive(&mut procedure, &[3, 5, 2, 0xf2, 6, 0x6a, 0x44]),
+        None
+    );
+    assert_eq!(procedure.termination_reason(), None);
+    assert!(procedure.pending_response().unwrap().is_encrypted());
+    procedure.response_enqueued().unwrap();
+    assert!(procedure.take_encryption_enabled());
+    assert_eq!(
+        receive(
+            &mut procedure,
+            &[2, 9, 0xf5, 0x1a, 0xd4, 0xec, 0x9a, 0x65, 0xf9, 0xa3, 0xde]
+        ),
+        Some(Vec::from([2, 5, 1, 0, 4, 0, b'x'])),
+    );
+    assert_eq!(procedure.termination_reason(), None);
+    assert_eq!(
+        procedure
+            .active_encryption()
+            .unwrap()
+            .next_central_transmit_counter(),
+        Some(2)
+    );
+}

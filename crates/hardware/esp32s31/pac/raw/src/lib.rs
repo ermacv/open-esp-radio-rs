@@ -40462,9 +40462,9 @@ pub mod btmac_ble_phy_init {
         pub type CustomOpcodeEnabledR = crate::BitReader;
         #[doc = "Field `CUSTOM_OPCODE_ENABLED` writer - "]
         pub type CustomOpcodeEnabledW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `LINK_STATE_CONTROL` reader - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        #[doc = "Field `LINK_STATE_CONTROL` reader - The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication."]
         pub type LinkStateControlR = crate::BitReader;
-        #[doc = "Field `LINK_STATE_CONTROL` writer - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        #[doc = "Field `LINK_STATE_CONTROL` writer - The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication."]
         pub type LinkStateControlW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0"]
@@ -40472,7 +40472,7 @@ pub mod btmac_ble_phy_init {
             pub fn custom_opcode_enabled(&self) -> CustomOpcodeEnabledR {
                 CustomOpcodeEnabledR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication."]
             #[inline(always)]
             pub fn link_state_control(&self) -> LinkStateControlR {
                 LinkStateControlR::new(((self.bits >> 1) & 1) != 0)
@@ -40486,7 +40486,7 @@ pub mod btmac_ble_phy_init {
             ) -> CustomOpcodeEnabledW<'_, ConnectionAbortControlSpec> {
                 CustomOpcodeEnabledW::new(self, 0)
             }
-            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit when its second private control flag is set, independently of the first flag, and sets it otherwise. The field selects the connection opcode-abort path; software-authenticated control PDUs require it cleared before RX publication."]
             #[inline(always)]
             pub fn link_state_control(
                 &mut self,

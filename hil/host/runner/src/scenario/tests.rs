@@ -1,4 +1,124 @@
+#[test]
+fn missing_refresh_key_has_a_separate_finite_scenario() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-peripheral-missing-refresh-key")
+        .unwrap()
+        .clone();
+    assert!(matches!(
+        scenario.workload,
+        Workload::BluetoothSecurityFailure {
+            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingRefreshKey,
+            read_version_before_disconnect: false,
+        }
+    ));
+    assert!(scenario.validate().is_ok());
+    if let Workload::BluetoothSecurityFailure {
+        ref mut read_version_before_disconnect,
+        ..
+    } = scenario.workload
+    {
+        *read_version_before_disconnect = true;
+    }
+    assert!(scenario.validate().is_err());
+}
+
 use super::*;
+
+#[test]
+fn secure_gatt_requires_its_distinct_host_image_and_no_network() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-trouble-secure-gatt")
+        .unwrap()
+        .clone();
+    assert!(scenario.validate().is_ok());
+    let required = crate::lab::requirements::Requirements::for_scenario(&scenario);
+    assert!(required.bluetooth_adapter);
+    assert!(!required.network());
+    for image in [
+        ImageClass::BluetoothGatt,
+        ImageClass::BluetoothDtm,
+        ImageClass::Correctness,
+    ] {
+        scenario.image = image;
+        assert!(scenario.validate().is_err());
+    }
+    scenario.image = ImageClass::BluetoothSecureGatt;
+    scenario.workload = Workload::BluetoothGatt;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn trouble_gatt_selects_its_own_host_and_only_an_att_adapter() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog.get("bluetooth-trouble-gatt").unwrap().clone();
+    assert!(scenario.validate().is_ok());
+    let required = crate::lab::requirements::Requirements::for_scenario(&scenario);
+    assert!(required.bluetooth_adapter);
+    assert!(!required.network());
+    for image in [
+        ImageClass::BluetoothDtm,
+        ImageClass::BluetoothPhyMaintenance,
+        ImageClass::BluetoothWatchdogReset,
+    ] {
+        scenario.image = image;
+        assert!(scenario.validate().is_err());
+    }
+    scenario.image = ImageClass::BluetoothGatt;
+    scenario.workload = Workload::BluetoothPhyWatchdog;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn system_watchdog_needs_no_peer_and_cannot_use_an_ordinary_image() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog.get("system-watchdog").unwrap().clone();
+    scenario.validate().unwrap();
+    let required = crate::lab::requirements::Requirements::for_scenario(&scenario);
+    assert!(!required.bluetooth_adapter);
+    assert!(!required.network());
+    for image in [
+        ImageClass::BluetoothDtm,
+        ImageClass::BluetoothPhyMaintenance,
+        ImageClass::BluetoothWatchdogReset,
+        ImageClass::Correctness,
+    ] {
+        scenario.image = image;
+        assert!(scenario.validate().is_err());
+    }
+}
+
+#[test]
+fn composite_lifecycles_require_following_connections_and_explicit_cycles() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let bluetooth = catalog
+        .get("bluetooth-peripheral-maintenance-restart")
+        .unwrap();
+    assert_eq!(bluetooth.image, ImageClass::BluetoothPhyMaintenance);
+    assert!(matches!(
+        bluetooth.workload,
+        Workload::BluetoothPeripheral {
+            connections: 3,
+            restart_between_connections: true,
+            retire_after: true,
+            ..
+        }
+    ));
+    assert!(matches!(
+        catalog.get("wifi-maintenance-restart").unwrap().workload,
+        Workload::WifiRole {
+            operation: WifiOperation::MaintenanceRestart,
+            cycles: Some(3),
+            ..
+        }
+    ));
+}
 
 #[test]
 fn missing_key_version_diagnostic_is_separate_and_rejects_wrong_key_mode() {
@@ -1726,5 +1846,91 @@ fn acl_backpressure_uses_the_plain_bluetooth_image_and_requires_no_network() {
         .clone();
     scenario.validate().unwrap();
     scenario.image = ImageClass::BluetoothPhyMaintenance;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn encrypted_maintenance_requires_its_image_and_separate_refresh_scope() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog
+        .get("bluetooth-peripheral-encrypted-phy-maintenance")
+        .unwrap()
+        .clone();
+    scenario.validate().unwrap();
+    scenario.image = ImageClass::BluetoothDtm;
+    assert!(scenario.validate().is_err());
+    scenario.image = ImageClass::BluetoothPhyMaintenance;
+    if let Workload::BluetoothEncryptedAcl { key_refresh, .. } = &mut scenario.workload {
+        *key_refresh = true;
+    }
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn backpressure_maintenance_requires_explicit_matching_image() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    for (id, wrong_image) in [
+        (
+            "bluetooth-peripheral-acl-backpressure",
+            ImageClass::BluetoothPhyMaintenance,
+        ),
+        (
+            "bluetooth-peripheral-maintenance-backpressure",
+            ImageClass::BluetoothDtm,
+        ),
+    ] {
+        let mut scenario = catalog.get(id).unwrap().clone();
+        scenario.validate().unwrap();
+        scenario.image = wrong_image;
+        assert!(scenario.validate().is_err());
+    }
+}
+
+#[test]
+fn watchdog_reset_and_cooperative_deadline_require_different_images() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    for (id, wrong) in [
+        (
+            "bluetooth-dtm-watchdog-reset",
+            ImageClass::BluetoothPhyMaintenance,
+        ),
+        (
+            "bluetooth-dtm-maintenance-deadline",
+            ImageClass::BluetoothWatchdogReset,
+        ),
+    ] {
+        let mut scenario = catalog.get(id).unwrap().clone();
+        scenario.validate().unwrap();
+        scenario.image = wrong;
+        assert!(scenario.validate().is_err());
+    }
+}
+
+#[test]
+fn peripheral_phy_faults_require_their_image_and_only_peripheral_peer() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog.get("bluetooth-phy-watchdog").unwrap().clone();
+    scenario.validate().unwrap();
+    let required = crate::lab::requirements::Requirements::for_scenario(&scenario);
+    assert!(required.bluetooth_adapter);
+    assert!(!required.network());
+    scenario.image = ImageClass::BluetoothDtm;
+    assert!(scenario.validate().is_err());
+}
+
+#[test]
+fn station_phy_faults_require_their_image_and_only_station_peer() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    let mut scenario = catalog.get("wifi-phy-watchdog").unwrap().clone();
+    scenario.validate().unwrap();
+    let required = crate::lab::requirements::Requirements::for_scenario(&scenario);
+    assert!(required.station_network);
+    assert!(!required.bluetooth_adapter);
+    scenario.image = ImageClass::Correctness;
     assert!(scenario.validate().is_err());
 }

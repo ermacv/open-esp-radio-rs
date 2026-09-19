@@ -147,6 +147,7 @@ pub fn compose_esp32s31_bluetooth_system<
     >,
     wakers: &'static RuntimeWakers,
     recheck: DtmAbsoluteRecheck,
+    watchdog: &'static crate::WatchdogConfig,
 ) -> Result<
     BluetoothSystemReady<
         P,
@@ -209,6 +210,7 @@ pub fn compose_esp32s31_bluetooth_system<
                     interrupt,
                     recheck,
                     wakers,
+                    watchdog,
                 ),
             },
         },

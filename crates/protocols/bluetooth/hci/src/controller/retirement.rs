@@ -93,7 +93,8 @@ impl<'resources, M: RawMutex, const H2C: usize, const C2H: usize, const PC: usiz
     /// The exact graceful-retirement proof is consumed. Existing Host handles,
     /// ACL credit senders and pending transport futures remain closed forever;
     /// only the returned Host can use the new generation. The bootstrap profile
-    /// is preserved while command state, masks and role configuration restart.
+    /// and installed random-source borrow are preserved while command state,
+    /// masks and role configuration restart. Rebinding that source is rejected.
     /// This proves no hardware restart: the outer owner must establish hardware
     /// readiness before it issues new command authority or runs the Controller.
     pub fn restart_transport(

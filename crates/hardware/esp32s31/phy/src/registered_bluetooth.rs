@@ -356,6 +356,12 @@ pub struct BluetoothPhyRfCloseFailure {
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPhyRfCloseFailure {
+    /// Whether preparation or RF close left an ambiguous hardware epoch.
+    /// A false result retains the unchanged release; it does not prove RF off.
+    pub const fn hardware_ambiguous(&self) -> bool {
+        !self.retryable
+    }
+
     /// The first failing preparation or hardware operation.
     pub const fn error(&self) -> crate::PhyTargetPortError {
         self.error

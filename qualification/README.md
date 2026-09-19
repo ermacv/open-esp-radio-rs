@@ -206,10 +206,14 @@ ACL traffic. Qualified execution/restoration bounds and complete terminal-fault
 coverage remain gaps; active DTM is non-preemptible and has a separate
 hard-deadline fail-stop requirement. See the canonical
 [periodic maintenance contract](catalog/esp32s31/wifi-phy.toml).
-The secure program additionally requires
-key/counter/MIC handling, Secure Connections pairing, ATT security enforcement,
-bond restoration and coordinated Host/Controller shutdown. Existing plaintext
-ACL scenarios do not supply encrypted or GATT evidence.
+The secure program additionally requires key/counter/MIC handling, Numeric
+Comparison-only Secure Connections pairing, authenticated ATT, RAM-bond
+restoration and coordinated Host/Controller shutdown. Its automated secure
+GATT scenario checks pairing rejection, protected traffic and bonded reconnect;
+it does not establish human presence, retention across reset or coordinated
+retirement. The canonical catalog selects the required repetitions and retains
+the missing lifecycle evidence separately. Existing plaintext ACL scenarios do
+not supply encrypted or GATT evidence.
 
 Check the selected programs without scanning the evidence archive:
 

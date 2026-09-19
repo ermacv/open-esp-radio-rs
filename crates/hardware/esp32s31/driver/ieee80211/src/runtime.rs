@@ -392,6 +392,37 @@ pub enum WifiRadioReleaseFailure<P> {
     ColdRelease(RegisteredPhyColdReleaseFailure<P>),
 }
 
+#[cfg(target_arch = "riscv32")]
+impl<P> WifiRadioReleaseFailure<P> {
+    /// Whether RF close left an ambiguous PHY epoch. Client preflight preserves
+    /// its stopped owner; cold reunion failure retains already-closed RF.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        match self {
+            Self::RfClose(RegisteredPhyRfCloseFailure::Started(_)) => true,
+            Self::Client(_)
+            | Self::RfClose(RegisteredPhyRfCloseFailure::Preparation(_))
+            | Self::ColdRelease(_) => false,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> WifiRadioRetainedCycleFailure<P> {
+    /// Whether close or wake poisoned the shared PHY. A pending tracking owner
+    /// is unexecuted work, not a failed tracking transaction. No branch grants
+    /// runnable Wi-Fi ownership merely because this observation is false.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        match self {
+            Self::RfClose(RegisteredPhyRfCloseFailure::Started(_)) | Self::RfWake(_) => true,
+            Self::Client(_)
+            | Self::Shared(_)
+            | Self::RfClose(RegisteredPhyRfCloseFailure::Preparation(_))
+            | Self::Acquire(_)
+            | Self::Tracking(_) => false,
+        }
+    }
+}
+
 /// Failed stopped-frontier PHY client release retaining all Wi-Fi owners.
 #[must_use = "failed PHY client release retains the complete stopped Wi-Fi frontier"]
 pub struct WifiPhyClientReleaseFailure<P> {

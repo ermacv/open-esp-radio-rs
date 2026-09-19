@@ -19,6 +19,8 @@ use bt_hci::{
     },
     transport::{PacketToController, Transport},
 };
+
+mod random;
 use embassy_futures::{
     block_on,
     select::{Either, select},

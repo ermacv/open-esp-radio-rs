@@ -961,7 +961,14 @@ impl RxMemoryListPublished {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RxPacketControl {
+    ControllerDefault,
+    SoftwareConnection,
+}
+
 trait RxMemoryListInitialPublication {
+    fn prepare_packet_control(&mut self, policy: RxPacketControl);
     fn publish_current_head(&mut self);
     fn clear_next_head(&mut self);
     fn reset_initial_control(&mut self);
@@ -969,7 +976,9 @@ trait RxMemoryListInitialPublication {
 
 fn execute_rx_memory_list_initial_publication(
     transaction: &mut impl RxMemoryListInitialPublication,
+    policy: RxPacketControl,
 ) {
+    transaction.prepare_packet_control(policy);
     transaction.publish_current_head();
     transaction.clear_next_head();
     transaction.reset_initial_control();
@@ -982,6 +991,17 @@ struct PacBluetoothRxMemoryListInitialPublication<'registers> {
 }
 
 impl RxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublication<'_> {
+    fn prepare_packet_control(&mut self, policy: RxPacketControl) {
+        match policy {
+            RxPacketControl::ControllerDefault => {
+                self.registers.restore_default_connection_packet_control();
+            }
+            RxPacketControl::SoftwareConnection => {
+                self.registers.prepare_software_connection_packet_control();
+            }
+        }
+    }
+
     #[allow(
         unsafe_code,
         reason = "the transaction retains the serialized RX-list lifecycle"
@@ -1081,11 +1101,13 @@ impl ControllerHal<'_> {
     /// the positional `selector`. HAL publishes the initialized current head
     /// first and only then clears the matching next head. Neither positional
     /// slot nor its register representation crosses this boundary.
+    /// The controller-default opcode policy is restored before either pointer;
+    /// software-owned connections use their separate publication transaction.
     ///
     /// # Safety
     ///
     /// The caller must own the selected powered-controller lifecycle epoch,
-    /// must retain the complete initialized pinned memory graph, and must
+    /// must have no active RUN, retain the complete initialized pinned memory graph, and
     /// serialize all task and interrupt access to this list until a later
     /// verified retirement transaction consumes the returned token.
     #[doc(hidden)]
@@ -1103,7 +1125,44 @@ impl ControllerHal<'_> {
             selector,
             head,
         };
-        execute_rx_memory_list_initial_publication(&mut transaction);
+        execute_rx_memory_list_initial_publication(
+            &mut transaction,
+            RxPacketControl::ControllerDefault,
+        );
+        RxMemoryListPublished { selector, head }
+    }
+
+    /// Publish RX for a connection whose control PDUs are owned by software.
+    ///
+    /// Configure opcode inspection before publishing the RX head. Software CCM
+    /// ciphertext must reach the authenticating LL decoder even when its first
+    /// byte matches a hardware abort opcode. Repeating this transaction also
+    /// restores the policy after PHY maintenance reinitializes BLE registers.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned connection graph and the
+    /// exclusive powered task epoch, with no active RUN. It must serialize RX
+    /// list access until the returned publication is retired.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the connection owner retains the powered graph and idle hardware"
+    )]
+    pub unsafe fn publish_software_connection_rx_memory_list_initial_head(
+        &mut self,
+        selector: BluetoothMemoryListSelector,
+        head: BluetoothControllerSramAddress,
+    ) -> RxMemoryListPublished {
+        let mut transaction = PacBluetoothRxMemoryListInitialPublication {
+            registers: self.registers,
+            selector,
+            head,
+        };
+        execute_rx_memory_list_initial_publication(
+            &mut transaction,
+            RxPacketControl::SoftwareConnection,
+        );
         RxMemoryListPublished { selector, head }
     }
 

@@ -879,6 +879,161 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn bluetooth_gatt(
+        &self,
+    ) -> Result<open_esp_radio_hil_protocol::BluetoothGattEvidence> {
+        match self
+            .send_command(0, Command::QueryBluetoothGatt, Duration::from_secs(2))?
+            .body
+        {
+            Event::BluetoothGatt(evidence) => {
+                self.require_bluetooth_irq_stack()?;
+                Ok(evidence)
+            }
+            response => Err(format!("invalid GATT observation: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn bluetooth_secure_gatt(
+        &self,
+    ) -> Result<open_esp_radio_hil_protocol::BluetoothSecureGattEvidence> {
+        match self
+            .send_command(0, Command::QueryBluetoothSecureGatt, Duration::from_secs(2))?
+            .body
+        {
+            Event::BluetoothSecureGatt(evidence) => {
+                self.require_bluetooth_irq_stack()?;
+                Ok(evidence)
+            }
+            response => Err(format!("invalid secure GATT observation: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn restart_bluetooth_gatt(&self, boot: u64, epoch: u32) -> Result<()> {
+        if boot == 0 {
+            return Err("secure GATT restart requires the observed boot identity".into());
+        }
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::RestartBluetoothGatt { epoch },
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.restarting => Ok(()),
+            response => Err(format!("secure GATT restart rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn confirm_bluetooth_gatt(
+        &self,
+        boot: u64,
+        decision: open_esp_radio_hil_protocol::BluetoothNumericDecision,
+    ) -> Result<()> {
+        if boot == 0 {
+            return Err("Numeric Comparison requires the displayed boot identity".into());
+        }
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::ConfirmBluetoothGatt(decision),
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::BluetoothGattDecisionRecorded(recorded) if recorded == decision => Ok(()),
+            response => Err(format!("Numeric Comparison decision rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn boot_status(&self) -> Result<open_esp_radio_hil_protocol::BootEvidence> {
+        match self
+            .send_command(0, Command::GetBootStatus, Duration::from_secs(5))?
+            .body
+        {
+            Event::BootStatus(evidence) => Ok(evidence),
+            response => Err(format!("invalid boot status: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn system_watchdog_test(
+        &self,
+        mode: open_esp_radio_hil_protocol::WatchdogTestMode,
+    ) -> Result<()> {
+        match self
+            .send_command(0, Command::SystemWatchdogTest(mode), Duration::from_secs(5))?
+            .body
+        {
+            Event::SystemWatchdogTest(observed) if observed == mode => Ok(()),
+            response => Err(format!("watchdog {mode:?} rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn phy_fault(
+        &self,
+        command: open_esp_radio_hil_protocol::PhyFaultCommand,
+    ) -> Result<open_esp_radio_hil_protocol::PhyFaultEvidence> {
+        match self
+            .send_command(0, Command::PhyFault(command), Duration::from_secs(2))?
+            .body
+        {
+            Event::PhyFault(evidence) => Ok(evidence),
+            response => Err(format!("PHY fault control {command:?} rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn start_fault_calibration(&self) -> Result<()> {
+        self.request_wifi_command(
+            Command::PauseStation {
+                operation: open_esp_radio_hil_protocol::StationPauseOperation::Calibration,
+            },
+            "fault calibration",
+        )
+        .map(|_| ())
+    }
+
+    /// Negative admission control: zero-duration absence must reject before
+    /// taking any physical owner and remain on this boot.
+    pub(crate) fn require_invalid_pause_rejected(&self) -> Result<()> {
+        let report = self.station_pause_round_trip(
+            open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
+                duration_micros: 0,
+                notify_ap: false,
+            },
+            Duration::from_secs(2),
+        )?;
+        if report.evidence.result
+            == open_esp_radio_hil_protocol::StationPauseResult::InvalidDuration
+            && report.evidence.tracking.is_none()
+            && report.evidence.elapsed_micros == 0
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "invalid pause was not rejected before PHY: {:?}",
+                report.evidence
+            )
+            .into())
+        }
+    }
+
+    fn require_bluetooth_irq_stack(&self) -> Result<()> {
+        let response =
+            self.send_command(0, Command::QueryInterruptStackUsage, Duration::from_secs(5))?;
+        match response.body {
+            Event::InterruptStackUsage { cpu0, cpu1 } => {
+                super::validation::validate_bluetooth_irq_stack(cpu0, cpu1)
+            }
+            response => Err(format!(
+                "Bluetooth IRQ stack evidence missing or below policy: {response:?}"
+            )
+            .into()),
+        }
+    }
+
     pub(crate) fn bluetooth_peripheral(
         &self,
         operation: open_esp_radio_hil_protocol::BluetoothPeripheralOperation,
@@ -904,6 +1059,7 @@ impl SerialCapture {
                         | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::HoldAclCredit { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclCreditHoldConfigured { .. })
                         | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::CalibrationTraffic { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::CalibrationTrafficConfigured { .. }))) =>
             {
+                self.require_bluetooth_irq_stack()?;
                 Ok(evidence)
             }
             response => {
@@ -1394,7 +1550,7 @@ impl SerialCapture {
             }))
     }
 
-    pub(super) fn latest_boot_id(&self) -> Option<u64> {
+    pub(crate) fn latest_boot_id(&self) -> Option<u64> {
         let state = self
             .protocol
             .state

@@ -9,6 +9,42 @@ const TRANSACTION_PAYLOAD: [u8; 16] = [1, 3, 5, 7, 9, 11, 13, 15, 2, 4, 6, 8, 10
 type TransactionStorage =
     ReceiveDmaStorage<TRANSACTION_COUNT, TRANSACTION_CAPACITY, TRANSACTION_STORAGE>;
 
+#[test]
+fn invalid_reserve_retains_the_live_owner_until_an_explicit_policy_is_selected() {
+    let (storage, ring, mut hardware, pointer) = transaction_fixture();
+    let pool = RxStagePool::<1, TRANSACTION_CAPACITY>::new();
+    let queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
+    let (sender, receiver) = queue.split();
+    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let observed = producer.ring().observed_mask();
+    let frontier = producer.ring().recycle_start();
+    assert_eq!(
+        embassy_futures::block_on(producer.service(&mut hardware)),
+        Err(RxStageTransactionError::InvalidCreditReserve {
+            reserved: 1,
+            pool_slots: 1,
+            queue_depth: 1
+        })
+    );
+    assert_eq!(producer.ring().observed_mask(), observed);
+    assert_eq!(producer.ring().recycle_start(), frontier);
+    assert_eq!(producer.work_counters().completed_units, 0);
+    assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(storage.detached_buffer_count(), 0);
+    assert!(receiver.try_receive().is_err());
+    assert!(hardware.walker);
+    let mut producer = producer.with_stage_admission_policy(UnreservedRxStageAdmission);
+    embassy_futures::block_on(producer.service(&mut hardware)).unwrap();
+    let frame = receiver.try_receive().unwrap();
+    assert_eq!(frame.segment().buffer.as_ptr(), pointer);
+    assert_eq!(frame.segment().buffer, TRANSACTION_PAYLOAD);
+    drop(frame);
+    embassy_futures::block_on(producer.service(&mut hardware)).unwrap();
+    producer
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("all leases returned"));
+}
+
 fn transaction_fixture() -> (
     &'static TransactionStorage,
     RxRingLive<'static, TRANSACTION_COUNT>,
@@ -50,7 +86,8 @@ fn adapter_service_publishes_the_original_buffer_before_its_future_is_polled() {
     let pool = RxStagePool::<1, TRANSACTION_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
     let (sender, receiver) = queue.split();
-    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_stage_admission_policy(UnreservedRxStageAdmission);
 
     let completion = producer.service(&mut hardware);
     let frame = receiver
@@ -151,7 +188,7 @@ fn run_transaction<'pool>(
         storage,
         pool,
         publisher,
-        &transaction::AdmitAll,
+        &transaction::AdmitUnreserved,
         transaction::Counters {
             descriptors,
             units,

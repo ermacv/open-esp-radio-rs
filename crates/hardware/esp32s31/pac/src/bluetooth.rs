@@ -2,6 +2,8 @@
 
 pub(crate) mod baseband;
 
+mod connection_control;
+
 pub(crate) mod controller;
 
 pub(crate) mod direction_finding;

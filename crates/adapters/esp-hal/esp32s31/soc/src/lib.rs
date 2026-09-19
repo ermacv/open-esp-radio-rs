@@ -13,7 +13,15 @@ mod cache;
 #[cfg(any(test, feature = "axi-gdma-mem2mem"))]
 mod dma;
 #[cfg(feature = "esp32s31")]
+pub mod entropy;
+#[cfg(feature = "esp32s31")]
 mod flash;
+#[cfg(feature = "esp32s31")]
+mod reset;
+pub mod watchdog;
+
+#[cfg(feature = "esp32s31")]
+pub use reset::reset_system;
 
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use cache::maintenance::{PsramCacheWritebackError, writeback_psram_for_dma_read};

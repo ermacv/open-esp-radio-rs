@@ -25,6 +25,7 @@ fn complete_delay(
 }
 
 fn complete_failure_cleanup(transition: &mut PhyRegisterTransition) {
+    assert!(!transition.failure_cleanup_completed());
     complete_mmio(
         transition,
         PhyRegisterMmioAction::SetCalibrationClock { enabled: false },
@@ -52,6 +53,7 @@ fn complete_failure_cleanup(transition: &mut PhyRegisterTransition) {
         },
         1,
     );
+    assert!(!transition.failure_cleanup_completed());
     complete_mmio(
         transition,
         PhyRegisterMmioAction::ConfigureForceTxRx {
@@ -59,6 +61,7 @@ fn complete_failure_cleanup(transition: &mut PhyRegisterTransition) {
             phase: 1,
         },
     );
+    assert!(!transition.failure_cleanup_completed());
     complete_delay(
         transition,
         PhyRegisterDelayPhase::ForceTxRx {
@@ -89,6 +92,7 @@ fn production_config_contains_only_the_qualified_tx_power_policy() {
 #[test]
 fn state_owner_cannot_escape_before_a_terminal_parent_outcome() {
     let transition = PhyRegisterTransition::with_production_config();
+    assert!(!transition.failure_cleanup_completed());
     let transition = match transition.into_model_parts() {
         Ok(_) => panic!("an active cold initializer must retain its unique state owner"),
         Err(transition) => transition,
@@ -545,6 +549,7 @@ fn stuck_i2c_reset_fails_only_after_bounded_async_samples_and_cleans_up() {
         Ok(_) => panic!("a failed registration cannot yield completed model parts"),
         Err(transition) => transition,
     };
+    assert!(transition.failure_cleanup_completed());
     let (state, retry_cache) = match transition.into_failed_parts() {
         Ok(parts) => parts,
         Err(_) => panic!("terminal failure must release its ordinary state owner"),
@@ -640,6 +645,7 @@ fn success_tail_marks_owned_state_before_releasing_radio() {
             .unwrap()
             .matches(CALIBRATION_IDENTITY)
     );
+    assert!(!transition.failure_cleanup_completed());
     let transition = match transition.into_failed_parts() {
         Ok(_) => panic!("a successful cold initializer is not a terminal failure"),
         Err(transition) => transition,
@@ -826,7 +832,9 @@ fn final_i2c_failure_returns_only_the_original_retry_cache() {
         .unwrap();
     assert!(!transition.calibration_cache_ready);
     assert!(transition.calibration_cache().is_none());
+    assert!(!transition.failure_cleanup_completed());
     complete_failure_cleanup(&mut transition);
+    assert!(transition.failure_cleanup_completed());
     assert_eq!(
         transition.step_local().unwrap(),
         PhyRegisterLocalStep::Failed(PhyRegisterFailure::FinalI2cDeadlineExceeded)

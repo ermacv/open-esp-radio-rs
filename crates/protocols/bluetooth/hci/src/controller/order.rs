@@ -1335,6 +1335,16 @@ where
                     ready.begin_next_response(response),
                 )
             }
+            LeControllerCommandClassification::Random(command) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(self.dispatch_random_command(command)),
+                )
+            }
+            LeControllerCommandClassification::MalformedRandom(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::MalformedDtm(response) => {
                 LeControllerIdleClassifiedCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
@@ -1492,6 +1502,16 @@ where
                     )
                 }
                 LeControllerCommandClassification::MalformedBootstrap(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::Random(command) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(self.dispatch_random_command(command)),
+                    )
+                }
+                LeControllerCommandClassification::MalformedRandom(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
                         ready.begin_next_response(response),
                     )
@@ -1676,6 +1696,12 @@ where
             LeControllerCommandClassification::MalformedBootstrap(response) => {
                 pending(ready.begin_next_response(response))
             }
+            LeControllerCommandClassification::Random(command) => {
+                pending(ready.begin_next_response(self.dispatch_random_command(command)))
+            }
+            LeControllerCommandClassification::MalformedRandom(response) => {
+                pending(ready.begin_next_response(response))
+            }
             LeControllerCommandClassification::Dtm(command) => {
                 let response = match command.into_idle_session_disposition() {
                     LeDtmIdleSessionDisposition::CompleteNoTest(response) => response,
@@ -1797,6 +1823,16 @@ where
                 )
             }
             LeControllerCommandClassification::MalformedBootstrap(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::Random(command) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(self.dispatch_random_command(command)),
+                )
+            }
+            LeControllerCommandClassification::MalformedRandom(response) => {
                 LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 )
@@ -1947,6 +1983,16 @@ where
                 )
             }
             LeControllerCommandClassification::MalformedBootstrap(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::Random(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(self.dispatch_random_command(command)),
+                )
+            }
+            LeControllerCommandClassification::MalformedRandom(response) => {
                 LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 )

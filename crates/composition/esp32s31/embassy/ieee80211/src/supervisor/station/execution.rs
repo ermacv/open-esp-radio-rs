@@ -42,6 +42,8 @@ pub(super) struct ConnectedDatapathTaskReturn {
 /// not implement `Sync`: both participants are spawned by the one Core0
 /// executor recorded before the physical supervisor starts.
 pub(crate) struct ConnectedDatapathMailbox {
+    // Configuration stays with the permanent worker, not every moved role union.
+    watchdog: &'static crate::WatchdogConfig,
     bound: Cell<bool>,
     pause: &'static super::pause::Storage,
     exchange: Exchange<ConnectedDatapathRunner, ConnectedDatapathTaskReturn>,
@@ -52,12 +54,14 @@ pub(crate) struct ConnectedDatapathMailbox {
 
 impl ConnectedDatapathMailbox {
     const fn new(
+        watchdog: &'static crate::WatchdogConfig,
         pause: &'static super::pause::Storage,
         #[cfg(feature = "connected-datapath-cycle-telemetry")] poll_observer: Option<
             crate::ConnectedDatapathPollObserver,
         >,
     ) -> Self {
         Self {
+            watchdog,
             bound: Cell::new(false),
             pause,
             exchange: Exchange::new(),
@@ -121,12 +125,14 @@ static CONNECTED_PAUSE_STORAGE: StaticCell<super::pause::Storage> = StaticCell::
 static CONNECTED_DATAPATH_MAILBOX: StaticCell<ConnectedDatapathMailbox> = StaticCell::new();
 
 pub(in crate::supervisor) fn initialize_connected_datapath_mailbox(
+    watchdog: &'static crate::WatchdogConfig,
     #[cfg(feature = "connected-datapath-cycle-telemetry")] poll_observer: Option<
         crate::ConnectedDatapathPollObserver,
     >,
 ) -> &'static ConnectedDatapathMailbox {
     CONNECTED_DATAPATH_MAILBOX.init_with(|| {
         ConnectedDatapathMailbox::new(
+            watchdog,
             CONNECTED_PAUSE_STORAGE.init_with(super::pause::Storage::new),
             #[cfg(feature = "connected-datapath-cycle-telemetry")]
             poll_observer,
@@ -194,7 +200,12 @@ pub(super) async fn wait_connected_datapath_completion(
     mailbox: &'static ConnectedDatapathMailbox,
     control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
     role: &super::pause::Role,
-) -> (Option<StationCommand>, super::PauseOperation, bool) {
+) -> (
+    Option<StationCommand>,
+    super::PauseOperation,
+    bool,
+    Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+) {
     use super::PauseOperation;
     match select3(
         mailbox.wait_completed(),
@@ -203,24 +214,26 @@ pub(super) async fn wait_connected_datapath_completion(
     )
     .await
     {
-        Either3::First(()) => (None, PauseOperation::Access, false),
+        Either3::First(()) => (None, PauseOperation::Access, false, None),
         Either3::Second(command) => {
             mailbox.request_stop();
             mailbox.wait_completed().await;
-            (Some(command), PauseOperation::Access, false)
+            (Some(command), PauseOperation::Access, false, None)
         }
         Either3::Third(request) => {
             let (operation, automatic) = match request {
                 Either::First(operation) => (operation, false),
                 Either::Second(operation) => (PauseOperation::Automatic(operation), true),
             };
+            // Include draining the active datapath, not just the PHY poll.
+            let protection = mailbox.watchdog.maintenance(None);
             mailbox.control.borrow().request_pause();
             match select(mailbox.wait_completed(), control.wait()).await {
-                Either::First(()) => (None, operation, automatic),
+                Either::First(()) => (None, operation, automatic, Some(protection)),
                 Either::Second(command) => {
                     mailbox.request_stop();
                     mailbox.wait_completed().await;
-                    (Some(command), operation, automatic)
+                    (Some(command), operation, automatic, Some(protection))
                 }
             }
         }
@@ -255,7 +268,7 @@ pub(super) async fn run(
     let mut requested_command = None;
     mailbox.start(runner);
     loop {
-        let (requested, operation, automatic) =
+        let (requested, operation, automatic, mut protection) =
             await_stack_boundary!(wait_connected_datapath_completion(
                 mailbox,
                 station_control,
@@ -300,10 +313,13 @@ pub(super) async fn run(
                             }
                         }
                         Err(failure) => {
+                            let stage = failure.stage();
+                            crate::maintenance_policy::enforce(failure, stage.shared_phy_failure());
+                            complete_protection(&mut protection);
                             pause_request::REQUESTS
                                 .automatic
-                                .report(super::TrackingStatus::Failed(failure.stage()));
-                            pause_request::REQUESTS.finish(Err(failure.stage()));
+                                .report(super::TrackingStatus::Failed(stage));
+                            pause_request::REQUESTS.finish(Err(stage));
                             return Err(failure);
                         }
                     }
@@ -320,8 +336,10 @@ pub(super) async fn run(
                     mailbox.request_stop();
                 }
                 mailbox.resume(runner);
+                complete_protection(&mut protection);
             }
             Ok(Exit::Stopped) => {
+                complete_protection(&mut protection);
                 return Ok((
                     interrupt_epoch,
                     Ok(DatapathRunnerExit::Stopped),
@@ -329,6 +347,7 @@ pub(super) async fn run(
                 ));
             }
             Ok(Exit::Role(reason)) => {
+                complete_protection(&mut protection);
                 return Ok((
                     interrupt_epoch,
                     Ok(DatapathRunnerExit::Role(reason)),
@@ -336,9 +355,18 @@ pub(super) async fn run(
                 ));
             }
             Err(error) => {
+                complete_protection(&mut protection);
                 return Ok((interrupt_epoch, Err(error), requested_command));
             }
         }
+    }
+}
+
+fn complete_protection(
+    protection: &mut Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+) {
+    if let Some(protection) = protection.take() {
+        crate::WatchdogConfig::complete(protection);
     }
 }
 

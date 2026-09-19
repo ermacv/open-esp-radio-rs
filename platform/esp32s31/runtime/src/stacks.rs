@@ -9,7 +9,16 @@
 //! `mret`. Nested traps remain on the same SRAM stack; only the outermost trap
 //! swaps back to PSRAM. Interrupt-side code must remain integer-only.
 
-use core::{arch::asm, mem::MaybeUninit, ptr};
+use core::{
+    arch::asm,
+    mem::MaybeUninit,
+    ptr,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+mod watermark;
+
+static IRQ_PAINTED: [AtomicBool; 2] = [const { AtomicBool::new(false) }; 2];
 
 use esp_hal::system::Stack;
 
@@ -57,7 +66,9 @@ unsafe extern "C" {
 /// # Safety
 ///
 /// Global interrupts must be disabled. The caller must execute on hart 0 or 1
-/// and must not enable interrupts until this function returns.
+/// in thread mode and must not enable interrupts until this function returns.
+/// The first installation must precede the hart's first IRQ admission.
+/// Reinstallation preserves the original paint.
 pub unsafe fn install_current_hart_interrupt_stack() {
     let hart: usize;
     unsafe { asm!("csrr {hart}, mhartid", hart = out(reg) hart, options(nomem, nostack)) };
@@ -67,6 +78,11 @@ pub unsafe fn install_current_hart_interrupt_stack() {
         _ => panic!("invalid hart for interrupt stack"),
     };
     let top = unsafe { bottom.add(IRQ_STACK_BYTES) } as usize;
+    if !IRQ_PAINTED[hart].load(Ordering::Acquire) {
+        // SAFETY: the caller owns this hart's inactive IRQ stack before admission.
+        unsafe { watermark::paint(bottom.cast(), IRQ_STACK_BYTES / 4) };
+        IRQ_PAINTED[hart].store(true, Ordering::Release);
+    }
     let table: *mut u32;
     unsafe {
         asm!(
@@ -92,6 +108,45 @@ pub unsafe fn install_current_hart_interrupt_stack() {
             options(nostack),
         )
     };
+}
+
+/// Observed unused prefix of the current hart's dedicated IRQ stack.
+///
+/// Call from thread mode only. The function briefly masks local interrupts
+/// while scanning SRAM; it never reads another hart's stack. It panics before
+/// scanning if the stack is uninitialized or the caller is on that IRQ stack.
+/// Painting measures observed writes, not a worst-case call-chain bound.
+pub fn current_hart_interrupt_stack_free_bytes() -> usize {
+    let hart: usize;
+    let sp: usize;
+    unsafe {
+        asm!("csrr {hart}, mhartid", "mv {sp}, sp", hart = out(reg) hart, sp = out(reg) sp, options(nomem, nostack))
+    };
+    let bottom = match hart {
+        0 => ptr::addr_of!(__open_radio_cpu0_irq_stack).cast::<u32>(),
+        1 => ptr::addr_of!(__open_radio_cpu1_irq_stack).cast::<u32>(),
+        _ => panic!("invalid hart for interrupt stack"),
+    };
+    assert!(
+        IRQ_PAINTED[hart].load(Ordering::Acquire),
+        "IRQ stack is not painted"
+    );
+    assert!(
+        !(bottom as usize..=bottom as usize + IRQ_STACK_BYTES).contains(&sp),
+        "IRQ stack sampling requires thread mode"
+    );
+    let previous: usize;
+    // MIE is hart-local. Do not acquire a cross-core lock or scan a foreign stack.
+    unsafe {
+        asm!("csrrci {previous}, mstatus, 8", previous = out(reg) previous, options(nostack))
+    };
+    // SAFETY: own painted stack, thread mode, local interrupts masked. No other
+    // hart uses this allocation; the scanner has a finite capacity and cannot panic.
+    let free = unsafe { watermark::free_words(bottom, IRQ_STACK_BYTES / 4) } * 4;
+    if previous & 8 != 0 {
+        unsafe { asm!("csrsi mstatus, 8", options(nostack)) };
+    }
+    free
 }
 
 #[cfg(feature = "multicore")]

@@ -32,6 +32,8 @@ pub enum ControllerPhyMaintenanceError<E> {
 )]
 enum PhyStage {
     InSlot,
+    /// PHY is settled, but reactivation/publication did not complete.
+    Restoration,
     Settled {
         _owner: BlePhyRetainedOwners,
     },
@@ -69,6 +71,21 @@ impl<S: InterruptOwnerRestartStorage, const SC: usize, const MT: usize, A>
 {
     pub const fn error(&self) -> &ControllerPhyMaintenanceError<S::RestartError> {
         &self.error
+    }
+
+    /// Distinguish preflight rejection from failed execution/restoration using
+    /// the retained owner, not the potentially identical public error code.
+    pub const fn failure_stage(
+        &self,
+    ) -> oer_esp32s31_phy::tracking::fail_stop::MaintenanceFailureStage {
+        use oer_esp32s31_phy::tracking::fail_stop::MaintenanceFailureStage;
+        match &self._phy {
+            PhyStage::InSlot | PhyStage::Evaluation { .. } => MaintenanceFailureStage::Admission,
+            PhyStage::Tracking { .. } => MaintenanceFailureStage::Execution,
+            PhyStage::Settled { .. } | PhyStage::Restoration => {
+                MaintenanceFailureStage::Restoration
+            }
+        }
     }
 }
 
@@ -293,7 +310,7 @@ pub(crate) async fn maintain<
         Err(pending) => {
             let result = {
                 let mut registers = authority.task_mut().runtime.task.shared_phy_hal();
-                let mut tracking = core::pin::pin!(async {
+                let tracking = async {
                     match tracking_deadline {
                             Some(deadline) => {
                                 oer_esp32s31_phy::run_target_bluetooth_phy_param_tracking_until::<
@@ -318,7 +335,10 @@ pub(crate) async fn maintain<
                             )
                             .await,
                         }
-                });
+                };
+                #[cfg(feature = "lifecycle-fault-injection")]
+                let tracking = oer_esp32s31_phy::fault_injection::drive(tracking);
+                let mut tracking = core::pin::pin!(tracking);
                 core::future::poll_fn(|cx| poll_tracking(tracking.as_mut(), cx)).await
             };
             match result {
@@ -342,6 +362,11 @@ pub(crate) async fn maintain<
         }
     };
     let phy = memory.with_client(phy);
+    #[cfg(feature = "lifecycle-fault-injection")]
+    oer_esp32s31_phy::fault_injection::checkpoint(
+        oer_esp32s31_phy::fault_injection::Boundary::Restoration,
+    )
+    .await;
     if let Some(deadline) = tracking_deadline
         && let Err(error) = deadline.check(D::now_micros())
     {
@@ -403,7 +428,7 @@ fn finish<
                 _task: task,
                 _timer: timer,
                 _interrupt: interrupt,
-                _phy: PhyStage::InSlot,
+                _phy: PhyStage::Restoration,
             });
         }
     };
@@ -420,7 +445,7 @@ fn finish<
                 storage,
             ),
             _interrupt: interrupt.deactivate(),
-            _phy: PhyStage::InSlot,
+            _phy: PhyStage::Restoration,
         });
     }
     Ok(ControllerPhyMaintained {

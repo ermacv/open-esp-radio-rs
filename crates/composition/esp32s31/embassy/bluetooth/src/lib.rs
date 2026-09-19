@@ -37,6 +37,25 @@
 //! local active-DTM/all-RF quiescence is not proven. It never pauses DTM or
 //! synthesizes Host Test End. Normal idle/ACL maintenance borrows the matching
 //! platform and restores the same HCI, timer and IRQ owners.
+//! Terminal maintenance errors, including a missed peripheral restoration
+//! deadline, escalate immediately rather than waiting for the next PHY due
+//! time. The composition retains the failed frontier and requests system reset
+//! through the SoC adapter; radio drivers do not own a watchdog or reset
+//! peripheral. IRQ cleanup and Host acknowledgement do not gate that request.
+//! Other terminal faults retain the quarantine/hard-deadline behavior above.
+//! In addition, cold start requires a stable caller-owned [`WatchdogConfig`]
+//! with explicit startup, maintenance and shutdown budgets. The board owns the
+//! independent SoC TIMG1 service. One lease covers each admitted physical
+//! transaction through restoration; peripheral maintenance retains it until
+//! guarded RUN or proven idle, not merely PHY return. Cancellation does not
+//! disarm it. No default or qualified reset-to-RF-off latency is supplied.
+//! Cold start arms before clock/PHY initialization; powered restart arms before
+//! its physical restart and completes after timer/IRQ rebinding. Physical
+//! release arms before RF close and completes only at cold ownership or a
+//! retained, proven-safe rejected frontier. Manual maintenance starts from
+//! synchronously retired idle timer/IRQ owners, before extracting/executing PHY;
+//! automatic maintenance arms before disabling their routes. Protocol admission
+//! and waiting for a future legal window do not arm a physical lease.
 //! HCI retirement extracts their actual owners; rejection preserves the runnable
 //! actor. Cold start also returns `platform` beside `system`: retain it until
 //! `BluetoothHardwareRetired::try_retire_interrupts` removes the actual shared
@@ -49,6 +68,14 @@
 //! suppressed through `release_physical`: last-client RF close, temperature
 //! power-down, Bluetooth reset and checked clock restoration return
 //! `BluetoothHardwareColdReleased`. Mismatched joins return both owners.
+//! RF-close ambiguity and restart PHY execution without completed cleanup
+//! request the same system reset as terminal maintenance. Pre-close rejection,
+//! completed registration cleanup, already-closed hardware reunion and non-PHY
+//! restart failures instead retain their non-runnable frontiers. No generic
+//! error code substitutes for the retained hardware stage in this decision.
+//! Initial cold start applies the same rule to registration and first tracking.
+//! Manual idle maintenance distinguishes admission from execution/restoration;
+//! only the latter request reset, without dropping PHY, IRQ or HCI owners first.
 //! Role retirement requires all five allocation owners, including advertising
 //! generations and the peripheral RX topology, before closing HCI. Extracted
 //! owners remain private; stable software storage is still borrowed. A
@@ -75,6 +102,12 @@
 
 #[cfg(target_arch = "riscv32")]
 mod cold_start;
+#[cfg(target_arch = "riscv32")]
+pub mod entropy;
+#[cfg(target_arch = "riscv32")]
+mod watchdog;
+#[cfg(target_arch = "riscv32")]
+pub use watchdog::WatchdogConfig;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod interrupt_fault;
 #[cfg(any(test, target_arch = "riscv32"))]

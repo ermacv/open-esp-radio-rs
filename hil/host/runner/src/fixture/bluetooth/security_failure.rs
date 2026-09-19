@@ -15,12 +15,14 @@ mod peer {
             le::LeEnableEncryption,
             link_control::{Disconnect, ReadRemoteVersionInformation},
         },
+        data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
         event::Event,
         param::{ConnHandle, EncryptionEnabledLevel, Status},
     };
     use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
     use open_esp_radio_hil_protocol::{
-        BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+        BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
+        BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
     };
     use std::time::{Duration, Instant};
 
@@ -28,6 +30,8 @@ mod peer {
     enum Action {
         Wait,
         ReadVersion,
+        Refresh,
+        SendData,
         Disconnect,
         Complete,
     }
@@ -54,6 +58,24 @@ mod peer {
             });
             match observe(&packet, handle, report)? {
                 Action::Wait => {}
+                Action::Refresh => {
+                    user.send_command(&LeEnableEncryption::new(
+                        handle,
+                        BLUETOOTH_REFRESH_RAND,
+                        BLUETOOTH_REFRESH_EDIV,
+                        BLUETOOTH_REFRESH_LTK,
+                    ))?;
+                }
+                Action::SendData => {
+                    let payload = open_esp_radio_hil_protocol::bluetooth_peripheral_acl_payload();
+                    user.send_acl(&AclPacket::new(
+                        handle,
+                        AclPacketBoundary::FirstNonFlushable,
+                        AclBroadcastFlag::PointToPoint,
+                        &payload,
+                    ))?;
+                    report.acl_sent = true;
+                }
                 Action::ReadVersion => {
                     user.send_command(&ReadRemoteVersionInformation::new(handle))?;
                 }
@@ -84,10 +106,16 @@ mod peer {
         }
         match event {
             Event::CommandStatus(s) if s.cmd_opcode == LeEnableEncryption::OPCODE => {
-                if s.status != Status::SUCCESS || report.command_status {
+                let admitted =
+                    if report.failure == Failure::MissingRefreshKey && !report.initial_encrypted {
+                        &mut report.initial_command_status
+                    } else {
+                        &mut report.command_status
+                    };
+                if s.status != Status::SUCCESS || *admitted {
                     return Err("failed or duplicate encryption command admission".into());
                 }
-                report.command_status = true;
+                *admitted = true;
             }
             Event::CommandStatus(s) if s.cmd_opcode == Disconnect::OPCODE => {
                 if !report.disconnect_requested
@@ -123,9 +151,40 @@ mod peer {
                 return Ok(Action::Disconnect);
             }
             Event::EncryptionChangeV1(e) => {
+                if report.failure == Failure::ActiveDataMic {
+                    if !report.command_status
+                        || report.initial_encrypted
+                        || report.acl_sent
+                        || e.handle != handle
+                        || e.status != Status::SUCCESS
+                        || e.enabled != EncryptionEnabledLevel::OnE0OrAesCcm
+                    {
+                        return Err(
+                            "active MIC injection requires successful initial encryption".into(),
+                        );
+                    }
+                    report.initial_encrypted = true;
+                    return Ok(Action::SendData);
+                }
+                if report.failure == Failure::MissingRefreshKey {
+                    if !report.initial_command_status
+                        || report.initial_encrypted
+                        || report.command_status
+                        || e.handle != handle
+                        || e.status != Status::SUCCESS
+                        || e.enabled != EncryptionEnabledLevel::OnE0OrAesCcm
+                    {
+                        return Err(
+                            "refresh failure requires exactly one successful initial encryption"
+                                .into(),
+                        );
+                    }
+                    report.initial_encrypted = true;
+                    return Ok(Action::Refresh);
+                }
                 let expected = match report.failure {
-                    Failure::MissingKey => 6,
-                    Failure::WrongKey => 8,
+                    Failure::MissingKey | Failure::MissingRefreshKey => 6,
+                    Failure::WrongKey | Failure::ActiveDataMic => 8,
                 };
                 if !report.command_status
                     || e.handle != handle
@@ -144,13 +203,23 @@ mod peer {
                     });
                 }
             }
-            Event::EncryptionKeyRefreshComplete(_) => {
-                return Err("unexpected refresh in initial key failure".into());
+            Event::EncryptionKeyRefreshComplete(e) => {
+                if report.failure != Failure::MissingRefreshKey
+                    || !report.initial_encrypted
+                    || !report.command_status
+                    || e.handle != handle
+                    || e.status != Status::new(6)
+                    || report.encryption_failure.is_some()
+                {
+                    return Err("unexpected refresh result for injected key failure".into());
+                }
+                report.encryption_failure = Some(6);
             }
             Event::DisconnectionComplete(e) => {
                 let expected = match report.failure {
                     Failure::MissingKey => 0x16,
-                    Failure::WrongKey => 8,
+                    Failure::WrongKey | Failure::ActiveDataMic => 8,
+                    Failure::MissingRefreshKey => 6,
                 };
                 if !report.command_status
                     || e.handle != handle
@@ -159,6 +228,8 @@ mod peer {
                     || (report.failure == Failure::MissingKey
                         && (!report.disconnect_command_status
                             || report.encryption_failure != Some(6)))
+                    || (report.failure == Failure::ActiveDataMic
+                        && (!report.initial_encrypted || !report.acl_sent))
                 {
                     return Err("unexpected peer disconnect for key failure".into());
                 }
@@ -183,6 +254,26 @@ mod peer {
         const STATUS: [u8; 7] = [4, 15, 4, 0, 1, 0x19, 0x20];
         const VERSION_STATUS: [u8; 7] = [4, 15, 4, 0, 1, 0x1d, 0x04];
         const VERSION: [u8; 11] = [4, 12, 8, 0, 1, 0, 0x0d, 0xff, 0xff, 1, 0];
+
+        #[test]
+        fn active_mic_requires_encryption_then_data_and_no_application_delivery() {
+            let h = ConnHandle::new(1);
+            let mut r = report(Failure::ActiveDataMic);
+            let disconnect = [4, 5, 4, 0, 1, 0, 8];
+            assert!(observe(&disconnect, h, &mut r).is_err());
+            observe(&STATUS, h, &mut r).unwrap();
+            assert!(observe(&disconnect, h, &mut r).is_err());
+            assert_eq!(
+                observe(&[4, 8, 4, 0, 1, 0, 1], h, &mut r).unwrap(),
+                Action::SendData
+            );
+            assert!(observe(&disconnect, h, &mut r).is_err());
+            r.acl_sent = true;
+            assert!(observe(&[2, 1, 0, 0, 0], h, &mut r).is_err());
+            assert!(observe(&[4, 8, 4, 0, 1, 0, 1], h, &mut r).is_err());
+            assert_eq!(observe(&disconnect, h, &mut r).unwrap(), Action::Complete);
+            assert!(!r.disconnect_requested);
+        }
 
         fn rejected_with_version_probe() -> Report {
             let mut r = report(Failure::MissingKey);
@@ -234,6 +325,54 @@ mod peer {
             let mut r = rejected_with_version_probe();
             assert!(observe(&[4, 5, 4, 0, 1, 0, 0x16], h, &mut r).is_err());
         }
+        fn awaiting_refresh_failure() -> Report {
+            let h = ConnHandle::new(1);
+            let mut r = report(Failure::MissingRefreshKey);
+            observe(&STATUS, h, &mut r).unwrap();
+            assert!(!r.command_status);
+            assert!(observe(&STATUS, h, &mut r).is_err());
+            assert_eq!(
+                observe(&[4, 8, 4, 0, 1, 0, 1], h, &mut r).unwrap(),
+                Action::Refresh
+            );
+            observe(&STATUS, h, &mut r).unwrap();
+            r
+        }
+
+        #[test]
+        fn missing_refresh_key_requires_initial_encryption_and_remote_termination() {
+            let h = ConnHandle::new(1);
+            let mut early = report(Failure::MissingRefreshKey);
+            assert!(observe(&[4, 8, 4, 0, 1, 0, 1], h, &mut early).is_err());
+            observe(&STATUS, h, &mut early).unwrap();
+            assert!(observe(&[4, 5, 4, 0, 1, 0, 6], h, &mut early).is_err());
+            for notification in [false, true] {
+                let mut r = awaiting_refresh_failure();
+                if notification {
+                    assert_eq!(
+                        observe(&[4, 0x30, 3, 6, 1, 0], h, &mut r).unwrap(),
+                        Action::Wait
+                    );
+                    assert!(observe(&[4, 0x30, 3, 6, 1, 0], h, &mut r).is_err());
+                }
+                assert_eq!(
+                    observe(&[4, 5, 4, 0, 1, 0, 6], h, &mut r).unwrap(),
+                    Action::Complete
+                );
+                assert!(!r.disconnect_requested);
+            }
+            for packet in [
+                vec![4, 0x30, 3, 0, 1, 0],    // refresh must not succeed
+                vec![4, 0x30, 3, 6, 2, 0],    // foreign handle
+                vec![4, 8, 4, 0, 1, 0, 1],    // duplicate initial success
+                vec![4, 5, 4, 0, 1, 0, 8],    // timeout cannot replace termination
+                vec![4, 5, 4, 0, 1, 0, 0x16], // no local cleanup command
+                vec![2, 1, 0, 0, 0],          // no application delivery
+            ] {
+                assert!(observe(&packet, h, &mut awaiting_refresh_failure()).is_err());
+            }
+        }
+
         #[test]
         fn missing_key_requires_rejection_before_explicit_disconnect() {
             let h = ConnHandle::new(1);

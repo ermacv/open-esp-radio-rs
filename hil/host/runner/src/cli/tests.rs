@@ -217,7 +217,8 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         cli.command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                adapter: crate::fixture::bluetooth::model::Adapter(2)
+                adapter: crate::fixture::bluetooth::model::Adapter(2),
+                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V2,
             }
         }
     ));
@@ -235,6 +236,34 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         CliCommand::Fixture { command: FixtureCommand::Check { scenario } }
             if scenario == "station-udp-tx-he20"
     ));
+}
+
+#[test]
+fn bluetooth_dtm_v1_requires_explicit_selection() {
+    let args = ["cargo-hil", "fixture", "bluetooth-check"];
+    assert!(matches!(
+        Cli::try_parse_from(args).unwrap().command,
+        CliCommand::Fixture {
+            command: FixtureCommand::BluetoothCheck {
+                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V2,
+                ..
+            }
+        }
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(args.into_iter().chain(["--dtm-version", "v1"]))
+            .unwrap()
+            .command,
+        CliCommand::Fixture {
+            command: FixtureCommand::BluetoothCheck {
+                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V1,
+                ..
+            }
+        }
+    ));
+    for version in ["auto", "v0", "v3"] {
+        assert!(Cli::try_parse_from(args.into_iter().chain(["--dtm-version", version])).is_err());
+    }
 }
 
 #[test]

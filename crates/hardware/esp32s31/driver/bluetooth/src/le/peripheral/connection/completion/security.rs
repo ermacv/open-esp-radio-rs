@@ -61,6 +61,8 @@ fn decode_inner(
             encryption.receive_encrypted_start_response(header, &mut decoded[2..pdu.len()])?;
         }
         Mode::Encrypted => {
+            #[cfg(feature = "rx-fault-injection")]
+            super::super::super::rx_fault::inject_active_data(header, &mut decoded[2..pdu.len()]);
             match encryption.receive_active_packet(header, &mut decoded[2..pdu.len()])? {
                 Received::PauseRequest => {}
                 Received::Plaintext { length } => {

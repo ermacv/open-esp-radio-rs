@@ -481,6 +481,13 @@ impl PhyRegisterTransition {
         Ok((state, calibration_cache))
     }
 
+    /// Whether failure cleanup reached its terminal phase with the state owner
+    /// intact. This is a model fact, not independent proof of target MMIO; target
+    /// runners may expose it only for their own executed transition.
+    pub fn failure_cleanup_completed(&self) -> bool {
+        matches!(self.phase.as_ref(), Some(Phase::Failed(_))) && self.state.is_some()
+    }
+
     /// Recover the ordinary PHY owner and retry cache after terminal failure.
     ///
     /// Success and in-progress transitions remain owned by the returned
@@ -500,7 +507,7 @@ impl PhyRegisterTransition {
         ),
         Self,
     > {
-        if !matches!(self.phase.as_ref(), Some(Phase::Failed(_))) {
+        if !self.failure_cleanup_completed() {
             return Err(self);
         }
         let Some(state) = self.state.take() else {

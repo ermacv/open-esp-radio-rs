@@ -15,9 +15,14 @@ const MEMORY_BENCHMARK_PAYLOAD_CAPACITY: u16 = 4096;
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
+            bluetooth_gatt: false,
+            bluetooth_secure_gatt: false,
             bluetooth_dtm: false,
             bluetooth_peripheral: false,
             bluetooth_phy_maintenance: false,
+            bluetooth_watchdog_reset: false,
+            system_watchdog: false,
+            phy_fault_injection: cfg!(feature = "phy-fault-injection"),
             udp: !cfg!(feature = "memory-benchmark"),
             tcp: !cfg!(feature = "memory-benchmark"),
             rx: !cfg!(feature = "memory-benchmark"),

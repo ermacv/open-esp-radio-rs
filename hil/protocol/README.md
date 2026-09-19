@@ -1,7 +1,73 @@
-# HIL protocol v142
+# HIL protocol
 
-Host and firmware must both use version 142. Other versions are rejected
-before interpreting their command and evidence layouts.
+The `bluetooth_gatt` capability identifies the separate plaintext Trouble
+application image. `QueryBluetoothGatt` returns `BluetoothGattEvidence` with
+the Controller address, application connection/read/write observations and
+the CPU0 stack measurement. All observations belong to the envelope's boot;
+the query neither resets the Controller nor submits ATT/HCI work. Counters are
+not independent proof of ATT delivery. The Linux peer validates actual replies
+and reconnection. This capability does not imply pairing or secure GATT.
+
+The separate `bluetooth_secure_gatt` capability identifies the actual secure
+application with one caller-owned RAM bond slot. `QueryBluetoothSecureGatt`
+reports traffic counters, the current unanswered Numeric Comparison challenge,
+independent confirmation/bond/reconnect/notification counters and application
+failure. It does not export keys. `ConfirmBluetoothGatt` requires the exact boot,
+session zero, challenge ID and six-digit number. Stale/duplicate replies are
+rejected. `BluetoothGattDecisionRecorded` acknowledges a queued UI decision,
+not successful pairing or protected access. Cancellation of the application
+prompt revokes even a queued answer. These commands cannot submit HCI or ATT
+traffic, clear bonds or force a security transition.
+
+`RestartBluetoothGatt { epoch }` accepts only the currently running secure
+application epoch, on session zero and the discovered boot. Duplicate, stale
+and stopped-application requests are rejected. Its initial snapshot acknowledges
+the request, not completed retirement. Completion requires a new `epoch`,
+`restarting = false`, a physical `cold_releases` increment and `old_hci_closed`:
+both command and read operations on the retired handle must reject access.
+The target rebuilds Host/Controller without resetting the SoC and retains only
+the caller's RAM bond store and comparison history, not connections or ATT state.
+Independent encrypted peer traffic without another pairing establishes key reuse;
+these lifecycle counters alone do not.
+
+Secure and plaintext capabilities are mutually exclusive. Both snapshots carry
+common traffic observations, which alone never establish security. Notification
+counters mean Host queue acceptance; the independent peer must receive the value.
+
+Host and firmware must use the same wire version, defined by
+[`PROTOCOL_VERSION`](src/message.rs). Other versions are rejected before
+interpreting their command and evidence layouts. Capabilities describe which
+operations the selected image implements; they do not replace wire-version
+validation.
+
+`phy_fault_injection` advertises destructive checkpoints in real PHY maintenance.
+`PhyFault(Arm(mode))` is one-shot per boot. In Bluetooth it requests idle forced
+calibration after a peripheral cycle; Wi-Fi uses the normal connected
+`PauseStation` calibration command after arming. `Status` reports `Reached` only
+after the selected physical frontier. `Release` is accepted only then, and its
+acknowledgement is serialized before injecting the fault. There is no disarm or
+deadline renewal command. `Cancelled` means the actual child future was dropped,
+not merely that the Host stopped waiting. A fresh boot must report `Idle` and
+MWDT1 reset; RF-off timing is not represented by that observation.
+
+`BluetoothDtmEvidence::reset_reason` classifies the current platform boot as
+software reset, MWDT1 reset or another cause. HCI Reset does not change this
+value. The `bluetooth_watchdog_reset` capability identifies the dedicated
+DTM fault-injection image; it is mutually exclusive with automatic
+`bluetooth_phy_maintenance`. Each reset scenario requires its exact mechanism.
+Archived captures retain their original wire schema and evidence layout.
+
+`GetBootStatus` returns `BootEvidence` for the boot identified by the envelope.
+`ResetReason` is a platform value shared by all images; querying it does not
+issue HCI Reset or change radio state.
+
+`SystemWatchdogTest` requires the independent `system_watchdog` capability.
+The dedicated radio-free image's one-second engineering budget exercises completion, a synchronous
+poll that never returns, cancellation, missing completion and late restoration
+of the SoC deadline service. The correlated event acknowledges the selected
+mode; only `Complete` acknowledges disarming. Other modes must produce a new
+boot and MWDT1 reset reason. This does not inject a PHY failure or measure RF
+cessation. The separate DTM reset scenario retains its independent peer gates.
 
 `phy_rx_hot_sram` identifies the paired placement experiment. It requires the
 RX-delivery diagnostic image and moves the direct RX-gain transaction into
@@ -378,8 +444,8 @@ ACL-backpressure Hosts. `BluetoothEncryptionEvidence` reports key requests,
 successful HCI key replies (including negative and deliberately wrong-key replies),
 Encryption Change, Key Refresh Complete events and faults. It never carries
 key bytes. The public `BLUETOOTH_TEST_*` and `BLUETOOTH_REFRESH_*` constants identify fixture material,
-not a pairing or bond-storage policy. Evidence uses wire protocol 150; runner and
-firmware must match. The body bound is 528 bytes, including the largest combined
+not a pairing or bond-storage policy. Runner and firmware must match
+[`PROTOCOL_VERSION`](src/message.rs). The body bound is 528 bytes, including the largest combined
 peripheral evidence record and worst-case integer encoding.
 
 The diagnostic Host accepts the initial identity once per connection, then the
@@ -389,9 +455,41 @@ not another initial Encryption Change. Disconnect clears this phase before
 reconnection; counters remain cumulative for the current boot.
 
 The optional `failure` field selects `missing-key` or `wrong-key` for the first
-initial LTK request only. The former uses the standard HCI negative reply; the
-latter replies with a fixed public key differing by one bit. After disconnect,
+initial LTK request, or `missing-refresh-key` for the first replacement LTK
+request after successful initial encryption. Missing keys use the standard HCI
+negative reply; `wrong-key` supplies a fixed public key differing by one bit.
+The refresh injection survives the initial valid reply and requires termination
+with PIN or Key Missing, without successful Key Refresh Complete. After disconnect,
 subsequent connections receive the correct key. The Controller and its RF/CCM
 path are unchanged. Expected injections have separate counters; malformed
 requests, failed HCI replies, unexpected encryption success and application
 data before encryption still invalidate the scenario.
+
+`active-data-mic` instead arms the diagnostic `rx-fault-injection` feature.
+The initial key and encryption handshake remain valid. Exactly one active
+encrypted data PDU has the final MIC bit flipped in its copied RX input before
+the production authenticator; control, plaintext and empty packets do not
+consume the request. `mic_injections` records actual corruption and
+`mic_injection_armed` identifies a pending request. Disconnect disarms it;
+counters remain cumulative so recovery must prove that no further injection
+occurred. The stimulus is after RF reception, not a malformed over-air packet.
+
+## Stack measurements
+
+`StackUsage` carries task watermarks and optional dedicated IRQ watermarks for
+both running Wi-Fi harts. CPU1 samples its own stacks through a bounded
+request/response task; CPU0 never scans its live stack storage. A missing
+response fails rather than publishing a cached measurement. Images with shared
+task/IRQ stacks report `None` for both dedicated IRQ fields.
+
+`QueryInterruptStackUsage` provides a separate short response without enlarging
+Bluetooth peripheral snapshots or the wire-frame limit. Bluetooth reports its
+CPU0 dedicated IRQ watermark and `None` for its inactive CPU1. The runner checks
+this response after peripheral commands, including physical retirement. Wi-Fi
+accepts this query under the same idle-session conditions as `QueryStackUsage`.
+
+IRQ sampling runs in thread mode with local interrupts masked during the SRAM
+scan. It therefore adds a short interruption to RF servicing; these diagnostic
+runs are not a timing baseline with instrumentation removed. The image's stack
+policy supplies the nonzero required reserve. These are observed boot-lifetime
+watermarks, not worst-case bounds or evidence of every possible nested IRQ.

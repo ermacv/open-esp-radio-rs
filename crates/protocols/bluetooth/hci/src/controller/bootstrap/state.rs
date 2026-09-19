@@ -101,6 +101,7 @@ impl LeControllerBootstrap {
     pub(crate) fn dispatch_owned(
         &mut self,
         command: OwnedBootstrapCommand,
+        has_random_source: bool,
     ) -> BootstrapCommandCompleteEvent {
         let opcode = command.opcode();
         if !command.is_reset() && self.phase == BootstrapPhase::AwaitingReset {
@@ -140,7 +141,11 @@ impl LeControllerBootstrap {
                 command_success(opcode, self.config.public_address.hci_wire_address().raw())
             }
             OwnedBootstrapCommand::ReadLocalSupportedCommands => {
-                command_success(opcode, &super::le_controller_supported_commands())
+                let mut commands = super::le_controller_supported_commands();
+                if has_random_source {
+                    commands[27] |= 1 << 7; // LE Rand.
+                }
+                command_success(opcode, &commands)
             }
             OwnedBootstrapCommand::LeSetEventMask(mask) => {
                 self.le_event_mask = mask;
@@ -179,11 +184,12 @@ impl LeControllerBootstrap {
     pub(crate) fn dispatch_owned_while_radio_active(
         &mut self,
         command: OwnedBootstrapCommand,
+        has_random_source: bool,
     ) -> BootstrapCommandCompleteEvent {
         if matches!(command, OwnedBootstrapCommand::LeSetRandomAddress(_)) {
             return command_error(command.opcode(), HciError::CMD_DISALLOWED);
         }
-        self.dispatch_owned(command)
+        self.dispatch_owned(command, has_random_source)
     }
 
     fn reset_epoch(&mut self) {

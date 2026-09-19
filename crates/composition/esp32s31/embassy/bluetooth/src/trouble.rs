@@ -13,7 +13,7 @@ use trouble_host::{Controller, HostResources};
 /// [`hardware`](Self::hardware) owner supplied by the platform composition.
 #[must_use = "the Trouble Host stack and hardware runner must both be retained and polled"]
 pub struct BluetoothTroubleSystem<'resources, C, P: PacketPool, H> {
-    /// Released Trouble Host stack over the direct typed HCI boundary.
+    /// Pinned Trouble Host stack over the direct typed HCI boundary.
     pub stack: Stack<'resources, C, P>,
     /// Executor-side owner for the exact Controller epoch used by `stack`.
     pub hardware: H,

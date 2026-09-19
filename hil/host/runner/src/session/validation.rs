@@ -275,7 +275,16 @@ fn validate_tx_timing(tx: TxRadioEvidence, timing: TxAggregateTimingEvidence) ->
 }
 
 pub(super) fn validate_stack_usage(usage: StackUsage) -> Result<()> {
-    for (name, watermark) in [("cpu0", usage.cpu0), ("cpu1", usage.cpu1)] {
+    if usage.cpu0_irq.is_some() != usage.cpu1_irq.is_some() {
+        return Err("two-hart stack evidence omitted one dedicated IRQ stack".into());
+    }
+    for (name, watermark) in [
+        ("cpu0", Some(usage.cpu0)),
+        ("cpu1", Some(usage.cpu1)),
+        ("cpu0-irq", usage.cpu0_irq),
+        ("cpu1-irq", usage.cpu1_irq),
+    ] {
+        let Some(watermark) = watermark else { continue };
         if watermark.capacity_bytes == 0
             || watermark.free_bytes > watermark.capacity_bytes
             || watermark.used_bytes > watermark.capacity_bytes
@@ -295,6 +304,19 @@ pub(super) fn validate_stack_usage(usage: StackUsage) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub(super) fn validate_bluetooth_irq_stack(
+    cpu0: Option<open_esp_radio_hil_protocol::StackWatermark>,
+    cpu1: Option<open_esp_radio_hil_protocol::StackWatermark>,
+) -> Result<()> {
+    match (cpu0, cpu1) {
+        (Some(irq), None) if irq.has_required_headroom() => Ok(()),
+        _ => Err(format!(
+            "Bluetooth IRQ stack evidence missing or below policy: cpu0={cpu0:?} cpu1={cpu1:?}"
+        )
+        .into()),
+    }
 }
 
 #[cfg(test)]

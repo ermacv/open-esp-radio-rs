@@ -74,7 +74,8 @@ fn interrupt_driven_recycled_append_for_diagnostics() -> bool {
 
 pub use oer_esp32s31_wifi::rx::transaction::{
     Admission as Esp32s31RxStageAdmissionPolicy, AdmitAll as FullRxStageAdmission,
-    CompletedUnit as Esp32s31RxCompletedUnit, IngressClass as Esp32s31RxIngressClass,
+    AdmitUnreserved as UnreservedRxStageAdmission, CompletedUnit as Esp32s31RxCompletedUnit,
+    CreditPolicy as RxStageCreditPolicy, IngressClass as Esp32s31RxIngressClass,
     IngressRoute as Esp32s31RxIngressRoute, Observation as Esp32s31RxIngressObservation,
     Preview as Esp32s31RxCompletedUnitPreview, Unavailable as RxStageUnavailableDisposition,
 };

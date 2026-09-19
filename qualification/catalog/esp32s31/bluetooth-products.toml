@@ -35,6 +35,7 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-active-phy-maintenance", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-acl-calibration", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-acl-backpressure", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-maintenance-backpressure", minimum-repetitions = 3 },
 ]
 gaps = [
   { axis = "implementation", id = "peripheral-event-deadlines-and-qualified-maintenance-bounds-incomplete" },
@@ -91,6 +92,9 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-key-refresh", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-missing-key", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-wrong-key", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-missing-refresh-key", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-encrypted-phy-maintenance", minimum-repetitions = 3 },
+  { scenario = "bluetooth-peripheral-active-data-mic", minimum-repetitions = 3 },
 ]
 gaps = [
   { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
@@ -104,7 +108,7 @@ gaps = [
 id = "peripheral-security-current-primitives"
 composition = "production"
 scope = "Portable LL security and HCI security procedures supply the existing key, encryption and packet-authentication primitives"
-limits = "The fixed-key encrypted ACL scenario exercises the composed peripheral boundary with exact bidirectional echoes, updates, reconnect and cold release. A separate key-refresh scenario requires a replacement LTK on the same handle and post-refresh traffic; its hardware evidence is evaluated independently. Separate initial missing-key and wrong-key scenarios require exact failure evidence followed by encrypted recovery. Their hardware evidence is evaluated independently; missing-key refresh and corrupted active-data MIC coverage remain incomplete. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
+limits = "The fixed-key encrypted ACL scenario exercises the composed peripheral boundary with exact bidirectional echoes, updates, reconnect and cold release. A separate key-refresh scenario requires a replacement LTK on the same handle and post-refresh traffic. Separate initial missing-key and wrong-key scenarios require exact failure evidence followed by encrypted recovery. Missing refresh-key coverage requires initial encryption, termination with PIN or Key Missing and encrypted recovery. Active-data MIC coverage uses an explicit diagnostic RX-input injection before production authentication; it requires zero Host delivery, MIC-failure termination and encrypted recovery, but does not inject an invalid MIC over the air. Encrypted maintenance requires ordered bidirectional traffic, guarded PHY restoration on the same encrypted connection and later acknowledged traffic; it does not establish worst-case timing or thermal/RF-quality bounds. Hardware evidence is evaluated independently. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",
@@ -124,16 +128,20 @@ limitations = "One peripheral connection. No Central role, PHY update or data-le
 [[capabilities]]
 id = "secure-peripheral-gatt"
 title = "Secure peripheral GATT server over the open Controller"
-scope = "Released Trouble Host with the selected encrypted peripheral Controller: LE Secure Connections pairing, explicit authenticated or unauthenticated security policy, encryption/key-size/MITM checks before protected ATT access, bond storage and key restoration for encrypted reconnect, characteristic reads/writes/notifications, security failures and coordinated Host/Controller shutdown"
+scope = "Pinned Trouble Host with the selected encrypted peripheral Controller: LE Secure Connections Numeric Comparison only, mandatory authenticated encryption and key-size checks before protected ATT access, caller-owned RAM bond storage and key restoration for encrypted reconnect within the retained application lifetime, characteristic reads/writes/notifications, security failures and coordinated Host/Controller shutdown"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 depends-on = ["peripheral-link-security"]
 vendor-not-applicable = "host-security-and-gatt-application-policy-over-independently-qualified-controller"
+hil-requirements = [
+  { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3 },
+]
 gaps = [
-  { axis = "implementation", id = "secure-trouble-peripheral-gatt-and-bond-store-composition-missing" },
+  { axis = "implementation", id = "secure-gatt-terminal-host-controller-fault-disposition-incomplete" },
   { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
-  { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-scenarios-missing" },
+  { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-evidence-incomplete" },
+  { axis = "hil", id = "secure-gatt-coordinated-host-controller-retirement-qualified-evidence-missing" },
   { axis = "async", id = "trouble-host-controller-coordinated-shutdown-and-cancellation-incomplete" },
 ]
 
@@ -141,15 +149,15 @@ gaps = [
 id = "secure-gatt-current-host-boundary"
 composition = "production"
 scope = "The Trouble composition retains the Host stack and hardware runner for the same Controller epoch using caller-owned bounded storage"
-limits = "Pairing policy and persistent bond storage remain application obligations to compose and test. Authenticated characteristics must reject unauthenticated pairing; missing key material or failed restoration cannot silently downgrade protected access. Existing Host construction tests are not a secure GATT demonstration"
-source-paths = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs"]
+limits = "The standalone secure application enforces Numeric Comparison with explicit boot/request-bound console confirmation, authenticated ATT read/write/notify, caller-owned asynchronous bond storage and a bounded RAM backend. Bond insertion must succeed before application authorization; restored encryption must match the retained record. Bonds do not require Controller privacy. RAM bonds survive Controller restart, not SoC reset; imported metadata does not prove pairing-method provenance. The reusable Host epoch runner drops producers and awaits Reset before physical retirement. The automated HIL scenario checks denied plaintext ATT, explicit pairing rejection, independent Numeric Comparison, authenticated traffic and notifications, then bonded reconnect before and after checked physical cold shutdown/restart with unchanged SoC boot identity and a closed old HCI handle. It removes only its temporary Linux bond during cleanup. The HIL operator does not prove human presence or durable storage. Terminal Host/Reset failures retain physical execution without a restart authorization; complete fault disposition and broader security/cancellation regressions remain incomplete. Repeated eligible evidence is required; source coverage and an engineering PASS do not qualify the product"
+source-paths = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs", "examples/esp32s31-bluetooth-controller/src/security/gatt.rs", "examples/esp32s31-bluetooth-controller/src/security/epoch.rs", "examples/esp32s31-bluetooth-controller/src/security/bonds.rs", "examples/esp32s31-bluetooth-controller/src/security/comparison.rs", "examples/esp32s31-bluetooth-controller/src/security/console.rs"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "peripheral-gatt-server"
 phy = "le-1m"
-security = ["le-secure-connections", "encrypted-att", "mitm-when-required"]
+security = ["le-secure-connections", "numeric-comparison-only", "authenticated-att", "ram-bond"]
 composition = "standalone-secure-peripheral-gatt"
 level = "composed-product"
 activation-boundary = "Host and Controller construction through pairing, protected ATT traffic, bonded reconnect and coordinated shutdown"
-limitations = "One GATT server/peripheral connection using ordinary ATT. EATT, GATT client/caching, privacy role combinations, Central, legacy pairing, Audio and concurrent Wi-Fi/BLE remain separate scopes. A failed or unavailable secure path is incomplete, not a plaintext fallback"
+limitations = "One GATT server/peripheral connection using ordinary ATT and one RAM bond slot. No Just Works or unauthenticated fallback; persistence across reset and human-presence verification are outside this profile. EATT, GATT client/caching, privacy role combinations, Central, legacy pairing, Audio and concurrent Wi-Fi/BLE remain separate scopes. A failed or unavailable secure path is incomplete, not a plaintext fallback"

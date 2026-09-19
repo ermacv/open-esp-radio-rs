@@ -1,5 +1,9 @@
 use core::ops::ControlFlow;
 
+#[cfg(not(target_arch = "riscv32"))]
+#[path = "tests/lifecycle.rs"]
+mod lifecycle;
+
 use crate::{
     ControllerSchedulerEpoch, ControllerTimeSample,
     le::peripheral::connection::{

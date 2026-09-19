@@ -3,6 +3,10 @@
 pub(crate) mod backpressure;
 pub(crate) mod calibration;
 pub(crate) mod deadline;
+mod encrypted_maintenance;
+pub(crate) mod gatt;
+pub(crate) mod phy_watchdog;
+pub(crate) mod secure_gatt;
 pub(crate) mod security_failure;
 
 use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
@@ -154,8 +158,34 @@ struct PeripheralCycle {
     start: BluetoothPeripheralEvidence,
     fixture: Option<bluetooth::model::ConnectionReset>,
     completion: Option<BluetoothPeripheralEvidence>,
+    failure_snapshot_error: Option<String>,
+    encrypted_maintenance: Option<encrypted_maintenance::Observation>,
     restart: Option<BluetoothPeripheralEvidence>,
     maintenance: Option<BluetoothPeripheralEvidence>,
+}
+
+impl PeripheralCycle {
+    fn record_fixture(
+        &mut self,
+        result: Result<bluetooth::model::ConnectionReset>,
+        snapshot: impl FnOnce() -> Result<BluetoothPeripheralEvidence>,
+    ) -> Result<()> {
+        match result {
+            Ok(fixture) => {
+                self.fixture = Some(fixture);
+                Ok(())
+            }
+            Err(error) => {
+                match snapshot() {
+                    Ok(observed) => self.completion = Some(observed),
+                    Err(snapshot_error) => {
+                        self.failure_snapshot_error = Some(snapshot_error.to_string())
+                    }
+                }
+                Err(error)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -203,6 +233,7 @@ impl From<&BluetoothPeripheralEvidence> for PeripheralBaseline {
 pub(crate) struct PeripheralConfig {
     pub encrypted: bool,
     pub key_refresh: bool,
+    pub encrypted_maintenance: bool,
     pub boots: u8,
     pub connections: u8,
     pub hold_millis: u16,
@@ -221,6 +252,7 @@ pub(crate) fn run_peripheral(
     let PeripheralConfig {
         encrypted,
         key_refresh,
+        encrypted_maintenance,
         boots,
         connections,
         hold_millis,
@@ -255,6 +287,7 @@ pub(crate) fn run_peripheral(
                     "schema": 1,
                     "encrypted": encrypted,
                     "key_refresh": key_refresh,
+                    "encrypted_maintenance": encrypted_maintenance,
                     "adapter": adapter.to_string(),
                     "connections": connections,
                     "hold_millis": hold_millis,
@@ -322,6 +355,9 @@ fn probe_peripheral(
     if !caps.features.bluetooth_peripheral {
         return Err("firmware lacks Bluetooth peripheral control".into());
     }
+    if config.encrypted_maintenance && !caps.features.bluetooth_phy_maintenance {
+        return Err("firmware lacks automatic PHY maintenance".into());
+    }
     let encryption_baseline = capture
         .bluetooth_peripheral(BluetoothPeripheralOperation::Snapshot)?
         .encryption
@@ -348,19 +384,43 @@ fn probe_peripheral(
             start,
             fixture: None,
             completion: None,
+            failure_snapshot_error: None,
+            encrypted_maintenance: None,
             restart: None,
             maintenance: None,
         });
-        let fixture = bluetooth::connect_profile_in(
-            &output.join(format!("connection-{cycle:03}")),
-            adapter,
-            bluetooth::model::PeerAddress(address),
-            hold_millis,
-            termination,
-            config.encrypted,
-            config.key_refresh,
-        )?;
-        cycles.last_mut().expect("cycle was inserted").fixture = Some(fixture);
+        let directory = output.join(format!("connection-{cycle:03}"));
+        let connect = || {
+            bluetooth::connect_profile_in(
+                &directory,
+                adapter,
+                bluetooth::model::PeerAddress(address),
+                hold_millis,
+                termination,
+                config.encrypted,
+                config.key_refresh,
+            )
+        };
+        let fixture = if config.encrypted_maintenance {
+            let entry = cycles.last_mut().expect("cycle was inserted");
+            let mut observation = encrypted_maintenance::Observation::default();
+            let result = encrypted_maintenance::connect_observed(
+                capture,
+                &entry.start,
+                &mut observation,
+                connect,
+            );
+            entry.encrypted_maintenance = Some(observation);
+            result
+        } else {
+            connect()
+        };
+        cycles
+            .last_mut()
+            .expect("cycle was inserted")
+            .record_fixture(fixture, || {
+                capture.bluetooth_peripheral(BluetoothPeripheralOperation::Snapshot)
+            })?;
 
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
@@ -559,6 +619,43 @@ fn peripheral_cycle_complete(
 
 #[cfg(test)]
 mod peripheral_tests {
+    #[test]
+    fn peer_failure_retains_target_snapshot_without_overwriting_original_error() {
+        let mut cycle = super::PeripheralCycle {
+            start: evidence(),
+            fixture: None,
+            completion: None,
+            failure_snapshot_error: None,
+            encrypted_maintenance: None,
+            restart: None,
+            maintenance: None,
+        };
+        let mut observed = evidence();
+        observed.last_disconnect_reason = Some(0x3d);
+        let error = cycle
+            .record_fixture(Err("peer refresh failed".into()), || Ok(observed))
+            .unwrap_err();
+        assert_eq!(error.to_string(), "peer refresh failed");
+        assert_eq!(
+            cycle.completion.as_ref().unwrap().last_disconnect_reason,
+            Some(0x3d)
+        );
+        assert!(cycle.fixture.is_none());
+        assert!(cycle.failure_snapshot_error.is_none());
+        cycle.completion = None;
+        let error = cycle
+            .record_fixture(Err("peer refresh failed".into()), || {
+                Err("serial unavailable".into())
+            })
+            .unwrap_err();
+        assert_eq!(error.to_string(), "peer refresh failed");
+        assert!(cycle.completion.is_none());
+        assert_eq!(
+            cycle.failure_snapshot_error.as_deref(),
+            Some("serial unavailable")
+        );
+    }
+
     use super::*;
     use open_esp_radio_hil_protocol::BluetoothPeripheralResult;
 
@@ -796,8 +893,14 @@ mod tests {
     use super::*;
     #[test]
     fn adapter_replacement_is_not_a_bidirectional_check_of_one_peer() {
-        let mut a = bluetooth::model::Check::new(bluetooth::model::Adapter(0));
-        let mut b = bluetooth::model::Check::new(bluetooth::model::Adapter(0));
+        let mut a = bluetooth::model::Check::new(
+            bluetooth::model::Adapter(0),
+            bluetooth::model::DtmVersion::V2,
+        );
+        let mut b = bluetooth::model::Check::new(
+            bluetooth::model::Adapter(0),
+            bluetooth::model::DtmVersion::V2,
+        );
         assert!(!same_peer(&a, &b));
         a.address = Some("peer-a".into());
         a.version = Some("firmware-a".into());
@@ -867,6 +970,18 @@ mod tests {
     }
 }
 
+/// Physical completion precedes guarded RUN publication. Live samplers must
+/// retain their original deadline while this single restoration is pending.
+fn active_maintenance_restoration_pending(current: &BluetoothPeripheralEvidence) -> bool {
+    current.phy_maintenance.as_ref().is_some_and(|m| {
+        !m.invalid
+            && m.restored.checked_add(1) == Some(current.phy_peripheral_maintenance)
+            && m.physical_finished_at_micros.is_some()
+            && m.restoration_deadline_micros.is_some()
+            && m.run_at_micros.is_none()
+    })
+}
+
 fn require_active_maintenance(baseline: u32, current: &BluetoothPeripheralEvidence) -> Result<()> {
     if current.phy_peripheral_maintenance <= baseline {
         return Err(
@@ -910,6 +1025,8 @@ fn require_encrypted_cycle(
         || e.negative_replies != baseline.negative_replies
         || e.wrong_key_replies != baseline.wrong_key_replies
         || e.faults != 0
+        || e.mic_injections != baseline.mic_injections
+        || e.mic_injection_armed
     {
         return Err(format!(
             "encrypted cycle {cycle} missing exact key/encryption/retirement transitions: {e:?}"
@@ -966,6 +1083,8 @@ mod encrypted_tests {
                 encryption_changes: cycle,
                 key_refreshes: cycle,
                 faults: 0,
+                mic_injections: 0,
+                mic_injection_armed: false,
             };
             snapshot.encryption = Some(complete);
             assert!(
@@ -1023,6 +1142,8 @@ mod encrypted_tests {
             encryption_changes: 1,
             key_refreshes: 0,
             faults: 0,
+            mic_injections: 0,
+            mic_injection_armed: false,
         };
         snapshot.encryption = Some(complete);
         assert!(require_encrypted_cycle(1, false, Default::default(), &snapshot).is_ok());

@@ -15,9 +15,158 @@ use super::{
 
 static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn symbol_coverage_distinguishes_aliases_missing_rust_other_text_and_rom() {
+    use super::{StackCoverageOrigin as Origin, StackCoverageStatus as Status};
+    for include_missing in [false, true] {
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        object.append_section_data(text, &[0; 0x3100], 4);
+        for (name, value, section, kind) in [
+            (
+                "_stack_start",
+                0x9000,
+                SymbolSection::Absolute,
+                SymbolKind::Data,
+            ),
+            (
+                "_stack_end",
+                0x8000,
+                SymbolSection::Absolute,
+                SymbolKind::Data,
+            ),
+            (
+                "measured",
+                0x3000,
+                SymbolSection::Section(text),
+                SymbolKind::Text,
+            ),
+            (
+                "measured_alias",
+                0x3000,
+                SymbolSection::Section(text),
+                SymbolKind::Text,
+            ),
+            (
+                "_ZN7fixture4lost17h1234567890abcdefE",
+                0x3010,
+                SymbolSection::Section(text),
+                SymbolKind::Text,
+            ),
+            (
+                "asm_or_c",
+                0x3020,
+                SymbolSection::Section(text),
+                SymbolKind::Text,
+            ),
+            (
+                "rom_call",
+                0x4000,
+                SymbolSection::Absolute,
+                SymbolKind::Text,
+            ),
+        ] {
+            object.add_symbol(Symbol {
+                name: name.as_bytes().to_vec(),
+                value,
+                size: 4,
+                kind,
+                scope: SymbolScope::Linkage,
+                weak: false,
+                section,
+                flags: SymbolFlags::None,
+            });
+        }
+        let section = object.add_section(
+            Vec::new(),
+            b".stack_sizes".to_vec(),
+            SectionKind::ReadOnlyData,
+        );
+        let mut data = Vec::new();
+        for address in [0x3000_u32, 0x3050].into_iter().chain(
+            include_missing
+                .then_some([0x3010, 0x3020])
+                .into_iter()
+                .flatten(),
+        ) {
+            data.extend(address.to_le_bytes());
+            data.push(0); // A zero-sized frame is measured, never missing.
+        }
+        object.append_section_data(section, &data, 1);
+        let path = std::env::temp_dir().join(format!(
+            "oer-coverage-{}-{}.elf",
+            std::process::id(),
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(&path, object.write().unwrap()).unwrap();
+        let report = analyze_stack(&path, &budget()).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(report.coverage.linked_text_addresses, 3);
+        assert_eq!(
+            report.coverage.measured_linked_text_addresses,
+            if include_missing { 3 } else { 1 }
+        );
+        assert_eq!(
+            report.coverage.linked_text_status,
+            if include_missing {
+                Status::Complete
+            } else {
+                Status::Incomplete
+            }
+        );
+        assert_eq!(report.coverage.metadata_without_text_symbol, [0x3050]);
+        let missing = &report.coverage.unmeasured_functions;
+        if include_missing {
+            assert_eq!(missing.len(), 1);
+        } else {
+            assert_eq!(missing[0].origin, Origin::LinkedRustSymbol);
+            assert_eq!(missing[1].origin, Origin::LinkedOtherText);
+            assert_eq!(missing.len(), 3);
+        }
+        assert_eq!(missing.last().unwrap().origin, Origin::AbsoluteText);
+        // Frame-size policy success does not overwrite the independent coverage result.
+        audit_stack(&report).unwrap();
+        let human = super::render_stack_report(&report);
+        assert!(human.contains("Measured-frame budget audit only"));
+        assert!(human.contains("rom_call"));
+        assert!(human.contains("metadata without text symbol: 0x00003050"));
+        if !include_missing {
+            assert!(human.contains("Incomplete"));
+        }
+    }
+}
+
+#[test]
+fn absolute_declarations_do_not_establish_linked_coverage() {
+    let path = test_elf(true, 0, 0x2000, 0x1000);
+    let report = analyze_stack(&path, &budget()).unwrap();
+    fs::remove_file(path).unwrap();
+    assert_eq!(report.coverage.linked_text_addresses, 0);
+    assert_eq!(report.coverage.measured_linked_text_addresses, 0);
+    assert_eq!(
+        report.coverage.linked_text_status,
+        super::StackCoverageStatus::Unavailable
+    );
+}
+
+#[test]
+fn reviewed_match_inventory_includes_small_frames_and_unused_rules() {
+    let path = test_elf(true, 0, 0x2000, 0x1000);
+    let mut policy = budget();
+    let mut matched = policy.reviewed_frames[0].clone();
+    matched.function_contains = "<unknown function at".into();
+    policy.reviewed_frames[0].function_contains = "unused_rule".into();
+    policy.reviewed_frames.push(matched);
+    let report = analyze_stack(&path, &policy).unwrap();
+    fs::remove_file(path).unwrap();
+    assert!(report.reviewed_rule_matches[0].addresses.is_empty());
+    assert_eq!(report.reviewed_rule_matches[1].addresses, [0x3000]);
+    assert_eq!(report.schema, 2);
+}
+
 fn budget() -> StackBudget {
     StackBudget {
-        schema: 3,
+        schema: 4,
         stack_start_symbol: "_stack_start".into(),
         stack_end_symbol: "_stack_end".into(),
         warn_frame_bytes: 8 * 1024,
@@ -25,6 +174,7 @@ fn budget() -> StackBudget {
         max_move_bytes: 4 * 1024,
         runtime_cpu0_minimum_free_bytes: 32 * 1024,
         runtime_cpu1_minimum_free_bytes: 4 * 1024,
+        runtime_irq_minimum_free_bytes: 4 * 1024,
         reported_frame_count: 30,
         reviewed_frames: vec![ReviewedStackFrame {
             function_contains: "<unknown function at".into(),
@@ -42,6 +192,15 @@ fn stack_policy_separates_review_and_hard_limits() {
     let mut invalid = budget();
     invalid.warn_frame_bytes = invalid.max_frame_bytes + 1;
     assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn irq_stack_policy_requires_a_nonzero_reserve() {
+    let mut policy = budget();
+    policy.runtime_irq_minimum_free_bytes = 0;
+    assert!(policy.validate().is_err());
+    policy.runtime_irq_minimum_free_bytes = 1;
+    assert!(policy.validate().is_ok());
 }
 
 #[test]
@@ -145,6 +304,35 @@ fn reviewed_source_accepts_repository_and_cargo_trimmed_identities() {
         &frame("./another-package-0.1.0/src/supervisor.rs"),
         &reviewed
     ));
+}
+
+#[test]
+fn overlapping_reviews_fail_independently_of_order_and_frame_size() {
+    // The broad allowance used to hide the narrower limit when listed first.
+    // Ambiguity also matters for small frames: a rule may select a different
+    // execution stack, whose headroom must not depend on policy order.
+    for size in [1024, 12 * 1024] {
+        let path = test_elf(true, size, 0x20000, 0x1000);
+        let mut policy = budget();
+        let mut narrower = policy.reviewed_frames[0].clone();
+        narrower.function_contains = "unknown function".into();
+        narrower.max_bytes = 9 * 1024;
+        policy.reviewed_frames.push(narrower);
+        for _ in 0..2 {
+            let report = analyze_stack(&path, &policy).unwrap();
+            assert!(audit_stack(&report).is_err());
+            assert_eq!(report.violations.len(), 1);
+            let error = &report.audit.errors[0];
+            assert!(error.contains("matches multiple reviewed rules"));
+            assert!(error.contains("reviewed_frames[0]"));
+            assert!(error.contains("reviewed_frames[1]"));
+            for rule in &report.reviewed_rule_matches {
+                assert_eq!(rule.addresses, [0x3000]);
+            }
+            policy.reviewed_frames.reverse();
+        }
+        fs::remove_file(path).unwrap();
+    }
 }
 
 #[test]

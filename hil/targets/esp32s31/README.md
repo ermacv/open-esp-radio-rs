@@ -1,5 +1,86 @@
 # ESP32-S31 HIL target
 
+`bluetooth-gatt` is a separate plaintext Trouble Host image. It compiles the
+actual [standalone application](../../../examples/esp32s31-bluetooth-controller/src/gatt.rs),
+not the diagnostic ATT responder. The `bluetooth-trouble-gatt` scenario uses
+the Linux fixed-ATT fixture to discover service/characteristic handles, read,
+write and reconnect three times on the same Host/Controller epoch. USB exposes
+only application observations, boot identity and transport/stack diagnostics;
+it cannot submit HCI commands. The image omits DTM and RX fault-injection
+features. Pairing, security policy, bond persistence and coordinated cold
+shutdown are outside this plaintext baseline. Runs require the usual installed
+Bluetooth fixture and an initially powered-off selected Linux adapter.
+
+`bluetooth-secure-gatt` instead compiles the standalone `security::gatt::run`
+application with a caller-owned one-slot RAM bond store. Its framed console
+accepts observations, explicit Numeric Comparison decisions and an epoch-bound
+Controller restart request; it cannot
+drive HCI, reply to ATT or install keys. Plaintext and secure applications share
+board/Controller construction but have separate application and evidence modules.
+For restart, `security::epoch::run` drops the application and Host runners,
+consumes the Host and waits for HCI Reset completion with an independent reader.
+The hardware runner then returns idle; checked timer/HCI/IRQ/output/platform
+retirement and physical PHY close precede cold restart. Fresh Host resources are
+reborrowed while the application retains its RAM bond and comparison sequence.
+An application, Host or Reset failure reports `application_stopped` and retains
+the physical runner; it does not authorize restart or silent re-enrollment.
+
+Run `cargo hil run bluetooth-trouble-secure-gatt` from the repository root.
+The Linux peer exercises denied plaintext ATT, an explicit negative pairing,
+then automatically compares the independent DUT/BlueZ Numeric Comparison numbers
+and sends exact boot/request-bound decisions to both peers. No terminal input is
+needed. This test operator does not prove human presence and does not change the
+standalone application's explicit user-consent policy.
+Successful pairing is followed by read/write/notify and encrypted
+reconnect without another confirmation, followed by full Controller cold
+shutdown/restart and another encrypted reconnect. The host requires unchanged
+SoC boot identity, a new application epoch, physical cold release and rejection
+of both commands and reads on the old HCI handle. The fresh GATT value starts at
+zero; the bond remains in application RAM. The Linux bond is temporary and
+removed at cleanup; SoC reset or power loss clears the DUT bond. See the
+[secure fixture contract](../../host/linux-bluetooth/README.md#secure-trouble-gatt-fixture).
+The scenario's existence and a successful build do not qualify RF behavior.
+
+HIL explicitly selects 5 s startup, 1 s maintenance and 1 s shutdown/retained
+cycle budgets in `runtime/src/watchdog.rs`, with caller-owned stable TIMG1 and
+policy storage. These engineering values are not qualified production defaults.
+`system-watchdog` uses the same SoC service and a separate 1 s test budget.
+Its dedicated `system-watchdog` image starts neither radio nor a network stack,
+advertises `system_watchdog`, and reports reset cause through `GetBootStatus`.
+It needs only the DUT and records reset evidence, not RF-stop timing or injected
+PHY restoration failures. The DTM watchdog scenario still requires its peer.
+`bluetooth-peripheral-maintenance-restart` combines live guarded maintenance,
+continued ACL, cold restart and old-HCI closure. `wifi-maintenance-restart`
+requires real connected common/Wi-Fi calibration, unchanged association and
+continued UDP before cold restart and new-generation UDP recovery. Their
+source definitions are not hardware qualification.
+
+`bluetooth-phy-watchdog` and `wifi-phy-watchdog` inject into actual maintenance,
+using `bluetooth-watchdog-reset` and `diagnostic-phy-fault` respectively. These
+images explicitly select a 5 s maintenance budget to include the diagnostic
+handshake. Other radio images retain the 1 s maintenance budget above. No
+command refreshes the lease. The host requires a reached checkpoint and a
+serialized release acknowledgement before expecting autonomous MWDT1 reset.
+The checkpoint is either after the real PBus-clear child, before publishing its
+completion, or after PHY return, before IRQ/MAC restoration. Modes block a
+synchronous poll, withhold the child completion, stall restoration, or drop the
+actual owner-bearing child future. Withheld completion is not an injected
+silicon IRQ loss. Cancellation is acknowledged only after the child is dropped.
+
+Each fault is bracketed by real ACL/peer-disconnect or bidirectional UDP checks
+on the original and reset boots. Normal calibration is followed by a wait longer
+than the diagnostic budget; Wi-Fi also rejects a zero-duration pause. The PHY
+hooks have no timer, reset or transport dependency and are compiled out without
+`lifecycle-fault-injection`. These scenarios do not measure RF cessation or
+qualify cold-start, close/wake or temperature-dependent execution bounds.
+
+The host's domain workloads own their link and calibration checks:
+`workload/bluetooth/phy_watchdog.rs` owns peripheral ACL, and
+`workload/ieee80211/phy_watchdog.rs` owns station admission and UDP.
+`workload/phy/fault_lifecycle.rs` coordinates checkpoints and reboot evidence
+without selecting or importing either protocol. SoC-only tests live under
+`workload/system/`; DTM-triggered reset remains a Bluetooth workload.
+
 The separate `bluetooth-dtm` image selects `bluetooth-hil`, the production
 Bluetooth composition and the framed HIL control protocol without a Wi-Fi
 network feature. Its USB owner translates bounded DTM requests into typed HCI
@@ -70,6 +151,30 @@ guarded RUN completions, followed by ACL/update/map progress and peer Reset
 recovery. Its explicit execution/restoration/deferral values remain engineering
 budgets. It does not force every expensive calibration branch or prove the
 shortest connection interval. Run either scenario with `cargo hil run <scenario>`.
+
+`bluetooth-peripheral-encrypted-phy-maintenance` uses that automatic image
+with the fixed-key Host and two connections per boot. Live snapshots must show
+bidirectional encrypted ACL progress, a subsequent guarded PHY restoration
+without changing the connection or encryption session, then new received data
+and acknowledged Host transmission. The independent central also requires both
+exact echoes. Peer Reset recovery and final cold retirement remain mandatory.
+This scenario uses engineering budgets and does not force every calibration
+branch or establish thermal/RF-quality bounds.
+
+`bluetooth-peripheral-maintenance-backpressure` requires new guarded PHY
+restoration on a live plaintext ACL connection before the Host withholds an
+RX credit. HCI event reads continue through supervision expiry; the old credit
+must drain before same-HCI reconnect and final physical cold retirement.
+It combines active maintenance with the existing backpressure lifecycle using
+the automatic maintenance image. It does not inject lost IRQs or hardware faults.
+
+`bluetooth-peripheral-active-data-mic` uses the plain Bluetooth image and its
+explicit `rx-fault-injection` feature. The diagnostic corrupts one received data
+MIC after encryption starts. Production authentication must reject all Host
+delivery and retire the connection with `0x3d`; subsequent encrypted recovery
+must use fresh session state and leave the one-shot injection disarmed. The
+peer sends valid encrypted data: this is RX-input fault injection, not proof
+of an invalid MIC on the air. Ordinary production builds omit this feature.
 
 `phy_maintenance` evidence contains boot totals and child timing maxima plus
 the latest transaction's timestamps. An idle transaction has no restoration
@@ -767,6 +872,24 @@ reliably completes Test End after RX with zero received packets. Packet silence
 is a DTM observation, not a spectrum-wide emissions measurement or proof of
 continuous packet cadence before reset.
 
+`cargo hil run bluetooth-dtm-watchdog-reset` uses the separate
+`bluetooth-watchdog-reset` image. Its DTM client acquires a deadline lease
+from the SoC service, which owns TIMG1 and arms MWDT1 for ten seconds after
+the first successful DTM TX/RX start. The client never completes or renews
+that lease; later HCI commands do not extend it. Automatic PHY
+maintenance is absent from this image. DTM continues through its normal
+production runner until the hardware reset. The host requires the MWDT1 reset
+reason and the same before/after peer gates as the software-reset scenario.
+This is fault injection to test reset of active RF, not an implementation of
+shared-PHY deadline ownership, a blocked-poll injection, or a proof that RX/DMA
+is quiescent. RX silence does not prove receiver shutdown; those limits remain
+distinct from the positive observation of TX packets followed by silence.
+Each phase's `deadline.json` reports `reset_verified` separately from `rf`:
+post-boot DTM silence, correlated TX packet cessation and peer identity.
+`tx_dtm_cessation_observed` is null for RX, and `rx_dma_stop_observed` is always
+null because this scenario has no such measurement. Neither field promotes a
+partial result into a passing run; peer errors still fail the scenario.
+
 
 The `bluetooth-peripheral-encrypted-acl` scenario uses the same production
 Controller and exact ACL echo Host, with an explicitly selected diagnostic
@@ -776,3 +899,24 @@ its evidence. Key values are public fixture constants; session SKD/IV still
 come from production hardware entropy. See the
 [encrypted ACL fixture](../../host/linux-bluetooth/README.md#encrypted-peripheral-acl-fixture)
 for the exchange, reconnection and cleanup gates and their limits.
+
+The `bluetooth-peripheral-missing-refresh-key` scenario selects a one-shot
+negative reply only for the replacement LTK after successful initial encryption.
+It checks termination and encrypted recovery through the same production
+Controller. See the [key failure fixtures](../../host/linux-bluetooth/README.md#key-failure-fixtures)
+for exact peer/target criteria and helper requirements.
+
+## IRQ stack evidence
+
+The shared platform paints dedicated SRAM IRQ stacks before interrupt admission.
+HIL samples each on its own hart in thread mode. The CPU1 sampler also returns
+its task watermark, so the console does not inspect live foreign stack storage.
+Both IRQ measurements accompany Wi-Fi session evidence and stack queries.
+Bluetooth's separate IRQ query covers CPU0 only and remains available after
+Controller retirement. The host validates its result after peripheral commands.
+
+The [stack policy](stack.toml) sets `runtime_irq_minimum_free_bytes`; its current
+reserve is an engineering guard, not a qualified nesting bound. A sampling
+request that cannot complete fails explicitly. Read the
+[wire contract](../../protocol/README.md#stack-measurements) for absence semantics
+and the instrumentation's effect on interrupt latency.

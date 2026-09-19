@@ -2,11 +2,11 @@
 //! Times include preemption and observation overhead; maxima are observations,
 //! not WCET or thermal qualification. No observation grants RF authority.
 
+#[cfg(any(test, target_arch = "riscv32"))]
 use oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceRun;
-use oer_esp32s31_phy::tracking::{
-    observation::{OPERATION_COUNT, Operation, Timing},
-    parameters::PhyParamTrackingOutcome,
-};
+use oer_esp32s31_phy::tracking::observation::{OPERATION_COUNT, Timing};
+#[cfg(any(test, target_arch = "riscv32"))]
+use oer_esp32s31_phy::tracking::{observation::Operation, parameters::PhyParamTrackingOutcome};
 
 /// Boot-lifetime measurements; operation timings nest and must not be summed.
 #[derive(Clone, Copy, Debug, Default)]
@@ -30,6 +30,7 @@ pub struct MaintenanceMeasurements {
     pub invalid: bool,
 }
 
+#[cfg(any(test, target_arch = "riscv32"))]
 impl MaintenanceMeasurements {
     fn add(value: &mut u32, amount: u32, invalid: &mut bool) {
         if let Some(sum) = value.checked_add(amount) {

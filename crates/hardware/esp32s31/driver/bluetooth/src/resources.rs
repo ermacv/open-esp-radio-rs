@@ -424,7 +424,7 @@ impl TaskResources {
         let publication = unsafe {
             self.registers
                 .borrow_bluetooth_controller()
-                .publish_rx_memory_list_initial_head(selector, head)
+                .publish_software_connection_rx_memory_list_initial_head(selector, head)
         };
         join_peripheral_connection_rx_publication(prepared, publication)
     }

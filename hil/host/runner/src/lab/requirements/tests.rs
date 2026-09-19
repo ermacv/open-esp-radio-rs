@@ -99,9 +99,18 @@ fn suite_requirements_include_every_selected_owner() {
 fn bluetooth_requires_its_adapter_without_a_network() {
     for workload in [
         Workload::BluetoothMaintenanceDeadline,
-        Workload::BluetoothAclBackpressure,
-        Workload::BluetoothEncryptedAcl { key_refresh: false },
-        Workload::BluetoothEncryptedAcl { key_refresh: true },
+        Workload::BluetoothWatchdogReset,
+        Workload::BluetoothAclBackpressure {
+            active_maintenance: false,
+        },
+        Workload::BluetoothEncryptedAcl {
+            key_refresh: false,
+            active_maintenance: false,
+        },
+        Workload::BluetoothEncryptedAcl {
+            key_refresh: true,
+            active_maintenance: false,
+        },
         Workload::BluetoothSecurityFailure {
             failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey,
             read_version_before_disconnect: false,

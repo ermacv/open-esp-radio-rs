@@ -55,6 +55,10 @@ extern "C" fn runtime_main() -> ! {
     // with global interrupts disabled and the PSRAM mapping intact.
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
 
+    static WATCHDOG: StaticCell<oer_esp32s31_soc::watchdog::DeadlineWatchdog> = StaticCell::new();
+    let watchdog = WATCHDOG.init(oer_esp32s31_soc::watchdog::DeadlineWatchdog::new(
+        peripherals.TIMG1,
+    ));
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
@@ -77,14 +81,19 @@ extern "C" fn runtime_main() -> ! {
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
     executor.run(|spawner| {
         spawner.spawn(
-            access_point_task(spawner, radio, trng)
+            access_point_task(spawner, radio, trng, watchdog)
                 .expect("access-point task storage must be available once"),
         );
     })
 }
 
 #[embassy_executor::task]
-async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
+async fn access_point_task(
+    spawner: Spawner,
+    radio: EspHalRadioPeripheral,
+    trng: Trng,
+    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+) {
     let mut station_address = [0; 6];
     station_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
@@ -106,7 +115,19 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         AccessPointClientLimit::new(AP_CLIENT_LIMIT).expect("AP client limit must be valid"),
     )
     .expect("AP request must be supported");
+    // Board-selected engineering limits, not qualified timing bounds.
+    use core::num::NonZeroU32;
+    use oer_esp32s31_soc::watchdog::DeadlineBudget;
+    static WATCHDOG_CONFIG: StaticCell<oer_esp32s31_embassy_wifi::WatchdogConfig> =
+        StaticCell::new();
+    let watchdog = WATCHDOG_CONFIG.init(oer_esp32s31_embassy_wifi::WatchdogConfig::new(
+        watchdog,
+        DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
+        DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
+        DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
+    ));
     let config = RadioConfig::new(
+        watchdog,
         station_mac,
         access_point_mac,
         PhyCalibrationIdentity {

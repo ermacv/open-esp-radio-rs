@@ -58,7 +58,8 @@ source-paths = [
   "crates/runtime/embassy/esp32s31/bluetooth/src/controller/maintenance/actor.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
-  "crates/adapters/esp-hal/esp32s31/radio/src/fail_stop.rs",
+  "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/fail_stop.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
 ]
 

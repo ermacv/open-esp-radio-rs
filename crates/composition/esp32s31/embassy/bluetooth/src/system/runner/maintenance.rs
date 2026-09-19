@@ -118,6 +118,11 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
             ),
         };
         crate::maintenance_observation::begin(admitted, execution, restoration);
+        let protection = self.watchdog.maintenance(
+            restoration
+                .or(execution)
+                .map(|at| at.saturating_sub(embassy_time::Instant::now().as_micros())),
+        );
         let interrupt = match self.interrupt.take().expect("live IRQ owner").disable() {
             Ok(interrupt) => interrupt,
             Err(failure) => quarantine(self, (continuation, authority, failure)),
@@ -195,6 +200,11 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
             Ok(interrupt) => interrupt,
             Err(failure) => quarantine(self, failure),
         });
+        if peripheral {
+            self.restoration_protection = Some(protection);
+        } else {
+            crate::WatchdogConfig::complete(protection);
+        }
         crate::diagnostics::record(
             crate::diagnostics::BluetoothExecutionEvent::PhyMaintenance { peripheral },
             format_args!(
@@ -232,12 +242,8 @@ fn quarantine<
         format_args!("automatic PHY maintenance quarantine"),
     );
     runner.controller.close_transport();
-    let routes = runner
-        .interrupt
-        .take()
-        .map(BluetoothInterruptRuntime::disable);
-    let _retained = (runner, owners, routes);
-    oer_esp32s31_radio_platform_esp_hal::fail_stop_shared_phy(
+    super::fail_stop_shared_phy(
         oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop::MaintenanceFailed,
+        (runner, owners),
     )
 }

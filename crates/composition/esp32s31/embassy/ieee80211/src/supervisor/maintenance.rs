@@ -10,12 +10,14 @@ pub(super) enum Reason {
     Deadline(PhyTrackTimeError),
     TxNotIdle,
     RxOwner,
+    RxRestoreOwner,
     Mac(StopError),
     Rx(oer_esp32s31_wifi_mac::rx::RxRingError),
     RxPrepare(oer_esp32s31_wifi_mac::rx::RxRingError),
     RxStart(oer_esp32s31_wifi_mac::rx::RxRingError),
     Interrupt,
     InterruptOwner,
+    InterruptRestore,
     Phy(WifiMaintenanceError),
 }
 
@@ -25,12 +27,14 @@ impl core::fmt::Display for Reason {
             Self::Deadline(error) => write!(f, "PHY deadline: {error:?}"),
             Self::TxNotIdle => f.write_str("ordinary TX owner is not idle"),
             Self::RxOwner => f.write_str("unexpected physical RX owner"),
+            Self::RxRestoreOwner => f.write_str("unexpected RX owner after tracking"),
             Self::Mac(error) => write!(f, "MAC stop: {error:?}"),
             Self::Rx(error) => write!(f, "RX stop: {error:?}"),
             Self::RxPrepare(error) => write!(f, "RX prepare after tracking: {error:?}"),
             Self::RxStart(error) => write!(f, "RX publish after tracking: {error:?}"),
             Self::Interrupt => f.write_str("IRQ quiesce failed"),
             Self::InterruptOwner => f.write_str("inactive IRQ owner unavailable"),
+            Self::InterruptRestore => f.write_str("IRQ restoration failed"),
             Self::Phy(error) => write!(f, "PHY tracking: {error:?}"),
         }
     }
@@ -64,6 +68,24 @@ pub(super) struct Failure {
 impl Failure {
     pub(super) const fn reason(&self) -> Reason {
         self.reason
+    }
+    pub(super) fn enforce_disposition(&self) {
+        use crate::maintenance_policy::StoppedFailure;
+        let state = match self.reason {
+            Reason::Deadline(_)
+            | Reason::TxNotIdle
+            | Reason::RxOwner
+            | Reason::Phy(WifiMaintenanceError::Admission(_)) => StoppedFailure::BeforePhy,
+            Reason::Interrupt | Reason::InterruptOwner => StoppedFailure::QuiescedOwnership,
+            Reason::Mac(_) | Reason::Rx(_) => StoppedFailure::StopUnconfirmed,
+            Reason::Phy(WifiMaintenanceError::Phy(_)) => StoppedFailure::PhyInvalid,
+            Reason::Phy(WifiMaintenanceError::Restoration(_))
+            | Reason::RxRestoreOwner
+            | Reason::InterruptRestore
+            | Reason::RxPrepare(_)
+            | Reason::RxStart(_) => StoppedFailure::RestorationUnconfirmed,
+        };
+        crate::maintenance_policy::enforce(self, state.shared_phy_failure());
     }
     fn radio(owner: ProductionWifiOwner, resources: Resources, reason: Reason) -> Self {
         Self {
@@ -297,7 +319,7 @@ pub(super) async fn maintain(
                     interrupts,
                 },
                 (physical, station, access_point, monitor),
-                Reason::Interrupt,
+                Reason::InterruptRestore,
             ));
         }
         let ring = match physical.rx_ring.take() {
@@ -311,7 +333,7 @@ pub(super) async fn maintain(
                         interrupts,
                     },
                     (physical, station, access_point, monitor),
-                    Reason::RxOwner,
+                    Reason::RxRestoreOwner,
                 ));
             }
         };

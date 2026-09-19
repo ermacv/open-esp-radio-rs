@@ -915,7 +915,26 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
-                    Command::BluetoothDtm(_) | Command::BluetoothPeripheral(_) => {
+                    Command::PhyFault(control) => {
+                        let response = if session_id == 0 {
+                            crate::phy_fault::control(control)
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        let accepted = matches!(response, Event::PhyFault(_));
+                        let sequence = queue_event_reliably(session_id, request_id, response).await;
+                        if accepted {
+                            SERIALIZED_WIFI_EVENTS.wait_for(sequence).await;
+                            crate::phy_fault::after_response(control, true);
+                        }
+                    }
+                    Command::BluetoothDtm(_)
+                    | Command::QueryBluetoothGatt
+                    | Command::QueryBluetoothSecureGatt
+                    | Command::ConfirmBluetoothGatt(_)
+                    | Command::RestartBluetoothGatt { .. }
+                    | Command::BluetoothPeripheral(_)
+                    | Command::SystemWatchdogTest(_) => {
                         publish_event_reliably(
                             session_id,
                             request_id,
@@ -927,13 +946,29 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
                             .await;
                     }
-                    Command::QueryStackUsage => {
+                    Command::GetBootStatus => {
+                        let response = if session_id == 0 {
+                            Event::BootStatus(crate::system::boot_evidence())
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::QueryStackUsage | Command::QueryInterruptStackUsage => {
                         let response = if initialized
                             && state == SessionState::Idle
                             && sessions.iter().all(Option::is_none)
                             && session_id == 0
                         {
-                            Event::StackUsage(crate::stack_usage_snapshot())
+                            let stack = crate::stack_usage_snapshot().await;
+                            if matches!(command.body, Command::QueryInterruptStackUsage) {
+                                Event::InterruptStackUsage {
+                                    cpu0: stack.cpu0_irq,
+                                    cpu1: stack.cpu1_irq,
+                                }
+                            } else {
+                                Event::StackUsage(stack)
+                            }
                         } else {
                             Event::Rejected(RejectReason::InvalidState)
                         };
@@ -1734,7 +1769,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     let retained = RetainedSessionResult {
                         measurement: result,
                         link: link_health_snapshot(),
-                        stack: crate::stack_usage_snapshot(),
+                        stack: crate::stack_usage_snapshot().await,
                     };
                     if !retain_session_result(retained) {
                         publish_event_reliably(
@@ -2012,6 +2047,9 @@ async fn write_event_async(
 }
 
 fn confirms_wifi_serialization(event: &Event) -> bool {
+    if matches!(event, Event::PhyFault(_)) {
+        return true;
+    }
     matches!(
         event,
         Event::StationLifecycle(_)

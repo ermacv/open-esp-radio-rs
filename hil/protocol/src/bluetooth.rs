@@ -250,12 +250,15 @@ pub const BLUETOOTH_REFRESH_LTK: [u8; 16] = [0x6a; 16];
 pub const BLUETOOTH_REFRESH_RAND: [u8; 8] = [0x58; 8];
 pub const BLUETOOTH_REFRESH_EDIV: u16 = 0x2849;
 
-/// One deliberately rejected first encryption attempt; subsequent connections use valid keys.
+/// One deliberate initial-key failure or missing refresh key; subsequent connections use valid keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BluetoothSecurityFailure {
     MissingKey,
     WrongKey,
+    MissingRefreshKey,
+    /// Corrupt one active data MIC after RF receive, before software authentication.
+    ActiveDataMic,
 }
 
 impl core::str::FromStr for BluetoothSecurityFailure {
@@ -264,7 +267,9 @@ impl core::str::FromStr for BluetoothSecurityFailure {
         match value {
             "missing-key" => Ok(Self::MissingKey),
             "wrong-key" => Ok(Self::WrongKey),
-            _ => Err("expected missing-key or wrong-key"),
+            "missing-refresh-key" => Ok(Self::MissingRefreshKey),
+            "active-data-mic" => Ok(Self::ActiveDataMic),
+            _ => Err("expected missing-key, wrong-key, missing-refresh-key or active-data-mic"),
         }
     }
 }
@@ -281,6 +286,11 @@ pub struct BluetoothEncryptionEvidence {
     pub encryption_changes: u32,
     pub key_refreshes: u32,
     pub faults: u32,
+    /// One-shot diagnostic corruption of a received data MIC, not an RF injection.
+    #[serde(default)]
+    pub mic_injections: u32,
+    #[serde(default)]
+    pub mic_injection_armed: bool,
 }
 
 /// Publication counts are software observations, not successful peer exchanges.
@@ -424,11 +434,11 @@ pub enum BluetoothDtmResult {
     LeaseExpired,
 }
 
+use crate::ResetReason;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BluetoothDtmEvidence {
-    /// Platform reported a digital-core software reset on this boot (not HCI Reset).
-    #[serde(default)]
-    pub software_reset_boot: bool,
+    pub reset_reason: ResetReason,
     pub operation: BluetoothDtmOperation,
     pub result: BluetoothDtmResult,
     pub rx_diagnostics: BluetoothDtmRxDiagnostics,
@@ -523,6 +533,8 @@ mod tests {
                         encryption_changes: u32::MAX,
                         key_refreshes: u32::MAX,
                         faults: u32::MAX,
+                        mic_injections: u32::MAX,
+                        mic_injection_armed: true,
                     }),
                     acl_backpressure: Some(BluetoothAclBackpressureEvidence {
                         enabled: true,
@@ -817,7 +829,7 @@ mod tests {
             0,
             5,
             crate::Event::BluetoothDtm(BluetoothDtmEvidence {
-                software_reset_boot: false,
+                reset_reason: ResetReason::Other,
                 operation: BluetoothDtmOperation::End,
                 result: BluetoothDtmResult::Complete {
                     received_packets: Some(0),
@@ -842,7 +854,7 @@ mod tests {
     #[test]
     fn only_correlated_complete_results_with_correct_count_scope_pass() {
         let evidence = BluetoothDtmEvidence {
-            software_reset_boot: false,
+            reset_reason: ResetReason::Other,
             rx_diagnostics: BluetoothDtmRxDiagnostics::default(),
             operation: BluetoothDtmOperation::End,
             result: BluetoothDtmResult::Complete {

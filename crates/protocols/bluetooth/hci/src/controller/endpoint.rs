@@ -58,6 +58,7 @@ pub struct LeControllerCommandEndpoint<
         PACKET_CAPACITY,
     >,
     pub(super) bootstrap: &'resources mut LeControllerBootstrap,
+    pub(super) random_source: Option<&'resources dyn crate::LeRandomSource>,
     pub(super) legacy_advertising: &'resources mut LeLegacyAdvertisingConfiguration,
     pub(super) legacy_scanning: &'resources mut LeLegacyScanningConfiguration,
     pub(super) initial_ready_available: &'resources mut bool,
@@ -80,6 +81,40 @@ impl<
 where
     M: RawMutex,
 {
+    /// Attach a composition-owned cryptographic entropy service before Reset.
+    ///
+    /// The borrow keeps the source alive for the entire endpoint epoch. It is
+    /// not reset or released by HCI Reset or radio maintenance. Without this
+    /// explicit binding LE Rand is not advertised and returns Unknown Command.
+    /// Rebinding or attaching after bootstrap starts is rejected unchanged.
+    pub fn install_random_source(
+        &mut self,
+        source: &'resources dyn crate::LeRandomSource,
+    ) -> Result<(), crate::LeRandomSourceAlreadyConfigured> {
+        if self.random_source.is_some() || !self.bootstrap.is_pristine() {
+            return Err(crate::LeRandomSourceAlreadyConfigured);
+        }
+        self.random_source = Some(source);
+        Ok(())
+    }
+
+    pub(crate) fn dispatch_random_command(
+        &self,
+        _command: crate::LeRandCommand,
+    ) -> crate::LeRandCommandCompleteEvent {
+        use bt_hci::param::Error as HciError;
+        let Some(source) = self.random_source else {
+            return crate::LeRandCommandCompleteEvent::error(HciError::UNKNOWN_CMD);
+        };
+        if self.bootstrap.is_pristine() {
+            return crate::LeRandCommandCompleteEvent::error(HciError::CMD_DISALLOWED);
+        }
+        match source.random_bytes() {
+            Ok(bytes) => crate::LeRandCommandCompleteEvent::success(bytes),
+            Err(_) => crate::LeRandCommandCompleteEvent::error(HciError::HARDWARE_FAILURE),
+        }
+    }
+
     /// Permanently close this epoch's HCI transport for terminal shutdown.
     ///
     /// Both directions reject further publications with [`crate::HciChannelError::Closed`],
@@ -147,7 +182,9 @@ where
         command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {
         let reset = command.is_reset();
-        let response = self.bootstrap.dispatch_owned(command);
+        let response = self
+            .bootstrap
+            .dispatch_owned(command, self.random_source.is_some());
         if reset {
             self.legacy_advertising.reset();
             self.legacy_scanning.reset();
@@ -159,7 +196,8 @@ where
         &mut self,
         command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {
-        self.bootstrap.dispatch_owned_while_radio_active(command)
+        self.bootstrap
+            .dispatch_owned_while_radio_active(command, self.random_source.is_some())
     }
 
     pub(crate) fn dispatch_legacy_advertising_configuration(

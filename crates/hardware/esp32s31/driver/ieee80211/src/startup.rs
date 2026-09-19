@@ -63,6 +63,26 @@ pub enum RadioStartFailure<P> {
     Mac(WifiMacStartFailure<P>),
 }
 
+impl<P> RadioStartFailure<P> {
+    /// Whether PHY execution failed without a completed safe cleanup. This
+    /// observation does not release ownership or choose a platform response.
+    pub fn phy_hardware_ambiguous(&self) -> bool {
+        match self {
+            Self::Wifi(Esp32s31WifiStartFailure::Registration(failure)) => {
+                !failure.failure_cleanup_completed()
+            }
+            Self::Wifi(
+                Esp32s31WifiStartFailure::InitialTracking(_)
+                | Esp32s31WifiStartFailure::InitialChannel { .. },
+            ) => true,
+            Self::Wifi(
+                Esp32s31WifiStartFailure::Power(_) | Esp32s31WifiStartFailure::ClientAcquire(_),
+            )
+            | Self::Mac(_) => false,
+        }
+    }
+}
+
 /// Perform cold PHY and common MAC initialization without choosing a Wi-Fi
 /// role. Role topology is validated for each supervisor epoch immediately
 /// before that epoch consumes this stopped owner.

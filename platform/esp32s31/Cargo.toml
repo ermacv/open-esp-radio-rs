@@ -10,8 +10,8 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false }
 static_cell = "2.1.1"
 oer-esp32s31-soc = { path = "../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 

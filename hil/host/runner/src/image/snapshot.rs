@@ -398,3 +398,13 @@ mod materialize;
 pub(crate) use builder::build;
 #[cfg(test)]
 use materialize::materialize;
+
+#[cfg(test)]
+pub(crate) fn test_capture(root: &Path) -> Snapshot {
+    capture_roots(
+        &[("repository".into(), root.to_owned())],
+        &[],
+        &root.join("target/snapshots"),
+    )
+    .unwrap()
+}

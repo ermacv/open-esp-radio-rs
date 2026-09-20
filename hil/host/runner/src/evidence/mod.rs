@@ -4,3 +4,6 @@ pub(crate) mod measurements;
 pub(crate) mod run;
 pub(crate) mod rx_delivery;
 pub(crate) mod verify;
+
+pub(crate) mod build_record;
+mod firmware;

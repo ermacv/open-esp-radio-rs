@@ -1341,6 +1341,8 @@ struct VendorEvidenceIndex {
     project: String,
     complete_project_run: bool,
     entries: Vec<VendorEvidenceIndexEntry>,
+    #[serde(default)]
+    suite_states: BTreeMap<String, String>,
 }
 
 impl VendorEvidenceIndex {
@@ -1352,10 +1354,18 @@ impl VendorEvidenceIndex {
             )
         })?;
         let index: Self = serde_json::from_str(&input)?;
-        if index.schema_version != 1
+        if !matches!(index.schema_version, 1 | 2)
             || index.command != "project verify vendor evidence index"
             || index.project != expected_project
-            || !index.complete_project_run
+            || (index.schema_version == 1 && !index.complete_project_run)
+            || (index.schema_version == 2
+                && (index
+                    .suite_states
+                    .values()
+                    .any(|s| !matches!(s.as_str(), "complete" | "incomplete"))
+                    || index.entries.iter().any(|e| {
+                        index.suite_states.get(&e.suite).map(String::as_str) != Some("complete")
+                    })))
         {
             return Err(format!(
                 "vendor evidence index {} is unsupported or incomplete",
@@ -1410,7 +1420,7 @@ struct VendorEvidenceIndexEntry {
 }
 
 impl VendorEvidenceIndexEntry {
-    fn is_current_release_evidence(&self, root: &Path, evaluator_clean: bool) -> bool {
+    fn is_current_release_evidence(&self, root: &Path, _evaluator_clean: bool) -> bool {
         let artifact_roles = self
             .artifact_hashes
             .iter()
@@ -1421,8 +1431,7 @@ impl VendorEvidenceIndexEntry {
             .iter()
             .map(|source| source.path.as_path())
             .collect::<BTreeSet<_>>();
-        if !evaluator_clean
-            || !self.release_eligible
+        if !self.release_eligible
             || self.evidence_class != "production-trace"
             || !matches!(self.status.as_str(), "match" | "bounded-match")
             || !self.baseline_passed

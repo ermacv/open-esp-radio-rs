@@ -5,6 +5,7 @@
 //! confers qualification, and no previous PASS is synthesized here.
 
 use std::collections::BTreeSet;
+mod evidence;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -46,6 +47,15 @@ pub(crate) struct Plan {
     requested_checks: Vec<String>,
     requirements: Requirements,
     scenarios: Vec<Entry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    qualification: Option<evidence::Binding>,
+}
+
+// Descriptive metadata is preserved in run provenance, but is not executed.
+fn procedure(scenario: &Scenario) -> Result<serde_json::Value> {
+    Ok(crate::scenario::identity::normalize(&serde_json::to_value(
+        scenario,
+    )?))
 }
 
 impl Plan {
@@ -138,7 +148,10 @@ impl Plan {
                 }
                 Ok(Entry {
                     scenario: scenario.id.clone(),
-                    scenario_sha256: format!("{:x}", Sha256::digest(serde_json::to_vec(scenario)?)),
+                    scenario_sha256: format!(
+                        "{:x}",
+                        Sha256::digest(serde_json::to_vec(&procedure(scenario)?)?)
+                    ),
                     image: scenario.image,
                     repetitions: scenario.repetitions,
                     requirements: Requirements::for_scenario(scenario),
@@ -152,7 +165,8 @@ impl Plan {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            schema: 3,
+            schema: 5,
+            qualification: None,
             network: network.id().to_owned(),
             requested: ids.into_iter().collect(),
             requested_checks: checks,
@@ -167,7 +181,7 @@ impl Plan {
         &self,
         catalog: &'a Catalog,
     ) -> Result<(Vec<&'a Scenario>, Integration)> {
-        if self.schema != 3 {
+        if self.schema != 5 {
             return Err("unsupported executable campaign schema".into());
         }
         let network: Integration = self.network.parse()?;
@@ -176,8 +190,12 @@ impl Plan {
             .iter()
             .map(|id| catalog.get(id))
             .collect::<Result<Vec<_>>>()?;
-        let expected =
-            Self::create_for_checks(catalog, &requested, network, &self.requested_checks)?;
+        let mut expected = if let Some(binding) = &self.qualification {
+            Self::from_selection(catalog, binding.clone(), network)?
+        } else {
+            Self::create_for_checks(catalog, &requested, network, &self.requested_checks)?
+        };
+        expected.qualification = self.qualification.clone();
         if *self != expected {
             return Err(
                 "campaign differs from current scenario contracts; generate and review a new plan"
@@ -198,7 +216,7 @@ impl Plan {
 mod tests {
     use super::*;
 
-    fn catalog() -> Catalog {
+    pub(super) fn catalog() -> Catalog {
         Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios")).unwrap()
     }
 
@@ -332,4 +350,31 @@ mod tests {
         changed.scenarios.clear();
         assert!(changed.resolve(&catalog).is_err());
     }
+}
+
+#[cfg(test)]
+#[test]
+fn procedure_identity_ignores_annotations_but_tracks_execution() {
+    let catalog = tests::catalog();
+    let mut scenario = catalog.get("boot-smoke").unwrap().clone();
+    let original = procedure(&scenario).unwrap();
+    scenario.description.push_str(" Clarified wording.");
+    scenario.tags.push("documentation".into());
+    assert_eq!(original, procedure(&scenario).unwrap());
+    let plan = Plan::create(
+        &catalog,
+        &[catalog.get("boot-smoke").unwrap()],
+        Integration::UpstreamXarxa,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("boot-smoke.toml");
+    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
+    let annotated = Catalog::load(directory.path()).unwrap();
+    assert!(plan.resolve(&annotated).is_ok());
+    scenario.repetitions += 1;
+    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
+    let changed = Catalog::load(directory.path()).unwrap();
+    assert!(plan.resolve(&changed).is_err());
+    assert_ne!(original, procedure(&scenario).unwrap());
 }

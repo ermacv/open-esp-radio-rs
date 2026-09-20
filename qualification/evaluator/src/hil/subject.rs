@@ -35,8 +35,21 @@ pub(super) struct ObservationSubject {
 
 impl ObservationSubject {
     pub(super) fn load(run: &Path, manifest: &RunManifest, scenario: &str) -> Result<Self> {
+        Self::from_parts(
+            run,
+            &manifest.repository,
+            &manifest.firmware,
+            Some(scenario),
+        )
+    }
+    pub(super) fn from_parts(
+        run: &Path,
+        repository: &RepositoryProvenance,
+        artifacts: &[FirmwareArtifactProvenance],
+        scenario: Option<&str>,
+    ) -> Result<Self> {
         let mut firmware = Vec::new();
-        for artifact in &manifest.firmware {
+        for artifact in artifacts {
             if artifact.image.as_ref().is_some_and(|id| !valid_id(id))
                 || artifact
                     .build_id
@@ -78,21 +91,26 @@ impl ObservationSubject {
             });
         }
         Ok(Self {
-            repository: manifest.repository.clone(),
+            repository: repository.clone(),
             firmware,
-            procedure: file(
-                run,
-                &PathBuf::from("scenarios")
-                    .join(scenario)
-                    .join("scenario.json"),
-            )?,
+            procedure: scenario
+                .map(|scenario| {
+                    file(
+                        run,
+                        &PathBuf::from("scenarios")
+                            .join(scenario)
+                            .join("scenario.json"),
+                    )
+                })
+                .transpose()?
+                .flatten(),
             fixture: file(run, Path::new("lab-provenance.json"))?,
             source_snapshot_manifest: file(run, Path::new("source/snapshot/manifest.json"))?,
         })
     }
 }
 
-fn file(run: &Path, relative: &Path) -> Result<Option<FileIdentity>> {
+pub(super) fn file(run: &Path, relative: &Path) -> Result<Option<FileIdentity>> {
     if !safe_relative(relative) {
         return Err("HIL subject path must be contained in its run".into());
     }

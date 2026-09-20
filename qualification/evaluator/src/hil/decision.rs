@@ -217,7 +217,7 @@ impl HilEvidenceIndex {
             scenario: requirement.scenario.clone(),
             checks: requirement.checks.clone(),
             minimum_repetitions: requirement.minimum_repetitions,
-            applicability_policy: "current-clean-composition",
+            applicability_policy: "current-source-composition",
             completion_boundary: "scenario-repetition-set",
             status: EvidenceStatus::Missing,
             evidence: None,

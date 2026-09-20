@@ -26,3 +26,5 @@ pub(crate) use replacement_graph::*;
 pub(crate) use report::*;
 pub(crate) use rust_component_index::*;
 pub(crate) use vendor_evidence_index::*;
+
+pub(crate) mod evidence_publication;

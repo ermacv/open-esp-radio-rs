@@ -16,6 +16,7 @@ use crate::Result;
 mod catalog;
 pub(crate) mod checks;
 pub(crate) mod comparison;
+pub(crate) mod identity;
 mod validation;
 
 #[cfg(test)]

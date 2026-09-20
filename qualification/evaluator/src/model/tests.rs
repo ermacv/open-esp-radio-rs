@@ -218,7 +218,7 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
     write_index(&document);
     let index = VendorEvidenceIndex::load(&path, "test").unwrap();
     assert_eq!(index.current_release_count(&root, true), 2);
-    assert_eq!(index.current_release_count(&root, false), 0);
+    assert_eq!(index.current_release_count(&root, false), 2);
     let ble = VendorEvidenceRef {
         suite: "radio".into(),
         source: "archive".into(),
@@ -279,6 +279,20 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
     document["complete_project_run"] = json!(false);
     write_index(&document);
     assert!(VendorEvidenceIndex::load(&path, "test").is_err());
+    document["schema_version"] = json!(2);
+    document["suite_states"] = json!({"radio":"complete","unrelated":"incomplete"});
+    write_index(&document);
+    let partial = VendorEvidenceIndex::load(&path, "test").unwrap();
+    assert!(
+        partial
+            .get(&wifi)
+            .unwrap()
+            .is_current_release_evidence(&root, false)
+    );
+    document["suite_states"]["radio"] = json!("incomplete");
+    write_index(&document);
+    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
+    document["suite_states"]["radio"] = json!("complete");
     document["complete_project_run"] = json!(true);
     let duplicate = document["entries"][0].clone();
     document["entries"].as_array_mut().unwrap().push(duplicate);
@@ -309,6 +323,7 @@ pub(crate) fn assert_reviewed_hil(
         command: "project verify vendor evidence index".into(),
         project: "test".into(),
         complete_project_run: true,
+        suite_states: BTreeMap::new(),
         entries: vec![],
     };
     let context = EvaluationContext {

@@ -761,7 +761,7 @@ cargo blobray project inputs init \
 ```
 
 Generated analysis files under `generated/` are disposable results. Durable
-machine-written revision snapshots and complete-run vendor-evidence indexes are
+machine-written revision snapshots and incremental vendor-evidence indexes are
 separate correspondence/publication records: preserve them in version control
 or equivalent controlled storage, but do not edit them as reviewed facts.
 Reviewed packs, policies, register models and dispositions are source inputs.

@@ -10,6 +10,7 @@ use serde::Serialize;
 
 mod assessment;
 mod contract;
+mod dependencies;
 mod sources;
 use assessment::{assess, failed};
 use contract::read;
@@ -28,13 +29,33 @@ struct ObservationRef {
     id: String,
     image: String,
     application_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    build_record: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct InputBinding {
+    #[serde(default, skip_serializing_if = "InputKind::is_bytes")]
+    kind: InputKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
     path: PathBuf,
     sha256: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum InputKind {
+    #[default]
+    Bytes,
+    Procedure,
+    Evidence,
+}
+impl InputKind {
+    fn is_bytes(&self) -> bool {
+        *self == Self::Bytes
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -67,6 +88,8 @@ struct Document {
     source: ObservationRef,
     destination: ObservationRef,
     inputs: Vec<InputBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dependency_roots: Vec<String>,
     #[serde(default)]
     failures: Vec<FailureResolution>,
 }
@@ -74,7 +97,12 @@ struct Document {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct PropertyBinding {
     pub(crate) sha256: String,
+    /// Exact v1 identity for checking existing records before metadata migration.
+    pub(crate) legacy_sha256: String,
+    pub(crate) previous_sha256: String,
+    pub(crate) procedure_sha256: Option<String>,
     pub(crate) required_inputs: Vec<PathBuf>,
+    pub(crate) implicit_build_inputs: Vec<PathBuf>,
     current_inputs: Vec<InputBinding>,
     image_sensitive: bool,
     pub(crate) unmapped_capabilities: Vec<String>,
@@ -221,3 +249,21 @@ fn regular(root: &Path, path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+fn input_hash(bytes: &[u8], kind: &InputKind) -> Result<String> {
+    let bytes = match kind {
+        InputKind::Procedure => {
+            let value: serde_json::Value = toml_edit::de::from_str(std::str::from_utf8(bytes)?)?;
+            if value["schema"] != 4
+                || !value["id"].is_string()
+                || !value["image"].is_string()
+                || !value["workload"]["kind"].is_string()
+            {
+                return Err("procedure input must be a version 4 HIL scenario".into());
+            }
+            serde_json::to_vec(&crate::hil::procedure::normalize(&value))?
+        }
+        InputKind::Bytes | InputKind::Evidence => bytes.to_vec(),
+    };
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}

@@ -16,17 +16,17 @@ pub(super) fn validate(
 ) -> Result<BTreeMap<String, String>> {
     let mut controls = BTreeMap::new();
     for (id, experiment) in documents {
-        let Some(relation) = experiment.get("comparison") else {
+        let Some(relation) = experiment.get("comparison").filter(|v| !v.is_null()) else {
             continue;
         };
         let Relation::WifiPhyMaintenance { control } = serde_json::from_value(relation.clone())?;
         let baseline = documents
             .get(&control)
             .ok_or_else(|| format!("{id}: missing comparison control {control}"))?;
-        if control == *id || baseline.get("comparison").is_some() {
+        if control == *id || baseline.get("comparison").is_some_and(|v| !v.is_null()) {
             return Err(format!("{id}: comparison control must be independent").into());
         }
-        let mut normalized = experiment.clone();
+        let mut normalized = procedure::normalize(experiment);
         let workload = normalized
             .get_mut("workload")
             .and_then(serde_json::Value::as_object_mut)
@@ -40,15 +40,21 @@ pub(super) fn validate(
                 .remove("station_pause")
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .is_none()
-            || baseline.pointer("/workload/station_pause").is_some()
-            || experiment.get("link").is_none()
+            || baseline
+                .pointer("/workload/station_pause")
+                .is_some_and(|v| !v.is_null())
+            || experiment.get("link").is_none_or(|v| v.is_null())
         {
             return Err(format!(
                 "{id}: comparison requires station UDP RX with and without maintenance"
             )
             .into());
         }
-        let mut baseline = baseline.clone();
+        let mut baseline = procedure::normalize(baseline);
+        baseline["workload"]
+            .as_object_mut()
+            .unwrap()
+            .remove("station_pause");
         for value in [&mut normalized, &mut baseline] {
             let fields = value.as_object_mut().ok_or("scenario must be an object")?;
             for field in ["id", "description", "tags", "comparison"] {

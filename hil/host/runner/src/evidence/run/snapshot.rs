@@ -1,8 +1,7 @@
 //! Bind one complete source snapshot before any experiment can be sealed.
 
 use super::*;
-use crate::image::{Artifacts, Integration, snapshot::FrozenSources};
-use build::{BuildFileMaterial, SourceRebuildStatus};
+use crate::image::{Artifacts, Integration};
 
 impl RunSession {
     pub(crate) fn bind_source_snapshot(&mut self, directory: &Path) -> Result<()> {
@@ -12,47 +11,11 @@ impl RunSession {
         {
             return Err("source snapshot must be bound once, before firmware or attempts".into());
         }
-        let destination = self.directory.join("source/snapshot");
-        let mut files: Vec<BuildFileMaterial> = Vec::new();
-        for (name, filename) in [
-            ("source-snapshot-metadata", "snapshot.json"),
-            ("source-snapshot-manifest", "manifest.json"),
-            ("source-snapshot-archive", "sources.tar"),
-        ] {
-            let relative = PathBuf::from("source/snapshot").join(filename);
-            let archived = build::archive_content_addressed(
-                &directory.join(filename),
-                &self.directory.join(&relative),
-                &self.target_directory,
-            )?;
-            files.push(build::archived_file_material(
-                name,
-                Path::new(filename),
-                relative,
-                &archived,
-            ));
-        }
-        let frozen = FrozenSources::open(&destination)?;
-        let sources = frozen
-            .sources()
-            .iter()
-            .map(|source| {
-                Ok(SourceMaterial {
-                    name: source.name.clone(),
-                    checkout_path: PathBuf::from(&source.name),
-                    remote: None,
-                    commit: source.commit.clone(),
-                    dirty: source.dirty,
-                    workspace_sha256: source.identity()?,
-                    rebuild_status: SourceRebuildStatus::SourceSnapshot,
-                    tracked_patch_path: None,
-                    tracked_patch_size_bytes: None,
-                    tracked_patch_sha256: None,
-                    untracked_files: Vec::new(),
-                    limitations: Vec::new(),
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let (frozen, sources, files) = crate::evidence::build_record::archive_snapshot(
+            directory,
+            &self.directory,
+            &self.target_directory,
+        )?;
         let primary = sources
             .first()
             .filter(|s| s.name == "repository")

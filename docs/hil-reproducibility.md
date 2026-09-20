@@ -33,25 +33,28 @@ They consume the archived build without invoking Cargo. A scenario replay
 produces a self-contained new bundle whose provenance names the source run,
 sealed-integrity digest, build ID and firmware-source repository. Replay is
 supported for one scenario; `run-all` does not accept an archived build input.
-Replayed runs are not accepted as current-clean qualification evidence.
+Replayed runs are not accepted as direct current-source qualification evidence.
 
 ## Source reconstruction
 
-Build provenance records repository and active local override identities.
-Each source material includes its checkout, remote when available, commit,
-dirty state, workspace digest and reconstruction status. Tracked changes may
-be archived as a binary Git patch against the recorded base commit.
+Normal HIL builds capture source inputs before construction, verify the snapshot
+manifest and archive, then build in an isolated checkout. Firmware publication
+checks that frozen inputs remain unchanged. The archived snapshot records each
+source role, commit, dirty state, file content, size and executable mode; build
+provenance binds these content identities with `source-snapshot` status.
 
-Untracked content is not copied automatically. Its paths, sizes and hashes
-may be recorded, but unavailable source content makes reconstruction
-incomplete. Active path overrides are independent build materials, not merely
-absolute directory names. Source identities are captured before construction
-and checked again before publication; an edit during the build invalidates
-the record.
+Tracked files are captured automatically. Nonignored untracked files require
+explicit inclusion before capture. Active path overrides are independent source
+materials. Build execution never falls back to the live checkout. Older bundles
+can contain clean-commit or tracked-patch provenance; incomplete source records
+remain diagnostic inputs.
 
-Clean commits and locked dependencies remain the qualification inputs.
-Archiving a dirty patch is a development convenience and does not convert it
-into clean evidence.
+A verified snapshot matching the complete current source selection is
+direct qualification evidence, subject to the scenario's remaining requirements.
+Dirty state and commit identity do not override a complete content match.
+Differences between observed and current inputs need an explicit
+[property/build applicability review](../qualification/evidence-reviews.md).
+Archiving source bytes establishes provenance, not a passing experiment.
 
 ## Byte-identical rebuilds
 
@@ -82,7 +85,7 @@ commit nor a stored ELF changes that rule.
 ## Build record and storage
 
 `BuildProvenance` contains the build ID/type, image class, runtime profile,
-target/features, source materials, lock/file identities, tool/environment
+target, selected network integration, effective runtime features, source materials, lock/file identities, tool/environment
 information and output subjects. `manifest.json` binds the application/build
 used by a scenario. The build record and lab observations have different
 owners and meanings.

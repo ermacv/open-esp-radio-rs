@@ -42,6 +42,11 @@ pub(crate) enum CliCommand {
         /// Require every named check; controls are added only after this filter.
         #[arg(long = "proof")]
         proofs: Vec<String>,
+        /// Select missing obligations using the independent qualification evaluator.
+        #[arg(long, conflicts_with_all = ["scenario", "tag", "proofs"])]
+        qualification: Option<PathBuf>,
+        #[arg(long, requires = "qualification")]
+        capability: Option<String>,
     },
     /// Execute an exact saved plan after validating its current scenario inputs.
     RunPlan {

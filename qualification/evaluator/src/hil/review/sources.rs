@@ -1,9 +1,10 @@
 //! Independently bind reviewed files to sealed build inputs, never live labels.
 use super::*;
+use crate::hil::{build_record::BuildEvidence, snapshot::Source};
 use serde_json::Value;
 use std::process::Command;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 struct Build {
     schema: u16,
     build_id: String,
@@ -12,32 +13,21 @@ struct Build {
     parameters: serde_json::Value,
     sources: Vec<Source>,
     subjects: Vec<Subject>,
+    #[serde(default)]
+    files: Vec<BuildFile>,
+    #[serde(default)]
+    environment: Value,
 }
 #[derive(Deserialize, PartialEq)]
-struct Source {
-    name: String,
-    commit: String,
-    dirty: bool,
-    workspace_sha256: String,
-    rebuild_status: String,
-    limitations: Vec<Value>,
-    untracked_files: Vec<Value>,
-    tracked_patch_path: Option<PathBuf>,
-}
-#[derive(Deserialize)]
 struct Subject {
     role: String,
     size_bytes: u64,
     sha256: String,
 }
 
-fn build(observation: &ScenarioEvidence, image: &str) -> Result<Option<Build>> {
-    let Some(run) = &observation.run_directory else {
-        return Ok(None);
-    };
-    let Some(subject) = &observation.subject else {
-        return Ok(None);
-    };
+fn build(observation: &BuildEvidence, image: &str) -> Result<Option<Build>> {
+    let run = &observation.directory;
+    let subject = &observation.subject;
     let Some(firmware) = subject
         .firmware
         .iter()
@@ -101,22 +91,144 @@ fn build(observation: &ScenarioEvidence, image: &str) -> Result<Option<Build>> {
     Ok(Some(build))
 }
 
+#[derive(Deserialize, PartialEq)]
+struct BuildFile {
+    name: String,
+    path: PathBuf,
+    archive_path: Option<PathBuf>,
+    size_bytes: Option<u64>,
+    sha256: String,
+}
+
 pub(super) fn same_dependencies(
-    a: &ScenarioEvidence,
+    a: &BuildEvidence,
     ai: &str,
-    b: &ScenarioEvidence,
+    b: &BuildEvidence,
     bi: &str,
+    roots: &[String],
+    current_root: &Path,
+    owners: &[PathBuf],
 ) -> Result<bool> {
-    let (Some(a), Some(b)) = (build(a, ai)?, build(b, bi)?) else {
+    let (Some(left), Some(right)) = (build(a, ai)?, build(b, bi)?) else {
         return Ok(false);
     };
-    // Build selection/features must not change implicitly with the image class.
-    Ok(a.parameters == b.parameters && a.sources[1..] == b.sources[1..])
+    // Reusing the very same recorded build does not infer any missing build
+    // selection. Older records remain usable for that exact application.
+    if left == right && roots.is_empty() {
+        return Ok(true);
+    }
+    let (Some(a), Some(b)) = (
+        composition(&left, a, roots)?,
+        composition(&right, b, roots)?,
+    ) else {
+        return Ok(false);
+    };
+    Ok(left.parameters == right.parameters
+        && left.sources[1..] == right.sources[1..]
+        && a == b
+        && (roots.is_empty() || dependencies::current(current_root, roots, owners, &a)?))
+}
+
+fn composition(
+    build: &Build,
+    observation: &BuildEvidence,
+    roots: &[String],
+) -> Result<Option<Value>> {
+    if !matches!(
+        build.parameters.get("network").and_then(Value::as_str),
+        Some("upstream-xarxa" | "patched-xarxa" | "upstream-smoltcp" | "owned-xarxa")
+    ) {
+        return Ok(None);
+    }
+    for name in ["image", "runtime_profile", "target", "runtime_features"] {
+        if !build
+            .parameters
+            .get(name)
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.is_empty())
+        {
+            return Ok(None);
+        }
+    }
+    let run = &observation.directory;
+    let mut locks = BTreeMap::new();
+    for name in ["embedded-lock", "bootstrap-lock"] {
+        let files = build
+            .files
+            .iter()
+            .filter(|file| file.name == name)
+            .collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            return Ok(None);
+        };
+        let Some(path) = &file.archive_path else {
+            return Ok(None);
+        };
+        let Some(actual) = crate::hil::subject::file(run, path)? else {
+            return Ok(None);
+        };
+        if !valid_sha256(&file.sha256)
+            || actual.sha256 != file.sha256
+            || Some(actual.size_bytes) != file.size_bytes
+        {
+            return Ok(None);
+        }
+        let identity = if name == "embedded-lock" && !roots.is_empty() {
+            dependencies::archived(
+                &observation.directory,
+                &build.sources,
+                roots,
+                &fs::read(run.join(path))?,
+            )?
+        } else {
+            serde_json::json!({"path":file.path,"sha256":file.sha256})
+        };
+        locks.insert(name, identity);
+    }
+    let Some(tools) = build.environment.get("tools").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let mut versions = BTreeMap::new();
+    // Tool installation paths do not define compiled behavior. Include espflash
+    // because it also encodes the application image, not only flashing.
+    for name in ["rustc", "cargo", "llvm-objcopy", "llvm-nm", "espflash"] {
+        let tools = tools
+            .iter()
+            .filter(|tool| tool["name"] == name)
+            .collect::<Vec<_>>();
+        let [tool] = tools.as_slice() else {
+            return Ok(None);
+        };
+        let Some(version) = tool["version"].as_str().filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        versions.insert(name, version);
+    }
+    let mut environment = BTreeMap::new();
+    for name in [
+        "inherited_rustflags",
+        "inherited_encoded_rustflags",
+        "cargo_incremental",
+        "source_date_epoch",
+    ] {
+        let Some(value) = build.environment.get(name) else {
+            return Ok(None);
+        };
+        if (name == "cargo_incremental" && value.as_str() != Some("0"))
+            || (name != "cargo_incremental" && !value.is_null() && !value.is_string())
+        {
+            return Ok(None);
+        }
+        environment.insert(name, value);
+    }
+    Ok(Some(
+        serde_json::json!({"locks":locks,"tools":versions,"environment":environment}),
+    ))
 }
 
 pub(super) fn matches(
     root: &Path,
-    observation: &ScenarioEvidence,
+    observation: &BuildEvidence,
     image: &str,
     inputs: &[InputBinding],
 ) -> Result<bool> {
@@ -128,13 +240,16 @@ pub(super) fn matches(
         return snapshot(observation, &build.sources, inputs);
     }
     for input in inputs {
+        if input.kind == InputKind::Evidence {
+            continue;
+        }
         let output = Command::new("git")
             .arg("-C")
             .arg(root)
             .args(["cat-file", "blob"])
             .arg(format!("{}:{}", primary.commit, input.path.display()))
             .output()?;
-        if !output.status.success() || digest(&output.stdout) != input.sha256 {
+        if !output.status.success() || input_hash(&output.stdout, &input.kind)? != input.sha256 {
             return Ok(false);
         }
     }
@@ -144,119 +259,48 @@ pub(super) fn matches(
 fn commit_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
-fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
-// Serialization order is the producer's v1 snapshot identity contract.
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct FileInput {
-    path: PathBuf,
-    size_bytes: u64,
-    sha256: String,
-    mode: u32,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct SourceInput {
-    name: String,
-    commit: String,
-    dirty: bool,
-    files: Vec<FileInput>,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Manifest {
-    schema: u16,
-    sources: Vec<SourceInput>,
-}
-#[derive(Deserialize)]
-struct Snapshot {
-    schema: u16,
-    snapshot_id: String,
-    archive_sha256: String,
-    files: usize,
-}
 
 fn snapshot(
-    observation: &ScenarioEvidence,
+    observation: &BuildEvidence,
     sources: &[Source],
     inputs: &[InputBinding],
 ) -> Result<bool> {
-    let Some(run) = &observation.run_directory else {
-        return Ok(false);
-    };
-    let Some(subject) = &observation.subject else {
-        return Ok(false);
-    };
-    let Some(manifest_file) = &subject.source_snapshot_manifest else {
+    let run = &observation.directory;
+    let subject = &observation.subject;
+    let Some(file) = &subject.source_snapshot_manifest else {
         return Ok(false);
     };
     let directory = run
-        .join(&manifest_file.path)
+        .join(&file.path)
         .parent()
         .ok_or("snapshot manifest has no parent")?
         .to_owned();
-    let manifest: Manifest = read_json(&directory.join("manifest.json"))?;
-    let snapshot: Snapshot = read_json(&directory.join("snapshot.json"))?;
-    if manifest.schema != 1
-        || snapshot.schema != 1
-        || digest(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
-        || sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
-        || sources.len() != manifest.sources.len()
-    {
+    let Some(manifest) = crate::hil::snapshot::verified(&directory, sources)? else {
         return Ok(false);
-    }
-    let mut expected = BTreeMap::new();
-    for (captured, source) in manifest.sources.iter().zip(sources) {
-        if captured.name != source.name
-            || captured.commit != source.commit
-            || captured.dirty != source.dirty
-            || digest(&serde_json::to_vec(captured)?) != source.workspace_sha256
-        {
-            return Ok(false);
+    };
+    let Some(repository) = manifest.sources.first() else {
+        return Ok(false);
+    };
+    for input in inputs {
+        if input.kind == InputKind::Evidence {
+            continue;
         }
-        for file in &captured.files {
-            if !safe_relative(&file.path)
-                || !valid_sha256(&file.sha256)
-                || !matches!(file.mode, 0o644 | 0o755)
-                || expected
-                    .insert(PathBuf::from(&captured.name).join(&file.path), file)
-                    .is_some()
-            {
+        let Some(file) = repository.files.iter().find(|file| file.path == input.path) else {
+            return Ok(false);
+        };
+        if input.kind == InputKind::Bytes {
+            if file.sha256 != input.sha256 {
+                return Ok(false);
+            }
+        } else {
+            let bytes = dependencies::archive_file(
+                &directory.join("sources.tar"),
+                &Path::new("repository").join(&input.path),
+            )?;
+            if input_hash(&bytes, &input.kind)? != input.sha256 {
                 return Ok(false);
             }
         }
     }
-    if snapshot.files != expected.len()
-        || !inputs.iter().all(|i| {
-            expected
-                .get(&Path::new("repository").join(&i.path))
-                .is_some_and(|f| f.sha256 == i.sha256)
-        })
-    {
-        return Ok(false);
-    }
-    // Check all archived bytes without extracting anything into the filesystem.
-    let mut archive = tar::Archive::new(fs::File::open(directory.join("sources.tar"))?);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?.into_owned();
-        let Some(file) = expected.remove(&path) else {
-            return Ok(false);
-        };
-        if !entry.header().entry_type().is_file()
-            || entry.size() != file.size_bytes
-            || entry.header().mode()? != file.mode
-        {
-            return Ok(false);
-        }
-        let mut hash = Sha256::new();
-        std::io::copy(&mut entry, &mut hash)?;
-        if format!("{:x}", hash.finalize()) != file.sha256 {
-            return Ok(false);
-        }
-    }
-    Ok(expected.is_empty())
+    Ok(true)
 }

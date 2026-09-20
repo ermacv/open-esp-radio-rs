@@ -2,6 +2,7 @@ mod engineering;
 mod hil;
 mod inventory;
 mod model;
+mod planning;
 mod report;
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode};
@@ -10,12 +11,13 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
     Status,
     Next,
+    Plan,
     Validate,
     Evaluate,
     Gate,
@@ -28,6 +30,7 @@ impl Command {
         match value {
             "status" => Ok(Self::Status),
             "next" => Ok(Self::Next),
+            "plan" => Ok(Self::Plan),
             "validate" => Ok(Self::Validate),
             "evaluate" => Ok(Self::Evaluate),
             "gate" => Ok(Self::Gate),
@@ -130,8 +133,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if matches!(command, Command::CatalogCheck | Command::CatalogRender) && json_report.is_some() {
         return Err("catalog commands do not accept --json-report".into());
     }
-    if capability.is_some() && !matches!(command, Command::Status | Command::Next) {
-        return Err("--capability is only accepted by status and next".into());
+    if capability.is_some() && !matches!(command, Command::Status | Command::Next | Command::Plan) {
+        return Err("--capability is only accepted by status, next and plan".into());
     }
     if details && command != Command::Status {
         return Err("--details is only accepted by status".into());
@@ -167,7 +170,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
 }
 
 fn execute(arguments: Arguments) -> Result<()> {
-    if matches!(arguments.command, Command::Status | Command::Next) {
+    if matches!(
+        arguments.command,
+        Command::Status | Command::Next | Command::Plan
+    ) {
         let map = if let Some(manifest) = &arguments.manifest {
             let path = arguments.root.join(manifest);
             let program = Qualification::load_and_evaluate(&path, &arguments.root)?;
@@ -176,6 +182,14 @@ fn execute(arguments: Arguments) -> Result<()> {
             let catalog = CatalogView::load(&arguments.root, &arguments.catalogs)?;
             engineering::ProjectMap::from_catalog(&catalog, arguments.capability.as_deref())?
         };
+        if arguments.command == Command::Plan {
+            let plan = planning::Plan::from_map(&map)?;
+            if let Some(path) = &arguments.json_report {
+                report::write_serialized(&plan, &arguments.root.join(path))?;
+            }
+            println!("{}", serde_json::to_string_pretty(&plan)?);
+            return Ok(());
+        }
         map.print(arguments.command == Command::Next, arguments.details);
         if let Some(path) = &arguments.json_report {
             report::write_serialized(&map, &arguments.root.join(path))?;

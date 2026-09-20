@@ -1,6 +1,10 @@
 //! Compact, shareable evidence consumed by the qualification evaluator.
 
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use open_radio_vendor_semantics::VerificationClaim;
 use serde::Serialize;
@@ -12,7 +16,7 @@ use super::{
 };
 use crate::Result;
 
-pub(crate) const VENDOR_EVIDENCE_INDEX_SCHEMA: u32 = 1;
+pub(crate) const VENDOR_EVIDENCE_INDEX_SCHEMA: u32 = 2;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct VendorEvidenceIndex {
@@ -21,6 +25,7 @@ pub(crate) struct VendorEvidenceIndex {
     pub(crate) project: String,
     pub(crate) complete_project_run: bool,
     pub(crate) entries: Vec<VendorEvidenceEntry>,
+    pub(crate) suite_states: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,11 +70,6 @@ impl VendorEvidenceIndex {
         report: &ProjectVerificationReport,
         project_manifest: &Path,
     ) -> Result<Self> {
-        if !report.complete_project_run {
-            return Err(crate::Error::invalid(
-                "vendor evidence index requires a complete project verification run",
-            ));
-        }
         let canonical_project_manifest = fs::canonicalize(project_manifest)?;
         let repository_root = canonical_project_manifest
             .ancestors()
@@ -195,7 +195,12 @@ impl VendorEvidenceIndex {
             schema_version: VENDOR_EVIDENCE_INDEX_SCHEMA,
             command: "project verify vendor evidence index",
             project: report.project.clone(),
-            complete_project_run: true,
+            complete_project_run: report.complete_project_run,
+            suite_states: report
+                .suites
+                .iter()
+                .map(|suite| (suite.id.clone(), "complete".into()))
+                .collect(),
             entries,
         };
         validate_shareable_index(&index, repository_root)?;
@@ -288,6 +293,7 @@ mod tests {
             project: project.to_owned(),
             complete_project_run: true,
             entries: Vec::new(),
+            suite_states: BTreeMap::new(),
         }
     }
 

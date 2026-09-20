@@ -369,3 +369,45 @@ fn connection_reset_fixture_has_a_bounded_hold_and_requires_a_peer() {
     assert!(Cli::try_parse_from(command.into_iter().chain(["--hold-ms", "5001"])).is_err());
     assert!(Cli::try_parse_from(["hil", "fixture", "bluetooth-connect-reset"]).is_err());
 }
+
+#[test]
+fn qualification_planning_has_an_explicit_scope_and_excludes_manual_selectors() {
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "plan",
+            "--qualification",
+            "program.toml",
+            "--capability",
+            "wifi"
+        ])
+        .is_ok()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "plan",
+            "boot-smoke",
+            "--qualification",
+            "program.toml"
+        ])
+        .is_err()
+    );
+    for selector in [
+        ["--tag", "smoke"],
+        ["--proof", "wifi.maintenance.same-link"],
+    ] {
+        assert!(
+            Cli::try_parse_from([
+                "cargo-hil",
+                "plan",
+                "--qualification",
+                "program.toml",
+                selector[0],
+                selector[1]
+            ])
+            .is_err()
+        );
+    }
+    assert!(Cli::try_parse_from(["cargo-hil", "plan", "--capability", "wifi"]).is_err());
+}

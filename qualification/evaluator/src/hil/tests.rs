@@ -230,7 +230,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     seal(&run);
     let replayed =
         HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
-    assert_eq!(replayed.summary().current_clean_producer, 0);
+    assert_eq!(replayed.summary().current_source_producer, 0);
     assert_eq!(replayed.summary().qualifying, 0);
 
     manifest["firmware"] = json!([]);
@@ -253,7 +253,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     seal(&run);
     let planned_replay =
         HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
-    assert_eq!(planned_replay.summary().current_clean_producer, 0);
+    assert_eq!(planned_replay.summary().current_source_producer, 0);
     assert_eq!(planned_replay.summary().qualifying, 0);
 
     fs::remove_file(run.join("plan.json")).unwrap();

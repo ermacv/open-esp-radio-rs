@@ -176,6 +176,7 @@ fn add_build_provenance(run: &Path) {
             build_id,
             build_type: String::from("open-esp-radio-hil-firmware/v1"),
             parameters: crate::evidence::build::BuildParameters {
+                network: None,
                 image: ImageClass::Correctness,
                 runtime_profile: ImageClass::Correctness.runtime_profile().to_owned(),
                 target: crate::image::TARGET.to_owned(),

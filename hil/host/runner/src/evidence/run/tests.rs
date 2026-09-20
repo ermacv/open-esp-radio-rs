@@ -376,7 +376,10 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     first_session
         .record_firmware(
-            ImageClass::Correctness,
+            (
+                ImageClass::Correctness,
+                crate::image::Integration::UpstreamXarxa,
+            ),
             &application,
             &runtime_elf,
             &runtime_bin,
@@ -440,6 +443,14 @@ fn firmware_record_archives_the_exact_application() {
         serde_json::from_slice(&fs::read(run_directory.join(provenance_path)).unwrap()).unwrap();
     assert_eq!(provenance.build_id, artifact.build_id.clone().unwrap());
     assert_eq!(provenance.subjects.len(), 4);
+    assert_eq!(
+        provenance.parameters.network.as_deref(),
+        Some("upstream-xarxa")
+    );
+    assert_eq!(
+        provenance.parameters.runtime_features,
+        ImageClass::Correctness.build_features(crate::image::Integration::UpstreamXarxa)
+    );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
     }
@@ -450,7 +461,10 @@ fn firmware_record_archives_the_exact_application() {
     assert!(
         first_session
             .record_firmware(
-                ImageClass::Correctness,
+                (
+                    ImageClass::Correctness,
+                    crate::image::Integration::UpstreamXarxa
+                ),
                 &application,
                 &runtime_elf,
                 &runtime_bin,
@@ -472,7 +486,10 @@ fn firmware_record_archives_the_exact_application() {
     second.bind_source_snapshot(snapshot.directory()).unwrap();
     second
         .record_firmware(
-            ImageClass::Correctness,
+            (
+                ImageClass::Correctness,
+                crate::image::Integration::UpstreamXarxa,
+            ),
             &application,
             &runtime_elf,
             &runtime_bin,
@@ -518,7 +535,10 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     source.bind_source_snapshot(snapshot.directory()).unwrap();
     source
         .record_firmware(
-            ImageClass::Correctness,
+            (
+                ImageClass::Correctness,
+                crate::image::Integration::UpstreamXarxa,
+            ),
             &application,
             &runtime_elf,
             &runtime_bin,
@@ -744,3 +764,40 @@ fn broken_or_interrupted_repetitions_can_retain_failed_measurements() {
         validation::validate_suite(&suite, &manifest).unwrap();
     }
 }
+
+#[test]
+fn provenance_retains_actual_network_selection_even_when_cargo_features_match() {
+    use crate::image::Integration;
+    let root = temporary_directory("build-selection");
+    write_test_build_materials(&root);
+    let mut selections = std::collections::BTreeSet::new();
+    for network in [
+        Integration::UpstreamXarxa,
+        Integration::PatchedXarxa,
+        Integration::UpstreamSmoltcp,
+        Integration::OwnedXarxa,
+    ] {
+        let provenance = crate::evidence::build::create_provenance(
+            &root,
+            (ImageClass::Correctness, network),
+            "00".repeat(32),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(provenance.parameters.network.as_deref(), Some(network.id()));
+        assert!(
+            provenance
+                .parameters
+                .runtime_features
+                .split(',')
+                .any(|feature| feature == network.feature())
+        );
+        selections.insert(serde_json::to_string(&provenance.parameters).unwrap());
+    }
+    assert_eq!(selections.len(), 4);
+    fs::remove_dir_all(root).unwrap();
+}
+
+mod workflow;

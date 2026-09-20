@@ -230,12 +230,20 @@ not contain proprietary payloads or full disassembly dumps. A generated file
 cannot replace its reviewed input.
 
 Two machine-written records are intentionally durable rather than disposable:
-the immutable revision snapshots described above, and the complete-run vendor
+the immutable revision snapshots described above, and the incremental vendor
 evidence index selected by a verification add-on. The evidence index is a
 compact qualification publication whose source hashes are rechecked by the
 qualification evaluator; preserve both record classes in version control or
 equivalent controlled storage. They remain tool-owned records, not manually
 reviewed fact packs.
+
+Vendor evidence index schema 2 records `suite_states` (`complete` or
+`incomplete`). Each completed suite replaces only its own current entries.
+Starting a rerun removes that suite's previous current entries before execution;
+an interruption cannot leave its old PASS current. Content-addressed sibling
+`*.history/` files retain prior indexes, including failed comparisons. The
+`complete_project_run` flag remains descriptive; per-suite completion governs
+schema-2 consumption. Legacy schema-1 indexes still require a complete run.
 
 ## Internal persistent query store
 

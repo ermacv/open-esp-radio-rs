@@ -38,7 +38,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
             HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
         assert_eq!(index.summary().qualifying, usize::from(expected));
         assert_eq!(
-            index.summary().current_clean_producer,
+            index.summary().current_source_producer,
             usize::from(expected)
         );
         assert_eq!(

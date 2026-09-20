@@ -373,3 +373,14 @@ fn manifest_catalog_check_rejects_repeated_invalid_and_incompatible_ids() {
         );
     }
 }
+
+#[test]
+fn execution_plan_requires_an_evaluated_program() {
+    assert!(
+        parse_arguments(
+            ["plan", "--manifest", "program.toml", "--capability", "wifi"].map(str::to_owned)
+        )
+        .is_ok()
+    );
+    assert!(parse_arguments(["plan", "--catalog", "catalog.toml"].map(str::to_owned)).is_err());
+}

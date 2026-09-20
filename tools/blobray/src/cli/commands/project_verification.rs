@@ -54,12 +54,6 @@ pub(super) fn execute(
     })?;
     let selected = select_suites(&workspace.suites, &arguments.suite)?;
     let complete_project_run = selected.len() == workspace.suites.len();
-    if arguments.check && !complete_project_run {
-        return Err(crate::Error::invalid(
-            "project verify --check cannot be combined with a partial --suite selection",
-        ));
-    }
-
     let rust_artifacts = selected
         .iter()
         .map(|suite| {
@@ -71,9 +65,23 @@ pub(super) fn execute(
         .collect::<Result<Vec<_>>>()?;
     preflight_rust_artifacts(project_manifest, &selected, &rust_artifacts)?;
 
+    let publication = if arguments.check {
+        None
+    } else {
+        Some(
+            crate::verification::evidence_publication::Publication::acquire(
+                &workspace.evidence_index,
+                &project.id,
+            )?,
+        )
+    };
     let mut suites = Vec::with_capacity(selected.len());
     let mut passed = true;
+    let checking = arguments.check;
     for suite in &selected {
+        if let Some(publication) = &publication {
+            publication.begin(&suite.id)?;
+        }
         let arguments = suite_arguments(suite, run_spec)
             .map_err(|error| error.verification_suite(suite.id.clone()))?;
         let report = super::verify_inventory::execute(
@@ -84,20 +92,39 @@ pub(super) fn execute(
         )
         .map_err(|error| error.verification_suite(suite.id.clone()))?;
         passed &= report.verification.passed;
-        suites.push(ProjectVerificationSuiteReport {
-            id: suite.id.clone(),
-            verification: report,
-        });
-    }
-    for suite in &suites {
+        let completed = ProjectVerificationReport::new(
+            project.id.clone(),
+            report.verification.passed,
+            false,
+            vec![ProjectVerificationSuiteReport {
+                id: suite.id.clone(),
+                verification: report,
+            }],
+            project_manifest,
+            &rust_artifacts
+                .iter()
+                .filter(|a| a.suite == suite.id)
+                .map(|a| RustArtifactInput {
+                    suite: a.suite.clone(),
+                    path: a.path.clone(),
+                })
+                .collect::<Vec<_>>(),
+        )?;
         let path = crate::verification::policy::suite_report_path(&workspace.report, &suite.id);
         generated_file::write_or_check_json(
             &path,
-            suite,
-            arguments.check,
+            &completed.suites[0],
+            checking,
             "verification suite report",
             true,
         )?;
+        if let Some(publication) = &publication {
+            publication.complete(
+                &suite.id,
+                &VendorEvidenceIndex::build(&completed, project_manifest)?,
+            )?;
+        }
+        suites.extend(completed.suites);
     }
     if let Some(directory) = arguments.candidate_evidence_dir.as_deref() {
         if !directory.is_dir() {
@@ -130,7 +157,6 @@ pub(super) fn execute(
     )?;
 
     if complete_project_run {
-        let evidence_index = VendorEvidenceIndex::build(&report, project_manifest)?;
         generated_file::write_or_check_json(
             &workspace.report,
             &report,
@@ -138,14 +164,14 @@ pub(super) fn execute(
             "project verification report",
             true,
         )?;
-        generated_file::write_or_check_json(
+    }
+    if arguments.check {
+        crate::verification::evidence_publication::Publication::check(
             &workspace.evidence_index,
-            &evidence_index,
-            arguments.check,
-            "vendor evidence index",
-            true,
+            &VendorEvidenceIndex::build(&report, project_manifest)?,
         )?;
     }
+
     Ok(report)
 }
 

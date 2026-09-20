@@ -71,6 +71,9 @@ pub(super) struct BuildFileMaterial {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct BuildParameters {
     pub(super) image: ImageClass,
+    /// None is retained when decoding older bundles with no recorded selection.
+    #[serde(default)]
+    pub(super) network: Option<String>,
     pub(super) runtime_profile: String,
     pub(super) target: String,
     pub(super) runtime_features: String,
@@ -439,12 +442,13 @@ pub(super) fn build_id(subjects: &[BuildSubject]) -> String {
 
 pub(super) fn create_provenance(
     root: &Path,
-    image: ImageClass,
+    selection: (ImageClass, crate::image::Integration),
     build_id: String,
     sources: Vec<SourceMaterial>,
     subjects: Vec<BuildSubject>,
     effective_locks: Vec<BuildFileMaterial>,
 ) -> Result<BuildProvenance> {
+    let (image, network) = selection;
     let mut files = [
         ("workspace-lock", "Cargo.lock"),
         ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
@@ -481,9 +485,10 @@ pub(super) fn create_provenance(
         build_type: String::from("open-esp-radio-hil-firmware/v1"),
         parameters: BuildParameters {
             image,
+            network: Some(network.id().to_owned()),
             runtime_profile: image.runtime_profile().to_owned(),
             target: crate::image::TARGET.to_owned(),
-            runtime_features: image.runtime_features().to_owned(),
+            runtime_features: image.build_features(network),
         },
         source_reconstructable: sources
             .iter()

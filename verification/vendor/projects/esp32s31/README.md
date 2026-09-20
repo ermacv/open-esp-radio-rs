@@ -177,8 +177,10 @@ profiles cover TX-gain restore, forced digital gain, temperature-to-power and
 post-init AGC; they do not qualify complete calibration, coexistence or hardware
 timing. Temperature tracking follows the archive policy, including divisor eight
 for a positive Wi-Fi temperature delta; the ROM primitive uses divisor five and
-is not a direct-equivalence target for this computation. A selected-suite run writes its own generated report without replacing
-the complete project's evidence index.
+is not a direct-equivalence target for this computation. A selected-suite run publishes its report and replaces only its rows in the
+compact evidence index. Other completed suites remain usable. An interrupted
+rerun leaves its suite incomplete; immutable index history retains older results.
+`project verify --suite <suite> --check` checks the selected suite's current rows.
 
 The private-input `phy_rfpll` integration tests also execute complete production
 children at the MMIO/I2C boundary. The calibration tests compare PBus clearing

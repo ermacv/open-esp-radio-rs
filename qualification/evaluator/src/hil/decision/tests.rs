@@ -456,7 +456,7 @@ fn ineligible_observations_remain_explained_in_the_serialized_decision() {
         assert_eq!(report["observations"][0]["outcome"], "passed");
         assert_eq!(report["observations"][0]["exclusions"], json!([expected]));
         assert_eq!(report["completion_boundary"], "scenario-repetition-set");
-        assert_eq!(report["applicability_policy"], "current-clean-composition");
+        assert_eq!(report["applicability_policy"], "current-source-composition");
     }
 }
 

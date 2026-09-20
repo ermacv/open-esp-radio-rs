@@ -48,7 +48,7 @@ struct HilInputsReport {
     incomplete: usize,
     completed: usize,
     passing: usize,
-    current_clean_producer: usize,
+    current_source_producer: usize,
     qualifying: usize,
     sealed_attempts: usize,
     evaluator_dirty: bool,
@@ -134,7 +134,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 incomplete: qualification.evidence_inputs.hil.incomplete,
                 completed: qualification.evidence_inputs.hil.completed,
                 passing: qualification.evidence_inputs.hil.passing,
-                current_clean_producer: qualification.evidence_inputs.hil.current_clean_producer,
+                current_source_producer: qualification.evidence_inputs.hil.current_source_producer,
                 qualifying: qualification.evidence_inputs.hil.qualifying,
                 sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
                 evaluator_dirty: qualification.evidence_inputs.hil.evaluator_dirty,
@@ -175,7 +175,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-clean-producer={}\thil-qualifying={}\thil-sealed-attempts={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
@@ -185,7 +185,7 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.incomplete,
         qualification.evidence_inputs.hil.completed,
         qualification.evidence_inputs.hil.passing,
-        qualification.evidence_inputs.hil.current_clean_producer,
+        qualification.evidence_inputs.hil.current_source_producer,
         qualification.evidence_inputs.hil.qualifying,
         qualification.evidence_inputs.hil.sealed_attempts,
         qualification.evidence_inputs.hil.evaluator_dirty,

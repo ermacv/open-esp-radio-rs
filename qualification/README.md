@@ -329,6 +329,18 @@ assessment, or `gate --manifest PATH` when every selected capability must be rea
 The catalog-check summary counts all loaded catalog declarations, including
 unselected ones; the evaluator report describes only the resolved product set.
 
+## Execution selection
+
+`cargo qualification plan --manifest <program> [--capability <id>]` emits a
+read-only JSON selection from the same HIL decisions as `status` and `gate`.
+Each obligation explains `satisfied`, `run`, `review` or `investigate` and binds
+its property scope. It performs no build, test or hardware action. The HIL
+runner consumes this through `cargo hil plan --qualification <program>` and
+refreshes it before resuming; already satisfied obligations do not rerun.
+Unknown impact requests review rather than silently inheriting success. A focused
+capability plan includes only its own obligations and necessary controls;
+prerequisite capabilities remain context, not additional execution requests.
+
 ## Declared and derived axes
 
 Every capability has five independent axes:
@@ -337,12 +349,13 @@ Every capability has five independent axes:
 - `host` is the reviewed declaration `covered` or `incomplete`. The evaluator
   checks consistency with declared gaps; it does not find or run Rust tests.
   Workspace testing remains a separate repository check;
-- `vendor` is derived from Blobray's complete compact evidence index. Only a
+- `vendor` is derived from Blobray's compact evidence index with independently completed suites. Only a
   fresh, baseline-accepted, release-eligible `production-trace` for every
-  declared root evaluated from a clean worktree can qualify the axis;
+  declared root with matching production source hashes can qualify the axis;
 - `hil` is derived from immutable schema-2 HIL bundles. Every required scenario
-  must pass with enough repetitions in a sealed run from the exact current
-  clean commit;
+  must pass with enough repetitions in an independently sealed attempt or run,
+  bound to the current source inputs or admitted by an explicit property/build
+  applicability review;
 - `async` is the reviewed declaration `bounded`, `incomplete`, or explicitly
   `not-applicable` with a reason. Consistency with gaps is checked; the
   evaluator does not infer executor behavior from source names.
@@ -442,8 +455,12 @@ silence, a validated maintenance transaction, and absence of station lifecycle
 change through that transaction's traffic session. Semantic checks are recorded
 only when attempted. They do not establish RF quality, a qualified PHY execution
 bound, or relative performance non-regression. Default applicability is
-`current-clean-composition`: current clean commit, current source binding and no
-unbound replay. Optional [reviewed applicability](evidence-reviews.md) admits an
+`current-source-composition`: verified current source binding and no unbound
+replay. Legacy commit-only provenance still requires a matching clean commit. A `source-snapshot` build can establish this direct binding:
+the evaluator independently verifies snapshot identities, every archived file,
+and the complete current tracked and nonignored untracked file set, bytes and executable modes. It also
+checks the current lockfile and local override pins. No self-review is needed
+for a matching snapshot, regardless of dirty state or commit identity. Optional [reviewed applicability](evidence-reviews.md) admits an
 original complete observation for a specific capability/property and destination
 build after validating an explicit engineering conclusion and its bindings.
 Original outcomes and exclusions remain visible; a commit change or another PASS
@@ -451,7 +468,7 @@ does not establish that a failure was resolved.
 
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,
-manifest/suite identity, clean repository provenance, commit equality,
+manifest/suite identity, current source applicability,
 scenario outcome and repetition count. Markdown reports are not proof inputs.
 A generated run directory without a manifest is incomplete mutable execution
 state, ignored as evidence and counted as `hil-incomplete` in console
@@ -482,10 +499,11 @@ cargo qualification evaluate \
 
 The console `INPUT` row and JSON `evidence_inputs` object expose how many
 verification rows and HIL directories were observed, how many are incomplete
-or current, and whether a dirty evaluator worktree prevented otherwise valid
-evidence from entering the verdict. `hil-qualifying` / `hil.qualifying` counts
+or current, together with repository dirty state and source applicability. `hil-qualifying` / `hil.qualifying` counts
 eligible runs containing at least one passed scenario, not qualified products;
 per-obligation decisions still enforce checks, repetitions, controls and failures.
+`hil-current-source-producer` / `hil.current_source_producer` counts direct
+source bindings independently of dirty state.
 
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)

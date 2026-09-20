@@ -7,7 +7,9 @@ map. It is an engineering conclusion about applicability, not a new execution.
 No review is inferred from an unchanged commit, a later PASS, or a capability's
 implementation status.
 
-The default remains `current-clean-composition`. An optional `hil-reviews` list
+The default is `current-source-composition`: a fully matching verified snapshot
+needs no review, even when dirty or recorded under another commit. Reviews
+justify differences between observed and current subjects. An optional `hil-reviews` list
 in a capability declaration references repository-relative TOML files. Keep
 accepted records with the capability's reviewed inputs; generated reports and
 run archives remain in their owner's ignored outputs. Each capability may have
@@ -24,7 +26,9 @@ cargo qualification status --manifest qualification/targets/esp32s31/wifi-sta.to
 For each entry, `evidence.hil_decisions` exposes:
 
 - `property.sha256`: the current capability scope, dependency scopes, source
-  contracts, selected checks, repetition requirement and scenario definition;
+  contracts, selected checks, repetition requirement and executable scenario
+  fields. The v3 fingerprint normalizes executable defaults and excludes top-level
+  `description` and `tags`;
 - `property.required_inputs` and `property.current_inputs`: owner files from the
   capability and its dependency closure, plus existing workspace manifest,
   lockfile and toolchain file, with current SHA-256 hashes;
@@ -42,8 +46,9 @@ material changes its ID. Old bundles can lack application or procedure
 identities; their absence stays explicit and cannot establish a transfer.
 
 Choose an original complete passing observation as the source. The destination
-is a sealed, build-bearing observation in the selected program's run index; it
-may belong to another scenario and need not pass. This identifies the actual
+is either a sealed build record or a build-bearing observation in the selected
+program's run index; an observation may belong to another scenario and need not
+pass. This identifies the actual
 application being assessed without demanding a repeat of the source experiment.
 It must contain the selected image class and checkable source provenance.
 
@@ -52,6 +57,24 @@ checks recorded bindings; it does not discover every implicit dependency or
 supply the reviewer's engineering conclusion. Include additional relevant files
 in `inputs` when the required owner paths are insufficient. Update the canonical
 source contracts when their ownership mapping was incomplete.
+
+The report also exposes `property.legacy_sha256` (v1) and
+`property.previous_sha256` (v2), exact fingerprints of the current declaration
+for checking existing records. A matching older record is
+still accepted without changing its review scope. When updating only the
+fingerprint format, first require the stored hash to equal the corresponding older fingerprint, then
+replace it with `sha256`; retain all source, build and failure bindings. An
+already-stale hash cannot be migrated this way. Existing byte bindings retain their original meaning. Reclassifying an input
+requires an explicit reviewed kind and reason; changing the fingerprint alone
+does not narrow those bindings.
+
+Transfer to a different recorded build requires matching recorded network
+selection, effective runtime features/profile/target, external source identities,
+both archived effective lockfiles, compiler/packing tool versions and inherited
+build flags. The evaluator checks lockfile contents against their recorded
+hashes. Missing configuration does not establish equality between builds. Reuse
+of the exact same recorded build remains possible for older bundles; it does not
+infer a missing network choice. Tool installation paths are not compared.
 
 ## Record format
 
@@ -129,6 +152,36 @@ applicable; historical controls can have their own property-scoped review.
 The status `applied` describes the review's bindings. The obligation may still
 be `unresolved-failure` or missing its applicable control. Original exclusions
 are retained alongside the explicit applicability decision.
+
+## Build-only destinations and input scope
+
+For a snapshot-backed `cargo hil image build`, use its published build directory
+as `destination.build-record` (relative to the repository), the SHA-256 of its
+`integrity.json` as `destination.id`, and the selected image/application digest.
+The evaluator checks the entire sealed inventory and source provenance. A source
+must still be an actual completed observation. A build-only destination cannot
+resolve a failure as `fixed`; that requires a later passing observation.
+
+Input `kind` defaults to `bytes`. Two explicit classifications require `reason`:
+
+- `procedure`: hash the canonical JSON of a schema-4 scenario, with executable
+  defaults expanded and display metadata removed. Both archived procedures and
+  the current file must match this hash.
+- `evidence`: record supporting test/analysis provenance without treating its
+  bytes as firmware inputs. A required implementation owner cannot be excluded
+  this way. Inline tests in a required Rust owner remain byte-bound.
+
+Optional `dependency-roots = ["package-name", ...]` replaces only implicitly
+added whole-workspace `Cargo.toml`/`Cargo.lock` byte bindings with a checked
+resolved package closure. Omit those implicit byte entries from `inputs` to use
+this policy; explicitly declared owner files and the toolchain stay required.
+Every mapped implementation package must appear among the roots. The evaluator
+checks captured effective and workspace lockfiles, source/checksum identities,
+local manifests, inherited dependencies, build and target dependencies, profiles,
+network selection, features and recorded build environment. Local dev-only edges
+are excluded; optional runtime edges remain conservative. Missing or ambiguous
+graph data cannot establish transfer. This is reviewed package scope, not an
+inferred per-function influence analysis.
 
 ## Resolving a failure
 

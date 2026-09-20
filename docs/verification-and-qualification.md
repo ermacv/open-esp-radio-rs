@@ -17,7 +17,7 @@ application path exists, and incomplete programs are ordinary development states
 | Reviewed implementation/host/async declarations | What reviewed state does the capability program declare, consistently with its gaps? | Required declarations, not test-run evidence |
 | Blobray `production-trace` | Does concrete vendor execution match the exact compiled production entry under the declared bounded contract? | Supplies vendor evidence only |
 | Blobray `shared-core` or static analysis | Does supporting code or a model agree? | No |
-| HIL sealed run | Did the current clean production composition pass the declared scenario on hardware? | Supplies HIL evidence only |
+| HIL sealed run | Did the current production composition pass the declared scenario on hardware? | Supplies HIL evidence only |
 | Qualification v4 | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
 
 No evidence producer imports product-readiness policy. Qualification consumes
@@ -96,12 +96,14 @@ A vendor comparison is qualification-eligible only when all of these hold:
 5. the comparison is `match` or an explicitly bounded match;
 6. the accepted evidence baseline passes with a reproducible identity;
 7. the evidence row is explicitly release eligible and has no blockers;
-8. the evaluator worktree is clean and every named production source still
-   matches its recorded hash.
+8. every named production source still matches its recorded hash; unrelated
+   dirty files do not invalidate an independent result.
 
 `project verify` writes the compact
-`verification/vendor/.../evidence/vendor-evidence.json` only for a complete
-project run. Qualification follows the selected project's
+`verification/vendor/.../evidence/vendor-evidence.json` after each completed
+suite. Schema 2 records per-suite completion; beginning a rerun marks that suite
+incomplete and removes its old current rows. Other suites remain available.
+Content-addressed history preserves earlier outcomes, including failures. Qualification follows the selected project's
 `verification-addon`, requires the configured index to be that exact output,
 checks its command and project identity, validates proof class/status/hash
 shape and re-hashes every referenced production source. A partial suite run
@@ -149,8 +151,9 @@ evidence only when:
 4. the evidence boundary is completed and the required scenario passed (an
    unrelated scenario or the enclosing campaign may have failed or been interrupted);
 5. every required repetition passed;
-6. the run was created from a clean tree at the evaluator's current commit and
-   its build provenance establishes the current source binding, or an explicit
+6. a verified snapshot fully matches the current source selection, regardless
+   of dirty state or commit identity, or legacy provenance binds a matching clean
+   commit, or an explicit
    property-scoped applicability review binds that observation to the destination
    build and the current reviewed owner inputs;
 7. no applicable failure of that scenario or its repetitions remains unresolved;
@@ -174,7 +177,7 @@ and the later aggregate result. Closing this evidence boundary does not declare
 fixture resources healthy after an interrupted subsequent experiment.
 
 Markdown descriptions do not enter this decision; no hand-edited `qualified`
-field exists. Applicability defaults to the clean current composition. An
+field exists. Applicability defaults to the verified current source composition. An
 explicit [review record](../qualification/evidence-reviews.md) can admit an old
 observation for one property after checking both builds, current owner hashes,
 and the property fingerprint. The same record can bind an individual failure's
@@ -203,9 +206,11 @@ Broader checkpoints select their full scope explicitly. The strict `gate`
 assesses that scope against its declared requirements; ordinary changes do not
 implicitly launch a complete vendor/HIL campaign. Missing equipment limits the
 properties that can be observed, not the recorded implementation state.
-Current qualification eligibility still requires a clean current composition;
-the engineering map exposes excluded observations without inventing portability
-between builds or claiming that a commit change resolved a failure.
+Direct HIL eligibility accepts a validated snapshot matching all current source
+inputs. A missing commit or dirty state alone does not require review. An explicit property/build review can
+establish applicability of earlier observations. The engineering map exposes
+original exclusions and review decisions without claiming that a commit change
+resolved a failure.
 
 The commands below produce and assess evidence for an explicitly selected
 checkpoint. They are not prerequisites for reading project status.

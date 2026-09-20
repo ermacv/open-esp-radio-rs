@@ -64,12 +64,17 @@ ordinary errors and cancellation.
 Cleanup runs before repetition attachments and its result is stored separately
 from the workload failure. A cleanup failure can make the repetition broken
 and quarantine later network work; it cannot turn the workload into a pass.
-After scenario results are written, the runner writes suite/JUnit/HTML records,
+Each completed scenario repetition set publishes its own immutable attempt seal.
+Those observations remain available if a later scenario or the campaign is
+interrupted. After scenario results are written, the runner writes suite/JUnit/HTML records,
 marks the manifest complete and finally creates `integrity.json`. Interrupted
 unwinding instead records an interrupted manifest and attempts its own seal.
-Abrupt process termination may leave only incrementally written bytes and no
-completed seal.
+Abrupt process termination can leave the active scenario without a seal;
+previously published scenario seals remain usable.
 
-Qualification independently reads eligible bundles for the exact program,
-commit, clean-source and repetition requirements. History pages and Markdown
+Qualification independently checks the selected program, source/build binding,
+completion seals and repetition requirements. A verified snapshot matching the
+complete current inputs supplies direct evidence, including dirty inputs. Property-scoped
+[engineering reviews](../qualification/evidence-reviews.md) can establish
+applicability to another build. History pages and Markdown
 remain navigation and presentation, never proof input.

@@ -80,7 +80,7 @@ fn archive_and_flash_built(
     flash: impl FnOnce(&Artifacts) -> Result<()>,
 ) -> Result<Option<Failure>> {
     artifacts.application_image = session.record_firmware(
-        class,
+        (class, artifacts.network),
         &artifacts.application_image,
         &artifacts.runtime_elf,
         &artifacts.runtime_bin,

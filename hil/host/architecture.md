@@ -449,12 +449,14 @@ available firmware subjects, effective lock and tracked source patches into
 its own CAS-backed bundle; it remains verifiable after the source run is
 removed. Its manifest records the source run and source integrity digest, and
 the independent qualification reader deliberately excludes replayed firmware
-from current-clean evidence. `run-all` does not accept `--firmware-from`.
+from direct current-source evidence. `run-all` does not accept `--firmware-from`.
 
 The qualification evaluator consumes these same sealed bundles through an
 independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
 scenario IDs and minimum passing repetitions; only a bundle produced from the
-exact current commit with a clean worktree can satisfy the HIL axis. The
+current source composition or admitted by an explicit property/build review
+can satisfy the HIL axis. A verified full snapshot match is sufficient even
+when the checkout is dirty or the commit identity differs. The
 derived history views and Markdown narratives are never proof inputs.
 
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime

@@ -31,6 +31,23 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
+    /// Effective Cargo feature selection used by both the builder and provenance.
+    pub(crate) fn build_features(self, network: super::Integration) -> String {
+        if matches!(
+            self,
+            Self::SystemWatchdog
+                | Self::BluetoothGatt
+                | Self::BluetoothSecureGatt
+                | Self::BluetoothDtm
+                | Self::BluetoothPhyMaintenance
+                | Self::BluetoothWatchdogReset
+        ) {
+            self.runtime_features().to_owned()
+        } else {
+            format!("{},{}", self.runtime_features(), network.feature())
+        }
+    }
+
     pub const ALL: [Self; 23] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,

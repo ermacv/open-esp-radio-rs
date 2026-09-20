@@ -1,0 +1,122 @@
+{
+  "root": {
+    "comparison": null,
+    "ap_scheduler": "disabled",
+    "repetitions": 1,
+    "data_plane": "split-radio-network",
+    "rx_checksum": "software",
+    "tx_udp_checksum": "software",
+    "tx_buffer": "owned-sram-promotion",
+    "rx_continuation": "immediate-software-probe",
+    "l1_cache_counters": false,
+    "link": null,
+    "criteria": {
+      "require_post_maintenance_echo": false,
+      "exact_delivery": false,
+      "minimum_rx_bps": null,
+      "minimum_tx_bps": null,
+      "minimum_combined_bps": null,
+      "minimum_bps_per_flow": null,
+      "minimum_host_offer_percent": null,
+      "maximum_flow_skew_percent": null,
+      "maximum_secondary_tx_interarrival_ms": null,
+      "minimum_secondary_tx_datagrams": null,
+      "maximum_idle_channel_utilization_255": null,
+      "maximum_rx_silence_ms": null,
+      "require_nonzero_rfpll_correction": false,
+      "maximum_lost": null,
+      "maximum_p95_ms": null,
+      "require_no_beacon_loss": false,
+      "minimum_concurrent_ap_clients": null
+    },
+    "evidence": {
+      "openwrt_tx_monitor_rx": false,
+      "independent_laptop_air_monitor": false
+    },
+    "fixture_mutation": {
+      "openwrt_fixed_guard_interval": "any",
+      "openwrt_client_fixed_ht_mcs": null,
+      "openwrt_client_fixed_guard_interval": "any"
+    }
+  },
+  "link": {
+    "minimum_mcs": null,
+    "guard_interval": "any"
+  },
+  "workloads": {
+    "bluetooth-acl-backpressure": {
+      "active_maintenance": false
+    },
+    "bluetooth-security-failure": {
+      "read_version_before_disconnect": false
+    },
+    "bluetooth-encrypted-acl": {
+      "key_refresh": false,
+      "active_maintenance": false
+    },
+    "bluetooth-dtm": {
+      "quiet_cycles": null
+    },
+    "bluetooth-peripheral": {
+      "termination": "peer-reset",
+      "retire_after": false,
+      "restart_between_connections": false,
+      "maintain_between_connections": false,
+      "calibration_threshold": null
+    },
+    "memory-benchmark": {
+      "batch_sizes": [
+        1
+      ]
+    },
+    "udp": {
+      "station_pause": null,
+      "station_pause_after_millis": null,
+      "station_pause_attempts": null,
+      "station_pause_interval_millis": null,
+      "rx_rate_bps": null,
+      "tx_rate_bps": null
+    },
+    "tcp": {
+      "rx_rate_bps": null,
+      "tx_rate_bps": null
+    },
+    "station-ap-loss": {
+      "require_recovery_echo": false
+    },
+    "station-ap-absence": {
+      "initially_absent": false
+    },
+    "wifi-role": {
+      "cycles": null,
+      "channel": null,
+      "dwell_seconds": null,
+      "snapshot_length": null
+    },
+    "monitor-capture": {
+      "channel": null
+    },
+    "access-point": {
+      "probe_load": false,
+      "client": "laptop",
+      "security": "wpa2-personal"
+    }
+  },
+  "ap_traffic": {
+    "udp": {
+      "rx_rate_bps": null,
+      "tx_rate_bps": null
+    },
+    "tcp": {
+      "rx_rate_bps": null,
+      "tx_rate_bps": null
+    },
+    "udp-multi-client": {
+      "secondary_rx_rate_bps": null,
+      "secondary_tx_rate_bps": null,
+      "secondary_tx_pacing_group_datagrams": null,
+      "rx_rate_bps_per_flow": null,
+      "tx_rate_bps_per_flow": null
+    }
+  }
+}

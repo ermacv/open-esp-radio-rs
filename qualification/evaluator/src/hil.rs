@@ -1,12 +1,15 @@
 //! Independent consumption of immutable HIL run bundles.
 
 mod attempt;
+mod build_record;
 mod checks;
 mod comparison;
 mod decision;
 mod measurement;
+mod procedure;
 mod provenance;
 pub(crate) mod review;
+mod snapshot;
 mod subject;
 
 pub(crate) use decision::{EvidenceDecision, EvidenceStatus, ObservationCounts};
@@ -212,7 +215,7 @@ pub(crate) struct HilEvidenceSummary {
     pub(crate) incomplete: usize,
     pub(crate) completed: usize,
     pub(crate) passing: usize,
-    pub(crate) current_clean_producer: usize,
+    pub(crate) current_source_producer: usize,
     pub(crate) qualifying: usize,
     pub(crate) sealed_attempts: usize,
     pub(crate) evaluator_dirty: bool,
@@ -429,29 +432,28 @@ impl HilEvidenceIndex {
                         .and_then(|plan| plan.firmware)
                         .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
                 let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
-                // Preserve observations independently of their applicability. This
-                // binding is still the current clean composition, not authorization
-                // to transfer evidence to a different firmware or source snapshot.
+                // Exact snapshot bytes establish identity independently of Git
+                // bookkeeping. Reviews justify differences, never missing commits.
+                let binding = provenance::current_sources(root, &run_directory, &manifest)?;
                 let mut exclusions = Vec::new();
                 if replays_firmware {
                     exclusions.push(decision::Exclusion::ReplaySubjectNotBound);
                 }
-                if manifest.repository.dirty {
-                    exclusions.push(decision::Exclusion::ProducerDirty);
+                if binding != provenance::Binding::Snapshot {
+                    if manifest.repository.dirty {
+                        exclusions.push(decision::Exclusion::ProducerDirty);
+                    }
+                    if manifest.repository.commit != repository.commit {
+                        exclusions.push(decision::Exclusion::DifferentCommit);
+                    }
                 }
-                if manifest.repository.commit != repository.commit {
-                    exclusions.push(decision::Exclusion::DifferentCommit);
-                }
-                if exclusions.is_empty()
-                    && !provenance::current_sources(root, &run_directory, &manifest)?
-                {
+                if exclusions.is_empty() && binding == provenance::Binding::Unavailable {
                     exclusions.push(decision::Exclusion::SourceBindingNotEstablished);
                 }
-                let current_clean_producer = exclusions.is_empty();
-                if current_clean_producer {
+                if exclusions.is_empty() {
                     current_producer = true;
                 }
-                if repository.dirty {
+                if repository.dirty && binding != provenance::Binding::Snapshot {
                     exclusions.push(decision::Exclusion::EvaluatorDirty);
                 }
                 if exclusions.is_empty()
@@ -515,7 +517,7 @@ impl HilEvidenceIndex {
                         });
                 }
             }
-            summary.current_clean_producer += usize::from(current_producer);
+            summary.current_source_producer += usize::from(current_producer);
             summary.qualifying += usize::from(qualifying);
         }
         Ok(Self { scenarios, summary })
@@ -795,15 +797,19 @@ fn aggregate_outcome(outcomes: impl IntoIterator<Item = Outcome>) -> Outcome {
 }
 
 fn verify_integrity(run_directory: &Path) -> Result<()> {
+    verify_integrity_named(
+        run_directory,
+        run_directory
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default(),
+    )
+}
+
+fn verify_integrity_named(run_directory: &Path, identity: &str) -> Result<()> {
     let path = run_directory.join("integrity.json");
     let index: IntegrityIndex = read_json(&path)?;
-    if index.schema != HIL_RUN_SCHEMA
-        || index.run_id
-            != run_directory
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default()
-    {
+    if index.schema != HIL_RUN_SCHEMA || index.run_id != identity {
         return Err(format!("invalid HIL integrity identity: {}", path.display()).into());
     }
     let mut declared = index.files;

@@ -95,11 +95,18 @@ pub(crate) fn run() -> Result<()> {
             out,
             network,
             proofs,
+            qualification,
+            capability,
         } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
-            let selected = selection.resolve(&catalog)?;
-            let plan =
-                crate::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?;
+            let plan = if let Some(manifest) = qualification {
+                crate::campaign::Plan::from_qualification(
+                    &root, &catalog, manifest, capability, network,
+                )?
+            } else {
+                let selected = selection.resolve(&catalog)?;
+                crate::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?
+            };
             if let Some(path) = out {
                 let mut file = std::fs::OpenOptions::new()
                     .write(true)
@@ -116,8 +123,9 @@ pub(crate) fn run() -> Result<()> {
         } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let plan: crate::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
+            let plan = plan.refresh(&root, &catalog)?;
             let (selected, network) = plan.resolve(&catalog)?;
-            if check {
+            if check || selected.is_empty() {
                 return emit_json(&plan, true);
             }
             let snapshot = image::snapshot::capture(&root, &source_include)?;
@@ -176,7 +184,14 @@ pub(crate) fn run() -> Result<()> {
                 source_snapshot,
             } => {
                 let artifacts = match source_snapshot {
-                    Some(snapshot) => image::snapshot::build(&root, &snapshot, class, network)?,
+                    Some(snapshot) => {
+                        let artifacts = image::snapshot::build(&root, &snapshot, class, network)?;
+                        let record = crate::evidence::build_record::publish(
+                            &root, &snapshot, class, &artifacts,
+                        )?;
+                        eprintln!("build_record={}", record.display());
+                        artifacts
+                    }
                     None => image::build(&root, class, network)?,
                 };
                 image::print_artifacts(class, &artifacts, false)

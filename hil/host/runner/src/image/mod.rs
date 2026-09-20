@@ -516,19 +516,7 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = if matches!(
-        class,
-        ImageClass::SystemWatchdog
-            | ImageClass::BluetoothGatt
-            | ImageClass::BluetoothSecureGatt
-            | ImageClass::BluetoothDtm
-            | ImageClass::BluetoothPhyMaintenance
-            | ImageClass::BluetoothWatchdogReset
-    ) {
-        class.runtime_features().to_owned()
-    } else {
-        format!("{},{}", class.runtime_features(), network.feature())
-    };
+    let runtime_features = class.build_features(network);
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();

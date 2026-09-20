@@ -210,6 +210,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         vendor_evidence_index: None,
     };
     let vendor_index = VendorEvidenceIndex {
+        suite_states: BTreeMap::new(),
         schema_version: 1,
         command: "project verify vendor evidence index".to_owned(),
         project: "test".to_owned(),
@@ -584,11 +585,12 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
             ],
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             false,
-            0,
+            2,
         ),
     ];
     for (name, entries, hil_entries, clean, ready) in cases {
         let vendor = VendorEvidenceIndex {
+            suite_states: BTreeMap::new(),
             schema_version: 1,
             command: "project verify vendor evidence index".to_owned(),
             project: "test".to_owned(),
@@ -648,6 +650,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     }
 
     let only_wifi_vendor = VendorEvidenceIndex {
+        suite_states: BTreeMap::new(),
         schema_version: 1,
         command: "project verify vendor evidence index".to_owned(),
         project: "test".to_owned(),
@@ -704,6 +707,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     assert!(!qualification.is_ready("wifi-channel"));
 
     let only_base_vendor = VendorEvidenceIndex {
+        suite_states: BTreeMap::new(),
         schema_version: 1,
         command: "project verify vendor evidence index".to_owned(),
         project: "test".to_owned(),

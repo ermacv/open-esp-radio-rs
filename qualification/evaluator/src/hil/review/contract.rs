@@ -45,17 +45,38 @@ pub(super) fn read(root: &Path, path: &Path) -> Result<Document> {
     {
         return Err("invalid HIL applicability review identity, rationale or inputs".into());
     }
+    if document.source.build_record.is_some() {
+        return Err("review source must be an actual observation".into());
+    }
     for reference in [&document.source, &document.destination] {
         if !valid_sha256(&reference.id)
             || !valid_id(&reference.image)
             || !valid_sha256(&reference.application_sha256)
+            || reference
+                .build_record
+                .as_ref()
+                .is_some_and(|p| !safe_relative(p))
         {
             return Err("invalid HIL review observation/build binding".into());
         }
     }
+    let mut roots = BTreeSet::new();
+    if document.dependency_roots.iter().any(|name| {
+        (name.is_empty()
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')))
+            || !roots.insert(name)
+    }) {
+        return Err("invalid or duplicate dependency root".into());
+    }
     let mut paths = BTreeSet::new();
     for input in &document.inputs {
-        if !safe_relative(&input.path) || !valid_sha256(&input.sha256) || !paths.insert(&input.path)
+        if !safe_relative(&input.path)
+            || !valid_sha256(&input.sha256)
+            || !paths.insert(&input.path)
+            || (input.kind != InputKind::Bytes
+                && input.reason.as_deref().is_none_or(|s| s.trim().is_empty()))
         {
             return Err("invalid or duplicate HIL review source binding".into());
         }
@@ -112,22 +133,43 @@ pub(crate) fn property(
         scopes.insert(id, serde_json::json!({"scope":d.scope,"contracts":d.source_contracts,"dependencies":d.depends_on,"catalog_scope":d.catalog_scope}));
         pending.extend(d.depends_on.iter().cloned());
     }
+    let mut implicit_build_inputs = Vec::new();
     for path in ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"] {
-        if root.join(path).try_exists()? {
-            owners.insert(PathBuf::from(path));
+        if root.join(path).try_exists()?
+            && owners.insert(PathBuf::from(path))
+            && path != "rust-toolchain.toml"
+        {
+            implicit_build_inputs.push(PathBuf::from(path));
         }
     }
     unmapped.sort();
-    let bytes = serde_json::to_vec(&serde_json::json!({
-        "format":"oer-hil-property-v1", "image_sensitive":image_sensitive(requirement, catalog), "capability":document.id, "scopes":scopes,
+    let mut identity = serde_json::json!({
+        "format":"oer-hil-property-v3", "image_sensitive":image_sensitive(requirement, catalog), "capability":document.id, "scopes":scopes,
         "scenario":requirement.scenario,"checks":requirement.checks,"minimum_repetitions":requirement.minimum_repetitions,
-        "procedure":catalog.definitions.get(&requirement.scenario),
-    }))?;
+        "procedure":catalog.definitions.get(&requirement.scenario).map(crate::hil::procedure::normalize),
+    });
+    let bytes = serde_json::to_vec(&identity)?;
+    identity["format"] = serde_json::json!("oer-hil-property-v2");
+    identity["procedure"] = catalog
+        .definitions
+        .get(&requirement.scenario)
+        .map(procedure)
+        .unwrap_or_default();
+    let previous_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&identity)?));
+    identity["format"] = serde_json::json!("oer-hil-property-v1");
+    identity["procedure"] = catalog
+        .definitions
+        .get(&requirement.scenario)
+        .cloned()
+        .unwrap_or_default();
+    let legacy_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&identity)?));
     let current_inputs = owners
         .iter()
         .map(|path| {
             regular(root, path)?;
             Ok(InputBinding {
+                kind: InputKind::Bytes,
+                reason: None,
                 path: path.clone(),
                 sha256: sha256_file(&root.join(path))?,
             })
@@ -135,6 +177,17 @@ pub(crate) fn property(
         .collect::<Result<Vec<_>>>()?;
     Ok(PropertyBinding {
         current_inputs,
+        implicit_build_inputs,
+        legacy_sha256,
+        previous_sha256,
+        procedure_sha256: catalog
+            .definitions
+            .get(&requirement.scenario)
+            .map(|v| {
+                serde_json::to_vec(&crate::hil::procedure::normalize(v))
+                    .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+            })
+            .transpose()?,
         image_sensitive: image_sensitive(requirement, catalog),
         sha256: format!("{:x}", Sha256::digest(bytes)),
         required_inputs: owners.into_iter().collect(),
@@ -160,4 +213,15 @@ pub(super) fn image_sensitive(requirement: &HilRequirement, catalog: &ScenarioCa
                     && c.image_sensitive()
             })
         })
+}
+
+/// Only top-level display metadata is excluded. Workload, criteria, evidence,
+/// fixture interventions and unknown future execution fields remain bound.
+fn procedure(definition: &serde_json::Value) -> serde_json::Value {
+    let mut value = definition.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("description");
+        object.remove("tags");
+    }
+    value
 }

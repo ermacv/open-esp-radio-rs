@@ -2,23 +2,21 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::evidence::run::{FirmwareArtifact, FirmwareReplayOrigin, RunSession, atomic_json};
-use crate::evidence::{
-    build,
-    build::{BuildSubject, BuildSubjectRole},
-};
+use crate::evidence::build;
+use crate::evidence::run::{FirmwareReplayOrigin, RunSession, atomic_json};
 use crate::{Result, image::ImageClass};
 
 impl RunSession {
     pub(crate) fn record_firmware(
         &mut self,
-        image: ImageClass,
+        selection: (ImageClass, crate::image::Integration),
         application: &Path,
         runtime_elf: &Path,
         runtime_bin: &Path,
         bootstrap_elf: &Path,
         effective_locks: (&Path, &Path),
     ) -> Result<PathBuf> {
+        let (image, _) = selection;
         if self
             .manifest
             .firmware
@@ -32,117 +30,23 @@ impl RunSession {
             .as_ref()
             .ok_or("firmware requires a bound source snapshot")?;
         frozen.verify_unchanged()?;
-        let firmware_directory = PathBuf::from("firmware").join(image.id());
-        let application_path = firmware_directory.join("application.bin");
-        let archived_application = self.directory.join(&application_path);
-        let runtime_elf_path = firmware_directory.join("runtime.elf");
-        let runtime_bin_path = firmware_directory.join("runtime.bin");
-        let bootstrap_elf_path = firmware_directory.join("bootstrap.elf");
-
-        let application = build::archive_content_addressed(
-            application,
-            &archived_application,
-            &self.target_directory,
-        )?;
-        let runtime_elf = build::archive_content_addressed(
-            runtime_elf,
-            &self.directory.join(&runtime_elf_path),
-            &self.target_directory,
-        )?;
-        let runtime_bin = build::archive_content_addressed(
-            runtime_bin,
-            &self.directory.join(&runtime_bin_path),
-            &self.target_directory,
-        )?;
-        let bootstrap_elf = build::archive_content_addressed(
-            bootstrap_elf,
-            &self.directory.join(&bootstrap_elf_path),
-            &self.target_directory,
-        )?;
-        let mut locks = Vec::new();
-        for (name, original, filename, source) in [
-            (
-                "embedded-lock",
-                "hil/targets/esp32s31/Cargo.lock",
-                "effective-Cargo.lock",
-                effective_locks.0,
-            ),
-            (
-                "bootstrap-lock",
-                "platform/esp32s31/Cargo.lock",
-                "bootstrap-Cargo.lock",
-                effective_locks.1,
-            ),
-        ] {
-            let path = firmware_directory.join(filename);
-            let archived = build::archive_content_addressed(
-                source,
-                &self.directory.join(&path),
-                &self.target_directory,
-            )?;
-            locks.push(build::archived_file_material(
-                name,
-                Path::new(original),
-                path,
-                &archived,
-            ));
-        }
-        let subjects = vec![
-            BuildSubject {
-                role: BuildSubjectRole::Application,
-                path: application_path.clone(),
-                size_bytes: application.size_bytes,
-                sha256: application.sha256.clone(),
+        let (artifact, archived_application) = crate::evidence::firmware::archive(
+            crate::evidence::firmware::Context {
+                directory: &self.directory,
+                target_directory: &self.target_directory,
+                source_root: &frozen.repository(),
+                source_materials: &self.source_materials,
+                snapshot_materials: &self.snapshot_materials,
             },
-            BuildSubject {
-                role: BuildSubjectRole::BootstrapElf,
-                path: bootstrap_elf_path.clone(),
-                size_bytes: bootstrap_elf.size_bytes,
-                sha256: bootstrap_elf.sha256.clone(),
+            crate::evidence::firmware::Inputs {
+                selection,
+                application,
+                runtime_elf,
+                runtime_bin,
+                bootstrap_elf,
+                effective_locks,
             },
-            BuildSubject {
-                role: BuildSubjectRole::RuntimeBin,
-                path: runtime_bin_path.clone(),
-                size_bytes: runtime_bin.size_bytes,
-                sha256: runtime_bin.sha256.clone(),
-            },
-            BuildSubject {
-                role: BuildSubjectRole::RuntimeElf,
-                path: runtime_elf_path.clone(),
-                size_bytes: runtime_elf.size_bytes,
-                sha256: runtime_elf.sha256.clone(),
-            },
-        ];
-        let build_id = build::build_id(&subjects);
-        let build_provenance_path = firmware_directory.join("build-provenance.json");
-        locks.extend(self.snapshot_materials.clone());
-        let provenance = build::create_provenance(
-            &frozen.repository(),
-            image,
-            build_id.clone(),
-            self.source_materials.clone(),
-            subjects,
-            locks,
         )?;
-        atomic_json(&self.directory.join(&build_provenance_path), &provenance)?;
-        let artifact = FirmwareArtifact {
-            image,
-            replayed_from: None,
-            build_id: Some(build_id),
-            build_provenance_path: Some(build_provenance_path),
-            application_path,
-            application_size_bytes: application.size_bytes,
-            application_sha256: application.sha256,
-            runtime_elf_path: Some(runtime_elf_path),
-            runtime_elf_size_bytes: Some(runtime_elf.size_bytes),
-            runtime_elf_sha256: runtime_elf.sha256,
-            runtime_bin_path: Some(runtime_bin_path),
-            runtime_bin_size_bytes: Some(runtime_bin.size_bytes),
-            runtime_bin_sha256: runtime_bin.sha256,
-            bootstrap_elf_path: Some(bootstrap_elf_path),
-            bootstrap_elf_size_bytes: Some(bootstrap_elf.size_bytes),
-            bootstrap_elf_sha256: bootstrap_elf.sha256,
-        };
         self.manifest.firmware.retain(|entry| entry.image != image);
         self.manifest.firmware.push(artifact);
         atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;

@@ -66,8 +66,27 @@ This selects the HE20 calibration integration and adds its HE20 control. A
 control need not provide the experiment's named check. The plan lists provided
 checks and selection reasons; it does not infer success from tags, select by
 changed files, or claim minimum coverage of an arbitrary product program.
-Saved executable plans use schema 3; older plan schemas are rejected. Regenerating
+Saved executable plans use schema 5; older plan schemas are rejected. Scenario
+digests normalize schema-4 defaults using `hil/schema/scenario-v4-defaults.json`
+and exclude top-level `description` and `tags`; all execution fields remain
+bound, including repetitions, workload, criteria and fixture interventions. Regenerating
 an offline plan neither executes hardware nor invalidates sealed observations.
+
+A program-backed plan reads the independent evaluator's existing evidence:
+
+```console
+cargo hil plan --qualification qualification/targets/esp32s31/wifi-sta.toml --out target/hil/plan.json
+```
+
+`--capability <id>` selects only that capability's HIL obligations. Dependencies
+remain evaluation context and do not expand execution. This mode cannot be combined
+with manual scenario, tag or proof selection. Satisfied obligations require no
+execution; excluded evidence requests review, and unresolved failures request
+investigation. Neither condition silently launches another hardware attempt.
+`run-plan` refreshes evaluator decisions before any build, lab configuration or
+fixture acquisition. New independent seals can reduce an unfinished campaign
+to an empty plan. A changed property scope requires regenerating the plan.
+Explicit manual selection remains available for an intentionally chosen rerun.
 
 `cargo hil run-plan target/hil/plan.json --check` validates the saved plan
 offline, without loading lab configuration or acquiring fixtures.
@@ -146,6 +165,11 @@ snapshot before building firmware; pass explicit `--source-include` arguments
 for nonignored untracked inputs. Replay uses the archived artifact rather than
 claiming a current build. Standalone image builds use the snapshot only when
 `--source-snapshot` is supplied.
+Such a build also publishes `target/hil/esp32s31/builds/<identity>/build.json`,
+firmware, source snapshot and `integrity.json`. Its identity is the SHA-256 of
+the integrity seal. A review can name this destination without fabricating a
+scenario or hardware observation; the record supplies no PASS or repetitions.
+
 
 `cargo hil run-all` reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
@@ -182,10 +206,11 @@ also runs without a DUT or private lab configuration.
 Qualification v4 independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared
 scenario and repetition requirement is satisfied by a completed bundle or a
-separately sealed attempt under the default current-clean-composition policy or an explicit
+separately sealed attempt under the default current-source-composition policy or an explicit
 [property-scoped applicability review](../../qualification/evidence-reviews.md)
-with validated build and owner bindings. A dirty but captured source snapshot
-is not promoted merely by its existence. Scenario IDs and achievable repetition counts are checked against the
+with validated build and owner bindings. A verified snapshot matching all current
+source inputs is directly applicable even when dirty. Its existence alone does
+not establish this match or a passing observation. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.
 
 ## Prepare and restore network fixtures

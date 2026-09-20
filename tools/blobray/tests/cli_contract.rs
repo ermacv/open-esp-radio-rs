@@ -1551,7 +1551,8 @@ prefix = "fixture_"
     let evidence_index: serde_json::Value =
         serde_json::from_slice(&std::fs::read(directory.join("vendor-evidence.json")).unwrap())
             .unwrap();
-    assert_eq!(evidence_index["schema_version"], 1);
+    assert_eq!(evidence_index["schema_version"], 2);
+    assert_eq!(evidence_index["suite_states"]["fixture"], "complete");
     assert_eq!(
         evidence_index["entries"][0]["evidence_class"],
         "static-analysis"
@@ -1603,6 +1604,47 @@ prefix = "fixture_"
         serde_json::from_slice::<serde_json::Value>(&check.stdout).unwrap(),
         document
     );
+    // An added suite can publish independently, and checking the first suite
+    // neither demands a complete project run nor replaces the second result.
+    let addon = directory.join("verification-addon.toml");
+    let initial = std::fs::read_to_string(&addon).unwrap();
+    let (_, suite) = initial.split_once("[[suites]]").unwrap();
+    let other = suite.replacen("id = \"fixture\"", "id = \"other\"", 1);
+    std::fs::write(&addon, format!("{initial}\n[[suites]]{other}")).unwrap();
+    for (selected, checking) in [("other", false), ("fixture", true)] {
+        let mut command = blobray();
+        command
+            .args(["project", "verify", "--project"])
+            .arg(&manifest)
+            .arg("--run-spec")
+            .arg(&run_spec)
+            .args([
+                "--suite",
+                selected,
+                "--format",
+                "json",
+                "--progress",
+                "never",
+            ]);
+        if checking {
+            command.arg("--check");
+        }
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["complete_project_run"], false);
+    }
+    let incremental: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("vendor-evidence.json")).unwrap())
+            .unwrap();
+    assert_eq!(incremental["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(incremental["suite_states"]["fixture"], "complete");
+    assert_eq!(incremental["suite_states"]["other"], "complete");
+    assert!(directory.join("vendor-evidence.history").is_dir());
     std::fs::remove_dir_all(directory).unwrap();
 }
 

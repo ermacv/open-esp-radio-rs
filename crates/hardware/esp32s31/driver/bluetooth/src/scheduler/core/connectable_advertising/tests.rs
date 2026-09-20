@@ -292,6 +292,106 @@ fn rejected_sequence_sample_releases_timeline_and_all_graph_owners() {
 }
 
 #[test]
+fn delayed_sequence_at_guard_rejects_but_same_powered_owners_can_prepare_again() {
+    // An executor delay between admission and sequence is not a hardware
+    // failure. Exercise the real graph, receive allocation and timeline at
+    // either side of the guard, then reuse those owners without a reset.
+    for late in [false, true] {
+        let mut scheduler = scheduler::<1>();
+        let config = scheduler.scheduler_config();
+        let scale = scheduler.controller_time_scale();
+        let epoch =
+            ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
+        let mut connectable = connectable_runtime(0x2f03_0000);
+        let mut peripheral = peripheral_runtime(0x2f03_2000);
+        let definition = definition(LeDeviceAddressKind::Public);
+        let first = candidate(
+            &scheduler,
+            &mut connectable,
+            &mut peripheral,
+            definition,
+            10_000,
+        );
+        let start = first.raw_window().start();
+        let guard = scale
+            .raw_ticks_from_micros(config.late_start_guard_micros())
+            .whole_ticks;
+        let deadline = start.wrapping_sub(guard);
+        let (interrupt, mut task, modem_timer, _platform) = scheduler
+            .split_runtime()
+            .expect("one powered scheduler epoch");
+        let admitted = task
+            .admit_legacy_connectable_advertising_first_event(
+                first,
+                LegacyConnectableAdvertisingAdmissionObservation {
+                    sample: ControllerTimeSample::for_validation(deadline.wrapping_sub(100)),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the admission sample is early"));
+        assert!(!connectable.event_is_idle());
+        assert!(!peripheral.allocation_is_idle());
+        let result = task.prepare_legacy_connectable_advertising_event(
+            admitted,
+            LegacyConnectableAdvertisingSequenceObservation {
+                sample: ControllerTimeSample::for_validation(if late {
+                    deadline
+                } else {
+                    deadline.wrapping_sub(1)
+                }),
+            },
+        );
+        let cancelled = if late {
+            let failure = match result {
+                Err(failure) => failure,
+                Ok(_) => panic!("equality at the guard must reject stale preparation"),
+            };
+            assert_eq!(
+                failure.error(),
+                LegacyConnectableAdvertisingEventPreparationError::Sequence(
+                    crate::scheduler::SchedulerSequenceAuthorizationError::DeadlineExpired
+                )
+            );
+            // A rejected window releases only its reservation, not the graph.
+            assert!(!connectable.event_is_idle());
+            assert!(!peripheral.allocation_is_idle());
+            failure.into_candidate().cancel().unwrap_or_else(|_| {
+                panic!("the unpublished graph must return its exact receive allocation")
+            })
+        } else {
+            let prepared = result.unwrap_or_else(|_| panic!("one early tick is sufficient"));
+            let merged = task
+                .prepare_legacy_connectable_advertising_empty_list_merge(prepared)
+                .unwrap_or_else(|_| panic!("the sole scheduler list is empty"));
+            cancel_merge(&mut task, merged)
+        };
+        restore(cancelled, &mut connectable, &mut peripheral);
+
+        // Keep the same task/IRQ/timer owners and the same static allocations.
+        // A leaked reservation or list link would prevent this second merge.
+        let next = connectable
+            .begin_event(definition, &mut peripheral)
+            .unwrap_or_else(|_| panic!("both restored role owners must be reusable"))
+            .form_first_event_candidate(
+                LegacyAdvertisingTimingObservation {
+                    current: SchedulerInstant::from_image(20_000),
+                    radio_ready: SchedulerInstant::from_image(20_000),
+                    epoch,
+                },
+                config,
+            )
+            .unwrap_or_else(|_| panic!("the fresh window must project"));
+        let prepared = prepare(&mut task, next);
+        let merged = task
+            .prepare_legacy_connectable_advertising_empty_list_merge(prepared)
+            .unwrap_or_else(|_| panic!("no reservation or list link leaked"));
+        let cancelled = cancel_merge(&mut task, merged);
+        restore(cancelled, &mut connectable, &mut peripheral);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+}
+
+#[test]
 fn phase_locked_connectable_recurrence_reserves_and_cancels_losslessly() {
     let mut scheduler = scheduler::<1>();
     let mut connectable = connectable_runtime(0x2f00_e000);

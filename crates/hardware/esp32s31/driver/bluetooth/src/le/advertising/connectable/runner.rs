@@ -3,6 +3,10 @@
 //! The accepted HCI Enable remains affine through fresh controller time,
 //! response-graph preparation and the single atomic publication suffix. Only
 //! an exact scheduler `RUN` result may create the pending Success response.
+//! Each newly issued preparation sample is checked once immediately. Only an
+//! observed hardware `Waiting` requires an executor wait; the three preparation
+//! phases cannot cycle or retry an expired window. Admission and sequence keep
+//! independent fresh samples and the same fail-closed deadline checks.
 
 #![forbid(unsafe_code)]
 
@@ -692,14 +696,15 @@ where
                     definition,
                     command,
                     |command, pending| {
-                        LegacyConnectableAdvertisingFirstRunnerStep::WaitControllerTime(
-                            Self::from_phase(
-                                LegacyConnectableAdvertisingFirstRunnerPhase::Preparation {
-                                    command,
-                                    pending,
-                                },
-                            ),
-                        )
+                        // A newly issued latch request has not reported Waiting.
+                        // Check it once before giving the executor an opportunity
+                        // to consume the finite first-event preparation window.
+                        LegacyConnectableAdvertisingFirstRunnerStep::Continue(Self::from_phase(
+                            LegacyConnectableAdvertisingFirstRunnerPhase::Preparation {
+                                command,
+                                pending,
+                            },
+                        ))
                     },
                     |command, current, error| {
                         Self::recovered(
@@ -723,6 +728,14 @@ where
                                 },
                             ),
                         )
+                    },
+                    |command, pending| {
+                        LegacyConnectableAdvertisingFirstRunnerStep::Continue(Self::from_phase(
+                            LegacyConnectableAdvertisingFirstRunnerPhase::Preparation {
+                                command,
+                                pending,
+                            },
+                        ))
                     },
                     |command, controller, merged| {
                         LegacyConnectableAdvertisingFirstRunnerStep::Continue(Self::from_phase(

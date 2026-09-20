@@ -81,6 +81,31 @@ fn rollback(
 }
 
 #[test]
+fn newly_issued_ready_request_needs_no_executor_wait() {
+    let mut controller = ModelController::ready("immediate");
+    controller
+        .rechecks
+        .push_back(Ok(ControllerTimePendingOwnerStep::Ready(
+            ControllerTimeSample::for_validation(7),
+        )));
+    let pending = TimedPreparationPending::begin(controller, Phase("sequence"), rollback)
+        .expect("a fresh request owns the phase");
+    let TimedPreparationStep::Ready {
+        controller,
+        phase,
+        sample,
+    } = pending.recheck()
+    else {
+        panic!("an already-ready latch must advance on its first bounded check");
+    };
+    assert_eq!(controller.identity, "immediate");
+    assert_eq!(phase, Phase("sequence"));
+    assert_eq!(sample, ControllerTimeSample::for_validation(7));
+    assert!(controller.rechecks.is_empty());
+    assert!(controller.restored.is_none());
+}
+
+#[test]
 fn waiting_then_ready_preserves_controller_and_phase_identity() {
     let mut controller = ModelController::ready("controller-a");
     controller

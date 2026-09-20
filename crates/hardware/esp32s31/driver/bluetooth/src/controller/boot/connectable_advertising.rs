@@ -373,10 +373,23 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Perform exactly one observation of the active controller-time request.
+    ///
+    /// `pending` means the hardware was observed waiting. `advanced` means a
+    /// new request was issued for the next phase and may be checked immediately.
+    /// Conflating these edges inserts executor delays into an admitted window
+    /// even when the controller-time latch is already ready.
     pub(crate) fn recheck_with<R, Context>(
         self,
         context: Context,
         pending: impl FnOnce(
+            Context,
+            LegacyConnectableAdvertisingControllerPreparationPending<
+                'runtime,
+                S,
+                SCHEDULER_CAPACITY,
+            >,
+        ) -> R,
+        advanced: impl FnOnce(
             Context,
             LegacyConnectableAdvertisingControllerPreparationPending<
                 'runtime,
@@ -453,7 +466,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 controller.begin_legacy_connectable_advertising_preparation_time_with(
                     LegacyConnectableAdvertisingControllerPreparationPhase::Admission(candidate),
                     context,
-                    pending,
+                    advanced,
                     fail_stop,
                 )
             }
@@ -480,7 +493,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 controller.begin_legacy_connectable_advertising_preparation_time_with(
                     LegacyConnectableAdvertisingControllerPreparationPhase::Sequence(admitted),
                     context,
-                    pending,
+                    advanced,
                     fail_stop,
                 )
             }

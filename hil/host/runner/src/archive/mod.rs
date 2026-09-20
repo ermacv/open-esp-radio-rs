@@ -9,6 +9,7 @@ use crate::Result;
 mod github;
 mod install;
 mod package;
+mod retention;
 #[cfg(test)]
 mod tests;
 
@@ -16,6 +17,12 @@ const TARGET: &str = "esp32s31";
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Read-only retention inventory. Never deletes runs, archives or CAS objects.
+    Retention {
+        /// Explicit baseline or selected experiment to retain. May be repeated.
+        #[arg(long = "keep-run")]
+        keep_runs: Vec<String>,
+    },
     /// Package sealed runs and optional analysis without changing their contents.
     Export {
         id: String,
@@ -91,6 +98,10 @@ fn validate_id(id: &str) -> Result<()> {
 
 pub(crate) fn run(root: &Path, command: Command) -> Result<()> {
     match command {
+        Command::Retention { keep_runs } => {
+            let report = retention::inspect(root, &keep_runs)?;
+            crate::emit_json(&report, false)
+        }
         Command::Export {
             id,
             runs,

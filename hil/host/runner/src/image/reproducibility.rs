@@ -198,6 +198,7 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -
         super::LocalOverrides::default(),
         Some(&output.join("build-a")),
         trim_paths,
+        false,
     )?;
     eprintln!("==> rebuild B from a different clean detached worktree");
     let right_artifacts = build_resolved(
@@ -207,6 +208,7 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -
         super::LocalOverrides::default(),
         Some(&output.join("build-directory-b")),
         trim_paths,
+        false,
     )?;
 
     let subjects = compare_artifacts(root, &output, &left_artifacts, &right_artifacts)?;

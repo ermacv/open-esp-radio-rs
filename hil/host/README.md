@@ -204,19 +204,12 @@ cargo hil fixture install --provider linux-bluetooth
 ```
 
 Bluetooth policy admits only named adapters. It defaults to the dedicated
-`hci0`; repeat `--adapter hciN` to install a sorted finite allow-list. This
-replaces the old broad `hci*` sudo rule. Reinstall with the adapters selected by
-the private lab configuration before using another controller. `install-host`
-remains an exact compatibility alias for `install --provider linux-net` only:
+`hci0`; repeat `--adapter hciN` to install a sorted finite allow-list. Reinstall
+with the adapters selected by the private lab configuration before using
+another controller.
 
-```console
-cargo hil fixture install-host
-```
-
-The tracked `linux-net/install.sh` and `linux-bluetooth/install.sh` entry points
-delegate to these Cargo commands when run unprivileged and reject a legacy
-`sudo install.sh` invocation. Linux is required; the installer does not claim
-support for another Unix host.
+Cargo is the single installation entry point and runs as the unprivileged
+operator. Linux is required; installation is not supported on other hosts.
 
 Preparation runs as the operator. Network preparation retains the pinned
 hostapd build, patch and provenance plus the locked probe and fixed-launcher
@@ -246,8 +239,9 @@ selection. Pre-commit failure restores the prior files and sudoers policy.
 Post-commit software verification failure rolls back; a receipt-write failure
 keeps the activated generation and leaves an explicit recovery-required journal.
 The next authorized install recovers that journal before considering a new
-bundle. The prior generation, including a copied legacy installation, is
-retained. Reinstalling the same bundle verifies it and refreshes its fixed-path
+bundle. The prior managed generation is retained. Unmanaged or incomplete
+installations require explicit operator recovery; installation does not import
+arbitrary existing files. Reinstalling the same bundle verifies it and refreshes its fixed-path
 receipt without switching generations. Generations are not automatically
 deleted while their lifetime is unknown.
 
@@ -259,10 +253,7 @@ upgrade. Kernel `flock` ownership, not file contents, identifies a live owner,
 so clearing `/run` or rebooting does not require reinstallation. All applies
 serialize through one root-owned installation lock, then installation requires
 the selected provider's exclusive lease and fails while such a session is
-active. An upgrade from the previous volatile-lock layout also takes the old
-`/run/open-radio-fixture/<provider>.session.lock` when that file still exists;
-an active old consumer therefore cannot be bypassed with the new inode. A
-missing old file after reboot is not recreated or required. Installation never
+active. Installation never
 stops hostapd, an adapter or another service to force an upgrade. A directly
 started network AP is also detected through its root-owned pid file. The lease
 is software-update ownership only and never acquires the DUT, opens SSH or

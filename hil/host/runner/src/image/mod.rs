@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 pub(crate) use oer_firmware::network::Integration;
 
 mod class;
+pub(crate) mod mono;
 mod reproducibility;
 pub(crate) mod stack;
 pub(crate) use class::ImageClass;
@@ -411,7 +412,15 @@ fn build_selected(
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
     if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
-        return build_resolved(root, class, network, LocalOverrides::default(), None, false);
+        return build_resolved(
+            root,
+            class,
+            network,
+            LocalOverrides::default(),
+            None,
+            false,
+            false,
+        );
     }
     if network != Integration::UpstreamXarxa {
         return Err("local dependency overrides are supported only with upstream-xarxa".into());
@@ -431,6 +440,7 @@ fn build_selected(
             xarxa: local_xarxa.as_deref(),
         },
         None,
+        false,
         false,
     );
     let restore = snapshot
@@ -461,6 +471,7 @@ fn build_resolved(
     local: LocalOverrides<'_>,
     output_override: Option<&Path>,
     trim_paths: bool,
+    mono_stats: bool,
 ) -> Result<Artifacts> {
     let LocalOverrides {
         esp_hal: local_esp_hal,
@@ -535,6 +546,9 @@ fn build_resolved(
     add_local_xarxa_patches(&mut runtime, local_xarxa);
     enable_experimental_path_trimming(&mut runtime, trim_paths);
     crate::image::stack::enable_stack_checks(&mut runtime, &stack_budget);
+    if mono_stats {
+        mono::configure(&mut runtime, &output)?;
+    }
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
 

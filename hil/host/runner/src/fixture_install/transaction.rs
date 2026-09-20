@@ -190,7 +190,6 @@ mod linux {
         root: PathBuf,
         state_root: PathBuf,
         install_lock: PathBuf,
-        legacy_session_root: PathBuf,
         sudoers_main: PathBuf,
         visudo: PathBuf,
         expected_uid: u32,
@@ -217,7 +216,6 @@ mod linux {
                 root: PathBuf::from("/"),
                 state_root: PathBuf::from("/var/lib/open-radio/fixture").join(provider.as_str()),
                 install_lock: PathBuf::from("/var/lib/open-radio/fixture/install.lock"),
-                legacy_session_root: PathBuf::from("/run/open-radio-fixture"),
                 sudoers_main: PathBuf::from("/etc/sudoers"),
                 visudo,
                 expected_uid: 0,
@@ -250,7 +248,6 @@ mod linux {
                     .join("var/lib/open-radio/fixture")
                     .join(provider.as_str()),
                 install_lock: root.join("var/lib/open-radio/fixture/install.lock"),
-                legacy_session_root: root.join("run/open-radio-fixture"),
                 sudoers_main,
                 visudo: PathBuf::from("/usr/bin/false"),
                 expected_uid: uid,
@@ -280,11 +277,6 @@ mod linux {
 
         fn session_lock(&self) -> PathBuf {
             self.state_root.join("session.lock")
-        }
-
-        fn legacy_session_lock(&self, provider: Provider) -> PathBuf {
-            self.legacy_session_root
-                .join(format!("{}.session.lock", provider.as_str()))
         }
 
         fn policy(&self, provider: Provider) -> PathBuf {
@@ -338,7 +330,6 @@ mod linux {
             format!("provider {provider} is in use by an active HIL session: {error}")
         })?;
         let _session_lock = ExclusiveLock(session_lock);
-        let _legacy_session_lock = acquire_legacy_session_lock(layout, provider)?;
         effects.require_provider_idle(provider)?;
 
         recover_if_needed(layout, provider, effects)?;
@@ -347,9 +338,9 @@ mod linux {
         let existing = classify_existing(layout, provider)?;
         let previous_current = match &existing {
             ExistingInstallation::Versioned(generation) => Some(generation.clone()),
-            ExistingInstallation::Fresh | ExistingInstallation::Legacy => None,
+            ExistingInstallation::Fresh => None,
         };
-        let mut previous_generation = previous_current.clone();
+        let previous_generation = previous_current.clone();
         let policy = policy_bytes(&bundle)?;
         let policy_sha256 = sha256(&policy);
         let mut base = InstallResult {
@@ -418,15 +409,6 @@ mod linux {
             &transaction_directory,
             "policy",
         )?;
-        if existing == ExistingInstallation::Legacy {
-            previous_generation = Some(import_legacy_generation(
-                layout,
-                &transaction_directory,
-                &bundle,
-                &stable_backups,
-                &policy_backup,
-            )?);
-        }
         base.previous_generation = previous_generation.clone();
         let mut journal = Journal {
             schema: JOURNAL_SCHEMA,
@@ -528,45 +510,6 @@ mod linux {
                 .ok_or("policy target has no parent")?,
         )?;
         Ok(())
-    }
-
-    fn acquire_legacy_session_lock(
-        layout: &Layout,
-        provider: Provider,
-    ) -> Result<Option<ExclusiveLock>> {
-        let path = layout.legacy_session_lock(provider);
-        match fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error.into()),
-            Ok(_) => {}
-        }
-        require_secure_directory(layout, &layout.legacy_session_root, 0o755)?;
-        let file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-            .open(&path)
-            .map_err(|error| {
-                format!(
-                    "cannot safely open legacy provider lease {}: {error}",
-                    path.display()
-                )
-            })?;
-        let metadata = file.metadata()?;
-        if !metadata.file_type().is_file()
-            || metadata.uid() != layout.expected_uid
-            || metadata.gid() != layout.expected_gid
-            || metadata.mode() & 0o777 != 0o644
-        {
-            return Err(format!(
-                "legacy provider lease has unsafe ownership or mode: {}",
-                path.display()
-            )
-            .into());
-        }
-        fs2::FileExt::try_lock_exclusive(&file).map_err(|error| {
-            format!("provider {provider} is in use by a legacy active HIL session: {error}")
-        })?;
-        Ok(Some(ExclusiveLock(file)))
     }
 
     fn ensure_destination_parent(layout: &Layout, directory: &Path) -> Result<()> {
@@ -893,7 +836,6 @@ mod linux {
     #[derive(Clone, Debug, Eq, PartialEq)]
     enum ExistingInstallation {
         Fresh,
-        Legacy,
         Versioned(String),
     }
 
@@ -903,7 +845,6 @@ mod linux {
         let mut launcher_absent = 0;
         let mut launcher_regular = 0;
         let mut payload_absent = 0;
-        let mut payload_regular = 0;
         let mut payload_links = 0;
         for spec in specs {
             let target = layout.map_absolute(Path::new(spec.target));
@@ -920,7 +861,11 @@ mod linux {
                     if spec.role.is_launcher() {
                         launcher_regular += 1;
                     } else {
-                        payload_regular += 1;
+                        return Err(format!(
+                            "unmanaged fixture file requires explicit recovery: {}",
+                            target.display()
+                        )
+                        .into());
                     }
                 }
                 Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -956,7 +901,7 @@ mod linux {
         match current {
             Some(generation)
                 if payload_links == payload_count
-                    && launcher_regular + launcher_absent == launcher_count
+                    && launcher_regular == launcher_count
                     && policy_exists =>
             {
                 Ok(ExistingInstallation::Versioned(generation))
@@ -967,68 +912,10 @@ mod linux {
             {
                 Ok(ExistingInstallation::Fresh)
             }
-            None if payload_regular == payload_count
-                && launcher_absent == launcher_count
-                && policy_exists =>
-            {
-                Ok(ExistingInstallation::Legacy)
-            }
             _ => {
                 Err("partial or inconsistent fixture installation requires manual recovery".into())
             }
         }
-    }
-
-    fn import_legacy_generation(
-        layout: &Layout,
-        transaction: &Path,
-        bundle: &Bundle,
-        stable_backups: &[FileBackup],
-        policy_backup: &FileBackup,
-    ) -> Result<String> {
-        let mut digest = Sha256::new();
-        for (artifact, backup) in bundle.artifacts.iter().zip(stable_backups) {
-            match backup {
-                FileBackup::Regular { name, .. } => {
-                    digest.update(fs::read(transaction.join(name))?);
-                }
-                FileBackup::Absent if artifact.role.is_launcher() => {}
-                _ => {
-                    return Err("legacy installation contains an unexpected artifact".into());
-                }
-            }
-        }
-        let FileBackup::Regular {
-            name: policy_name, ..
-        } = policy_backup
-        else {
-            return Err("legacy installation is missing its sudoers policy".into());
-        };
-        digest.update(fs::read(transaction.join(policy_name))?);
-        let generation = format!("legacy-{:x}", digest.finalize());
-        let destination = layout.generations().join(&generation);
-        if destination.exists() {
-            return Ok(generation);
-        }
-        let staging = transaction.join("legacy-generation");
-        fs::create_dir(&staging)?;
-        fs::set_permissions(&staging, permissions(0o700))?;
-        for (artifact, backup) in bundle.artifacts.iter().zip(stable_backups) {
-            let FileBackup::Regular { name, mode } = backup else {
-                debug_assert!(artifact.role.is_launcher());
-                continue;
-            };
-            let target = staging.join(&artifact.file_name);
-            fs::copy(transaction.join(name), &target)?;
-            set_owner_mode(&target, layout.expected_uid, layout.expected_gid, *mode)?;
-        }
-        let target = staging.join("sudoers.policy");
-        fs::copy(transaction.join(policy_name), &target)?;
-        set_owner_mode(&target, layout.expected_uid, layout.expected_gid, 0o440)?;
-        fs::rename(staging, &destination)?;
-        fs::set_permissions(&destination, permissions(0o555))?;
-        sync_parent(&destination)?;
-        Ok(generation)
     }
 
     fn backup_stable_targets(

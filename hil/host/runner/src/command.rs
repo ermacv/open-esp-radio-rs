@@ -27,16 +27,6 @@ pub(crate) fn run() -> Result<()> {
                     adapter,
                 },
         } => return fixture::install::run(&root, provider, dry_run, &adapter),
-        CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::InstallHost { dry_run },
-        } => {
-            return fixture::install::run(
-                &root,
-                open_esp_radio_hil_runner::fixture_install::Provider::LinuxNet,
-                dry_run,
-                &[],
-            );
-        }
         command => command,
     };
     let lab_path = cli
@@ -46,9 +36,7 @@ pub(crate) fn run() -> Result<()> {
 
     match command {
         CliCommand::Fixture {
-            command:
-                crate::cli::FixtureCommand::Install { .. }
-                | crate::cli::FixtureCommand::InstallHost { .. },
+            command: crate::cli::FixtureCommand::Install { .. },
         } => unreachable!("install commands return before lab configuration is resolved"),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::ProbePlan,
@@ -145,6 +133,7 @@ pub(crate) fn run() -> Result<()> {
             }
         }
         CliCommand::Image { command } => match command {
+            ImageCommand::Mono { class } => image::mono::capture(&root, class),
             ImageCommand::Build { class, network } => {
                 let artifacts = image::build(&root, class, network)?;
                 image::print_artifacts(class, &artifacts, false)

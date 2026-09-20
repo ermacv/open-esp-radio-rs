@@ -105,6 +105,22 @@ does not install arbitrary scenario files or execute archived analysis code.
 
 ## Retention
 
+```console
+cargo hil archive retention --keep-run <baseline-run-id> --keep-run <selected-experiment-id>
+```
+
+This read-only inventory preserves explicit selections, the latest passing run
+for each scenario, non-passing or incomplete runs, imported archive members and
+sources referenced by firmware replay. Unreadable/unknown run metadata is kept
+with its reason; an unknown explicit run ID is an error. It never deletes files,
+opens hardware, contacts the evidence repository or changes CAS objects.
+All CAS objects remain retained. Declared digest references are not hash
+verification; logical candidate bytes include hard-linked storage and must not
+be interpreted as reclaimable disk space. Concurrent writers can change the
+inventory. Review candidates and verify evidence separately before any deletion;
+the report is not deletion authorization. Baselines outside imported archives
+must be selected explicitly.
+
 Archive selected control measurements, reproducible regressions and experiments
 that justify implementation choices. Preserve failed attempts and selection
 rationale alongside successful measurements. Keep routine local iterations

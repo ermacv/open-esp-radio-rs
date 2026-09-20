@@ -733,7 +733,11 @@ fn source_replacement_symlink_and_partial_installation_are_rejected() {
     let root = tempfile::tempdir().unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxNet, "partial");
     let layout = Layout::test(root.path(), Provider::LinuxNet).unwrap();
-    fs::write(root.path().join("usr/local/sbin/open-radio-net"), b"legacy").unwrap();
+    fs::write(
+        root.path().join("usr/local/sbin/open-radio-net"),
+        b"unmanaged",
+    )
+    .unwrap();
     assert!(
         apply(
             &layout,
@@ -800,36 +804,29 @@ fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
 }
 
 #[test]
-fn legacy_installation_is_retained_as_previous_generation() {
+fn unmanaged_installation_requires_explicit_recovery_without_replacing_files() {
     let root = tempfile::tempdir().unwrap();
-    let _layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
-    let declarations = artifact_declarations(Provider::LinuxBluetooth, "legacy");
+    let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     let stable = root.path().join("usr/local/libexec/open-radio-bluetooth");
-    fs::write(&stable, &declarations[1].1).unwrap();
+    fs::write(&stable, b"unmanaged helper").unwrap();
     fs::set_permissions(&stable, fs::Permissions::from_mode(0o555)).unwrap();
-    let policy = root.path().join("etc/sudoers.d/open-radio-bluetooth");
-    fs::write(&policy, b"legacy policy\n").unwrap();
-    fs::set_permissions(&policy, fs::Permissions::from_mode(0o440)).unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "new");
-    let result = test_apply(
-        root.path(),
+    let error = apply(
+        &layout,
         Provider::LinuxBluetooth,
         &bundle,
+        OPERATOR,
+        unsafe { libc::geteuid() },
         &mut TestEffects::passing(),
-    );
-    let previous = result.previous_generation.unwrap();
-    assert!(previous.starts_with("legacy-"));
-    let retained = root
-        .path()
-        .join("var/lib/open-radio/fixture/linux-bluetooth/generations")
-        .join(previous);
-    assert_eq!(
-        fs::read(retained.join("open-radio-bluetooth")).unwrap(),
-        declarations[1].1
-    );
-    assert_eq!(
-        fs::read(retained.join("sudoers.policy")).unwrap(),
-        b"legacy policy\n"
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("unmanaged fixture file"));
+    assert_eq!(fs::read(stable).unwrap(), b"unmanaged helper");
+    assert!(
+        !root
+            .path()
+            .join("var/lib/open-radio/fixture/linux-bluetooth/current")
+            .exists()
     );
 }
 
@@ -911,108 +908,32 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
 }
 
 #[test]
-fn active_legacy_lease_refuses_transition_without_changing_installed_state() {
+fn missing_launcher_is_incomplete_not_an_implicit_upgrade_path() {
     let root = tempfile::tempdir().unwrap();
-    let (first, installed) = make_bundle(root.path(), Provider::LinuxNet, "installed");
+    let (first, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "installed");
     test_apply(
         root.path(),
-        Provider::LinuxNet,
+        Provider::LinuxBluetooth,
         &first,
         &mut TestEffects::passing(),
     );
-    let legacy_path = root
+    let launcher = root
         .path()
-        .join("run/open-radio-fixture/linux-net.session.lock");
-    fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-    fs::set_permissions(
-        legacy_path.parent().unwrap(),
-        fs::Permissions::from_mode(0o755),
-    )
-    .unwrap();
-    fs::write(&legacy_path, b"").unwrap();
-    fs::set_permissions(&legacy_path, fs::Permissions::from_mode(0o644)).unwrap();
-    let legacy_owner = File::open(&legacy_path).unwrap();
-    fs2::FileExt::lock_shared(&legacy_owner).unwrap();
-    let stable_before = fs::read_link(root.path().join("usr/local/sbin/open-radio-net")).unwrap();
-    let policy_before = fs::read(root.path().join("etc/sudoers.d/open-radio-net")).unwrap();
-
-    let (upgrade, _) = make_bundle(root.path(), Provider::LinuxNet, "upgrade");
-    let layout = Layout::test(root.path(), Provider::LinuxNet).unwrap();
+        .join("usr/local/libexec/open-radio-bluetooth-launcher");
+    fs::remove_file(&launcher).unwrap();
+    let (upgrade, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "new");
+    let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     let error = apply(
         &layout,
-        Provider::LinuxNet,
+        Provider::LinuxBluetooth,
         &upgrade,
         OPERATOR,
         unsafe { libc::geteuid() },
         &mut TestEffects::passing(),
     )
-    .unwrap_err()
-    .to_string();
-    assert!(error.contains("legacy active HIL session"));
-    assert_eq!(
-        fs::read_link(root.path().join("usr/local/sbin/open-radio-net")).unwrap(),
-        stable_before
-    );
-    assert_eq!(
-        fs::read(root.path().join("etc/sudoers.d/open-radio-net")).unwrap(),
-        policy_before
-    );
-    assert_eq!(
-        fs::read_link(
-            root.path()
-                .join("var/lib/open-radio/fixture/linux-net/current")
-        )
-        .unwrap(),
-        PathBuf::from("generations").join(installed.generation)
-    );
-    fs2::FileExt::unlock(&legacy_owner).unwrap();
-    drop(legacy_owner);
-    fs::remove_file(&legacy_path).unwrap();
-    std::os::unix::fs::symlink("missing", &legacy_path).unwrap();
-    let error = apply(
-        &layout,
-        Provider::LinuxNet,
-        &upgrade,
-        OPERATOR,
-        unsafe { libc::geteuid() },
-        &mut TestEffects::passing(),
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(!error.is_empty());
-}
-
-#[test]
-fn versioned_prelauncher_layout_upgrades_without_requiring_volatile_lock() {
-    let root = tempfile::tempdir().unwrap();
-    let (first, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "prelauncher");
-    test_apply(
-        root.path(),
-        Provider::LinuxBluetooth,
-        &first,
-        &mut TestEffects::passing(),
-    );
-    fs::remove_file(
-        root.path()
-            .join("usr/local/libexec/open-radio-bluetooth-launcher"),
-    )
-    .unwrap();
-    assert!(!root.path().join("run/open-radio-fixture").exists());
-
-    let (upgrade, expected) = make_bundle(root.path(), Provider::LinuxBluetooth, "launcher");
-    let result = test_apply(
-        root.path(),
-        Provider::LinuxBluetooth,
-        &upgrade,
-        &mut TestEffects::passing(),
-    );
-    assert_eq!(result.state, InstallState::SoftwareVerified);
-    assert_eq!(result.generation, expected.generation);
-    assert!(
-        root.path()
-            .join("usr/local/libexec/open-radio-bluetooth-launcher")
-            .is_file()
-    );
+    .unwrap_err();
+    assert!(error.to_string().contains("partial or inconsistent"));
+    assert!(!launcher.exists());
 }
 
 #[test]
@@ -1350,13 +1271,14 @@ fn installed_provider_leases_survive_modeled_run_cleanup() {
         assert_eq!(result.state, InstallState::SoftwareVerified);
     }
 
-    fs::create_dir_all(root.path().join("run/open-radio-fixture")).unwrap();
+    fs::create_dir_all(root.path().join("run/unrelated-volatile-state")).unwrap();
     fs::write(
-        root.path().join("run/open-radio-fixture/boot-volatile"),
+        root.path()
+            .join("run/unrelated-volatile-state/boot-volatile"),
         b"modeled volatile state",
     )
     .unwrap();
-    fs::remove_dir_all(root.path().join("run/open-radio-fixture")).unwrap();
+    fs::remove_dir_all(root.path().join("run/unrelated-volatile-state")).unwrap();
 
     let mut admissions = Vec::new();
     for provider in [Provider::LinuxNet, Provider::LinuxBluetooth] {
@@ -1379,7 +1301,7 @@ fn installed_provider_leases_survive_modeled_run_cleanup() {
         &mut TestEffects::passing(),
     );
     assert_eq!(result.state, InstallState::SoftwareVerified);
-    assert!(!root.path().join("run/open-radio-fixture").exists());
+    assert!(!root.path().join("run/unrelated-volatile-state").exists());
 }
 
 #[test]

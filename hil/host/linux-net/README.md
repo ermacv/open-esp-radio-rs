@@ -8,9 +8,7 @@ cargo hil fixture install --provider linux-net --dry-run
 cargo hil fixture install --provider linux-net
 ```
 
-`cargo hil fixture install-host` is retained only as an alias for the second
-command. Do not run `sudo install.sh`; the tracked script delegates to the same
-Cargo workflow only when invoked as the unprivileged operator.
+Run Cargo as the unprivileged operator; it requests sudo only for installation.
 
 Preparation requires Linux, Cargo, a C compiler, make, pkg-config, libnl3 and
 OpenSSL development files, curl, tar and patch. It builds the pinned

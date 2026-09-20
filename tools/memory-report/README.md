@@ -100,3 +100,20 @@ deltas, not these diagnostic identities, establish the total image change.
 `-Zdump-mono-stats=DIR -Zdump-mono-stats-format=json` on the pinned toolchain.
 Its counts and estimates are not linked bytes. Keep build provenance with the
 compiler output; neither command rebuilds firmware or adds a mandatory gate.
+
+For a complete compiler capture through the HIL image constructor, run manually
+from a clean checkout:
+
+```console
+cargo hil image mono bluetooth-secure-gatt
+```
+
+This builds in a fresh ignored `target/hil/esp32s31/mono/` directory and never
+flashes or acquires a fixture. `capture.json` records the source commit,
+compiler/Cargo identities, command and flags, effective locks, input JSON hashes
+and exact diagnostic ELF identity. `linked-code.json` describes that same ELF.
+Compiler files remain separate; their estimates must not be added to linked
+bytes. An interrupted or invalid capture retains `status = building`, not a
+successful manifest. Local dependency/compiler wrappers are rejected, and the
+source must remain unchanged until completion. This is an explicit diagnostic
+build, not qualified production timing evidence or a mandatory checkpoint.

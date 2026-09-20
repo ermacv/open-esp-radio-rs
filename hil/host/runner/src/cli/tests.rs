@@ -222,13 +222,7 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
             }
         }
     ));
-    let cli = Cli::try_parse_from(["cargo-hil", "fixture", "install-host"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        CliCommand::Fixture {
-            command: FixtureCommand::InstallHost { dry_run: false }
-        }
-    ));
+    assert!(Cli::try_parse_from(["cargo-hil", "fixture", "install-host"]).is_err());
     let cli =
         Cli::try_parse_from(["cargo-hil", "fixture", "check", "station-udp-tx-he20"]).unwrap();
     assert!(matches!(

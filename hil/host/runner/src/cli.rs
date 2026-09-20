@@ -133,6 +133,8 @@ pub(crate) enum ScenarioCommand {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ImageCommand {
+    /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
+    Mono { class: crate::image::ImageClass },
     Build {
         class: crate::image::ImageClass,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
@@ -207,12 +209,6 @@ pub(crate) enum FixtureCommand {
         /// Bluetooth adapter admitted by the installed policy; defaults to hci0.
         #[arg(long, value_name = "hciN")]
         adapter: Vec<String>,
-    },
-    /// Compatibility alias for `install --provider linux-net`.
-    InstallHost {
-        /// Print the offline plan without executing any installer step.
-        #[arg(long)]
-        dry_run: bool,
     },
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
     Check { scenario: String },

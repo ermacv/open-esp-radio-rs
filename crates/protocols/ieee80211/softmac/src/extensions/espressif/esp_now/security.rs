@@ -21,7 +21,9 @@ use oer_ieee80211::{
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    esp_now::{ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowPeerSecurity, EspNowPhyMode},
+    extensions::espressif::esp_now::protocol::{
+        ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowPeerSecurity, EspNowPhyMode,
+    },
     interface::{BoundVirtualInterface, ChannelContextId},
 };
 

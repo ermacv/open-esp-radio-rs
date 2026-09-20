@@ -27,9 +27,8 @@ protocol that owns them:
 | `extensions/espressif/esp_now/v2/reassembly` | Caller-owned storage for a validated v2 datagram |
 
 The public Block Ack, fragmentation, station and data namespaces expose their
-protocol contracts. Root `wmm` and `esp_now` imports are compatibility exports
-of the canonical modules. Production consumers use the explicit QoS, WMM and
-ESP-NOW paths.
+protocol contracts. Consumers use `qos` for traffic intent, `extensions::wmm`
+for WMM elements and `extensions::espressif::esp_now` for vendor MAC framing.
 
 QoS classification includes the existing DSCP mapping and downgrade helpers.
 The actual admission/downgrade loop still belongs to chip MAC TX runtime;

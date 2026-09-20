@@ -23,7 +23,6 @@ pub mod contract;
 pub mod extensions;
 pub use extensions::espressif::long_range::EspressifLongRangeRate;
 
-pub use extensions::espressif::esp_now::{protocol as esp_now, security as esp_now_security};
 pub mod interface;
 pub mod monitor;
 pub mod tx_work;
@@ -37,7 +36,7 @@ pub use configuration::{
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
 };
-pub use esp_now::{
+pub use extensions::espressif::esp_now::protocol::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,
     EspNowConfigError, EspNowHt20Rate, EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate,
     EspNowOwnedReceivedV1, EspNowOwnedReceivedV2, EspNowPeerCapability, EspNowPeerChannelPolicy,
@@ -46,7 +45,7 @@ pub use esp_now::{
     EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch, EspNowRxOutcome,
     EspNowSendError, EspNowV2ReceiveError, EspNowV2RxOutcome, EspNowV2SendError,
 };
-pub use esp_now_security::{
+pub use extensions::espressif::esp_now::security::{
     ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,
     EspNowEncryptedPeerConfig, EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError,
     EspNowEncryptedPeerId, EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement,

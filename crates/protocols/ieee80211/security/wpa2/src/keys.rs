@@ -27,9 +27,6 @@ pub struct CcmpKey {
     bytes: [u8; WPA2_TK_LEN],
 }
 
-/// Compatibility name for the original portable key owner.
-pub type AlignedCcmpKey = CcmpKey;
-
 impl CcmpKey {
     pub const fn new(bytes: [u8; WPA2_TK_LEN]) -> Self {
         Self { bytes }

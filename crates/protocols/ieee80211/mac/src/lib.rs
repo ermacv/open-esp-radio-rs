@@ -17,8 +17,6 @@ pub mod data;
 pub mod extensions;
 pub mod qos;
 
-// Compatibility import; the canonical protocol namespace identifies its vendor.
-pub use extensions::espressif::esp_now;
 pub mod fragmentation;
 pub mod ftm;
 pub mod he;
@@ -35,4 +33,3 @@ pub mod tbtt;
 pub mod trigger;
 pub mod twt;
 pub mod vif;
-pub mod wmm;

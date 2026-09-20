@@ -12,7 +12,7 @@ dim = 4
 dimIncrement = 0x10
 dimIndex = "0,1,2,3"
 name = "PROTECTION%s"
-description = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."
+description = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -49,14 +49,14 @@ maximum = 0x3FF
 
 [[peripherals.registers.register.fields]]
 name = "SOFTWARE_RTS"
-description = "Complete dbg_read_txq_conf2 names bit 30 SW_RTS."
-bitOffset = 30
+description = "Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."
+bitOffset = 31
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "SOFTWARE_CTS"
-description = "Complete dbg_read_txq_conf2 names bit 31 SW_CTS."
-bitOffset = 31
+description = "Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."
+bitOffset = 30
 bitWidth = 1
 
 [[peripherals.registers]]
@@ -209,6 +209,7 @@ sources = [
     "BLOB_LIBPP_HE_DELIMITER_SPACING",
     "BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG",
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
+    "BLOB_LIBPP_TX_PROTECTION_ARGUMENTS",
     "HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29",
     "HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29",
 ]
@@ -218,15 +219,15 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_RTS"
-sources = ["BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG"]
-provenance = "observed"
+sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS"]
+provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_CTS"
-sources = ["BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG"]
-provenance = "observed"
+sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS"]
+provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
 

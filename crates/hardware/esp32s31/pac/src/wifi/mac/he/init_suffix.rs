@@ -16,6 +16,20 @@ pub struct MacHeTxMpduLengthLink {
 }
 
 impl WifiRadioRegisters {
+    /// Clear software CTS requests during cold initialization, retaining RTS.
+    ///
+    /// SOURCE: `hal_he_init` offsets 0xb6..0xec, four ordered queue RMWs.
+    pub(crate) fn initialize_mac_software_cts(&self) {
+        // Physical protection words are traversed high-to-low.
+        for physical in (0..4).rev() {
+            self.peripherals
+                .wifi_mac
+                .wifi_mac_tx_queue_control
+                .protection(physical)
+                .modify(|_, w| w.software_cts().clear_bit());
+        }
+    }
+
     /// Sample one of the 120 linked TX MPDU-length entries.
     pub fn he_tx_mpdu_length_link(&self, index: u8) -> Option<MacHeTxMpduLengthLink> {
         if index >= 120 {
@@ -108,14 +122,7 @@ impl WifiRadioRegisters {
             crate::svd::zero_register_write::clear_mac_he_mpdu_length_link(init, word);
         }
 
-        // Physical protection words are traversed high-to-low.
-        for physical in (0..4).rev() {
-            self.peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_control
-                .protection(physical)
-                .modify(|_, w| w.software_rts().clear_bit().software_cts().clear_bit());
-        }
+        self.initialize_mac_software_cts();
 
         self.peripherals
             .wifi_mac

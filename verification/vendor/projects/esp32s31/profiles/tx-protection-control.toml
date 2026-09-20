@@ -1,0 +1,288 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables"
+
+[[profiles]]
+name = "ordinary-tx-software-rts-clear"
+claim = "reviewed-domain-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_he_set_tx_protection"
+rust-symbol = "open_tx_protection_clear_rts"
+compare-return = false
+precondition = "ordinary-preparation-without-rts-or-duration-threshold"
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+[[profiles.argument-ranges]]
+index = 1
+min = 0
+max = 0
+[[profiles.argument-ranges]]
+index = 3
+min = 0
+max = 0
+
+[[profiles.cases]]
+name = "q0-clear"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x00000000 },
+  { address = 0x20104d54, value = 0x00000000 },
+  { address = 0x20104d44, value = 0x00000000 },
+  { address = 0x20104d34, value = 0x00000000 },
+]
+
+[[profiles.cases]]
+name = "q0-rts-only"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x80000000 },
+  { address = 0x20104d54, value = 0x80000000 },
+  { address = 0x20104d44, value = 0x80000000 },
+  { address = 0x20104d34, value = 0x80000000 },
+]
+
+[[profiles.cases]]
+name = "q0-cts-only"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x40000000 },
+  { address = 0x20104d54, value = 0x40000000 },
+  { address = 0x20104d44, value = 0x40000000 },
+  { address = 0x20104d34, value = 0x40000000 },
+]
+
+[[profiles.cases]]
+name = "q0-both"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xc0000000 },
+  { address = 0x20104d54, value = 0xc0000000 },
+  { address = 0x20104d44, value = 0xc0000000 },
+  { address = 0x20104d34, value = 0xc0000000 },
+]
+
+[[profiles.cases]]
+name = "q0-spacing-and-cts"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x55555555 },
+  { address = 0x20104d54, value = 0x55555555 },
+  { address = 0x20104d44, value = 0x55555555 },
+  { address = 0x20104d34, value = 0x55555555 },
+]
+
+[[profiles.cases]]
+name = "q0-all-set"
+arguments = [0, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xffffffff },
+  { address = 0x20104d54, value = 0xffffffff },
+  { address = 0x20104d44, value = 0xffffffff },
+  { address = 0x20104d34, value = 0xffffffff },
+]
+
+[[profiles.cases]]
+name = "q1-clear"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x00000000 },
+  { address = 0x20104d54, value = 0x00000000 },
+  { address = 0x20104d44, value = 0x00000000 },
+  { address = 0x20104d34, value = 0x00000000 },
+]
+
+[[profiles.cases]]
+name = "q1-rts-only"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x80000000 },
+  { address = 0x20104d54, value = 0x80000000 },
+  { address = 0x20104d44, value = 0x80000000 },
+  { address = 0x20104d34, value = 0x80000000 },
+]
+
+[[profiles.cases]]
+name = "q1-cts-only"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x40000000 },
+  { address = 0x20104d54, value = 0x40000000 },
+  { address = 0x20104d44, value = 0x40000000 },
+  { address = 0x20104d34, value = 0x40000000 },
+]
+
+[[profiles.cases]]
+name = "q1-both"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xc0000000 },
+  { address = 0x20104d54, value = 0xc0000000 },
+  { address = 0x20104d44, value = 0xc0000000 },
+  { address = 0x20104d34, value = 0xc0000000 },
+]
+
+[[profiles.cases]]
+name = "q1-spacing-and-cts"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x55555555 },
+  { address = 0x20104d54, value = 0x55555555 },
+  { address = 0x20104d44, value = 0x55555555 },
+  { address = 0x20104d34, value = 0x55555555 },
+]
+
+[[profiles.cases]]
+name = "q1-all-set"
+arguments = [1, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xffffffff },
+  { address = 0x20104d54, value = 0xffffffff },
+  { address = 0x20104d44, value = 0xffffffff },
+  { address = 0x20104d34, value = 0xffffffff },
+]
+
+[[profiles.cases]]
+name = "q2-clear"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x00000000 },
+  { address = 0x20104d54, value = 0x00000000 },
+  { address = 0x20104d44, value = 0x00000000 },
+  { address = 0x20104d34, value = 0x00000000 },
+]
+
+[[profiles.cases]]
+name = "q2-rts-only"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x80000000 },
+  { address = 0x20104d54, value = 0x80000000 },
+  { address = 0x20104d44, value = 0x80000000 },
+  { address = 0x20104d34, value = 0x80000000 },
+]
+
+[[profiles.cases]]
+name = "q2-cts-only"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x40000000 },
+  { address = 0x20104d54, value = 0x40000000 },
+  { address = 0x20104d44, value = 0x40000000 },
+  { address = 0x20104d34, value = 0x40000000 },
+]
+
+[[profiles.cases]]
+name = "q2-both"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xc0000000 },
+  { address = 0x20104d54, value = 0xc0000000 },
+  { address = 0x20104d44, value = 0xc0000000 },
+  { address = 0x20104d34, value = 0xc0000000 },
+]
+
+[[profiles.cases]]
+name = "q2-spacing-and-cts"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x55555555 },
+  { address = 0x20104d54, value = 0x55555555 },
+  { address = 0x20104d44, value = 0x55555555 },
+  { address = 0x20104d34, value = 0x55555555 },
+]
+
+[[profiles.cases]]
+name = "q2-all-set"
+arguments = [2, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xffffffff },
+  { address = 0x20104d54, value = 0xffffffff },
+  { address = 0x20104d44, value = 0xffffffff },
+  { address = 0x20104d34, value = 0xffffffff },
+]
+
+[[profiles.cases]]
+name = "q3-clear"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x00000000 },
+  { address = 0x20104d54, value = 0x00000000 },
+  { address = 0x20104d44, value = 0x00000000 },
+  { address = 0x20104d34, value = 0x00000000 },
+]
+
+[[profiles.cases]]
+name = "q3-rts-only"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x80000000 },
+  { address = 0x20104d54, value = 0x80000000 },
+  { address = 0x20104d44, value = 0x80000000 },
+  { address = 0x20104d34, value = 0x80000000 },
+]
+
+[[profiles.cases]]
+name = "q3-cts-only"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x40000000 },
+  { address = 0x20104d54, value = 0x40000000 },
+  { address = 0x20104d44, value = 0x40000000 },
+  { address = 0x20104d34, value = 0x40000000 },
+]
+
+[[profiles.cases]]
+name = "q3-both"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xc0000000 },
+  { address = 0x20104d54, value = 0xc0000000 },
+  { address = 0x20104d44, value = 0xc0000000 },
+  { address = 0x20104d34, value = 0xc0000000 },
+]
+
+[[profiles.cases]]
+name = "q3-spacing-and-cts"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0x55555555 },
+  { address = 0x20104d54, value = 0x55555555 },
+  { address = 0x20104d44, value = 0x55555555 },
+  { address = 0x20104d34, value = 0x55555555 },
+]
+
+[[profiles.cases]]
+name = "q3-all-set"
+arguments = [3, 0, 0x12345678, 0, 0x87654321]
+max-steps = 256
+mmio-initial = [
+  { address = 0x20104d64, value = 0xffffffff },
+  { address = 0x20104d54, value = 0xffffffff },
+  { address = 0x20104d44, value = 0xffffffff },
+  { address = 0x20104d34, value = 0xffffffff },
+]

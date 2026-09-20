@@ -646,9 +646,9 @@ gaps = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml", "verification/vendor/projects/esp32s31/profiles/tx-protection-control.toml"]
 gap-work = [
-  { gap = "ordinary-tx-protection-required-unimplemented", kind = "research", reason = "HT Nonmember protection can require CTS-to-Self during AP-loss recovery. The ordinary TX owner rejects this unimplemented physical publication before DMA and the connected runner ends with HardwareFailure. Establish the protected TX hardware contract and completion ownership; the unchanged reconnect/ICMP/control obligation remains unsatisfied." },
+  { gap = "ordinary-tx-protection-required-unimplemented", kind = "research", reason = "HT Nonmember protection can require CTS-to-Self during AP-loss recovery. The ordinary TX owner rejects this unimplemented physical publication before DMA and the connected runner ends with HardwareFailure. The reviewed SW_RTS clear and cold-init SW_CTS reset are distinct operations; neither establishes CTS-to-Self transmission. Recover or experimentally establish the generated CTS frame, receiver address, NAV duration, protected-MPDU sequencing and completion ownership; the unchanged reconnect/ICMP/control obligation remains unsatisfied." },
 ]
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
@@ -1101,7 +1101,7 @@ section = "wifi-legacy-and-ht-mac-behavior"
 title = "CTS-to-Self protection"
 status = "fail-closed"
 level = "composed-product"
-scope-and-limitations = "Typed TX-protection policy identifies group exchanges that require CTS-to-Self and rejects them before sequence, PN or DMA publication. There is no CTS frame, queue-publication or completion owner; an `SW_CTS` register name or cold queue bit is not a physical implementation."
+scope-and-limitations = "Typed TX-protection policy identifies group exchanges that require CTS-to-Self and rejects them before sequence, PN or DMA publication. The reviewed SW_CTS field is bit 30, independently of SW_RTS at bit 31. Cold HE initialization clears CTS; ordinary PLCP preparation clears RTS. Those compared reset edges do not implement a CTS frame, NAV duration, queue-publication or completion owner."
 source-paths = []
 
 [[items]]

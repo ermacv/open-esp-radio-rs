@@ -45,7 +45,8 @@ Neither can manufacture an implementation or hide an observed difference.
 ## Readiness
 
 The [qualification evaluator](../../qualification/README.md) independently
-consumes release-eligible evidence and current clean HIL bundles. It checks
+consumes release-eligible vendor evidence and applicable sealed HIL observations,
+including explicitly reviewed transfers. It checks
 source freshness, declared capability requirements and dependencies; Blobray
 comparison alone cannot establish readiness. The current
 [Wi-Fi target](../../qualification/targets/esp32s31/wifi-sta.toml) includes cold

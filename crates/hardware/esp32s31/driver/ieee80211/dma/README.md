@@ -14,6 +14,14 @@ an HT Nonmember group exchange can stop the connected runner with
 `HardwareFailure` during AP-loss recovery. That admission failure is distinct
 from a stuck DMA transaction; it does not establish a detach or reuse failure.
 
+The reviewed queue control has separate software RTS and CTS requests. Ordinary
+PLCP preparation clears RTS and retains CTS; cold HE initialization clears CTS
+and retains RTS and spacing. Those register edges are independently compared
+with vendor code in the [protection investigation](../../../../../../verification/vendor/projects/esp32s31/README.md#tx-protection-control).
+Neither edge supplies a CTS frame, its NAV duration, its relation to the protected
+MPDU, or completion ownership. The ordinary API therefore still rejects a
+protection-required exchange before DMA publication.
+
 [`PinnedTxDmaStorage`](src/tx_storage.rs) permanently retains its allocation.
 Dropping the movable owner does not free or detach hardware-visible memory.
 [`TxSlot`](../mac/src/tx.rs) adds the active queue and generation cookie;

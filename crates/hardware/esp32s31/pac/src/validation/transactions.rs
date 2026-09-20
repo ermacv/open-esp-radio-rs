@@ -9,6 +9,19 @@
 use crate::{MacHtTxProgram, MacInterface, WifiRadioRegisters};
 
 impl WifiRadioRegisters {
+    /// Execute the production cold-init CTS reset for all ordinary queues.
+    pub fn validation_initialize_mac_software_cts(&mut self) {
+        self.initialize_mac_software_cts();
+    }
+
+    /// Execute the production RTS-clear edge without publishing a queue.
+    pub fn validation_clear_mac_tx_software_rts(&mut self, queue: u32) {
+        crate::wifi::mac::tx::queue::clear_software_rts(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            queue,
+        );
+    }
+
     /// Execute the production publication edge in an isolated probe image.
     pub fn validation_start_prepared_mac_tx(&mut self, queue: u8) {
         self.start_prepared_mac_tx(queue);

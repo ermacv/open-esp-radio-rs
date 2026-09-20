@@ -116,6 +116,45 @@ The [DMA owner contract](../../../../crates/hardware/esp32s31/driver/ieee80211/d
 connects these operations to buffer retention, host regressions and the remaining
 result-decoding, descriptor, abort and physical-release limits.
 
+## TX protection control
+
+The reviewed `WDEVTXQ_CONF2` argument order identifies **SW_RTS at bit 31** and
+**SW_CTS at bit 30**. The source identity and exact call argument positions live
+in `BLOB_LIBPP_TX_PROTECTION_ARGUMENTS` in the
+[register evidence](../../../../registers/esp32s31/evidence/vendor-libpp.toml).
+`hal_he_set_tx_protection` controls RTS, despite its generic name. Ordinary
+production queue preparation clears that RTS request and preserves CTS and
+minimum MPDU spacing.
+
+The `tx-protection-control` completion suite compares this compiled production
+edge with `hal_he_set_tx_protection(queue, 0, _, 0, _)`: four queues, six initial
+images, including independent RTS and CTS states. All observed MMIO effects are
+compared; RTS enable and HE threshold publication are outside this bounded scope.
+Use the same authenticated `libpp` and fresh `rust-artifact` bindings as above:
+
+```console
+target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/projects/esp32s31/local.toml \
+  project verify --suite tx-protection-control
+```
+
+Cold HE initialization separately clears CTS while preserving RTS and spacing.
+The private-input
+[`tx_protection` test](blobray-provider/models/tests/tx_protection.rs) compares
+its four ordered queue RMWs with the real `hal_he_init` parent. It observes only
+those queue effects, with six earlier children supplied as explicit out-of-scope
+call responses, and stops before broadcast-RU setup. This is not a comparison of
+the entire HE initializer. Build the test with `--profile blobray`, then run its
+executable through `blobray-run` with `BLOBRAY_BINARY`,
+`BLOBRAY_LIMIT_BACKEND=watchdog`, `OER_TX_ARCHIVE` and `OER_TX_PROBE` set to the
+built test, authenticated archive and fresh production probe respectively.
+
+CTS-to-Self transmission remains unimplemented. The generated CTS receiver
+address, NAV duration, protected-MPDU sequencing and completion/abort contract
+still need evidence; an RTS helper or a CTS reset cannot establish them.
+The [ordinary DMA contract](../../../../crates/hardware/esp32s31/driver/ieee80211/dma/README.md)
+and qualification catalog retain that admission limit.
+
 ## Current PHY calibration gate
 
 The `phy-calibration-leaves` suite compares four production-bound leaves against

@@ -385,6 +385,26 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_disable(queue: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
+pub extern "C" fn open_tx_protection_initialize_cts() {
+    oer_esp32s31_hal::validation::initialize_mac_software_cts();
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_tx_protection_clear_rts(
+    queue: u32,
+    enabled: u32,
+    _unused: u32,
+    duration_threshold: u32,
+    _duration: u32,
+) {
+    assert_eq!(enabled, 0);
+    assert_eq!(duration_threshold, 0);
+    oer_esp32s31_hal::validation::ordinary_tx_clear_software_rts(queue);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
 pub extern "C" fn open_ordinary_tx_ownership_publish(queue: u8) {
     oer_esp32s31_hal::validation::ordinary_tx_publish(queue);
 }
@@ -1766,6 +1786,8 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_is_txq_valid as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_set_txq_invalid as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
+    core::hint::black_box(open_tx_protection_initialize_cts as *const ());
+    core::hint::black_box(open_tx_protection_clear_rts as *const ());
     core::hint::black_box(open_ordinary_tx_ownership_publish as *const ());
     core::hint::black_box(open_ordinary_tx_ownership_acknowledge as *const ());
     core::hint::black_box(open_ordinary_tx_ownership_disable as *const ());

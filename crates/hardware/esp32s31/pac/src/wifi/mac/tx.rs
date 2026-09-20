@@ -921,9 +921,7 @@ impl WifiRadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
-        control_bank
-            .protection(bank)
-            .modify(|_, w| w.software_cts().clear_bit());
+        queue::clear_software_rts(control_bank, u32::from(queue));
         crate::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
             vectors,
             bank,
@@ -1038,10 +1036,8 @@ impl WifiRadioRegisters {
             },
         );
         // `mac_tx_set_plcp0` publishes the control image and immediately
-        // clears software CTS through one fresh-read protection update.
-        control_bank
-            .protection(bank)
-            .modify(|_, w| w.software_cts().clear_bit());
+        // clears software RTS through one fresh-read protection update.
+        queue::clear_software_rts(control_bank, u32::from(queue));
         let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         crate::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
             vectors,
@@ -1195,10 +1191,10 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.trigger_based_enable().clear_bit());
 
         // SOURCE: complete mac_tx_set_plcp0/hal_he_set_tx_protection followed
-        // by mac_tx_set_hesig. The bounded SU profile clears software CTS,
+        // by mac_tx_set_hesig. The bounded SU profile clears software RTS,
         // then replaces the three finite channel-width minimum-MPDU lanes.
         let protection = control_bank.protection(bank);
-        protection.modify(|_, w| w.software_cts().clear_bit());
+        queue::clear_software_rts(control_bank, u32::from(queue));
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
                 .set(parameters.protection_spacing)

@@ -26,6 +26,18 @@ const fn control_address(queue: u32) -> u32 {
     LAST_CONTROL_ADDRESS - queue * CONTROL_STRIDE
 }
 
+/// Clear software RTS while retaining software CTS and MPDU spacing.
+///
+/// Complete `hal_he_set_tx_protection(queue, 0, _, 0, _)`. The vendor debug
+/// formatter identifies SW_RTS as bit 31 and SW_CTS as bit 30. This operation
+/// does not admit or publish a protected transmission.
+#[inline(always)]
+pub(crate) fn clear_software_rts(registers: &svd::WifiMacTxQueueControl, queue: u32) {
+    registers
+        .protection(physical_bank(queue))
+        .modify(|_, writer| writer.software_rts().clear_bit());
+}
+
 #[inline(always)]
 pub(crate) fn set_cca_force(registers: &svd::WifiMacTxCommon, value: u32) -> u32 {
     registers

@@ -5,7 +5,10 @@
 //! and host-testable.  It deliberately does not turn the queue's basic-rate,
 //! power, `SW_RTS` or `SW_CTS` fields into an RTS/CTS claim: the reviewed S31
 //! sources do not yet establish the complete generated-frame, duration/NAV,
-//! retry and queue-clear lifecycle.
+//! retry and queue-clear lifecycle. In the reviewed queue word, SW_RTS is
+//! bit 31 and SW_CTS is bit 30. Ordinary preparation clears RTS; cold HE
+//! initialization clears CTS. Neither reset operation proves a generated
+//! CTS-to-Self exchange, so admission remains closed.
 
 use crate::tx::{HeEdcaTxopLimit, HtChannelWidth, LegacyRate, TxPhyRate};
 

@@ -18538,7 +18538,7 @@ pub mod wifi_mac_tx_queue_control {
         control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub const fn protection(&self, n: usize) -> &Protection {
             #[allow(clippy::no_effect)]
@@ -18546,7 +18546,7 @@ pub mod wifi_mac_tx_queue_control {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub fn protection_iter(&self) -> impl Iterator<Item = &Protection> {
             (0..4).map(move |n| unsafe {
@@ -18604,10 +18604,10 @@ pub mod wifi_mac_tx_queue_control {
             })
         }
     }
-    #[doc = "PROTECTION (rw) register accessor: Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
+    #[doc = "PROTECTION (rw) register accessor: Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
     #[doc(alias = "PROTECTION")]
     pub type Protection = crate::Reg<protection::ProtectionSpec>;
-    #[doc = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+    #[doc = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
     pub mod protection {
         #[doc = "Register `PROTECTION%s` reader"]
         pub type R = crate::R<ProtectionSpec>;
@@ -18628,14 +18628,14 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW80` writer - Third copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
         pub type MinimumMpduLengthCbw80W<'a, REG> =
             crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
-        #[doc = "Field `SOFTWARE_RTS` reader - Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
-        pub type SoftwareRtsR = crate::BitReader;
-        #[doc = "Field `SOFTWARE_RTS` writer - Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
-        pub type SoftwareRtsW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `SOFTWARE_CTS` reader - Complete dbg_read_txq_conf2 names bit 31 SW_CTS."]
+        #[doc = "Field `SOFTWARE_CTS` reader - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
         pub type SoftwareCtsR = crate::BitReader;
-        #[doc = "Field `SOFTWARE_CTS` writer - Complete dbg_read_txq_conf2 names bit 31 SW_CTS."]
+        #[doc = "Field `SOFTWARE_CTS` writer - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
         pub type SoftwareCtsW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOFTWARE_RTS` reader - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+        pub type SoftwareRtsR = crate::BitReader;
+        #[doc = "Field `SOFTWARE_RTS` writer - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+        pub type SoftwareRtsW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:9 - First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
             #[inline(always)]
@@ -18652,15 +18652,15 @@ pub mod wifi_mac_tx_queue_control {
             pub fn minimum_mpdu_length_cbw80(&self) -> MinimumMpduLengthCbw80R {
                 MinimumMpduLengthCbw80R::new(((self.bits >> 20) & 0x03ff) as u16)
             }
-            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
-            #[inline(always)]
-            pub fn software_rts(&self) -> SoftwareRtsR {
-                SoftwareRtsR::new(((self.bits >> 30) & 1) != 0)
-            }
-            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 names bit 31 SW_CTS."]
+            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
             #[inline(always)]
             pub fn software_cts(&self) -> SoftwareCtsR {
-                SoftwareCtsR::new(((self.bits >> 31) & 1) != 0)
+                SoftwareCtsR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+            #[inline(always)]
+            pub fn software_rts(&self) -> SoftwareRtsR {
+                SoftwareRtsR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -18685,18 +18685,18 @@ pub mod wifi_mac_tx_queue_control {
             ) -> MinimumMpduLengthCbw80W<'_, ProtectionSpec> {
                 MinimumMpduLengthCbw80W::new(self, 20)
             }
-            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
-            #[inline(always)]
-            pub fn software_rts(&mut self) -> SoftwareRtsW<'_, ProtectionSpec> {
-                SoftwareRtsW::new(self, 30)
-            }
-            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 names bit 31 SW_CTS."]
+            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
             #[inline(always)]
             pub fn software_cts(&mut self) -> SoftwareCtsW<'_, ProtectionSpec> {
-                SoftwareCtsW::new(self, 31)
+                SoftwareCtsW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+            #[inline(always)]
+            pub fn software_rts(&mut self) -> SoftwareRtsW<'_, ProtectionSpec> {
+                SoftwareRtsW::new(self, 31)
             }
         }
-        #[doc = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_RTS and SW_CTS. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears the same SW_RTS/SW_CTS pair, not an independent register. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ProtectionSpec;
         impl crate::RegisterSpec for ProtectionSpec {
             type Ux = u32;

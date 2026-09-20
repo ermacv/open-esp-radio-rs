@@ -127,6 +127,20 @@ pub fn hal_mac_txq_disable(queue: u32) -> u32 {
     owner().pac_mut().validation_disable_mac_tx_queue(queue)
 }
 
+/// Production cold-init CTS reset for all ordinary queues.
+#[inline(always)]
+pub fn initialize_mac_software_cts() {
+    owner().pac_mut().validation_initialize_mac_software_cts();
+}
+
+/// Production RTS-clear edge used by ordinary queue preparation.
+#[inline(always)]
+pub fn ordinary_tx_clear_software_rts(queue: u32) {
+    owner()
+        .pac_mut()
+        .validation_clear_mac_tx_software_rts(queue);
+}
+
 /// Production queue publication, excluding vendor access bookkeeping.
 #[inline(always)]
 pub fn ordinary_tx_publish(queue: u8) {

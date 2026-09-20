@@ -657,3 +657,23 @@ vendor = { source = "libpp", symbol = "hal_mac_clr_txq_state", fingerprint = "sh
 disposition = "verified"
 requirement = "ordinary-tx-acknowledge-edges"
 rationale = "Fingerprint covers the complete unrelocated function bytes in the authenticated libpp archive. The requirement restricts the comparison to complete selector-two acknowledgement for ordinary queues zero through three; it does not prove DMA quiescence, descriptor preparation, physical timing or the complete ordinary-TX root."
+
+[[surfaces]]
+id = "ordinary-tx-software-rts-clear"
+description = "Complete software RTS clear with duration-threshold publication disabled; preserves CTS and spacing."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-software-rts-clear-edges"
+description = "Compiled production preserves all unrelated state for four queues and six retained images."
+suite = "tx-protection-control"
+source = "libpp"
+symbol = "hal_he_set_tx_protection"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-software-rts-clear-mmio"
+vendor = { source = "libpp", symbol = "hal_he_set_tx_protection", fingerprint = "sha256:fee41fb6c99ea30975bc4fa6dfc19087b5deeadad1362aa415ef74d8cab9432d" }
+disposition = "verified"
+requirement = "ordinary-tx-software-rts-clear-edges"
+rationale = "Fingerprint covers all 64 unrelocated function bytes in the authenticated archive. The comparison is limited to a1=0 and a3=0; a2 and a4 are immaterial in that domain. It proves the production RTS-clear edge, not RTS enable, HE threshold publication or CTS-to-Self support."

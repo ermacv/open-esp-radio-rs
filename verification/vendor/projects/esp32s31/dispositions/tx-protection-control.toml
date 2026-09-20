@@ -1,0 +1,40 @@
+schema = 3
+default-disposition = "not-yet-ported"
+default-protocol = "wifi"
+
+[[functions]]
+source = "libpp"
+symbol = "hal_he_set_tx_protection"
+disposition = "bounded-feature"
+protocol = "wifi"
+rust-component = "oer_esp32s31_pac::wifi::mac::tx::queue::clear_software_rts"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_tx_protection_clear_rts"
+comparison-plan = "direct-effects-v1"
+compare-return = false
+effect-contract = "exact-effects-v2"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d64 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d64 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d54 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d54 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d44 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d44 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d34 }
+disposition = { kind = "required-when-observed" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d34 }
+disposition = { kind = "required-when-observed" }

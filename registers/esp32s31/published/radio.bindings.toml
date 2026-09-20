@@ -20603,15 +20603,15 @@ bit-width = 10
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_RTS"
-method = "software_rts"
+svd-name = "SOFTWARE_CTS"
+method = "software_cts"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_CTS"
-method = "software_cts"
+svd-name = "SOFTWARE_RTS"
+method = "software_rts"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -20833,15 +20833,15 @@ bit-width = 10
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_RTS"
-method = "software_rts"
+svd-name = "SOFTWARE_CTS"
+method = "software_cts"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_CTS"
-method = "software_cts"
+svd-name = "SOFTWARE_RTS"
+method = "software_rts"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -21063,15 +21063,15 @@ bit-width = 10
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_RTS"
-method = "software_rts"
+svd-name = "SOFTWARE_CTS"
+method = "software_cts"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_CTS"
-method = "software_cts"
+svd-name = "SOFTWARE_RTS"
+method = "software_rts"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -21293,15 +21293,15 @@ bit-width = 10
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_RTS"
-method = "software_rts"
+svd-name = "SOFTWARE_CTS"
+method = "software_cts"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOFTWARE_CTS"
-method = "software_cts"
+svd-name = "SOFTWARE_RTS"
+method = "software_rts"
 bit-offset = 31
 bit-width = 1
 access = "read-write"

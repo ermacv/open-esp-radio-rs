@@ -331,33 +331,18 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
         PreImageStage::Metadata => metadata::run(ctx).map(|_| ()),
         PreImageStage::NetworkDependencies => network::run(ctx, true),
         PreImageStage::Examples => examples::run(ctx),
-        PreImageStage::Docs => docs::run(ctx, false, false, 2),
+        PreImageStage::Docs => docs::run_selected(ctx, checkpoint_docs_scope(), false, false, 1),
     }
 }
 
-fn checked_example_configurations(
-    evidence: Option<&examples::ExampleEvidence>,
-) -> Result<&BTreeSet<common::CargoConfiguration>> {
-    Ok(&evidence
-        .ok_or("docs gate requires fresh source-only example evidence")?
-        .target_configurations)
+fn checkpoint_docs_scope() -> docs::Scope {
+    docs::Scope::Static
 }
 
 pub fn run(ctx: &Context) -> Result<()> {
     let total_start = Instant::now();
-    let mut example_evidence: Option<examples::ExampleEvidence> = None;
     run_pre_image_stages(|stage| {
-        timed_stage(stage.label(), || match stage {
-            PreImageStage::Examples => {
-                example_evidence = Some(examples::run_with_evidence(ctx)?);
-                Ok(())
-            }
-            PreImageStage::Docs => {
-                let checked = checked_example_configurations(example_evidence.as_ref())?;
-                docs::run_with_consumers(ctx, false, false, 2, checked)
-            }
-            _ => execute_pre_image_stage(ctx, stage),
-        })
+        timed_stage(stage.label(), || execute_pre_image_stage(ctx, stage))
     })?;
 
     timed_stage("build-hil-runner", || {

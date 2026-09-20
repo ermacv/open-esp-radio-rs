@@ -552,22 +552,6 @@ fn planner_follows_transitive_required_features_like_cargo() {
             .iter()
             .all(|(_, execution)| { plan.execution_jobs.contains(execution) })
     );
-    let consumer = plan
-        .execution_jobs
-        .iter()
-        .find(|job| job.purpose == Purpose::McuCompileConsumer)
-        .unwrap()
-        .configuration
-        .clone();
-    assert!(validate_verified_consumers(&plan, &BTreeSet::from([consumer.clone()])).is_ok());
-    let mut wrong_consumer = consumer;
-    wrong_consumer.target = "host-target".into();
-    assert!(
-        validate_verified_consumers(&plan, &BTreeSet::from([wrong_consumer]))
-            .unwrap_err()
-            .to_string()
-            .contains("does not match")
-    );
     let demo_jobs = plan
         .jobs
         .iter()

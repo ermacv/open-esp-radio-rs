@@ -32,7 +32,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check docs --package oer-memory` | Also build public rustdoc and run applicable doctests for the selected package’s supported profiles; repeat `--package` for more packages, add `--private` for private API |
 | `cargo xtask check docs --full` | Check every public/private rustdoc profile, host doctest and MCU consumer, plus links and static views; at most two independent rustdoc caches run concurrently |
 | `cargo xtask check docs --full --jobs 1 --export-html` | Use one rustdoc worker and additionally copy complete isolated HTML snapshots; the required gate does not need this export |
-| `cargo xtask check source-only` | Compose repository suites once, including the docs gate, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits |
+| `cargo xtask check source-only` | Compose repository suites once, including static links/catalogs, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits; no public/private API documentation build |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
@@ -51,8 +51,8 @@ silently omitted.
 
 Use focused package tests and target builds for the code being changed. Run
 `check docs` for prose/catalog changes and `check docs --package PACKAGE` for
-API changes. `check source-only` is the complete, expensive checkpoint, including
-`check docs --full`; it is not required after every local edit. Shared contracts,
+API changes. `check source-only` is the source/image integration checkpoint;
+`check docs --full` runs separately and explicitly. Neither is required after every local edit. Shared contracts,
 Cargo feature policy, generated PAC and firmware layout changes need the relevant
 broader architecture, safety and artifact checks. Partial checks do not establish
 full repository coverage.
@@ -91,10 +91,9 @@ paths and builder/final-audit verdicts. A failed or incomplete correctness
 build cannot be replaced by a previous application image or a successful
 performance build. This gate does not run on hardware or measure runtime stack
 high-water.
-Within `source-only`, the examples stage passes its successful in-memory MCU
-configuration checks to the docs stage, which maps its ten consumer obligations
-to those exact checks instead of compiling them twice. Standalone `check docs --full`
-still performs all ten checks itself; no saved PASS report is reused.
+Within `source-only`, documentation checks only static links and catalogs.
+Standalone `check docs --full` performs its API, doctest and MCU consumer checks
+itself; no saved PASS report is reused.
 
 Network dependency checks distinguish released compatibility, original upstream,
 maintained owned and research contracts. Compatibility products

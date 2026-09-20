@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, time::Instant};
+use std::time::Instant;
 
 use crate::{Context, Result, process};
 
@@ -7,14 +7,6 @@ use super::{TARGET, common};
 mod dma;
 
 pub fn run(ctx: &Context) -> Result<()> {
-    run_with_evidence(ctx).map(|_| ())
-}
-
-pub struct ExampleEvidence {
-    pub(crate) target_configurations: BTreeSet<common::CargoConfiguration>,
-}
-
-pub fn run_with_evidence(ctx: &Context) -> Result<ExampleEvidence> {
     let total_start = Instant::now();
     let plan_start = Instant::now();
     let configurations = common::example_configurations(ctx, TARGET)?;
@@ -74,7 +66,5 @@ pub fn run_with_evidence(ctx: &Context) -> Result<ExampleEvidence> {
         "example timing: stage=total total-us={}",
         total_start.elapsed().as_micros()
     );
-    Ok(ExampleEvidence {
-        target_configurations: configurations.into_iter().collect(),
-    })
+    Ok(())
 }

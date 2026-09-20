@@ -193,22 +193,6 @@ fn record_requirement(
     mapped.push((requirement, execution));
 }
 
-fn validate_verified_consumers(
-    plan: &Plan,
-    verified: &BTreeSet<common::CargoConfiguration>,
-) -> Result<()> {
-    let planned = plan
-        .execution_jobs
-        .iter()
-        .filter(|job| job.purpose == Purpose::McuCompileConsumer)
-        .map(|job| job.configuration.clone())
-        .collect::<BTreeSet<_>>();
-    if !verified.is_subset(&planned) {
-        return Err("source-only example evidence does not match planned MCU consumers".into());
-    }
-    Ok(())
-}
-
 struct ToolchainIdentity {
     cargo: String,
     rustc: String,
@@ -277,25 +261,6 @@ fn job_timing(ctx: &Context, job: &Job, timing: JobTiming) -> Result<Value> {
     }))
 }
 
-fn reused_consumer_timing(ctx: &Context, job: &Job) -> Result<Value> {
-    let id = job.configuration.id(&ctx.root)?;
-    eprintln!(
-        "docs timing: job={} id={id} metadata-us=0 cargo-us=0 snapshot-us=0 total-us=0 verification=source-only/examples",
-        job.purpose.label(),
-    );
-    Ok(json!({
-        "purpose": job.purpose.label(),
-        "configuration-id": id,
-        "verification": "source-only/examples",
-        "timing": JobTiming::default().as_json(),
-    }))
-}
-
-/// Full checkpoint entry point used by source-only orchestration.
-pub fn run(ctx: &Context, list: bool, export_html: bool, workers: usize) -> Result<()> {
-    run_with_consumers(ctx, list, export_html, workers, &BTreeSet::new())
-}
-
 pub fn run_selected(
     ctx: &Context,
     scope: Scope,
@@ -306,24 +271,7 @@ pub fn run_selected(
     if export_html && matches!(scope, Scope::Static) {
         return Err("--export-html requires --full or --package".into());
     }
-    run_scoped(ctx, scope, list, export_html, workers, &BTreeSet::new())
-}
-
-pub fn run_with_consumers(
-    ctx: &Context,
-    list: bool,
-    export_html: bool,
-    workers: usize,
-    verified_consumers: &BTreeSet<common::CargoConfiguration>,
-) -> Result<()> {
-    run_scoped(
-        ctx,
-        Scope::Full,
-        list,
-        export_html,
-        workers,
-        verified_consumers,
-    )
+    run_scoped(ctx, scope, list, export_html, workers)
 }
 
 fn run_scoped(
@@ -332,7 +280,6 @@ fn run_scoped(
     list: bool,
     export_html: bool,
     workers: usize,
-    verified_consumers: &BTreeSet<common::CargoConfiguration>,
 ) -> Result<()> {
     if !(1..=2).contains(&workers) {
         return Err("docs rustdoc workers must be one or two".into());
@@ -345,7 +292,6 @@ fn run_scoped(
     let stage_start = Instant::now();
     let mut plan = build_plan(ctx, &toolchain.host)?;
     select_plan(&mut plan, &scope)?;
-    validate_verified_consumers(&plan, verified_consumers)?;
     let plan_us = elapsed_us(stage_start);
     stage_timing("plan-metadata", plan_us);
     let stage_start = Instant::now();
@@ -421,19 +367,13 @@ fn run_scoped(
     let doctest_us = elapsed_us(stage_start);
     stage_timing("host-doctest", doctest_us);
     let stage_start = Instant::now();
-    let mut reused_consumers = 0;
     for job in plan
         .execution_jobs
         .iter()
         .filter(|job| job.purpose == Purpose::McuCompileConsumer)
     {
-        if verified_consumers.contains(&job.configuration) {
-            reused_consumers += 1;
-            job_timings.push(reused_consumer_timing(ctx, job)?);
-        } else {
-            let timing = run_consumer_measured(ctx, &output, job)?;
-            job_timings.push(job_timing(ctx, job, timing)?);
-        }
+        let timing = run_consumer_measured(ctx, &output, job)?;
+        job_timings.push(job_timing(ctx, job, timing)?);
     }
     let consumer_us = elapsed_us(stage_start);
     stage_timing("mcu-consumer", consumer_us);
@@ -500,8 +440,7 @@ fn run_scoped(
             "private-rustdoc": execution_counts.get(Purpose::PrivateRustdoc.label()).copied().unwrap_or(0),
             "host-doctest": execution_counts.get(Purpose::HostDoctest.label()).copied().unwrap_or(0),
             "mcu-compile-consumer": execution_counts.get(Purpose::McuCompileConsumer.label()).copied().unwrap_or(0),
-            "mcu-compile-consumer-example-evidence": reused_consumers,
-            "local-cargo-jobs": plan.execution_jobs.len() - reused_consumers,
+            "local-cargo-jobs": plan.execution_jobs.len(),
             "rustdoc-workers": workers,
         },
         "requirement-map": plan.requirement_map.iter().map(|(requirement, execution)| {

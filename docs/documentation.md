@@ -93,9 +93,9 @@ and applicable host doctests run for that package's supported feature profiles.
 Repeat `--package` to select more packages; `--private` includes their private API.
 
 `cargo xtask check docs --full` checks the complete public/private rustdoc matrix,
-host doctests and MCU compile-only consumers. This expensive mode also remains
-part of `cargo xtask check source-only`; use it at full checkpoints, with focused
-checks during local iteration. Add `--list` to any scope to inspect its plan
+host doctests and MCU compile-only consumers. Run this expensive mode separately
+and explicitly; `cargo xtask check source-only` includes only static documentation
+checks, never public/private rustdoc builds. Add `--list` to any scope to inspect its plan
 without executing checks. `--export-html` exports isolated rustdoc snapshots for
 package/full scopes.
 

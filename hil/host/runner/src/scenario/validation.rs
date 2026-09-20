@@ -193,6 +193,7 @@ impl Scenario {
             Workload::BluetoothDtm { .. }
                 | Workload::BluetoothGatt
                 | Workload::BluetoothSecureGatt
+                | Workload::BluetoothSecureGattTiming
                 | Workload::BluetoothSecureGattHciReadFailure
                 | Workload::BluetoothPhyWatchdog
                 | Workload::BluetoothPeripheral { .. }
@@ -214,7 +215,9 @@ impl Scenario {
         if (self.image == ImageClass::BluetoothSecureGatt)
             != matches!(
                 self.workload,
-                Workload::BluetoothSecureGatt | Workload::BluetoothSecureGattHciReadFailure
+                Workload::BluetoothSecureGatt
+                    | Workload::BluetoothSecureGattTiming
+                    | Workload::BluetoothSecureGattHciReadFailure
             )
         {
             return self
@@ -581,6 +584,7 @@ impl Scenario {
             }
             Workload::BluetoothGatt
             | Workload::BluetoothSecureGatt
+            | Workload::BluetoothSecureGattTiming
             | Workload::BluetoothSecureGattHciReadFailure => {
                 if self.link.is_some()
                     || self.criteria != Criteria::default()

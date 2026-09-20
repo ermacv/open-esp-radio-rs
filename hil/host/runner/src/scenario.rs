@@ -170,6 +170,9 @@ pub enum Workload {
     BluetoothGatt,
     /// Automated Numeric Comparison, bonded reconnect and explicit terminal fault.
     BluetoothSecureGatt,
+    /// Same lifecycle with IRQ watermark scans only before and after traffic.
+    /// Diagnostic comparison, not a replacement for memory-stress evidence.
+    BluetoothSecureGattTiming,
     BluetoothSecureGattHciReadFailure,
     BluetoothPhyWatchdog,
     WifiPhyWatchdog,

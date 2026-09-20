@@ -1,5 +1,5 @@
 //! A failed Reset must retain the old epoch, not claim RF-close or restart.
-use super::{Duration, Evidence, Instant, Result, SerialCapture, wait};
+use super::{Duration, Evidence, Instant, Observation, Result, wait};
 use open_esp_radio_hil_protocol::{
     BluetoothGattResetOutcome as Reset, BluetoothGattResetReadGate as Gate, BluetoothGattShutdown,
     BluetoothGattStopCause as Cause,
@@ -33,7 +33,7 @@ fn require_retained(before: Evidence, after: Evidence) -> Result<()> {
 }
 
 pub(super) fn run(
-    capture: &SerialCapture,
+    capture: &Observation<'_>,
     samples: &mut Vec<Evidence>,
     boot: u64,
     before: Evidence,

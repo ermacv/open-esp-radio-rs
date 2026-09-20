@@ -20,6 +20,36 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum IrqSampling {
+    EverySnapshot,
+    BoundaryOnly,
+}
+
+/// Keep the observer policy with the capture across pairing and retirement;
+/// no helper may accidentally restore intrusive sampling in the timing case.
+struct Observation<'a> {
+    capture: &'a SerialCapture,
+    irq: IrqSampling,
+}
+
+impl std::ops::Deref for Observation<'_> {
+    type Target = SerialCapture;
+    fn deref(&self) -> &Self::Target {
+        self.capture
+    }
+}
+
+impl Observation<'_> {
+    fn bluetooth_secure_gatt(&self) -> Result<Evidence> {
+        match self.irq {
+            IrqSampling::EverySnapshot => self.capture.bluetooth_secure_gatt(),
+            IrqSampling::BoundaryOnly => self.capture.bluetooth_secure_gatt_snapshot(),
+        }
+    }
+}
+
 pub(crate) fn preflight(adapter: Adapter) -> Result<()> {
     att::preflight(adapter)
 }
@@ -30,7 +60,7 @@ fn join(a: Result<()>, b: Result<()>) -> Result<()> {
         (Err(a), Err(b)) => Err(format!("{a}; cleanup: {b}").into()),
     }
 }
-fn sample(capture: &SerialCapture, samples: &mut Vec<Evidence>) -> Result<Evidence> {
+fn sample(capture: &Observation<'_>, samples: &mut Vec<Evidence>) -> Result<Evidence> {
     let e = capture.bluetooth_secure_gatt()?;
     samples.push(e);
     if e.application_stopped {
@@ -50,7 +80,7 @@ fn sample(capture: &SerialCapture, samples: &mut Vec<Evidence>) -> Result<Eviden
     Ok(e)
 }
 fn wait(
-    capture: &SerialCapture,
+    capture: &Observation<'_>,
     samples: &mut Vec<Evidence>,
     predicate: impl Fn(&Evidence) -> bool,
 ) -> Result<Evidence> {
@@ -71,6 +101,7 @@ pub(crate) fn run(
     output: &Path,
     context: &Context<'_>,
     shutdown: SecureGattShutdown,
+    irq_sampling: IrqSampling,
 ) -> Result<()> {
     let adapter = context
         .lab
@@ -79,12 +110,15 @@ pub(crate) fn run(
     preflight(adapter)?;
     let mut radio = att::Owner::acquire(adapter, output)?;
     let result = context.with_capture(output, |capture| {
+        let observation = Observation { capture, irq: irq_sampling };
+        let capture = &observation;
         let mut samples = Vec::new();
         let mut exchanges = Vec::new();
         let mut peer = None;
         let probe = (|| -> Result<()> {
             let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
             if !capabilities.features.bluetooth_secure_gatt || capabilities.features.bluetooth_gatt { return Err("exclusive secure GATT image required".into()); }
+            capture.require_bluetooth_irq_stack()?;
             let initial = wait(capture,&mut samples,|e|e.traffic.advertising && e.traffic.address.is_some())?;
             if initial.traffic.connections != 0 || initial.bonds_stored != 0 || initial.comparisons != 0 || initial.traffic.value != 0 { return Err("fresh secure application epoch required".into()); }
             let address = PeerAddress(initial.traffic.address.ok_or("DUT address missing")?);
@@ -134,6 +168,9 @@ pub(crate) fn run(
                 }
             }
         })();
+        // Also retain the terminal high-water measurement when the workload
+        // fails. A scan failure is never replaced by the traffic outcome.
+        let probe = join(probe, capture.require_bluetooth_irq_stack());
         let cleanup = oer_process::cleanup(|| {
             let bond = peer.as_mut().map_or(Ok(()), Owner::restore);
             let power = radio.restore();
@@ -141,6 +178,7 @@ pub(crate) fn run(
         });
         crate::evidence::run::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
             "schema":6, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
+            "irq_sampling":irq_sampling,
             "confirmation":"automated-hil-number-comparison", "human_presence_verified":false,
             "samples":samples,"peer_exchanges":exchanges,"passed":probe.is_ok() && cleanup.is_ok(),
             "error":probe.as_ref().err().map(ToString::to_string), "restored":cleanup.is_ok(),
@@ -156,7 +194,7 @@ pub(crate) fn run(
 }
 
 fn pairing(
-    capture: &SerialCapture,
+    capture: &Observation<'_>,
     peer: &Owner,
     samples: &mut Vec<Evidence>,
     accept: bool,

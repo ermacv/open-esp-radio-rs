@@ -1,5 +1,5 @@
 //! Observe a pending software Reset without treating it as an RF-close proof.
-use super::{Duration, Evidence, Instant, Result, SerialCapture, sample, wait};
+use super::{Duration, Evidence, Instant, Observation, Result, sample, wait};
 use open_esp_radio_hil_protocol::BluetoothGattResetReadGate as Phase;
 
 fn require_held(before: Evidence, held: Evidence) -> Result<()> {
@@ -24,7 +24,7 @@ fn require_held(before: Evidence, held: Evidence) -> Result<()> {
 }
 
 pub(super) fn restart(
-    capture: &SerialCapture,
+    capture: &Observation<'_>,
     samples: &mut Vec<Evidence>,
     boot: u64,
     before: Evidence,

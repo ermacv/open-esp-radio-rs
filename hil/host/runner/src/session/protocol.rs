@@ -897,14 +897,21 @@ impl SerialCapture {
     pub(crate) fn bluetooth_secure_gatt(
         &self,
     ) -> Result<open_esp_radio_hil_protocol::BluetoothSecureGattEvidence> {
+        let evidence = self.bluetooth_secure_gatt_snapshot()?;
+        self.require_bluetooth_irq_stack()?;
+        Ok(evidence)
+    }
+
+    /// Protocol observation only. IRQ watermark scanning masks interrupts;
+    /// callers selecting this path must explicitly own their sampling policy.
+    pub(crate) fn bluetooth_secure_gatt_snapshot(
+        &self,
+    ) -> Result<open_esp_radio_hil_protocol::BluetoothSecureGattEvidence> {
         match self
             .send_command(0, Command::QueryBluetoothSecureGatt, Duration::from_secs(2))?
             .body
         {
-            Event::BluetoothSecureGatt(evidence) => {
-                self.require_bluetooth_irq_stack()?;
-                Ok(evidence)
-            }
+            Event::BluetoothSecureGatt(evidence) => Ok(evidence),
             response => Err(format!("invalid secure GATT observation: {response:?}").into()),
         }
     }
@@ -1105,7 +1112,7 @@ impl SerialCapture {
         }
     }
 
-    fn require_bluetooth_irq_stack(&self) -> Result<()> {
+    pub(crate) fn require_bluetooth_irq_stack(&self) -> Result<()> {
         let response =
             self.send_command(0, Command::QueryInterruptStackUsage, Duration::from_secs(5))?;
         match response.body {

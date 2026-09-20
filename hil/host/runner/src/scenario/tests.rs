@@ -39,6 +39,10 @@ fn secure_gatt_terminal_fault_is_explicit_and_has_independent_scenarios() {
             "bluetooth-trouble-secure-gatt-hci-read-failure",
             Workload::BluetoothSecureGattHciReadFailure,
         ),
+        (
+            "bluetooth-trouble-secure-gatt-timing",
+            Workload::BluetoothSecureGattTiming,
+        ),
     ] {
         let scenario = catalog.get(id).unwrap();
         assert_eq!(scenario.workload, expected);

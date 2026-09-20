@@ -209,9 +209,14 @@ hard-deadline fail-stop requirement. See the canonical
 The secure program additionally requires key/counter/MIC handling, Numeric
 Comparison-only Secure Connections pairing, authenticated ATT, RAM-bond
 restoration and coordinated Host/Controller shutdown. Its automated secure
-GATT scenario checks pairing rejection, protected traffic and bonded reconnect;
-it does not establish human presence, retention across reset or coordinated
-retirement. The canonical catalog selects the required repetitions and retains
+GATT scenario checks pairing rejection, protected traffic, RAM-bonded reconnect
+after physical Controller cold restart, withheld Reset-reader retention and
+terminal cold close after injected bond-load failure. The separate HCI-reader
+failure scenario checks retained ownership, not successful cold close. Neither
+establishes human presence, bond retention across SoC reset or all terminal
+fault dispositions. The timing diagnostic uses boundary-only IRQ watermark
+sampling; it does not replace the required every-snapshot memory-stress scenario.
+The canonical catalog selects the required repetitions and retains
 the missing lifecycle evidence separately. Existing plaintext ACL scenarios do
 not supply encrypted or GATT evidence.
 

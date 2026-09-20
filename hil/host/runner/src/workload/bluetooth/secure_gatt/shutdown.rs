@@ -1,5 +1,5 @@
 //! Fault-close evidence is separate from normal reconnect and from RF loss.
-use super::{Duration, Evidence, Instant, Owner, Result, SerialCapture};
+use super::{Duration, Evidence, Instant, Observation, Owner, Result};
 use open_esp_radio_hil_protocol::{
     BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
 };
@@ -38,7 +38,7 @@ fn require_closed(before: Evidence, after: Evidence) -> Result<()> {
 }
 
 pub(super) fn bond_load_failure(
-    capture: &SerialCapture,
+    capture: &Observation<'_>,
     peer: &Owner,
     samples: &mut Vec<Evidence>,
     boot: u64,

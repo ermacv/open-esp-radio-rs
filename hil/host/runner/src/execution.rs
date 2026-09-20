@@ -77,12 +77,20 @@ fn execute_workload_inner(
             output,
             context,
             crate::scenario::SecureGattShutdown::BondLoadFailure,
+            crate::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
+        ),
+        Workload::BluetoothSecureGattTiming => crate::workload::bluetooth::secure_gatt::run(
+            output,
+            context,
+            crate::scenario::SecureGattShutdown::BondLoadFailure,
+            crate::workload::bluetooth::secure_gatt::IrqSampling::BoundaryOnly,
         ),
         Workload::BluetoothSecureGattHciReadFailure => {
             crate::workload::bluetooth::secure_gatt::run(
                 output,
                 context,
                 crate::scenario::SecureGattShutdown::HciReadFailure,
+                crate::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
             )
         }
         Workload::BluetoothDtm {

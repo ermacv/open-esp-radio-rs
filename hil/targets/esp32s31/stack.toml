@@ -31,8 +31,10 @@ runtime_irq_minimum_free_bytes = 4096
 
 reported_frame_count = 30
 
-# These are async owner graphs, not local packet arrays. Their executor and
-# call-chain use is independently bounded by the runtime high-water check.
+# These limits measure local machine frames generated while constructing,
+# polling or transferring affine owner graphs, not the size of stored Futures.
+# Static task/Future storage is accounted separately by ELF allocation policy;
+# runtime high-water observations cover exercised aggregate call chains only.
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
 function_contains = "::bluetooth_gatt::__task_task::__task_task_inner_function"
@@ -47,19 +49,19 @@ reason = "the single-core GATT task transfers the affine cold-start result into 
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "open-esp-radio-wifi-sta-0.1.0/src/station.rs"]
 max_bytes = 19712
-reason = "station lifecycle future retains the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
+reason = "compiled station lifecycle poll materializes the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "::startup::start_esp32s31_radio"
 source_ends_with = ["crates/hardware/esp32s31/driver/ieee80211/src/startup.rs", "open-esp-radio-esp32s31-wifi-0.1.0/src/startup.rs"]
 max_bytes = 18432
-reason = "one-time radio start future returns the complete initialized radio owner graph"
+reason = "compiled one-time radio start return materializes the complete initialized radio owner graph"
 
 [[reviewed_frames]]
 function_contains = "::cold_start::start_esp32s31_wifi::<"
 source_ends_with = ["crates/hardware/esp32s31/driver/ieee80211/src/cold_start.rs", "open-esp-radio-esp32s31-wifi-0.1.0/src/cold_start.rs"]
 max_bytes = 21504
-reason = "one-time source-only PHY cold-start future retains the unique powered radio, expanded PAC-owned registration transition and recoverable channel-selection frontier when diagnostic fat LTO materializes it out of line; the 4-KiB move limit rejects hidden copies and runtime painting bounds the complete allocation-free call chain"
+reason = "one-time source-only PHY cold-start poll materializes the unique powered radio, expanded PAC-owned registration transition and recoverable channel-selection frontier when diagnostic fat LTO materializes it out of line; the 4-KiB move limit rejects hidden copies and runtime painting observes the exercised allocation-free call chain"
 
 [[reviewed_frames]]
 function_contains = "::target_port::run_target_phy_register::<"
@@ -71,7 +73,7 @@ reason = "one-time target PHY registration retains the unique powered radio, com
 function_contains = "::station::composer::StationEngine<"
 source_ends_with = ["crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/composer.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/composer.rs"]
 max_bytes = 22528
-reason = "station attempt future retains every recoverable phase owner, including typed RX overload disposition, low-power and ESP-NOW state, until disposition on the PSRAM task stack"
+reason = "compiled station attempt poll materializes every recoverable phase owner, including typed RX overload disposition, low-power and ESP-NOW state, until disposition on the PSRAM task stack"
 
 [[reviewed_frames]]
 function_contains = "::roles::station::connected::port::ConnectedStaPort>::compose::<"

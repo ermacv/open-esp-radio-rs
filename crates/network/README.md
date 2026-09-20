@@ -9,7 +9,7 @@ and complete ESP32-S31 composition belongs to `crates/composition`.
 | --- | --- |
 | `interface/` | Stack-neutral interface, link and error values |
 | `../adapters/xarxa/upstream/` | Original Xarxa driver API and packet-owner queues, shared by upstream and patched Xarxa |
-| `../adapters/embassy-net/compat/` | Released Embassy token API and frame staging for smoltcp |
+| `../adapters/embassy-net/upstream/` | Released Embassy token API and frame staging for smoltcp |
 | `../adapters/embassy-net/owned/` | Maintained Embassy/Xarxa packet-owner contract with explicit pools |
 | [dependencies/](dependencies/README.md) | Cargo source overrides for stack implementations |
 | `../../experiments/network-engine/` | Experimental synchronous engine and materializer; no product composition |

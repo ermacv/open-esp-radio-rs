@@ -38,8 +38,9 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-maintenance-backpressure", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "implementation", id = "peripheral-event-deadlines-and-qualified-maintenance-bounds-incomplete" },
-  { axis = "host", id = "peripheral-virtual-time-irq-list-admission-backpressure-and-recovery-regressions-incomplete" },
+  { axis = "implementation", id = "peripheral-first-advertising-rejection-and-terminal-event-disposition-incomplete" },
+  { axis = "host", id = "peripheral-virtual-time-delayed-irq-control-maintenance-collision-coverage-incomplete" },
+  { axis = "hil", id = "peripheral-qualified-phy-execution-restoration-and-observer-free-timing-bounds-missing" },
   { axis = "vendor", id = "peripheral-scheduler-packet-and-powered-release-production-traces-missing" },
   { axis = "hil", id = "peripheral-abrupt-rf-loss-stimulus-not-established-by-soft-rfkill" },
   { axis = "async", id = "peripheral-active-maintenance-blocking-poll-and-terminal-lifecycle-coverage-incomplete" },

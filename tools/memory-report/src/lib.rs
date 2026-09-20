@@ -1,3 +1,9 @@
+//! Exact-ELF data placement, local machine-frame policy and linked-code views.
+//!
+//! This host tool owns analysis, not firmware compilation or product readiness.
+//! Stack metadata measures local generated frames; task/Future storage belongs
+//! to static allocation accounting, and aggregate stack use needs runtime evidence.
+//! Compiler mono estimates and linked symbol ranges remain separate views.
 #![forbid(unsafe_code)]
 
 mod analyze;

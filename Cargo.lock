@@ -3398,6 +3398,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "toml_edit",
 ]
 

@@ -7,6 +7,8 @@ in [qualification](../README.md). Its package name is
 
 | Operation | Result |
 | --- | --- |
+| `status (--catalog PATH ... \| --manifest PATH) [--capability ID] [--json-report PATH]` | Show declarations or saved observations, owners, knowledge links, limits and next work without an aggregate gate |
+| `next (--catalog PATH ... \| --manifest PATH) [--capability ID] [--json-report PATH]` | Explain work candidates in the same map; never execute checks or infer cross-image evidence transfer |
 | `validate --manifest PATH` | Reject malformed or inconsistent inputs; a valid incomplete program may pass |
 | `evaluate --manifest PATH` | Derive readiness axes and optionally write `--json-report PATH` |
 | `gate --manifest PATH` | Fail unless every required capability and dependency is ready |
@@ -52,9 +54,15 @@ all imported sources retain hashes. Imported capabilities are validated even if
 unselected. Both required-set policies use the same capability and evidence
 validation; closure mode never drops a dependency to make a product ready.
 
-HIL qualification requires build provenance for every firmware artifact. The
+By default, HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the current clean repository, and the recorded
 workspace lockfile must match its pinned composition. Local source overrides
 qualify only when clean, reconstructable and at the locked revisions of every
 package they replace. Missing provenance, dirty or unpinned overrides, and
 firmware replay remain diagnostic evidence without establishing qualification.
+
+Explicit [property-scoped applicability reviews](../evidence-reviews.md) can admit
+previously excluded observations for a selected destination build after checking
+owner inputs and build/property identities. They also encode individual failure
+dispositions. This opt-in path is shared by qualification and the engineering
+map; it preserves original observations and never reruns hardware automatically.

@@ -1,0 +1,27 @@
+schema = 4
+id = "udp-rx-he20-calibration"
+description = "HE20 UDP RX with combined PHY calibration, controlled against the same-image receive baseline"
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["integration", "phy-maintenance", "udp", "station", "he20"]
+
+[comparison]
+kind = "wifi-phy-maintenance"
+control = "udp-rx-he20-ceiling"
+
+[link]
+phy = "he20"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 100000000
+payload_bytes = 1200
+station_pause = "calibration"
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 90000000
+require_no_beacon_loss = true

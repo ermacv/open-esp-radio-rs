@@ -19,7 +19,19 @@ impl RunSession {
         bootstrap_elf: &Path,
         effective_locks: (&Path, &Path),
     ) -> Result<PathBuf> {
-        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
+        if self
+            .manifest
+            .firmware
+            .iter()
+            .any(|artifact| artifact.image == image)
+        {
+            return Err("firmware already bound to this run cannot be replaced".into());
+        }
+        let frozen = self
+            .frozen_sources
+            .as_ref()
+            .ok_or("firmware requires a bound source snapshot")?;
+        frozen.verify_unchanged()?;
         let firmware_directory = PathBuf::from("firmware").join(image.id());
         let application_path = firmware_directory.join("application.bin");
         let archived_application = self.directory.join(&application_path);
@@ -103,8 +115,9 @@ impl RunSession {
         ];
         let build_id = build::build_id(&subjects);
         let build_provenance_path = firmware_directory.join("build-provenance.json");
+        locks.extend(self.snapshot_materials.clone());
         let provenance = build::create_provenance(
-            &self.repository_root,
+            &frozen.repository(),
             image,
             build_id.clone(),
             self.source_materials.clone(),
@@ -140,7 +153,14 @@ impl RunSession {
         &mut self,
         archived: &crate::evidence::verify::ArchivedFirmware,
     ) -> Result<PathBuf> {
-        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
+        if self
+            .manifest
+            .firmware
+            .iter()
+            .any(|artifact| artifact.image == archived.artifact.image)
+        {
+            return Err("firmware already bound to this run cannot be replaced".into());
+        }
         let source = &archived.artifact;
         let firmware_directory = PathBuf::from("firmware").join(source.image.id());
         let application_path = firmware_directory.join("application.bin");
@@ -219,6 +239,8 @@ impl RunSession {
                 validate_replayed_source_path(&source_path)?;
                 let destination = if file.name == "embedded-lock" {
                     firmware_directory.join("effective-Cargo.lock")
+                } else if file.name.starts_with("source-snapshot-") {
+                    firmware_directory.join("source-snapshot").join(&file.path)
                 } else {
                     firmware_directory
                         .join("build-materials")

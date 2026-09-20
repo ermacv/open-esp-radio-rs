@@ -1,3 +1,4 @@
+mod engineering;
 mod hil;
 mod inventory;
 mod model;
@@ -9,10 +10,12 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
+    Status,
+    Next,
     Validate,
     Evaluate,
     Gate,
@@ -23,6 +26,8 @@ enum Command {
 impl Command {
     fn parse(value: &str) -> Result<Self> {
         match value {
+            "status" => Ok(Self::Status),
+            "next" => Ok(Self::Next),
             "validate" => Ok(Self::Validate),
             "evaluate" => Ok(Self::Evaluate),
             "gate" => Ok(Self::Gate),
@@ -39,6 +44,8 @@ struct Arguments {
     root: PathBuf,
     json_report: Option<PathBuf>,
     output_directory: Option<PathBuf>,
+    capability: Option<String>,
+    details: bool,
 }
 
 fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
@@ -68,8 +75,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut root = None;
     let mut json_report = None;
     let mut output_directory = None;
+    let mut capability = None;
+    let mut details = false;
     while index < arguments.len() {
         match arguments[index].as_str() {
+            "--details" => {
+                if details {
+                    return Err("duplicate --details".into());
+                }
+                details = true;
+                index += 1;
+            }
+            "--capability" => {
+                let value = arguments
+                    .get(index + 1)
+                    .ok_or("--capability requires a value")?
+                    .clone();
+                index += 2;
+                if capability.replace(value).is_some() {
+                    return Err("duplicate --capability".into());
+                }
+            }
             "--manifest" => {
                 let value = take_value(&arguments, &mut index, "--manifest")?;
                 if manifest.replace(value).is_some() {
@@ -104,15 +130,24 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if matches!(command, Command::CatalogCheck | Command::CatalogRender) && json_report.is_some() {
         return Err("catalog commands do not accept --json-report".into());
     }
+    if capability.is_some() && !matches!(command, Command::Status | Command::Next) {
+        return Err("--capability is only accepted by status and next".into());
+    }
+    if details && command != Command::Status {
+        return Err("--details is only accepted by status".into());
+    }
     if !matches!(command, Command::CatalogRender) && output_directory.is_some() {
         return Err("--out is only accepted by catalog render".into());
     }
     if command == Command::CatalogRender && output_directory.is_none() {
         return Err("catalog render requires --out".into());
     }
-    if matches!(command, Command::CatalogCheck | Command::CatalogRender) {
+    if matches!(
+        command,
+        Command::CatalogCheck | Command::CatalogRender | Command::Status | Command::Next
+    ) {
         if manifest.is_some() == !catalogs.is_empty() {
-            return Err("catalog commands require exactly one of --manifest or --catalog".into());
+            return Err("command requires exactly one of --manifest or --catalog".into());
         }
     } else if manifest.is_none() {
         return Err("missing --manifest".into());
@@ -126,10 +161,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         root: root.unwrap_or(env::current_dir()?),
         json_report,
         output_directory,
+        capability,
+        details,
     })
 }
 
 fn execute(arguments: Arguments) -> Result<()> {
+    if matches!(arguments.command, Command::Status | Command::Next) {
+        let map = if let Some(manifest) = &arguments.manifest {
+            let path = arguments.root.join(manifest);
+            let program = Qualification::load_and_evaluate(&path, &arguments.root)?;
+            engineering::ProjectMap::from_program(&program, arguments.capability.as_deref())?
+        } else {
+            let catalog = CatalogView::load(&arguments.root, &arguments.catalogs)?;
+            engineering::ProjectMap::from_catalog(&catalog, arguments.capability.as_deref())?
+        };
+        map.print(arguments.command == Command::Next, arguments.details);
+        if let Some(path) = &arguments.json_report {
+            report::write_serialized(&map, &arguments.root.join(path))?;
+        }
+        return Ok(());
+    }
     if matches!(
         arguments.command,
         Command::CatalogCheck | Command::CatalogRender

@@ -36,6 +36,7 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Config {
+    pub(crate) require_post_maintenance_echo: bool,
     pub(crate) maximum_rx_silence_ms: Option<u32>,
     pub(crate) require_nonzero_rfpll_correction: bool,
     pub(crate) station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
@@ -253,7 +254,7 @@ pub(crate) fn run(
                 let device_rx = capture.wait_for_udp_rx_started(session, Duration::from_secs(3))?;
                 super::maintenance::wait_after_progress(options.station_pause_after);
                 let host_rx: Option<u64> = None;
-                super::maintenance::run(
+                let result = super::maintenance::run(
                     &capture,
                     operation,
                     options.require_nonzero_rfpll_correction,
@@ -261,7 +262,11 @@ pub(crate) fn run(
                     options.station_pause_interval,
                     output,
                     serde_json::json!({"device_rx_datagrams": device_rx, "host_rx_datagrams": host_rx}),
-                )
+                );
+                context
+                    .measurements
+                    .check("wifi.maintenance.transaction-valid", result.is_ok());
+                result
             })();
             let host = sender
                 .join()
@@ -298,8 +303,21 @@ pub(crate) fn run(
     if let Err(error) = pause_result {
         return capture.finish_with(Err(error));
     }
+    if options.require_post_maintenance_echo {
+        let resumed = super::icmp_latency::post_maintenance_echo(options.address, output);
+        context
+            .measurements
+            .check("wifi.maintenance.ip-exchange-resumed", resumed.is_ok());
+        if let Err(error) = resumed {
+            return capture.finish_with(Err(error));
+        }
+    }
     if options.station_pause.is_some() {
-        capture.require_station_unchanged_since(station_cursor)?;
+        let same_link = capture.require_station_unchanged_since(station_cursor);
+        context
+            .measurements
+            .check("wifi.maintenance.same-link", same_link.is_ok());
+        same_link?;
     }
     if let Some(wire) = host_wire_capture {
         wire.finish()?;
@@ -336,6 +354,11 @@ pub(crate) fn run(
         typed_rx_kbps,
         host.throughput_bps(),
         minimum_bps,
+    );
+    super::continuity::record_rx_silence(
+        &context.measurements,
+        options.maximum_rx_silence_ms,
+        structured.transport,
     );
     super::continuity::require_rx_silence(options.maximum_rx_silence_ms, structured.transport)?;
     if !evidence_policy.require_driver_observation {
@@ -851,6 +874,7 @@ fn rx_air_evidence_markdown(
 impl Default for Config {
     fn default() -> Self {
         Self {
+            require_post_maintenance_echo: false,
             maximum_rx_silence_ms: None,
             require_nonzero_rfpll_correction: false,
             station_pause: None,

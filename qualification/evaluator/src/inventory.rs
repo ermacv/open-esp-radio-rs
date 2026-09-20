@@ -39,6 +39,12 @@ pub(crate) fn write_static(
         "migration-map.md",
         &render_mapping(catalog, output_directory, root)?,
     )?;
+    write_file(
+        output_directory,
+        "project-status.md",
+        &crate::engineering::ProjectMap::from_catalog(catalog, None)?
+            .markdown(output_directory, root)?,
+    )?;
     println!("CATALOG-INVENTORY\t{}", output_directory.display());
     Ok(())
 }
@@ -53,6 +59,12 @@ pub(crate) fn write(
         output_directory,
         "program-inventory.md",
         &render_program(qualification, output_directory, root)?,
+    )?;
+    write_file(
+        output_directory,
+        "program-status.md",
+        &crate::engineering::ProjectMap::from_program(qualification, None)?
+            .markdown(output_directory, root)?,
     )?;
     println!(
         "PROGRAM-INVENTORY\t{}",
@@ -451,7 +463,12 @@ fn render_sources(
     Ok(())
 }
 
-fn rewrite_links(value: &str, source: &Path, output: &Path, root: &Path) -> Result<String> {
+pub(crate) fn rewrite_links(
+    value: &str,
+    source: &Path,
+    output: &Path,
+    root: &Path,
+) -> Result<String> {
     let mut rendered = String::new();
     let mut rest = value;
     while let Some(start) = rest.find("](") {
@@ -512,7 +529,7 @@ fn normalize_relative(base: &Path, relative: &Path) -> Result<PathBuf> {
     Ok(parts.into_iter().collect())
 }
 
-fn link_to(target: &Path, output: &Path, root: &Path) -> Result<String> {
+pub(crate) fn link_to(target: &Path, output: &Path, root: &Path) -> Result<String> {
     let root = fs::canonicalize(root)?;
     let output = if output.is_absolute() {
         output.to_owned()
@@ -575,8 +592,10 @@ fn hil_requirement_list(values: &[HilRequirement]) -> String {
             .iter()
             .map(|requirement| {
                 format!(
-                    "`{}` ×{}",
-                    requirement.scenario, requirement.minimum_repetitions
+                    "`{}` ×{}{}",
+                    requirement.scenario,
+                    requirement.minimum_repetitions,
+                    named_checks(&requirement.checks)
                 )
             })
             .collect::<Vec<_>>()
@@ -592,8 +611,10 @@ fn hil_requirement_document_list(values: &[HilRequirementDocument]) -> String {
             .iter()
             .map(|requirement| {
                 format!(
-                    "`{}` ×{}",
-                    requirement.scenario, requirement.minimum_repetitions
+                    "`{}` ×{}{}",
+                    requirement.scenario,
+                    requirement.minimum_repetitions,
+                    named_checks(&requirement.checks)
                 )
             })
             .collect::<Vec<_>>()
@@ -603,6 +624,14 @@ fn hil_requirement_document_list(values: &[HilRequirementDocument]) -> String {
 
 fn optional_reason(reason: Option<&str>) -> String {
     reason.map_or_else(|| "not declared".to_owned(), |reason| format!("`{reason}`"))
+}
+
+fn named_checks(checks: &[String]) -> String {
+    if checks.is_empty() {
+        String::new()
+    } else {
+        format!(" checks: {}", code_list(checks))
+    }
 }
 
 fn escape_heading(value: &str) -> String {
@@ -838,7 +867,7 @@ scope-and-limitations = "No composition"
         assert!(rendered.contains("## Domain: `whole-radio`"));
         assert!(
             rendered.contains(
-                "Displayed rows: 356. Unique source facts: 345. Explicit projections: 17."
+                "Displayed rows: 356. Unique source facts: 349. Explicit projections: 17."
             )
         );
         assert!(rendered.contains("- Canonical source fact: `coex-timer-validation-bridge`"));

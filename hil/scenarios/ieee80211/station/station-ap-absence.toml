@@ -4,7 +4,7 @@ description = "Station exhausts bounded retries while the configured AP is absen
 image = "correctness"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["qualification", "station", "lifecycle"]
+tags = ["ap-availability", "qualification", "station", "lifecycle"]
 
 [link]
 phy = "ht40"

@@ -126,7 +126,8 @@ impl CoveragePolicy {
     }
 }
 
-// v0 demangling exposes a 16-hex crate disambiguator, which changes with the
+// v0 demangling exposes an unpadded hexadecimal crate disambiguator (up to
+// 16 digits), which changes with the
 // consumer's build. Ignore only that decoration; retain the full definition,
 // type arguments, closure identity and const parameters of the reviewed symbol.
 fn without_crate_disambiguators(name: &str) -> String {
@@ -135,10 +136,17 @@ fn without_crate_disambiguators(name: &str) -> String {
     while let Some(open) = rest.find('[') {
         result.push_str(&rest[..open]);
         rest = &rest[open..];
-        if rest.as_bytes().get(17) == Some(&b']')
-            && rest.as_bytes()[1..17].iter().all(u8::is_ascii_hexdigit)
-        {
-            rest = &rest[18..];
+        let disambiguator_end = rest.find(']').filter(|end| {
+            (2..=17).contains(end)
+                && rest.as_bytes()[1..*end].iter().all(u8::is_ascii_hexdigit)
+                && rest[*end + 1..].starts_with("::")
+                && result
+                    .as_bytes()
+                    .last()
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        });
+        if let Some(end) = disambiguator_end {
+            rest = &rest[end + 1..];
         } else {
             result.push('[');
             rest = &rest[1..];
@@ -166,6 +174,31 @@ mod tests {
         ] {
             assert_eq!(without_crate_disambiguators(name), name);
         }
+    }
+    #[test]
+    fn unpadded_v0_disambiguator_preserves_the_exact_reviewed_function() {
+        assert_eq!(
+            without_crate_disambiguators(
+                "esp_hal[c21304bb353fc7d6]::soc::implementation::cpu_control::start_core1_init::<open_esp_radio_hil_esp32s31_runtime[bd01774463a7ff5]::runtime_main::{closure#0}>"
+            ),
+            "esp_hal::soc::implementation::cpu_control::start_core1_init::<open_esp_radio_hil_esp32s31_runtime::runtime_main::{closure#0}>"
+        );
+        assert_eq!(
+            without_crate_disambiguators("crate[0]::entry"),
+            "crate::entry"
+        );
+        for name in [
+            "hal[]::entry",
+            "hal[1234567890abcdef0]::entry",
+            "hal::entry::<[u8; 16]>",
+            "hal::entry::<[1234]>",
+        ] {
+            assert_eq!(without_crate_disambiguators(name), name);
+        }
+        assert_ne!(
+            without_crate_disambiguators("hal[a]::entry_impl::<B>"),
+            "hal::entry::<B>"
+        );
     }
     #[test]
     fn duplicate_review_and_unknown_categories_fail_closed() {

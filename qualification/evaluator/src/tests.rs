@@ -102,6 +102,8 @@ runs = "missing-runs"
             root: self.path.clone(),
             json_report: None,
             output_directory: None,
+            capability: None,
+            details: false,
         })
     }
 }
@@ -127,6 +129,104 @@ fn command_requires_one_explicit_manifest() {
     );
     assert!(parsed.json_report.is_none());
     assert!(parsed.output_directory.is_none());
+}
+
+#[test]
+fn engineering_commands_require_explicit_inputs_and_limit_focus_to_views() {
+    for command in ["status", "next"] {
+        let parsed = parse_arguments(
+            [
+                command,
+                "--catalog",
+                "catalog.toml",
+                "--capability",
+                "ble",
+                "--json-report",
+                "map.json",
+            ]
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert_eq!(parsed.capability.as_deref(), Some("ble"));
+        assert!(parse_arguments([command].map(str::to_owned)).is_err());
+        assert!(
+            parse_arguments(
+                [command, "--manifest", "a.toml", "--catalog", "b.toml"].map(str::to_owned)
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        parse_arguments(["gate", "--manifest", "a.toml", "--capability", "ble"].map(str::to_owned))
+            .is_err()
+    );
+}
+
+#[test]
+fn status_reads_catalog_without_git_or_evidence_and_writes_the_same_map() {
+    let root = StaticProgramRoot::new("engineering-map");
+    // Invalid evidence must not be loaded in declarations-only mode.
+    fs::write(root.path.join("vendor.json"), "invalid evidence").unwrap();
+    let arguments = parse_arguments(
+        [
+            "status",
+            "--catalog",
+            "catalog/source.toml",
+            "--root",
+            root.path.to_str().unwrap(),
+            "--json-report",
+            "output/map.json",
+        ]
+        .map(str::to_owned),
+    )
+    .unwrap();
+    execute(arguments).unwrap();
+    let map: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path.join("output/map.json")).unwrap()).unwrap();
+    assert_eq!(map["mode"], "declarations-only");
+    assert_eq!(map["entries"][0]["implementation"], "complete");
+    assert!(map["entries"][0]["evidence"].is_null());
+    assert!(!root.path.join("missing-runs").exists());
+}
+
+#[test]
+fn development_links_are_validated_without_turning_them_into_proof() {
+    let root = StaticProgramRoot::new("development-links");
+    root.write_program("\"base\"", "\"base\"");
+    fs::create_dir_all(root.path.join("crate/src")).unwrap();
+    fs::write(
+        root.path.join("crate/Cargo.toml"),
+        "[package]\nname = \"test-package\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path.join("crate/src/tests.rs"),
+        "// reviewed test source\n",
+    )
+    .unwrap();
+    let path = root.path.join("catalog/source.toml");
+    let original = fs::read_to_string(&path).unwrap();
+    let valid = r#"
+[capabilities.development]
+knowledge = ["Cargo.toml"]
+host-tests = [{manifest = "crate/Cargo.toml", filter = "owner::tests", source = "crate/src/tests.rs"}]
+"#;
+    fs::write(&path, format!("{original}{valid}")).unwrap();
+    root.check().unwrap();
+    for invalid in [
+        valid.replace(
+            "knowledge = [\"Cargo.toml\"]",
+            "knowledge = [\"../outside\"]",
+        ),
+        valid.replace("crate/src/tests.rs", "missing.rs"),
+        valid.replace("filter = \"owner::tests\"", "filter = \" \""),
+        format!(
+            "{valid}\ngap-work = [{{gap = \"not-declared\", kind = \"research\", reason = \"Unknown behavior\"}}]\n"
+        ),
+    ] {
+        fs::write(&path, format!("{original}{invalid}")).unwrap();
+        assert!(root.check().is_err());
+    }
 }
 
 #[test]

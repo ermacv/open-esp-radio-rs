@@ -550,6 +550,7 @@ fn validate_build_provenance(
     let expected_lock_archive = PathBuf::from("firmware")
         .join(artifact.image.id())
         .join("effective-Cargo.lock");
+    validate_snapshot_materials(run_directory, &provenance)?;
     if provenance
         .files
         .iter()
@@ -652,6 +653,12 @@ fn validate_source_material(
         }
     }
     let state_is_consistent = match source.rebuild_status {
+        SourceRebuildStatus::SourceSnapshot => {
+            source.tracked_patch_path.is_none()
+                && source.untracked_files.is_empty()
+                && source.limitations.is_empty()
+                && !source.commit.is_empty()
+        }
         SourceRebuildStatus::CleanCommit => {
             !source.dirty
                 && source.tracked_patch_path.is_none()
@@ -676,6 +683,66 @@ fn validate_source_material(
             manifest.run_id
         )
         .into());
+    }
+    Ok(())
+}
+
+fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Result<()> {
+    let snapshot_sources = provenance
+        .sources
+        .iter()
+        .filter(|s| s.rebuild_status == SourceRebuildStatus::SourceSnapshot)
+        .count();
+    let materials = provenance
+        .files
+        .iter()
+        .filter(|f| f.name.starts_with("source-snapshot-"))
+        .collect::<Vec<_>>();
+    if snapshot_sources == 0 && materials.is_empty() {
+        return Ok(());
+    }
+    if snapshot_sources != provenance.sources.len() || materials.len() != 3 {
+        return Err("incomplete source snapshot binding".into());
+    }
+    let mut directory = None;
+    for (name, filename) in [
+        ("source-snapshot-metadata", "snapshot.json"),
+        ("source-snapshot-manifest", "manifest.json"),
+        ("source-snapshot-archive", "sources.tar"),
+    ] {
+        let file = materials
+            .iter()
+            .find(|f| f.name == name)
+            .ok_or("missing source snapshot material")?;
+        let path = file
+            .archive_path
+            .as_deref()
+            .ok_or("source snapshot must be archived")?;
+        if file.path != Path::new(filename)
+            || path.file_name() != Some(std::ffi::OsStr::new(filename))
+        {
+            return Err("invalid source snapshot material path".into());
+        }
+        let parent = path.parent().ok_or("source snapshot has no directory")?;
+        if directory
+            .replace(parent)
+            .is_some_and(|previous| previous != parent)
+        {
+            return Err("source snapshot materials must share one directory".into());
+        }
+    }
+    let frozen = crate::image::snapshot::FrozenSources::open(&run.join(directory.unwrap()))?;
+    if frozen.sources().len() != provenance.sources.len() {
+        return Err("source snapshot roles disagree with provenance".into());
+    }
+    for (input, source) in frozen.sources().iter().zip(&provenance.sources) {
+        if input.name != source.name
+            || input.commit != source.commit
+            || input.dirty != source.dirty
+            || input.identity()? != source.workspace_sha256
+        {
+            return Err("source snapshot identity disagrees with provenance".into());
+        }
     }
     Ok(())
 }

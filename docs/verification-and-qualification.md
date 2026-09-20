@@ -3,6 +3,13 @@
 This document defines the boundary between production code, host contracts,
 Blobray verification, HIL execution and product qualification.
 
+The everyday engineering map is `cargo qualification status|next`. It connects
+reviewed knowledge references, implementation owners, checks, saved observations
+and next-work reasons. Catalog mode reads declarations only; program mode uses
+the same independent evaluator described below. Neither mode emits a global
+project gate or runs missing checks. Research results remain useful before an
+application path exists, and incomplete programs are ordinary development states.
+
 ## Authorities
 
 | Source | Question it answers | May decide readiness? |
@@ -132,27 +139,76 @@ hil-requirements = [
 
 The evaluator first checks that every requirement exists in the typed HIL
 scenario catalog and is achievable by its declared repetition count. It then
-accepts a run only when:
+retains observations separately from their applicability. A scenario can supply
+evidence only when:
 
-1. `integrity.json` exactly seals the complete file inventory;
+1. an invocation integrity seal or an independent scenario-attempt seal covers
+   the complete inventory of its evidence boundary;
 2. every size and SHA-256 digest matches;
 3. manifest, suite, run directory and target identities agree;
-4. the run and required scenarios passed;
+4. the evidence boundary is completed and the required scenario passed (an
+   unrelated scenario or the enclosing campaign may have failed or been interrupted);
 5. every required repetition passed;
-6. the run was created from a clean tree at the evaluator's current commit.
+6. the run was created from a clean tree at the evaluator's current commit and
+   its build provenance establishes the current source binding, or an explicit
+   property-scoped applicability review binds that observation to the destination
+   build and the current reviewed owner inputs;
+7. no applicable failure of that scenario or its repetitions remains unresolved;
+8. selected named checks satisfy their current criteria and any required control
+   is satisfied with a matching repetition set in that same run.
 
-Markdown descriptions do not enter this decision. A changed commit needs
-a new hardware run; no hand-edited `qualified` field exists.
+The evaluator checks recorded measurement verdicts against their original
+thresholds independently of the requested criteria. Sufficient numeric
+observations can be reassessed without a new experiment or alteration of the
+sealed run. Missing measurements remain missing. A changed criterion cannot
+rescue a failed lifecycle, and repetition sets cannot be assembled from several
+runs. An aggregate infrastructure failure does not erase an explicit failed
+repetition. Details are exposed in `hil_decisions` in the qualification report.
+
+An independently sealed attempt covers a whole scenario repetition set, not
+an arbitrary successful prefix. It retains its own completion snapshot and
+checksums of the immutable subject, procedure and observations. It remains
+available before the aggregate campaign seal exists. Qualification consumes
+one completion record per scenario in that invocation, never both the attempt
+and the later aggregate result. Closing this evidence boundary does not declare
+fixture resources healthy after an interrupted subsequent experiment.
+
+Markdown descriptions do not enter this decision; no hand-edited `qualified`
+field exists. Applicability defaults to the clean current composition. An
+explicit [review record](../qualification/evidence-reviews.md) can admit an old
+observation for one property after checking both builds, current owner hashes,
+and the property fingerprint. The same record can bind an individual failure's
+resolution or explain its inapplicability. Original observations and exclusions
+remain visible; a new relevant failure is not hidden by an older PASS. The
+engineering map and qualification consume the same decision.
 
 ## Normal workflow
 
-1. Implement behavior and named host contracts in `crates/`.
-2. Run workspace tests.
-3. Produce complete Blobray verification evidence for declared vendor roots.
-4. Run the exact HIL scenarios declared by the target qualification manifest
-   from a clean commit.
-5. Validate and inspect the derived report.
-6. Use the strict gate for a release decision.
+1. Select the capability or source scope being developed. Inspect its status,
+   source contracts, knowledge and next-work reasons in the engineering map.
+2. Research an unknown hardware contract or implement the selected change in
+   its owner. Record accepted hardware definitions in `registers/` and semantic
+   contracts with their code owners; retain research provenance in verification.
+3. Run focused host tests and the checks appropriate to the affected boundaries.
+   Host-test links are selectors, not evidence that those tests have run.
+4. Use compiled vendor comparison when the changed contract needs that comparison.
+   Use an addressed HIL experiment when the behavior needs hardware observation.
+   Choose scenarios supported by the available fixture; a functional observation
+   does not establish an unmeasured RF or worst-case timing property.
+5. Read the saved results through the selected program and inspect applicability,
+   unresolved failures and remaining gaps. A dependency is context for this
+   decision, not an instruction to execute every prerequisite scenario.
+
+Broader checkpoints select their full scope explicitly. The strict `gate`
+assesses that scope against its declared requirements; ordinary changes do not
+implicitly launch a complete vendor/HIL campaign. Missing equipment limits the
+properties that can be observed, not the recorded implementation state.
+Current qualification eligibility still requires a clean current composition;
+the engineering map exposes excluded observations without inventing portability
+between builds or claiming that a commit change resolved a failure.
+
+The commands below produce and assess evidence for an explicitly selected
+checkpoint. They are not prerequisites for reading project status.
 
 ```console
 cargo build --profile blobray -p blobray-esp32s31 --bin blobray

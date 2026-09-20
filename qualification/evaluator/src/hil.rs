@@ -1,6 +1,15 @@
 //! Independent consumption of immutable HIL run bundles.
 
+mod attempt;
+mod checks;
+mod comparison;
+mod decision;
+mod measurement;
 mod provenance;
+pub(crate) mod review;
+mod subject;
+
+pub(crate) use decision::{EvidenceDecision, EvidenceStatus, ObservationCounts};
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -40,12 +49,16 @@ impl RepositoryState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HilRequirement {
     pub(crate) scenario: String,
+    pub(crate) checks: Vec<String>,
     pub(crate) minimum_repetitions: u8,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScenarioCatalog {
     repetitions: BTreeMap<String, u8>,
+    controls: BTreeMap<String, String>,
+    checks: BTreeMap<String, BTreeMap<String, checks::Contract>>,
+    definitions: BTreeMap<String, serde_json::Value>,
 }
 
 impl ScenarioCatalog {
@@ -74,23 +87,38 @@ impl ScenarioCatalog {
             .into());
         }
         let mut repetitions = BTreeMap::new();
-        Self::read_directory(&directory, &mut repetitions)?;
+        let mut documents = BTreeMap::new();
+        Self::read_directory(&directory, &mut repetitions, &mut documents)?;
         if repetitions.is_empty() {
             return Err(format!("HIL scenario catalog is empty: {}", directory.display()).into());
         }
-        Ok(Self { repetitions })
+        let controls = comparison::validate(&documents)?;
+        let checks = documents
+            .iter()
+            .map(|(id, document)| Ok((id.clone(), checks::contracts(document)?)))
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            repetitions,
+            controls,
+            checks,
+            definitions: documents,
+        })
     }
 
     // Independent input validation: this consumer never imports the runner's
     // execution catalog or accepts its in-memory verdict as qualification.
-    fn read_directory(directory: &Path, repetitions: &mut BTreeMap<String, u8>) -> Result<()> {
+    fn read_directory(
+        directory: &Path,
+        repetitions: &mut BTreeMap<String, u8>,
+        documents: &mut BTreeMap<String, serde_json::Value>,
+    ) -> Result<()> {
         let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
         entries.sort_by_key(fs::DirEntry::file_name);
         for entry in entries {
             let path = entry.path();
             let kind = entry.file_type()?;
             if kind.is_dir() {
-                Self::read_directory(&path, repetitions)?;
+                Self::read_directory(&path, repetitions, documents)?;
                 continue;
             }
             if !kind.is_file() {
@@ -110,7 +138,8 @@ impl ScenarioCatalog {
                 )
                 .into());
             }
-            let document: ScenarioDocument = toml_edit::de::from_str(&fs::read_to_string(&path)?)?;
+            let input = fs::read_to_string(&path)?;
+            let document: ScenarioDocument = toml_edit::de::from_str(&input)?;
             if document.schema != HIL_SCENARIO_SCHEMA
                 || document.id.is_empty()
                 || !document
@@ -130,11 +159,31 @@ impl ScenarioCatalog {
             {
                 return Err(format!("duplicate HIL scenario id {}", document.id).into());
             }
+            documents.insert(document.id, toml_edit::de::from_str(&input)?);
         }
         Ok(())
     }
 
+    pub(crate) fn control_for(&self, scenario: &str) -> Option<&str> {
+        self.controls.get(scenario).map(String::as_str)
+    }
+
     pub(crate) fn validate_requirement(&self, requirement: &HilRequirement) -> Result<()> {
+        let mut seen = BTreeSet::new();
+        for name in &requirement.checks {
+            if !seen.insert(name)
+                || !self
+                    .checks
+                    .get(&requirement.scenario)
+                    .is_some_and(|checks| checks.contains_key(name))
+            {
+                return Err(format!(
+                    "HIL requirement {} names duplicate or unsupported check {name}",
+                    requirement.scenario
+                )
+                .into());
+            }
+        }
         let repetitions = self
             .repetitions
             .get(&requirement.scenario)
@@ -165,13 +214,53 @@ pub(crate) struct HilEvidenceSummary {
     pub(crate) passing: usize,
     pub(crate) current_clean_producer: usize,
     pub(crate) qualifying: usize,
+    pub(crate) sealed_attempts: usize,
     pub(crate) evaluator_dirty: bool,
 }
 
 #[derive(Clone, Debug)]
 struct ScenarioEvidence {
     run_id: String,
+    started_unix_millis: u64,
+    outcome: Outcome,
+    repetition_outcomes: Vec<Outcome>,
+    exclusions: Vec<decision::Exclusion>,
     repetitions: usize,
+    measurements: Vec<Vec<serde_json::Value>>,
+    completion_seal: Option<CompletionSeal>,
+    subject: Option<subject::ObservationSubject>,
+    failure: Option<serde_json::Value>,
+    repetition_failures: Vec<Option<serde_json::Value>>,
+    run_directory: Option<PathBuf>,
+    review: Option<review::ReviewLink>,
+    resolution: Option<review::ResolutionLink>,
+}
+
+impl ScenarioEvidence {
+    fn applicable(&self) -> bool {
+        self.exclusions.is_empty() || self.review.is_some()
+    }
+    fn observation_id(&self, scenario: &str) -> Option<String> {
+        let seal = self.completion_seal.as_ref()?;
+        let mut digest = Sha256::new();
+        digest.update(b"oer-hil-observation-v1\0");
+        for part in [
+            &self.run_id,
+            scenario,
+            &seal.path.to_string_lossy(),
+            &seal.sha256,
+        ] {
+            digest.update(part.as_bytes());
+            digest.update([0]);
+        }
+        Some(format!("{:x}", digest.finalize()))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+struct CompletionSeal {
+    path: PathBuf,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -197,7 +286,19 @@ impl HilEvidenceIndex {
                         (*scenario).to_owned(),
                         vec![ScenarioEvidence {
                             run_id: format!("synthetic-{scenario}"),
+                            started_unix_millis: 0,
+                            outcome: Outcome::Passed,
+                            completion_seal: None,
+                            subject: None,
+                            failure: None,
+                            repetition_failures: vec![None; *repetitions],
+                            run_directory: None,
+                            review: None,
+                            resolution: None,
+                            repetition_outcomes: vec![Outcome::Passed; *repetitions],
+                            exclusions: Vec::new(),
                             repetitions: *repetitions,
+                            measurements: vec![Vec::new(); *repetitions],
                         }],
                     )
                 })
@@ -282,85 +383,150 @@ impl HilEvidenceIndex {
                 )
                 .into());
             }
-            // A process may be killed before `RunSession::drop` can turn its
-            // live directory into a sealed interrupted bundle. Running
-            // directories are mutable execution state, never qualification
-            // evidence, so do not require an integrity inventory from them.
-            // Completed and interrupted bundles are immutable and must still
-            // fail closed if their seal is absent or inconsistent.
-            if manifest.state == RunState::Running {
-                continue;
+            let attempts = attempt::load(&run_directory, &manifest)?;
+            let independently_sealed = attempts.is_some();
+            let units = if let Some(attempts) = attempts {
+                summary.sealed_attempts += attempts.len();
+                attempts
+            } else {
+                // Whole-invocation evidence and independently sealed attempts
+                // are different completion boundaries in the current format.
+                if manifest.state == RunState::Running {
+                    continue;
+                }
+                verify_integrity(&run_directory)?;
+                if manifest.state != RunState::Completed {
+                    continue;
+                }
+                let suite: SuiteResult = read_json(&run_directory.join("suite.json"))?;
+                validate_suite(&suite, &manifest, &run_directory)?;
+                vec![(manifest, suite)]
+            };
+            let mut current_producer = false;
+            let mut qualifying = false;
+            // Counters describe enclosing invocations, not individual seals.
+            let outer: RunManifest = read_json(&run_directory.join("manifest.json"))?;
+            if outer.state == RunState::Completed {
+                summary.completed += 1;
+                if !units.is_empty() && units.iter().all(|(_, s)| s.outcome == Outcome::Passed) {
+                    summary.passing += 1;
+                }
             }
-            verify_integrity(&run_directory)?;
-            if manifest.state != RunState::Completed {
-                continue;
-            }
-            summary.completed += 1;
-            let suite: SuiteResult = read_json(&run_directory.join("suite.json"))?;
-            validate_suite(&suite, &manifest, &run_directory)?;
-            if !valid_sha256(&manifest.repository.workspace_sha256) {
-                return Err(format!(
-                    "HIL run has an invalid workspace digest: {}",
-                    run_directory.display()
-                )
-                .into());
-            }
-            if suite.outcome == Outcome::Passed {
-                summary.passing += 1;
-            }
-            let artifact_replays_firmware = manifest
-                .firmware
-                .iter()
-                .any(|artifact| artifact.replayed_from.is_some());
-            let plan_replays_firmware =
-                read_optional_json::<RunPlanProvenance>(&run_directory.join("plan.json"))?
-                    .and_then(|plan| plan.firmware)
-                    .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
-            let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
-            let current_clean_producer = !replays_firmware
-                && !manifest.repository.dirty
-                && manifest.repository.commit == repository.commit
-                && provenance::current_sources(root, &run_directory, &manifest)?;
-            if current_clean_producer {
-                summary.current_clean_producer += 1;
-            }
-            if repository.dirty || !current_clean_producer || suite.outcome != Outcome::Passed {
-                continue;
-            }
-            summary.qualifying += 1;
-            let mut seen = BTreeSet::new();
-            for scenario in suite.scenarios {
-                if !seen.insert(scenario.scenario.clone()) {
+            for (manifest, suite) in units {
+                if !valid_sha256(&manifest.repository.workspace_sha256) {
                     return Err(format!(
-                        "HIL run {} repeats scenario {}",
-                        manifest.run_id, scenario.scenario
+                        "HIL run has an invalid workspace digest: {}",
+                        run_directory.display()
                     )
                     .into());
                 }
-                scenarios
-                    .entry(scenario.scenario)
-                    .or_default()
-                    .push(ScenarioEvidence {
-                        run_id: manifest.run_id.clone(),
-                        repetitions: scenario.repetitions.len(),
+                let artifact_replays_firmware = manifest
+                    .firmware
+                    .iter()
+                    .any(|artifact| artifact.replayed_from.is_some());
+                let plan_replays_firmware =
+                    read_optional_json::<RunPlanProvenance>(&run_directory.join("plan.json"))?
+                        .and_then(|plan| plan.firmware)
+                        .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
+                let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
+                // Preserve observations independently of their applicability. This
+                // binding is still the current clean composition, not authorization
+                // to transfer evidence to a different firmware or source snapshot.
+                let mut exclusions = Vec::new();
+                if replays_firmware {
+                    exclusions.push(decision::Exclusion::ReplaySubjectNotBound);
+                }
+                if manifest.repository.dirty {
+                    exclusions.push(decision::Exclusion::ProducerDirty);
+                }
+                if manifest.repository.commit != repository.commit {
+                    exclusions.push(decision::Exclusion::DifferentCommit);
+                }
+                if exclusions.is_empty()
+                    && !provenance::current_sources(root, &run_directory, &manifest)?
+                {
+                    exclusions.push(decision::Exclusion::SourceBindingNotEstablished);
+                }
+                let current_clean_producer = exclusions.is_empty();
+                if current_clean_producer {
+                    current_producer = true;
+                }
+                if repository.dirty {
+                    exclusions.push(decision::Exclusion::EvaluatorDirty);
+                }
+                if exclusions.is_empty()
+                    && suite.scenarios.iter().any(|s| s.outcome == Outcome::Passed)
+                {
+                    qualifying = true;
+                }
+                let mut seen = BTreeSet::new();
+                for scenario in suite.scenarios {
+                    let path = if independently_sealed {
+                        PathBuf::from("attempts").join(format!("{}.json", scenario.scenario))
+                    } else {
+                        PathBuf::from("integrity.json")
+                    };
+                    let completion_seal = Some(CompletionSeal {
+                        sha256: sha256_file(&run_directory.join(&path))?,
+                        path,
                     });
+                    let subject = Some(subject::ObservationSubject::load(
+                        &run_directory,
+                        &manifest,
+                        &scenario.scenario,
+                    )?);
+                    if !seen.insert(scenario.scenario.clone()) {
+                        return Err(format!(
+                            "HIL run {} repeats scenario {}",
+                            manifest.run_id, scenario.scenario
+                        )
+                        .into());
+                    }
+                    scenarios
+                        .entry(scenario.scenario)
+                        .or_default()
+                        .push(ScenarioEvidence {
+                            run_id: manifest.run_id.clone(),
+                            completion_seal,
+                            subject,
+                            run_directory: Some(run_directory.clone()),
+                            review: None,
+                            resolution: None,
+                            failure: scenario.failure,
+                            repetition_failures: scenario
+                                .repetitions
+                                .iter()
+                                .map(|r| r.failure.clone())
+                                .collect(),
+                            started_unix_millis: suite.started_unix_millis,
+                            outcome: scenario.outcome,
+                            repetition_outcomes: scenario
+                                .repetitions
+                                .iter()
+                                .map(|r| r.outcome)
+                                .collect(),
+                            exclusions: exclusions.clone(),
+                            repetitions: scenario.repetitions.len(),
+                            measurements: scenario
+                                .repetitions
+                                .into_iter()
+                                .map(|repetition| repetition.measurements)
+                                .collect(),
+                        });
+                }
             }
+            summary.current_clean_producer += usize::from(current_producer);
+            summary.qualifying += usize::from(qualifying);
         }
         Ok(Self { scenarios, summary })
     }
 
-    pub(crate) fn evidence_for(&self, requirement: &HilRequirement) -> Option<String> {
-        self.scenarios
-            .get(&requirement.scenario)?
-            .iter()
-            .filter(|evidence| evidence.repetitions >= usize::from(requirement.minimum_repetitions))
-            .max_by(|left, right| left.run_id.cmp(&right.run_id))
-            .map(|evidence| {
-                format!(
-                    "hil:{}/{}:repetitions={}",
-                    evidence.run_id, requirement.scenario, evidence.repetitions
-                )
-            })
+    pub(crate) fn evidence_for(
+        &self,
+        requirement: &HilRequirement,
+        catalog: &ScenarioCatalog,
+    ) -> Option<String> {
+        self.decision_for(requirement, catalog).evidence
     }
 
     pub(crate) fn summary(&self) -> &HilEvidenceSummary {
@@ -376,7 +542,7 @@ enum RunState {
     Interrupted,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Outcome {
     Passed,
@@ -387,7 +553,7 @@ enum Outcome {
     Interrupted,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
 struct RepositoryProvenance {
     commit: String,
     dirty: bool,
@@ -414,6 +580,10 @@ struct FirmwareArtifactProvenance {
     replayed_from: Option<serde::de::IgnoredAny>,
     build_id: Option<String>,
     build_provenance_path: Option<PathBuf>,
+    image: Option<String>,
+    application_path: Option<PathBuf>,
+    application_size_bytes: Option<u64>,
+    application_sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -498,6 +668,8 @@ struct RepetitionResult {
     schema: u16,
     repetition: u8,
     outcome: Outcome,
+    #[serde(default)]
+    measurements: Vec<serde_json::Value>,
     failure: Option<serde_json::Value>,
 }
 
@@ -599,6 +771,7 @@ fn validate_suite(suite: &SuiteResult, manifest: &RunManifest, directory: &Path)
                 )
                 .into());
             }
+            measurement::validate(&repetition.measurements, repetition.outcome)?;
         }
     }
     Ok(())
@@ -669,16 +842,25 @@ fn verify_integrity(run_directory: &Path) -> Result<()> {
 }
 
 fn collect_integrity_inventory(directory: &Path) -> Result<Vec<(PathBuf, u64)>> {
-    fn visit(root: &Path, directory: &Path, output: &mut Vec<(PathBuf, u64)>) -> Result<()> {
+    collect_inventory(directory, true)
+}
+
+fn collect_inventory(directory: &Path, exclude_integrity: bool) -> Result<Vec<(PathBuf, u64)>> {
+    fn visit(
+        root: &Path,
+        directory: &Path,
+        output: &mut Vec<(PathBuf, u64)>,
+        exclude_integrity: bool,
+    ) -> Result<()> {
         let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
         entries.sort_by_key(std::fs::DirEntry::file_name);
         for entry in entries {
             let file_type = entry.file_type()?;
             if file_type.is_dir() {
-                visit(root, &entry.path(), output)?;
+                visit(root, &entry.path(), output, exclude_integrity)?;
             } else if file_type.is_file() {
                 let relative = entry.path().strip_prefix(root)?.to_owned();
-                if relative == Path::new("integrity.json") {
+                if exclude_integrity && relative == Path::new("integrity.json") {
                     continue;
                 }
                 output.push((relative, entry.metadata()?.len()));
@@ -694,7 +876,7 @@ fn collect_integrity_inventory(directory: &Path) -> Result<Vec<(PathBuf, u64)>> 
     }
 
     let mut output = Vec::new();
-    visit(directory, directory, &mut output)?;
+    visit(directory, directory, &mut output, exclude_integrity)?;
     output.sort();
     Ok(output)
 }

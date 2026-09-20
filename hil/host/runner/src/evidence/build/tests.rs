@@ -71,8 +71,20 @@ fn source_stability_check_rejects_a_post_capture_change() {
         Path::new("source/repository.patch"),
     )
     .unwrap();
-    verify_source_material_unchanged(&source).unwrap();
+    assert_eq!(
+        capture_git_source_state(&root)
+            .unwrap()
+            .unwrap()
+            .workspace_sha256,
+        source.workspace_sha256
+    );
     fs::write(root.join("tracked.txt"), b"after\n").unwrap();
-    assert!(verify_source_material_unchanged(&source).is_err());
+    assert_ne!(
+        capture_git_source_state(&root)
+            .unwrap()
+            .unwrap()
+            .workspace_sha256,
+        source.workspace_sha256
+    );
     fs::remove_dir_all(root).unwrap();
 }

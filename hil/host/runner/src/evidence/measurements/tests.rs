@@ -194,3 +194,26 @@ fn zero_elapsed_time_does_not_invent_a_rate_and_host_gates_remain_explicit() {
         1
     );
 }
+#[test]
+fn semantic_checks_record_only_explicit_observations() {
+    let recorder = super::Recorder::default();
+    assert!(recorder.snapshot().is_empty());
+    recorder.check("wifi.maintenance.transaction-valid", false);
+    recorder.check("wifi.maintenance.transaction-valid", true);
+    let values = recorder.snapshot();
+    assert_eq!(values[0].value, 0);
+    assert_eq!(
+        values[0].verdict,
+        Some(crate::evidence::run::MeasurementVerdict::Failed)
+    );
+    assert_eq!(values[0].threshold.unwrap().value, 1);
+    recorder.check("wifi.maintenance.same-link", true);
+    assert_eq!(
+        recorder
+            .snapshot()
+            .iter()
+            .filter(|value| value.verdict == Some(crate::evidence::run::MeasurementVerdict::Passed))
+            .count(),
+        1
+    );
+}

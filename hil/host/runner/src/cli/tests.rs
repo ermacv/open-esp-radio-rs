@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn source_snapshot_accepts_only_explicit_repeated_file_arguments() {
+    let cli = Cli::try_parse_from([
+        "cargo-hil",
+        "image",
+        "snapshot",
+        "--source-include",
+        "new.rs",
+        "--source-include",
+        "esp-hal:src/new.rs",
+    ])
+    .unwrap();
+    let CliCommand::Image {
+        command: ImageCommand::Snapshot { source_include },
+    } = cli.command
+    else {
+        panic!("snapshot expected")
+    };
+    assert_eq!(source_include, ["new.rs", "esp-hal:src/new.rs"]);
+}
+
+#[test]
 fn ap_scheduler_is_a_runtime_choice_and_can_reuse_the_same_firmware() {
     for (name, expected) in [
         (
@@ -92,6 +113,36 @@ fn preflight_selection_is_unambiguous() {
             Cli::try_parse_from(["cargo-hil", command, "timebase", "--tag", "system"]).is_err()
         );
     }
+}
+
+#[test]
+fn campaign_validation_is_an_explicit_offline_operation() {
+    let cli =
+        Cli::try_parse_from(["cargo-hil", "run-plan", "target/hil/plan.json", "--check"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        CliCommand::RunPlan { check: true, .. }
+    ));
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "run-plan",
+            "target/hil/plan.json",
+            "--network",
+            "owned-xarxa"
+        ])
+        .is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "plan",
+            "boot-smoke",
+            "--out",
+            "target/hil/plan.json"
+        ])
+        .is_ok()
+    );
 }
 
 #[test]

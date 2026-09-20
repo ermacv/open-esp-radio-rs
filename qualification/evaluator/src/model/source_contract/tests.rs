@@ -83,6 +83,8 @@ fn source_composition_cannot_promote_or_block_readiness() {
         vendor_evidence: Vec::new(),
         vendor_not_applicable: Some("not-applicable".to_owned()),
         hil_requirements: Vec::new(),
+        hil_checks: Vec::new(),
+        hil_decisions: Vec::new(),
         hil_not_applicable: Some("not-applicable".to_owned()),
         async_not_applicable: None,
     };

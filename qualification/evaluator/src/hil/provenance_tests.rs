@@ -43,10 +43,14 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         );
         assert_eq!(
             index
-                .evidence_for(&HilRequirement {
-                    scenario: "station-reconnect".into(),
-                    minimum_repetitions: 1
-                })
+                .evidence_for(
+                    &HilRequirement {
+                        scenario: "station-reconnect".into(),
+                        checks: vec![],
+                        minimum_repetitions: 1
+                    },
+                    &ScenarioCatalog::default()
+                )
                 .is_some(),
             expected
         );

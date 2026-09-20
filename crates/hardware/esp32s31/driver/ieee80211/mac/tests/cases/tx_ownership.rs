@@ -1,6 +1,78 @@
 use crate::{support::*, *};
 
 #[test]
+fn completed_tx_keeps_buffer_until_detach_and_rejects_previous_generation() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = MockMmio::default();
+    let mut previous = None;
+    for payload in 0..32_u8 {
+        slot.as_mut().buffer_mut().unwrap()[0] = payload;
+        let cookie = slot.as_mut().reserve(512, 100).unwrap();
+        slot.as_mut().mark_hardware_owned(cookie).unwrap();
+        assert!(
+            slot.as_mut()
+                .acknowledge_completion(&mut hardware)
+                .unwrap()
+                .is_none()
+        );
+        assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
+        hardware.set_tx_completion(0, MacTxCompletionObservation::new_model(0, 0));
+        let completion = slot
+            .as_mut()
+            .acknowledge_completion(&mut hardware)
+            .unwrap()
+            .unwrap();
+        assert_eq!(completion.cookie(), cookie);
+        assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
+        assert!(matches!(
+            slot.as_mut().reserve(512, 100),
+            Err(TxError::Busy)
+        ));
+        if let Some(stale) = previous {
+            assert_eq!(
+                slot.as_mut().detach_completed(&mut hardware, stale),
+                Err(TxError::Stale)
+            );
+            assert_eq!(slot.state(), TxSlotState::Completed);
+        }
+        slot.as_mut()
+            .detach_completed(&mut hardware, cookie)
+            .unwrap();
+        assert_eq!(slot.as_mut().buffer_mut().unwrap()[0], payload);
+        previous = Some(cookie);
+    }
+}
+
+#[test]
+fn failed_completion_detach_quarantines_storage_despite_success_status() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let cookie = slot.as_mut().reserve(512, 100).unwrap();
+    slot.as_mut().mark_hardware_owned(cookie).unwrap();
+    let mut hardware = MockMmio::default();
+    hardware.set_tx_completion(0, MacTxCompletionObservation::new_model(0, 0));
+    slot.as_mut()
+        .acknowledge_completion(&mut hardware)
+        .unwrap()
+        .unwrap();
+    hardware.tx_detach_fails[0] = true;
+    assert_eq!(
+        slot.as_mut().detach_completed(&mut hardware, cookie),
+        Err(TxError::DetachFailed)
+    );
+    assert_eq!(slot.state(), TxSlotState::ResetRequired);
+    assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
+    hardware.tx_detach_fails[0] = false;
+    assert_eq!(
+        slot.as_mut().detach_completed(&mut hardware, cookie),
+        Err(TxError::Stale)
+    );
+    assert!(matches!(
+        slot.as_mut().reserve(512, 100),
+        Err(TxError::Busy)
+    ));
+}
+
+#[test]
 fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     slot.as_mut().buffer_mut().unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);

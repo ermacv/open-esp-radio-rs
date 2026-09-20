@@ -86,7 +86,13 @@ impl Catalog {
         // Preserve the original flat filename order inside each ImageClass::ALL
         // group, regardless of future domain-folder placement.
         scenarios.sort_by(|left, right| left.id.cmp(&right.id));
-        Ok(Self { scenarios })
+        let catalog = Self { scenarios };
+        for scenario in catalog.all() {
+            if let Some(comparison) = &scenario.comparison {
+                comparison.validate(scenario, &catalog)?;
+            }
+        }
+        Ok(catalog)
     }
 
     pub fn all(&self) -> &[Scenario] {

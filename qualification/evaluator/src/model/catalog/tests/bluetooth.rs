@@ -43,6 +43,7 @@ fn secure_gatt_requires_repeated_numeric_comparison_hil_but_retains_retirement_g
         .unwrap()
         .validate_requirement(&crate::hil::HilRequirement {
             scenario: requirement.scenario.clone(),
+            checks: requirement.checks.clone(),
             minimum_repetitions: requirement.minimum_repetitions,
         })
         .unwrap();

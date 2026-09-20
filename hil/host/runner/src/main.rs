@@ -3,6 +3,7 @@
 use std::error::Error;
 
 mod archive;
+mod campaign;
 mod cli;
 mod command;
 mod device;

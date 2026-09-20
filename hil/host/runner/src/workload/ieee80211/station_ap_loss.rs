@@ -17,6 +17,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
+    pub(crate) require_recovery_echo: bool,
 }
 
 pub(crate) fn run(
@@ -31,7 +32,36 @@ pub(crate) fn run(
     let mut ap = context.ap()?;
     let result = context.with_capture(output, |capture| {
         let mut cursor = capture.station_lifecycle_cursor();
-        qualify(capture, context, &mut cursor, &mut ap, options.timeout)
+        qualify(capture, context, &mut cursor, &mut ap, options.timeout)?;
+        if options.require_recovery_echo {
+            // The existing lease may survive link loss. Observe its current-boot
+            // address without issuing Initialize or StartStation again; fresh
+            // replies, not cached readiness, prove the recovered data path.
+            let address = capture.wait_for_network_ready_after(
+                0,
+                open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
+                options.timeout,
+            )?;
+            let result = crate::workload::traffic::icmp_latency::fresh_echo(address);
+            fs::write(
+                output.join("recovery-echo.json"),
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "schema": 1, "target": address, "requested_replies": 3,
+                    "after": "generation-one-reconnection", "passed": result.is_ok(),
+                    "failure": result.as_ref().err().map(ToString::to_string),
+                }))?,
+            )?;
+            context
+                .measurements
+                .check("wifi.station.recovered-ip-exchange", result.is_ok());
+            result?;
+            capture.require_station_unchanged_since(cursor)?;
+        }
+        let responsive = capture.query_operation_status(Duration::from_secs(3));
+        context
+            .measurements
+            .check("wifi.station.control-responsive", responsive.is_ok());
+        responsive.map(|_| ())
     });
     drop(ap);
     result?;
@@ -99,6 +129,9 @@ fn qualify(
         },
         "generation-one recovery",
     )?;
+    context
+        .measurements
+        .check("wifi.station.ap-loss-reconnected", true);
     eprintln!(
         "station_ap_loss_recovered_ms={}",
         recovery_started.elapsed().as_millis()
@@ -143,6 +176,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             timeout: DEFAULT_TIMEOUT,
+            require_recovery_echo: false,
         }
     }
 }

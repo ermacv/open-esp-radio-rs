@@ -1,5 +1,37 @@
 # HIL PHY workloads
 
+## Functional maintenance continuity
+
+`station-phy-maintenance-continuity` uses the correctness image and production
+station/PHY owners with a managed HT20 peer. Each of three repetitions receives
+UDP at a 2 Mbit/s offered load, waits for the target's 256-datagram progress
+marker, then requests combined calibration after one second of preconditioning.
+The complete 12-second UDP session must meet a 100 kbit/s liveness floor; loss is
+allowed. After successful maintenance and completion of that session, a fresh
+ICMP socket exchanges three requests/replies with the target (two-second failure
+detection timeout each). The station lifecycle cursor covers the original
+session and this new exchange, so reconnect, restart or beacon loss fails it.
+
+The runner records `wifi.maintenance.transaction-valid`,
+`wifi.maintenance.same-link` and `wifi.maintenance.ip-exchange-resumed` separately.
+`post-maintenance-echo.json` retains the final exchange's outcome. A PASS requires
+the entire repetition, not a successful early check. This establishes retained
+connection and later IP reachability; it does not establish RF quality, a
+calibration-time bound or resumed UDP throughput. Existing high-load and RFPLL
+scenarios retain their independent acceptance criteria.
+
+```console
+cargo hil doctor station-phy-maintenance-continuity
+cargo hil plan station-phy-maintenance-continuity --out target/hil/maintenance-continuity-plan.json
+cargo hil run-plan target/hil/maintenance-continuity-plan.json --check
+cargo hil run-plan target/hil/maintenance-continuity-plan.json
+```
+
+A fresh execution captures the source snapshot before building. Supply explicit
+`--source-include <file>` arguments for nonignored untracked inputs as described
+in the [host guide](../../host/README.md). This scenario needs only the DUT and
+managed station AP; it does not require monitor interfaces or a Bluetooth peer.
+
 ## Same-connection pause
 
 `cargo hil run diagnostic-station-pause --network patched-xarxa` requests one

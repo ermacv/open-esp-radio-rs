@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 
 mod catalog;
+pub(crate) mod checks;
+pub(crate) mod comparison;
 mod validation;
 
 #[cfg(test)]
@@ -272,9 +274,13 @@ pub enum Workload {
     },
     StationApLoss {
         timeout_seconds: u16,
+        #[serde(default)]
+        require_recovery_echo: bool,
     },
     StationApAbsence {
         timeout_seconds: u16,
+        #[serde(default)]
+        initially_absent: bool,
     },
     WifiRole {
         operation: WifiOperation,
@@ -355,6 +361,8 @@ fn is_rx_only_udp_workload(workload: &Workload) -> bool {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Criteria {
+    /// Require fresh ICMP exchange after completed station maintenance in the same link epoch.
+    pub require_post_maintenance_echo: bool,
     pub exact_delivery: bool,
     pub minimum_rx_bps: Option<u64>,
     pub minimum_tx_bps: Option<u64>,
@@ -415,6 +423,10 @@ pub struct FixtureMutationConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
+    /// A controlled experiment, not a qualification prerequisite or a promise
+    /// that the control's result applies to another firmware image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<comparison::ControlledComparison>,
     #[serde(default)]
     pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
     pub schema: u16,

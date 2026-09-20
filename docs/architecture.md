@@ -16,7 +16,7 @@ commands belong to each component's README and Rust documentation.
 | [Repository tooling](../tools/repo/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
-| [Qualification](../qualification/README.md) | Capability declarations and an independent readiness evaluator | Consumes evidence; does not run the hardware or vendor implementation |
+| [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
 | [Examples](../examples/esp32s31-station/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
@@ -131,6 +131,11 @@ flowchart LR
 ```
 
 The evaluator reads serialized evidence independently of the producers.
+Its engineering map connects knowledge, source owners, checks, observations and
+next-work reasons. Static catalog views require no saved runs; program views
+retain the evaluator's evidence-applicability decisions. Neither view runs
+missing checks or turns the whole project into one readiness gate. Knowledge
+and source facts remain useful outside a selected qualification program.
 Implementation, host coverage and async states are reviewed declarations;
 vendor/HIL states are derived from evidence. A valid incomplete capability
 program is not a passing readiness gate. The exact rules are defined in the

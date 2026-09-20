@@ -8,7 +8,7 @@ use crate::{
         run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
         verify::ArchivedFirmware,
     },
-    image::{self, Artifacts, ImageClass, Integration},
+    image::{Artifacts, ImageClass, Integration},
     lab::config::LabConfig,
 };
 
@@ -52,7 +52,7 @@ pub(crate) fn prepare_image(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     session.record_event("image-build-started", None, Some(class), None)?;
-    let artifacts = match image::build(root, class, network) {
+    let artifacts = match session.build_frozen_image(class, network) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;

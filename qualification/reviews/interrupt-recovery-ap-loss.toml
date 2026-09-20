@@ -1,0 +1,1388 @@
+schema = 1
+id = "interrupt-recovery-ap-loss"
+capability = "interrupt-recovery"
+scenario = "station-ap-loss"
+property-sha256 = "d5de36edf989ee1c7eaf51c62f8eab385b26edfca549a72d030abdda81761eed"
+kind = "unchanged-functional-contract"
+reviewer = "codex-engineering-review"
+reason = "Review of the original complete scenario observation and its captured correctness build for the declared property. All mapped production implementation packages and workspace build inputs match the archived source snapshot byte for byte. The source and destination here identify this observed build; applicability to the current checkout is functional and limited to the bound owners. This observation is independently sealed inside a suite whose initial-absence experiment failed; that sibling failure does not invalidate this completed scenario. The current HIL target differs from this build only by reverting an unexercised immediate station-start error handler in product_hil.rs; its successful service-start path and the production implementation are unchanged. This scenario successfully started its service, so that negative-start branch is outside the observed path. The initial-absence host expectation was corrected separately. This admits only the capability existing HIL obligation; its vendor requirements and explicit gaps remain unresolved, and no complete IRQ or deadline qualification is claimed."
+
+[source]
+id = "a609ba5609f793456c36ada52e513ae9495cca905aab30ce948b1d0412648f71"
+image = "correctness"
+application-sha256 = "a41b7c0306aeb8345ead5824568fd8ca71eab6dd526d6498c0034958ce61e886"
+
+[destination]
+id = "a609ba5609f793456c36ada52e513ae9495cca905aab30ce948b1d0412648f71"
+image = "correctness"
+application-sha256 = "a41b7c0306aeb8345ead5824568fd8ca71eab6dd526d6498c0034958ce61e886"
+
+[[inputs]]
+path = ".cargo/config.toml"
+sha256 = "476d4555415d867d3614cd6953358fd81041c2ea5d9f253c56b0534342d55fea"
+
+[[inputs]]
+path = "Cargo.lock"
+sha256 = "83acb3464a42a8daabd72a7823ada0513f648d341486f18eee3a45972953fd8c"
+
+[[inputs]]
+path = "Cargo.toml"
+sha256 = "56709723bd017da8980508f9530b194ba597e221358fcd04a2c0b060f5b4b54e"
+
+[[inputs]]
+path = "crates/adapters/esp-hal/esp32s31/ieee80211/Cargo.toml"
+sha256 = "946fee5724959b7189ae1a226baf7da982ba12cd0df61cd5b669c37ef96a20da"
+
+[[inputs]]
+path = "crates/adapters/esp-hal/esp32s31/ieee80211/src/lib.rs"
+sha256 = "70d714e75d97197b3bfe32ae8fbf7319645021fdfb4b6eb363c3aea8d60b722c"
+
+[[inputs]]
+path = "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch.rs"
+sha256 = "43d0761fe9469815b24a614bebbbd2ddf39d1d42b22c18d3b8bc6300add28a14"
+
+[[inputs]]
+path = "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch/storage.rs"
+sha256 = "2b6930fd37caa60b9d77b7765db114dc9661d825fd3c4a291d6728e0e997b041"
+
+[[inputs]]
+path = "crates/adapters/esp-hal/esp32s31/ieee80211/tests/interrupt_storage.rs"
+sha256 = "c786a57d980cdb3a9054f4522731c0411517d3467cd5dfe731deb101152c1ef1"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml"
+sha256 = "2467d82a123f1def54f942ba843edc5e0bb388ba58f63e801785ad88cc8c3e21"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/ap_policy.rs"
+sha256 = "431e3a35884e26c78ccbc4b47a80bcf02bdb71e147143f306875958d0b1676c5"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/ap_policy/tests.rs"
+sha256 = "91da457baf2549f2644d6011cc40bbe0f07d595358748a9c916e76895b0a0e4f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/ap_tsf.rs"
+sha256 = "59b57d48f0caecf07825a3863f9c41be3e5aaf5a7589ffcfc10a39557e62c045"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/ap_tsf/tests.rs"
+sha256 = "cd2ca750855c848d245a427fe9b55a2aeefce7ea7eeb6d586decfe4b025453c5"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/capabilities.rs"
+sha256 = "d46d5406f8499f87a6a6d5a314c1714ce7a8b6cfa35ec1cbbb93bba81ed55331"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/capabilities/tests.rs"
+sha256 = "986b217ab57956d854dd1570146924a1ff75dd195ee8c3cde2b5b71673be57e9"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/channel_state.rs"
+sha256 = "7ff401f813ca18c5b2f4acdb312ec8b5c85b0de2f3a066508a2506e954e19fc7"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/channel_state/tests.rs"
+sha256 = "a996d781affc512d3c87ba366f7f993c0b82f7dce53d932c43aac3b979676311"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/coex_runtime.rs"
+sha256 = "415d95916f58eebad060fb9dfb46eebe95dee9fa9326e36fdb72152b258ba298"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/coex_runtime/tests.rs"
+sha256 = "3bd215315987ce69906f2ed026e5412e071ab373da4ea5d6029a126374ff7a6f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold.rs"
+sha256 = "8efcbd290c0a8350f001f089e3c56476f5e1c55a4a261ce226e4e034a4238d7f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/antenna.rs"
+sha256 = "4d807bd134f1abe89e98cc47a2ec07c526384b2440439f95384edd69e19c622d"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/coex.rs"
+sha256 = "7c0d87a9f0bc0784fa1caa157c76e69005220ca48ca9a53410041ec9b98f3466"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/coex/tests.rs"
+sha256 = "d74ecc8332f9e2d91ad4c938587c88b0469d4d772a5c12c671356fb52a53f73f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/crypto.rs"
+sha256 = "725f2c740362c50e73766a38f8c6b23b7f1fc8895b2899f0ed070db98a846f35"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/enable.rs"
+sha256 = "9c2c419a0f4cf319dcf014bcd3b174c5f5c1982da4096978eed2adb93ae3b642"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/hal_tail.rs"
+sha256 = "806a681745a6c231de9802fb504f94e67e4bccea9f74568b689a73734970cad2"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/handshake.rs"
+sha256 = "571b449300da70b1872bd009e56c901e1f547af25973176b0612aecfa84ff678"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/he.rs"
+sha256 = "04a4f335d2b8a41f91f37186df325abd77ac162190945fc199cb4ac09f9d6385"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/last_rx_buffer.rs"
+sha256 = "34da70c8b53786e673d94d6642ccf5979460ade0402e8011d3321edb70042f4a"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/rx_buffer.rs"
+sha256 = "fd4e46e4a9a68ed4c4b5bb7678d193ba391131f3399f9cb1e64eaff26839dd4e"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/rx_policy.rs"
+sha256 = "99f7c61326e611d71369f37479904166f868f4d25129d35ce3a91a53e381e9f3"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/cold/txrx.rs"
+sha256 = "5895b04cadb85c0149ca0e934f8d3d14831f40cb974f9eebd3bffbfaa74805e0"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"
+sha256 = "f686d0c6bc986b8265c09f86c449908af76342aba16d40e238a66a80a7492022"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto/tests.rs"
+sha256 = "6a5fbee45e82962d6fb3803a69b7a3359d39a9394b48128a432d6556a9144eaa"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/edca.rs"
+sha256 = "5a617df5f12a7eb14da9c4d90a1e3fefcaa86e33849b2c8ca955d6e78f260070"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/edca/tests.rs"
+sha256 = "e2662f09d73ce468d74494aa79b1164b798d54568597a8cb6c71859a9ff636bb"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/he.rs"
+sha256 = "e1e063db1e20751d659b46868e649a91f02020b23913714c656b12b0b63d3157"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/he/tests.rs"
+sha256 = "3bf4b35ad59898f2e66f4515f1946b9b474d5169e59feb1ec3497bda0384b336"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/init.rs"
+sha256 = "fca5736162b7ea33fb14232a0083a949c30263d0f4b6be5b5c87a5689bd8deda"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/interface_address.rs"
+sha256 = "748748ddd3f635a44638cc62416037f2070fad4a1798643373ec7f6e32b52f6f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq.rs"
+sha256 = "f530d013895bd3dc3366803909578e07e7b46e2bc1894b57cb65b2a25433a797"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/lib.rs"
+sha256 = "cc959fa13d5ea3acf1154be2b75b68af30f468c003e28113ed3bbdd778fd95cf"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate.rs"
+sha256 = "e45eb4aaa3bcbc502f0e35420b12411f9bd55c935a4363408b82ce46ae8d4018"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/control.rs"
+sha256 = "7641c7d0ea31e318bce28bbaf38c3c677da21fb60afd84c26401a19b34a11226"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/control/tests.rs"
+sha256 = "076894441bc3eb7f950a403a85822068b6838875229e8b5bbaf99fabe3f6df2c"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/long_range.rs"
+sha256 = "c160349b0c656af284af9c9ae25d8b4715d1c137195c6f589036b14b5fcb4dca"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/low.rs"
+sha256 = "a31748f2575a220b8e71907741d32112496a2b98471374880a8eade8e9cb6841"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/low/tests.rs"
+sha256 = "29a04715ef08010a490a68ca6fe4d2d55405d388683e68ec425e7f7e4df4bcc4"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/rx.rs"
+sha256 = "aba8739d24eef38eb0ad6974c42b3af0a27606e0df8850c613659611fe0061ed"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/rx/tests.rs"
+sha256 = "e6d53faab0c411208164c92a78d91387c1dd2d1823b7ebb184270d101d2cd0e4"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/schedule.rs"
+sha256 = "3a1aae8d1696d8cddd22878435dd9d10cefaf0ce37437ada5ac08d34d45a623c"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rate/schedule/tests.rs"
+sha256 = "c68cd0d958ef38e034738564b88baa042e9f233457779053ea68a34d30d1a884"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx.rs"
+sha256 = "ba2ddbb9dc33e676772a0d726afc7dcf7e2ffb6a070e1eb992af4d2966a7f49b"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/ampdu.rs"
+sha256 = "b13288c826cf4009b190471023bc5436e68a7ad83c170916973e182fc057cb53"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/ampdu/tests.rs"
+sha256 = "4905d457bac57a85ca9577894b1699eb6e313aaf201882e754f0df6cd072947a"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/hardware.rs"
+sha256 = "eeee9c929f5439a942f757b435c131f9dfaba61a63ada7fcfc394905eb094685"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/hardware/tests.rs"
+sha256 = "d5e072d84dbd5f1d1dd5cf813649c729c381dc8635899976f21d0f43f5e2f11f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/pool.rs"
+sha256 = "cb53526b96f3e20cdb0cf77e4e4c5b05a464cea36ac4b6c8d25e909fa341458a"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/sniffer.rs"
+sha256 = "2c4120e614e227ec208a0ece667e8ac763411c922ac69c201128f34c5c711b8f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/sta_ap_registers.rs"
+sha256 = "dddeb40abe569bb26eb0b6f1ff089a53c1ee5ae801e6c35c610b62b08b7d5f57"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/sta_ap_registers/tests.rs"
+sha256 = "12a3ae540c1d5910acd8781feaa60abd50794e3b71949e41a60feb5cd1902fe9"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/sta_link_policy.rs"
+sha256 = "59c4232f9b5b9006e0f7d21d2c194eea3e7108cbe90fd3662c988f28dbf7eb0e"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs"
+sha256 = "79e08226ae94cccbda99921a441442cc078dc1d2973e21d3c56247b9fd0a6b92"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu.rs"
+sha256 = "8efb15040fbd036c39b217af7ac3e4afc14ea8bd11f892bba44696cd938a64d4"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/block_ack.rs"
+sha256 = "53254a04cedca21de60dd5a40009c3c33acce2fe6224f34ff4d73a1e58192dbc"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/block_ack/tests.rs"
+sha256 = "bb860019ab6f22f88603c6a846780168cda68d268aab2881d62c9b928ee1c328"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/capacity.rs"
+sha256 = "5c52c289c24de9ff24f83891b6c6de27078e808e04207d2afa1a56ed749fbd91"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/commit.rs"
+sha256 = "ac1910e8c23193758feb4044e142c850dea9bcc931423acbbd33a9e25e6af195"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/hardware.rs"
+sha256 = "41be0e3eb51f632b009391c7bb8bd8028ca97308cb8e53a78207ff90830de1ba"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/length.rs"
+sha256 = "2f22a754658283e7ca5525336e45b68eb861bdb5d720de475f4f18b625280fab"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/lifecycle.rs"
+sha256 = "d0685374615dafd690caa66d4a4c4e44b964494067a0faca5080d9feede20d43"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/model.rs"
+sha256 = "4d9dd9c80dfddaa49d31388e0ffb959aedab79b132f76cf22c9e9bc06ef62f27"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs"
+sha256 = "aedeaa12974a2a4ade2be586f6a168b6967ea17655efdf750e081588f1985651"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/request.rs"
+sha256 = "1f0c3394974de23066ac3b785c74b2387f1c9cb94e7ac826870266b5a251b2c7"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/retry.rs"
+sha256 = "6aa71a8e497a5ca15ad5d3ff33b2efb964dfcfd8732c6b823b950c81c0b6ef9d"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/submission.rs"
+sha256 = "73c18acc933b3ce395387a090b5e02b8d0d3f7ee0acd480f9ac255fb113b8237"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/tests.rs"
+sha256 = "a9b66f3a436f19ff74204ea1f81ca3edf41f54fa9386dad2a7eb91bad6f5c0fd"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/tests/exchange_budget.rs"
+sha256 = "f8801d3041599fe493924e8ba38b4b00a7ce287772394190762f00a8275e0a51"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/tests/length_budget.rs"
+sha256 = "bfc49faa67b592a7309a2ae25de5d2cf3c3c3f61abcdfa9bdca52968deb6ad4c"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/tests/work.rs"
+sha256 = "ca2eeca4f721a4fd0665dbc563e1331711319996773860a086c65e29e7573324"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/completion_disposition_tests.rs"
+sha256 = "f2e4dcf7bd27b0174b91228b8d8ea7649e4f961320344183ef121e3262c75e95"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/cost.rs"
+sha256 = "d311a1629b1898aaddece5bb523cf562598fdd860b69049ae28bbd7be60277b7"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/cost/tests.rs"
+sha256 = "b97e4fc92568094e666736dc1b2d9f0b6f09689367c3a3d441928d6a31765dfa"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/metadata.rs"
+sha256 = "bd38111ffa37ceeff8df9bae79e5b986e8d907b725968ee6e00023f1a26a1b0f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/metadata/tests.rs"
+sha256 = "b970d3a1f5160706b62b03abc76a13a0adca36fba7ab7991d46d2f32f656c21e"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/policy.rs"
+sha256 = "b65751acbbb7a5a31a0004d3a7f34efec32912300324b4aaf8004545f657b319"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/policy/tests.rs"
+sha256 = "024798fa24a7f83aad0383091f0069b47af9bdbedd904e510a7263dfa33ef06a"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs"
+sha256 = "0f2a6c372acacf0bed08788b85ae99b294ef34d48ca98dcd94a796129c97ab84"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection/tests.rs"
+sha256 = "191c7ba60657040f9b953715808e3624614f2ec4bd5e9aae44189ffe44c20071"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs"
+sha256 = "1b018d994f2f4f92e89e033f03e2507379b2c0f3efc926f16ff98abcb48fec1f"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime/tests.rs"
+sha256 = "479a376e6f77a23b614fde0bb2a6cd281a57de70614bad347aeb91ce520d957c"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/aggregation.rs"
+sha256 = "3e244ffebd2035c14a59f094ff4248f121aff9eecf3f3f3a34ac79f9e01c5157"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/crypto.rs"
+sha256 = "c33a1a37561433e5bf19d7c3e2114d0fe6df0a42d4c8c628f67f34642bcf8bd8"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/dma_geometry.rs"
+sha256 = "26f79e8e77a3d9dc32b14c4e860b09e12af7078b5d9e05527e7373d4529356ec"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/irq.rs"
+sha256 = "1836592649b16f8216f36fe7e16fa4e580b7ebb9ec4acde4d14024165d4a0e0e"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/mod.rs"
+sha256 = "b0be7d84cf983e51603ed8c075c41bcb65cb5d632108deeb49528e3f2bff3e3c"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/rx_frames.rs"
+sha256 = "871f0215a1f008964593e9d310b7ae56f5df302856f347e129d2b984919fbd16"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/rx_metadata.rs"
+sha256 = "0cf3a8eb61656ca2209afe2b5bf33d32e48d51801c4de9c70562b86b5eac0685"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/rx_ring.rs"
+sha256 = "a152d54288bc1938fa68ce13f2c0c57a08bcb86f9d5a77fd53e1abf8fa28a2fc"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/startup.rs"
+sha256 = "f4c24053894b99a77a19debad36eb75696f0eeb5331d4bb4eb878f8451d3f255"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/tx_ownership.rs"
+sha256 = "ce72fb1395e389d14f3789fa29a6a4baaec951fc5cf4e7e11fca694cf7f12134"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/tx_rates.rs"
+sha256 = "21c3114ed5af250317440ba65caea4e8bd255e1f702b22c39efbe7df09e7f3f2"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/mac.rs"
+sha256 = "42df2a57da59c107e34ccb9a8fd2dd83d7b43282bac4544e10a3ede1f9233506"
+
+[[inputs]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/support/mod.rs"
+sha256 = "a93e4426fd43d128dc25d490546a4b5f83fe65cfa5c6272e5b51b868a9c5d304"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml"
+sha256 = "a37db15ad7520c4b5e0e349bc178cc29cd7ffc65297f4159ee464ae9689974f6"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/examples/station_service.rs"
+sha256 = "5d8f6426b16bb614e7125035594c4dffba74869d955de57478a4dd3be5935b7a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/execution.rs"
+sha256 = "c76910d9150fd667e5f7d005c9f821afc5afa3a0da0cd50ae24ce081cf1c81ad"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/execution/tests.rs"
+sha256 = "727497a6bf9f51856f08dbdf421afcb953d1a4381fd123364ace68f4c476b0a0"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq.rs"
+sha256 = "f8ce5bdbd667c5b1f848d4e8920a9ed7a69942986155e802c1580ac86680f349"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/epoch.rs"
+sha256 = "0adbf145b7f7bcd4599f400a3791396cec08c174cac76cdad7ac70d00203e51a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs"
+sha256 = "72bb51814b0b675a045edf780ffe3142cd30913bff20f1850d8422af5fac568f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/pause.rs"
+sha256 = "2a9b2b179b9dd003f55199556d0bff60fec85b354525845dbff936772b4c5eff"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs"
+sha256 = "7ed2e5715a2331e96de2270691ac27d531a74f5a7ad5d34986bd8b7d31fc7f8e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests.rs"
+sha256 = "8e92db2a9be79cc07235d1e1204d4e439ebae2ea6e4eceb0fafb54d371227c07"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests/pause.rs"
+sha256 = "35e48a9cd8172dd83e7ff5e79c3e7810dd8fba10aa5d65d7fbd8c203c3e42925"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests/pause/operation.rs"
+sha256 = "1c6bf8988778ca2de182163e0783e3ed6d62013cc430f69b84e5dc5926f084c5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance.rs"
+sha256 = "ea2807f5f533c877b1ddcef94bb95d34367e279cb7f73bead0db9e590b35c56a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance/tests.rs"
+sha256 = "81e66c3944f1d9dd1a98bc7ef84e2824e3c03dfb1d76853bdbb1c1b29e0d177a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/mod.rs"
+sha256 = "031c2032cdfed07197b843053ab52467449de8417450ca21377447e5dad85273"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/network.rs"
+sha256 = "900b42f0c381a473e0695826ec3eeb611dab2e1f2b3c01a74a9bcbf05e77c17d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/owned_tests.rs"
+sha256 = "a583d415fa89341d921c350785bb2ac8bbfd9afcad0c1bed4da428de6ea1b3cc"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/owner.rs"
+sha256 = "0aa0cc4f81fbb58e6355f42c56e5f1015208f8c68722fb8c49c56b4af8dd6d25"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/owner/fairness_tests.rs"
+sha256 = "d3d7eaaa31b46e5ccfb1ea042d35e1b45ebaa568f188158f61a72a24a675ecfa"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/paired.rs"
+sha256 = "634762a991d9e88f5c4e1970ff31ec973517f0d95286bf2f5748e930e4523904"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/paired/physical_tx_tests.rs"
+sha256 = "b2bfc726c94f7fb404aca118a603ee4a4c7cb5cc1c34a003c464c4fc410f48d4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma.rs"
+sha256 = "7348edd172f90b10024f0ef003219a9aac6694444c1cab5d2e3a5b05d267cd62"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/epoch.rs"
+sha256 = "fc159d4c1671e216871c5486dde40cec68c0d98d12b94e902c30352fff500c49"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/lifecycle.rs"
+sha256 = "32d14e19fa4e8ad04562a1692b09b8d2b0d73e642da0a695c1784652ca51f48a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/pause.rs"
+sha256 = "29fc355ba37b71fbee8ff5c00477fb76ab3ded64a97db8a894d22f17cd4dc107"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/service.rs"
+sha256 = "7779a036e8d6855aa1829dc52d6b8d5a423b7d50d8a20d8e2dd6157259e3efa1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/service/observation.rs"
+sha256 = "6132adf1baf0c58fa8eaaf9ac047f79260da0aa289343811c4635cde0f68ac3f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/tests.rs"
+sha256 = "4d70c1f00ec186c81c2033bc1aeffe75b8bba2b7de347313f3fda03a691fe98a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/tests/credit_policy.rs"
+sha256 = "0e69cbaa7a41faf293b5f587fdddd757f8fdb78e1e452571afd4cebb3378ec48"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/tests/network_admission.rs"
+sha256 = "73e429d7bcf57726c6c536f8058d90e9f22f5941a27c2735afb81fdbc8ff101b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/tests/pause.rs"
+sha256 = "d597d79c411f04cdf8c4f7f0ce729a041a4203d55374cd96411d10e6fcda8787"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/tests/transaction.rs"
+sha256 = "ae968789ccd977a63a29a6e7a315aaa0079bdc9100f1d6adb77544f4d3b6ccef"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/ethernet.rs"
+sha256 = "7758f17e41a000fa314b8e2f531f94b0c51ea8473c5e6f7bfe998c82745a5121"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/ethernet/tests.rs"
+sha256 = "2bfb3f6e0960d94adf77454548d57157c93541e81635f4302c5249004171eb3a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/frontier.rs"
+sha256 = "38a8ef5428ffb759ff81248d08cdb3a87bf434d382db8ce6f4a7f379036f01a5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/frontier/time.rs"
+sha256 = "61cdac3fa68d53a746cc3d7458298718f33bcffe49d7d3af3272f65133c73584"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/hardware.rs"
+sha256 = "dcd9893ab11247607b69a85464330c91505f895407fee0066fd205e5ad534289"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/hardware/tests.rs"
+sha256 = "1687742358a352b04a1611ccdae1165a2cc80fb32499d5210c730c39f46b7ed8"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/mod.rs"
+sha256 = "3cd847121018f4c48807656c14083be3e7d67f6c2ff756a07f8b790c0f3b5113"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/reorder.rs"
+sha256 = "1346417c70e24a347cb7ab8440bf852058c406242071c0fa91f10f3598700929"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/reorder/tests.rs"
+sha256 = "349f7b918adf8334f09b1800f1dead7f7df3fbadf3462c93b18e142087a30ceb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/staging.rs"
+sha256 = "b7a6031b6ca1bbef2d221e26384203414854bf58da2c34653c6078d0607a0732"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/turn.rs"
+sha256 = "42e3ffee76a353311cf57237ec2f4790b00320c869f23cbacf5215ea083fc905"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/turn/tests.rs"
+sha256 = "a5261fe86cba6c883ae83fe85652d72a73cd348a479c0e8cef17e6b0825eac6b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/scheduler.rs"
+sha256 = "5690c02eefb1d5b2acbcd0394ee742d3530658b2f6bdf6112e2213f8c7e08108"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/scheduler/tests.rs"
+sha256 = "9a08e2cde5a131dd3a6987305d487094a3bb4a944950bdb3ca2d86763fce6749"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/service.rs"
+sha256 = "7d1dc14e4016724b31e7c43375599cd748707e82ef6e0076bff778c556b5b3a9"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/services.rs"
+sha256 = "844f2a34972adb055ea8e1aba5a1ea584b0f8a828a509f390a0cc76bbcc72bd2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/software_tx_queue.rs"
+sha256 = "f540a6e3f66bcca3518efe7ca4c149c90be50329e8c8146a7975ebd1a3903b1f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/software_tx_queue/tests.rs"
+sha256 = "bb0b6b48747270cb43635ebdd64cfbe4b2a12c1149d50e302d22dd7f041ec773"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/sram_tx.rs"
+sha256 = "b27d7fbcd84ada2e9025bce0d2eafe278991872e4185e3c86cb6e67de22deda6"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/aggregate.rs"
+sha256 = "e53251cf2296c5c40032e6cd8c8bc0e5d93b0453b9e665e33e9cedcd8f825c83"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/aggregate/tests.rs"
+sha256 = "adcc21b6a1d0d1ceb0540c1d2f4faab0b38bb8e13c9c2ef33dd11ef68c95b647"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/mod.rs"
+sha256 = "a1df543ed7b2570d24ecdcb797f2746b03c650f3447848d99ef9eba306ea9fc4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/resources.rs"
+sha256 = "9cbfbe57ab850c7cdcde2dc701f0c9916cd0504a88f8fedf31614092e015c35e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/resources/tests.rs"
+sha256 = "295eacf15526e81887088e9789599a6edc041fa178f18a35965e65a2f5f24776"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx/time.rs"
+sha256 = "38e19f9a0cb371fcfa5d03d69179a9a1b6594751c92a05dbba79940410bab9dc"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx_performance.rs"
+sha256 = "eea3205c6deba193be15ccf15ec37f53c2b14810883389d55127bd4ab19742b5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/tx_performance/tests.rs"
+sha256 = "fd8d65fe98ad89bb3364f9c0ecae6c86a903398b10eb59108d8360d8e7135075"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics.rs"
+sha256 = "95a610dc1c770619d072816264211aae6b76bbcd4064abe11c653dcd3be30eb9"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/access_point.rs"
+sha256 = "631c0342f320f98955bf66b63db6a13e5af08d01098f4b39fab5adbbd7eeeac5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/aggregate_tx.rs"
+sha256 = "649bb2fa881699503785c2ae8d2cbf982285a52f34901f9d2f3587e9d2629453"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_ap_rx_cycles.rs"
+sha256 = "f49209ed9d7820caa48967c948ceb7b73d448a7e7d6778962b592d3f92e3f1b8"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_cycles.rs"
+sha256 = "83c90f6742342db60e09037c2f17fec7304f029585b9d2d6ebf44712437634ea"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_cycles/tests.rs"
+sha256 = "386ff92b56652d8a61712385df03c301462c6b6b1b924d8142343d12cc9b0e33"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_performance.rs"
+sha256 = "61ea5ce66cf051eaf2f581ae28264775f2d604b5afdc163d68d62181739e85af"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_performance/tests.rs"
+sha256 = "11a159952a2a3cf04f455d411f5fd0994a041eb07d9fd99cf070f859d3488810"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_reorder_cycles.rs"
+sha256 = "beed83598fbc1027db46b93b3505c66d6a6fa3eea249994c8a3b1d7b4355c435"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_reorder_cycles/tests.rs"
+sha256 = "9735607846540690c9b227526de3141a147ddc227fcb16b3884e0d4aa277551d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_service_histogram.rs"
+sha256 = "36d08bd269898e41451b3bbbee3a26fb4c1b9aa3c4d06dda30eb0d0c75ba0e67"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/core0_rx_service_histogram/tests.rs"
+sha256 = "44edb138c84eb8b107b763be659633549c674109970bf064880aa15746c81c56"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/network.rs"
+sha256 = "0cede6ed4b0f8b62665d3dbaa6a4a7ed6e27eba0c2f48cea1b96991e69c041cf"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/diagnostics/rx_pipeline.rs"
+sha256 = "6d80f0fdb0ff1d3a0d45d2c8b8c7e767a29035f18ef54a55a3fb20f87709e395"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/lib.rs"
+sha256 = "2796c87f76a729cc2427ba293667af3384c44d25394118224088e362acd7b771"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles.rs"
+sha256 = "5058140cd239b019a6e9ff7c48253399ddee0eb9b458856b593691558e6ad834"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point.rs"
+sha256 = "5f72d0561d78c5454f9523450202a247f74bf30776a38a53796c4f5afd6e4faa"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/ampdu.rs"
+sha256 = "e6a45245a94ca7605857905033ce5065be5b2c258c9d344e47846655ac2c4fb4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/ampdu/tests.rs"
+sha256 = "2d6fc5f3c7b59ebe5f3d03e11d34b422edb7e6b50c7cb019dce19d44f8139e13"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/concurrent.rs"
+sha256 = "7a7cb7c5cab28aaefe5a24cf529ea185e21d7466158dd3461dae869c2caf75f3"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/control_owner.rs"
+sha256 = "e13b9190c62e9275433d7c0884cb0fa4124cb9efadd711733532316bff28ba2a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/control_readiness.rs"
+sha256 = "d9ee187ee9b6a948c86cbacc1803c2282db739ef9cb31259b8c2b7c95b3f08ac"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/control_types.rs"
+sha256 = "10ffba7576f1c8ba8c0ed138dbba1ce03a030e25f5311a6d539910a0270c5ebe"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/datapath.rs"
+sha256 = "004fb57cb1c360be74a80832fb9c1f70415aad3425675906a3a4b74e58f37c9c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/datapath/tests.rs"
+sha256 = "ca6917de2f4df861f3edc25a261eaee18c68ff537947b42cfef4672722911e52"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/ethernet_diagnostics.rs"
+sha256 = "80b1b0c98f066b93dc9577cc8ee223327f7104eca69600f2e3b6b87133228ff2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/lifecycle_tests.rs"
+sha256 = "ab4d2f14b5828dd7c100d79ef19c18e487b65b7ea994665659c685d4e6040906"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx.rs"
+sha256 = "404dc7e5dc60454d0b3f282507af4b883aad9362a877365c435a94b83c089c99"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/aggregate.rs"
+sha256 = "473751767eb9d98781e1e6ff6926a52228865ee843c9a0bf221f83daa7ef8ec5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/airtime.rs"
+sha256 = "da7d3abaee2753da6db8065bd4f9f1597aa368f2d6fe1555b2cc15dec0937241"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/completion.rs"
+sha256 = "83a1f2f807b269016b87c3af091483b6bbb1c2cbd9738745d375117d2be0276a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/power_save.rs"
+sha256 = "5d97ec7641300080b3f8655962a76a13526be2771a6e1f1f0bcefeb56117f102"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/queue.rs"
+sha256 = "bdf142bde3ad3c6c7d36e941bf45497c1ed7a340fe1b147605b6baf3aade66e1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/queue/airtime.rs"
+sha256 = "bf6e821dd18a16d9ec4927dd65716b87a66af28adc734b3f00926374341f5cfd"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/service_phase.rs"
+sha256 = "bb3938908d57698f097a62db856a4e23d56479cd6683624eceac7def2857e62d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/service_phase/tests.rs"
+sha256 = "0e7920c462d810797287f8429de97702b1ef88c23ba99f61705a44c480690745"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/storage.rs"
+sha256 = "34290d66546f2aa08bdee8ffca245f67b8ad020b10499432bb55568790f0ac4d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/storage/tests.rs"
+sha256 = "2d1b5ab46b60c44a6ec3f9b82fe2e78111ea8cab1889a17a84b7675dbad87312"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests.rs"
+sha256 = "0dcb5297619d6172abc4fa9a8e0db8db175656292fafbb2ef250c855fe315034"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime.rs"
+sha256 = "6f4095c9bd56b4f6ec6bd1be34f9c7b3832cde2ee3ad3d33a61952495895d3d1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/admission.rs"
+sha256 = "2baea38fa105215b51c0da7e6d060b1b21544234955f109b8d3ed35aba4fe1ef"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/hardware.rs"
+sha256 = "28d26779958a78a28bb145c5a0454eaecb253c75707a599afdd36d3c8ae1ee2e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/peers.rs"
+sha256 = "7d8a462e1a5b0b06304a0ac82eb7a1992f85cbd49fcae5ec987874a5ee1fbe45"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/runtime.rs"
+sha256 = "e63bcb6856fd848cb398b7010f9375ba358e88c076e9140ba3ce52ea2c05f775"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/runtime/fifo.rs"
+sha256 = "38b7fab36643d978e1831958a6c261bdc4fd3911f270c590f024677ebde5a902"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/airtime/selection.rs"
+sha256 = "d9dc8d01e2139b65b2ab1e18279093399f46dc3139671e18f60a3018315fc2bb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/power_save_admission.rs"
+sha256 = "627955c321547e6279436fb019fea5531edea920e993663ae6bae3a3e44eabac"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/retention.rs"
+sha256 = "c015ae39484fc3adfafbdb157ab97370d5b2faf6e61ddd921d7254f80d5ed94c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/selection.rs"
+sha256 = "053f019e8c68869d7799c7dd1771cf3d1b476321965bc5d49c13555953c75868"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/selection/admission.rs"
+sha256 = "707ee34e7ba493812354638c44e259e28d13a9a06897896259122603d6aad9b9"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/selection/awake.rs"
+sha256 = "ecc080d8bf3739b0c623e107809c4b7d3c8d7a6c6f8e532db90828e4baa2428a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/network_tx/tests/support.rs"
+sha256 = "0772a24c0c867ce30e5ed67a2e4893e9488edbe5a0d8264b26ca1189ca00cc32"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_mailbox.rs"
+sha256 = "21e772033479adff30d6e8620622299e9de2c3e8188637bc231d8924d83af21a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_mailbox/tests.rs"
+sha256 = "f0da50ebc4a7186604e8b9a54be78204a5bf96d24510e6c42ea0cab7ccef3aa7"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_owner.rs"
+sha256 = "a77b37bccdb661ca31a48e67a77f27c3a01b4d6d8f91cdedd9b91857424b470b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_service.rs"
+sha256 = "cbde253725f18cf50fb8d7aea43375686fce266027ad028f72b1f43332d70a14"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_service/ht_rx_observation_tests.rs"
+sha256 = "c96aa7c1572a541d9173239dca86bcfe8a15f59b6c212ecdbc40ba4c49b841a0"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/protocol_shutdown.rs"
+sha256 = "cd4f2080f6132418fceeba1fd4c066743e0eacc64c4cecf4d47ea272716ea5cb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_dispatch.rs"
+sha256 = "7917e90d5d5d5e4d6925da00c9d56a593739122578eb63f6fdada848149dd633"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_dispatch/in_place_rx_sink_tests.rs"
+sha256 = "4516971988d8abc84b8e920e1e81cb34a4fed39fcb53028e109ebb6111df3ee1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_pipeline.rs"
+sha256 = "50c1dab49408ff42cee04e6b342daaf0a5faadc3b5801eb0e91295d7607a4010"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_pipeline/classification_tests.rs"
+sha256 = "e3fcdd16f32593759356263ac458279c42561c5b8ca76dc30e6190adeede9042"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_rejection.rs"
+sha256 = "b1d38a2828ed97f15d144371d0ced3055b6054468ff3a184c03a4bd31b45d84d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_rejection/tests.rs"
+sha256 = "282574462d142bd3e2d0b8a33b38a15c6590153428ede50e5d174c7d3915a6ee"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_reorder.rs"
+sha256 = "1a1c1105eb29c677b3e5905a222f888e89f181ca19cb757abbdd61b3eb936f45"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/rx_reorder/tests.rs"
+sha256 = "2da002f5865e1405af5388a625aee480cfba15286e5ae33cb62e7f09eb4a8965"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/service_epoch.rs"
+sha256 = "59c8259ad05555639994b08e05835f4e052473c4154805fc5493e278f33c249b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent.rs"
+sha256 = "1dabe7466b8e12bf9973aa707269a82a16fa92dfbe7a88db5454f1bd025a32e5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/control.rs"
+sha256 = "4379a2dcda0f815cb6e73e0ad83d75cef03024b5b5d84836386c5feb6827799a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/control/tests.rs"
+sha256 = "009ae66e14603c37059708559b055979df990291de79920e252bf9d11d5ead80"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/rx_service.rs"
+sha256 = "0ba3ba4f2511a4ceb0ece3abb781c2078364ef689bff28b7662e3cf2459b124b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/station_rx_role.rs"
+sha256 = "63fc4075602f95ec40ccd5382dffa52baa7b3cdd7e51329029a2f1ba4a1d304f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/station_rx_role/tests.rs"
+sha256 = "84e35d2f821bd38439a39fcd20fae5a4b1785aa2a0f1ce217839517418d7b139"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/concurrent/tests.rs"
+sha256 = "90f09be52b95d7fd6a0e9a086f343662dda3b2b4953eb65de52b605769a1b7e0"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/esp_now.rs"
+sha256 = "359430a430038509ba5bf868242d3c87541a00f858d13116184d28cbbf60b4de"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/esp_now/channel.rs"
+sha256 = "7241762c8bb18d669a6f8e63b59e24621d291bb4fe7a120a987bf29a405169f4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/esp_now/rx.rs"
+sha256 = "44db732532f8111616840e9ecb0b0436c29c31d0893f20ce493f918773568a5d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/esp_now/service.rs"
+sha256 = "3d632aad8006ea81ed3390186c5621113042f722f4385d8ef8f4e78f722e647c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor.rs"
+sha256 = "728585262d97da755a636520a709e22ac6227fada05e50e4c9d2adbccc9d92d5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/builder.rs"
+sha256 = "ee6becfdddca08ea388ede1f5821cba81a28ac593a97c4aa6c9b7dcd4724d5b9"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/control.rs"
+sha256 = "57138f20856833c171a4c8bccab72962041537d9d70642339a4e002f95418060"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/control/tests.rs"
+sha256 = "298780033e01b6ce8ee9d08643a7d4a25c11e8ed9a5b79281863ca2013f0a602"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/rx.rs"
+sha256 = "7fe5ca48a0b0bfdfa054d0222dd43f27066b36914a8a4df7dd81663534b78795"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/service.rs"
+sha256 = "0a617ef8e0b959b0ac9a8bbadec79b518dbe2faf1ce76d3467af0c62551a2a0b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/monitor/service/tests.rs"
+sha256 = "edd0d894ede5b584e9895d9f79e3ffe00e36c5346f04d7e93146f4321abe8187"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan.rs"
+sha256 = "5a4d55dfccd51f072491b1634f671ee88edf4cee4c10f1e47be1a98b70ffa2d1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/port.rs"
+sha256 = "9db29e471db531891b99cec19a86bfb8bf3648bd7d07d090b751a2137ccdd7bd"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/port/bindings.rs"
+sha256 = "c9e6bb9f90396610e19c299ad5b26219ceb5e2345f5eae04db0ec2317aaf0cd8"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/port/owner.rs"
+sha256 = "6e47dcb66f2f838292ddef5514e215501e76b38060f46851f1f184b173ee0530"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/port/service.rs"
+sha256 = "66ce6adf31a51fed8b8fb03520316af11d5fd4262ab5d42a8886fe008eec84ab"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/port/tests.rs"
+sha256 = "bb2ae4c06125daf2ea26fe99993fe8b400366bec18609eba57369fd8b7cc010e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/rx.rs"
+sha256 = "1e4cd839c8598523df8b93837ef41473964e68bbf9a581a1d7d0bac55424a391"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/rx/running.rs"
+sha256 = "703dedfe98ea2f8b1ef04ea21747c3d565cb4ef6163f94616932b082ad311ae3"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/rx/tests.rs"
+sha256 = "40c86cd486bc3eb10eb44897a11479412473d102715f823876152d1c91290f92"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs"
+sha256 = "90695d39c749253bc771dd6022d47f6dd502a397e10a7b8fd25aabec568cd7ce"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station.rs"
+sha256 = "e4f98ad836d8f84813ed27327e57dec1367e1c553b3817b224be69ea9862d894"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt.rs"
+sha256 = "274ce84bab9ed6552660aaee461604516af81b5c280e6d9e2a859e699deb07a6"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt/channel.rs"
+sha256 = "e1debc4f81b466bcd25da353e7afc947318b5c4e246f467127c4d8494f901739"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt/owner.rs"
+sha256 = "c208014f35ac7f48f9f41c5addc53019777c9578e406ed9b15f118fa51a70794"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt/port.rs"
+sha256 = "f120bb3b6e90ee8a4c190d702be7a378397851fabd4a190bdd0efe70f0e03f93"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt/resources.rs"
+sha256 = "0d22cbea196ab0b70b40bffb252098506ee175e0f77f364ee384fbb0780bfda4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/attempt/service.rs"
+sha256 = "be6f524dc36cc9746c328e8a333f3ff8b4a485e334d122d2d86207eb14b69202"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/backend.rs"
+sha256 = "9c42a4d8dc9c21bdbf1ad536ffe98bafbb1b1f02a3708db28f76036ff3ed0037"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/command.rs"
+sha256 = "d2e44a4a36a686b7395ee8714ca1e16bef70ffc6d5fb423a5c6412c587b582b1"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/composer.rs"
+sha256 = "639fedbb87481c13a43f522317f2c944f708f20b62a25e329708d0f53477047f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/composer/tests.rs"
+sha256 = "c403fd6c212d66d609e49c017e238dddaf165dbd1af50efe785e42ef3ab8fcd4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/assembly.rs"
+sha256 = "2bf37637a3f4a70d53962dd6ac247d04cae6c5a413d3b633ed13708ccc65f070"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/epoch.rs"
+sha256 = "2f4e33493952351e3a1a74326aca59908ec26c4b81ebd26458ae8f6c7d8dd7f2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/mod.rs"
+sha256 = "26fda0bf6c27d07053493e8f4c1bf4f69709de096cbde927c89be8f8d09b1347"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port.rs"
+sha256 = "1e5043b5260fc3705318790f5310470ec43860346613659fd05a46bf712d1612"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs"
+sha256 = "1aa5af67ce3d7054ec9660426294d79d16ca3704d204ceaf24908995b2e6d67f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/plan.rs"
+sha256 = "5e8cbe68d1189db1ecfbca7df7ef090864d97a17eaf2020159a964a2edf40fd2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/resources.rs"
+sha256 = "062511dd12ea920d3c8129f394072e69ed3c7c061a68fc06c2602ffc657ba88a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/tests.rs"
+sha256 = "567fcc82b9ba97598933db00db820e53fdc7a19e4cacb69f6d932e3ebdedd394"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/preparation.rs"
+sha256 = "937291c100e5fb6cb32afcef9c3553595458fa1fe41a9131c4d3923636e767fd"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/rx_service.rs"
+sha256 = "9edce15e6cb1471da553044b349c3dc99ec968618ad8df7ff5351f95aadbf938"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/shutdown.rs"
+sha256 = "5a02b1f50ff2c8d74df08aeac80aa319aec146a40d49c6b47e41c6696be3774e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/shutdown/tests.rs"
+sha256 = "0b1ee00b5d15a41ebfb3bceb699e1390d016d05fc93efb6d232a5e91c254d094"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/start.rs"
+sha256 = "a4c8c0eab4fe8ce8da60775f1b10b15432e0337be87cedd668d1c163bd7b664e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/start/tests.rs"
+sha256 = "15eb6b1541bba3bff4d27f6cfd16f2953ebcd7974751e12b48c8d2c8138134e9"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs"
+sha256 = "fd0b8753e21382fd8d470e3507aeaf4b45cd3ddd4425bbebf238840be87fcd05"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction/tests.rs"
+sha256 = "e0e56cd16ae10688e2a6c8b52748b5d81fdfdb6a1785a6c66a3b0f2b4fc9c5b7"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control.rs"
+sha256 = "4564cf391c3a714c6d6154a19255ebb4adf3ad57644344ee05e100c3e58e728d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control_mailbox.rs"
+sha256 = "11305008dadc80651445ad512ac3798c29ce7fa83888dc7b61e59cd44cecb3f5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control_mailbox/tests.rs"
+sha256 = "e30d42e38686973dba847a588f79ffdddb8a0165f10fc36b14d74a4e16175dc2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control_tests.rs"
+sha256 = "4153aeaf85f7142be1ddcc6ca0d943ebd20dbbca8b84d7ccdcbaed9c84fc4a4c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/epoch.rs"
+sha256 = "79f0da3fa032f6849aa06955e47e90bac4d738828efd79d6d072bd412c13d344"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/epoch/tests.rs"
+sha256 = "fb1f1c98b216cf663e4580a1230eff4a05e92756395022d13645295ee1391443"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/esp_now_mailbox.rs"
+sha256 = "130f5562891f8dcc792d13e103f7756f4aa6e3e65e881a9a48e0683d491c2e14"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/esp_now_tx.rs"
+sha256 = "ce8af28abaad63037f37bdcfb09cc8edd39d8b8f312c547e876255d255a1da69"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join.rs"
+sha256 = "a3db338ffb8c7dedd1b8ad0979311a09fae8abbc193e3c0163d0923e4891354f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port.rs"
+sha256 = "50bc2b7c996522c8f96183284d2237fc365d98225f4db15a2795819c3f506c5d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port/owner.rs"
+sha256 = "ff0b9cd6e6d2af5baf32cb18c58efb7d381b7bf920f5a54abfdc0de722b2650e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port/resources.rs"
+sha256 = "08f9f06eef7ef042bfa602b21b87930b8d4283ce6d206f44952a874114d7091d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port/rx.rs"
+sha256 = "9c1286cb38f036dbf8b0f6a23e34d3328e1e6b26f01c86a695d2237a3db6512f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port/service.rs"
+sha256 = "d2c7f814e9145a78d77c4650f7a3dc60dc02b9397067dfe89e5ef4e9758a3cdb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_port/tests.rs"
+sha256 = "c0c7f893906aede492e7f95f51e48dfd4242ffaecb75743b3e03d2addf68e6ee"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/join_time.rs"
+sha256 = "29502786115879aa83c9996efd5f7b411d5264dc8e0fa2d5120e37248dc6e868"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs"
+sha256 = "3677b2f01427185e80fae5caff9f48987c2c1ba3354282da6dc045d54177f896"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/network.rs"
+sha256 = "475edbb490dee1997e1eb1459935b38779e38b51bcfb0f371e8a20b234cbc24a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/network/tests.rs"
+sha256 = "ca2b896a1524e86c63c4067c4a38453a3279deb962c0028d61cd51c8d7cc8b09"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/reclaim.rs"
+sha256 = "85458c82af88c00f4a7482184332a50e87640463818cad7c8f8db71d3bcb26f3"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/resources.rs"
+sha256 = "3146404dec80436686b5d24e789c1c9846b81070adbec0d17404b032ef1b0d0b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/resources/tests.rs"
+sha256 = "d07ef5fff105e46c3053568622739672e9fb796c49a69bab52afdbf648914ede"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/runtime.rs"
+sha256 = "9b7d101b57ad3c5811c797a76a4ab5cdaf23aa0439ad084715d406f59606c2dc"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol.rs"
+sha256 = "be234d753282185bbaf019323369678d3e44d7c7aeec468353144133ec68da0e"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol/dispatch.rs"
+sha256 = "283735bb60805573cfe28e08fea6edf9ffec441cc291908cf260c8df13e12b2d"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol/owner.rs"
+sha256 = "aebac7d7e85a0e708eda8be81c4b9f42e84643ae85c6250d7ca485c57a4cbdd8"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol/reorder.rs"
+sha256 = "f9bd9b2e1af43c7a89cf8259ca7ada01630f5a8c30b6a0c762dd7bb05bc8b58a"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol/scheduler.rs"
+sha256 = "13139942adc8f7fda13eb72d370243104e7054ee61af75dc50f3491e5a007256"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/rx_protocol/tests.rs"
+sha256 = "2fab151a325dfab9050ffc384d3334f3628ae486a15eac9682edb7483c86c64c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/scan.rs"
+sha256 = "c8cf20d649746ab645ca5dbe01af14617ce7d8b9731a7b0c136093e8765acefc"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/scan/tests.rs"
+sha256 = "cbae428c049980e3aaf3b8fd3c808b117ca7b5317326973ec332e4613eabc850"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/teardown.rs"
+sha256 = "ce79dd035fad35faac3c7ee0320b34e7a8f2fc2e0733a29aa30761e99c3d0414"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/teardown/tests.rs"
+sha256 = "322cdb8276619de10a9e4e6ab534d599b219f56498ddacc6e82f5ab84bcf1c6c"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tests.rs"
+sha256 = "8738630b11190cb17ffc3e1fce36f60ffaec98243469fd58c1dece6ce3c28700"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx.rs"
+sha256 = "ea27664db5fae049ad03ac17a22a7d32fa239891cdd28bd3b87d28c800e54b57"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/adapters.rs"
+sha256 = "c5022a0a97cb0c1b4fe913bb3a4c046f6dc66a0e8becdd8a2d4582435d0ed3b0"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/completion.rs"
+sha256 = "b9f3366270f980f7f1330fa3c9d7c52877fdf43b1b3e0c02ae00bb3db75c18f4"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/owner.rs"
+sha256 = "17226b9cb883696139203e3c2c8f8abc49ff8bacc43d854fdb647dd0e2335d32"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/publication.rs"
+sha256 = "eb52860fa8c064902f45002cc01079133a0ba7e46b0b533052d1cdd23563effb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/resources.rs"
+sha256 = "59463f9f1d0ed89b3bd2991e4a8fa9b1ce13c96c0510b5fd290430aa4aedc165"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/tests.rs"
+sha256 = "8e84929b8d315cfcfd52360b593c0f2533e1ab27ac05ef8c6b7b0abb4bb23b86"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/tests/native.rs"
+sha256 = "e961838ecd1b33bf2d6711c7ec83ceea18f082e4d286226d75eeac4cb8b0669b"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/tests/terminal.rs"
+sha256 = "65eca05f038fb16b44c21c5a37c1a0cb8522a395489af405834b637a2ecb38ca"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx/wait_probe.rs"
+sha256 = "6f75932640ac49a63c817f1fc93f003ee09ecc0bcd7979c01a72179cebc789e2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx_epoch.rs"
+sha256 = "4559e461de8d103628e9e25a742549bfedc70d37eb594b742d5c54fd02aef7fb"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tx_service.rs"
+sha256 = "c4269b7ad46b94af526e132f9e31856fb9236e1bfaa5fab5538ae7f38a826b19"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/wpa2_port.rs"
+sha256 = "fc96744227a7d61bd0257048b19a9450769b0dca83c31d7f5dfa7ccc2d9286e5"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/wpa2_time.rs"
+sha256 = "85ebf6189ca07973cc7c986c4b759a991b6ff52e732624a026b58bd54e9d40a3"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/time.rs"
+sha256 = "a118685c6a10c7dc50b464167c54bd192967732044812058c3c5be879db4134f"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/time/delay.rs"
+sha256 = "ce7468e2a3e6921f5a5028498c48b7d2a6039124a0cfec4315ca2187e1933749"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/time/delay/tests.rs"
+sha256 = "42fdb7deebc843d89a34288edc66887e6cf8bb69cb7bcead006bcf1471aaab84"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/src/time/phy.rs"
+sha256 = "73e99a0f3e9a92e2734531f40eb6fc74f9c37762968efc1abff8c43520222a15"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/tests/owned_datapath_network.rs"
+sha256 = "329e0d67e2c601f56f2e42691dcc48e903c68233a20aceedc68f9296b03828e2"
+
+[[inputs]]
+path = "crates/runtime/embassy/esp32s31/ieee80211/tests/owned_datapath_network/airtime.rs"
+sha256 = "2219f27f6cd40885227cde6affe68af8fa0fe3c905d7dc60ca1ddc7d2e060309"
+
+[[inputs]]
+path = "hil/scenarios/ieee80211/station/station-ap-loss.toml"
+sha256 = "f415cad04597f4aa2d036db502fa2f63a07940bc4f7d776388c8340381f4580d"
+
+[[inputs]]
+path = "rust-toolchain.toml"
+sha256 = "6acbac03427c3aa57059eb7644e61fb575ee768684daeb8814494ff4e6f3cea6"
+
+[[failures]]
+observation = "970c70dabf4f7fb0980e01e92102e8a77039a612c1a7a70871e1ad1d2e3c5d0c"
+disposition = "fixed"
+reason = "The archived UART identifies a Busy panic from respawning the connected Embassy task during generation-one recovery. The current production implementation binds one permanent worker and transfers the owner through Exchange; its host regression exercises 32 epochs with late wakes. This later three-repetition observation on the bound destination application completes generation-one reconnection, fresh IP exchange and control responses. The original failure remains recorded."
+resolving-observation = "a609ba5609f793456c36ada52e513ae9495cca905aab30ce948b1d0412648f71"

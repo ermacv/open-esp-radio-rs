@@ -9,6 +9,19 @@
 use crate::{MacHtTxProgram, MacInterface, WifiRadioRegisters};
 
 impl WifiRadioRegisters {
+    /// Execute the production publication edge in an isolated probe image.
+    pub fn validation_start_prepared_mac_tx(&mut self, queue: u8) {
+        self.start_prepared_mac_tx(queue);
+    }
+
+    /// Execute the production completion acknowledgement for one queue.
+    pub fn validation_acknowledge_mac_tx_completion(&mut self, queue: u8) {
+        crate::wifi::mac::tx::queue::acknowledge_completion(
+            &self.peripherals.wifi_mac.wifi_mac_tx_common,
+            queue,
+        );
+    }
+
     pub fn validation_station_tsf(&self, low: Option<&mut u32>, high: Option<&mut u32>) {
         crate::wifi::mac::tsf::snapshot_station_tsf(
             &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load,

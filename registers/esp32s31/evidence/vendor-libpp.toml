@@ -2,6 +2,10 @@
 schema = 1
 
 [[sources]]
+id = "BLOB_LIBPP_ORDINARY_TX_OWNERSHIP_EDGES"
+description = "libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; hal_mac_tx.o hal_mac_txq_enable size 0xbc, hal_mac_clr_txq_state size 0x42 and hal_mac_txq_disable size 0x18; lmac.o lmacProcessTxComplete size 0x25c. The enable prefix reads the selected CONTROL and ORs ENABLE|VALID at offsets 0x0c..0x1e before GetAccess at 0x22; the remaining access/HE bookkeeping and statistics are outside the publication comparison. Selector two of clr_txq_state reads COMPLETE_CLEAR and writes its old value OR the queue bit. txq_disable clears ENABLE|VALID while preserving the remaining CONTROL bits. The completion dispatcher calls hal_mac_get_txq_complete at 0xde, hal_mac_get_txq_in_trig_flow_state at 0xe6 and hal_mac_clr_txq_state with selector two at 0x14a, before status dispatch. The ordinary-tx-ownership suite compares the three register edges against compiled production for ordinary queues zero through three; full descriptor/result/lifecycle roots and physical DMA quiescence are not established by these leaf comparisons."
+
+[[sources]]
 id = "BLOB_LIBPP_ISR_REGISTER_DUMP"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_debug.o print_isr_regs body, size 0x5a, and pinned register-name strings. It reads WDEV ENABLE/RAW/STATUS at 0x20104c40/44/48, WDEV_INT1 ENABLE/RAW/STATUS at 0x20104c2c/30/34 and WDEVPWR ENABLE/RAW/STATUS at 0x2010d8b4/b8/bc."
 

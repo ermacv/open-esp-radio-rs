@@ -127,6 +127,20 @@ pub fn hal_mac_txq_disable(queue: u32) -> u32 {
     owner().pac_mut().validation_disable_mac_tx_queue(queue)
 }
 
+/// Production queue publication, excluding vendor access bookkeeping.
+#[inline(always)]
+pub fn ordinary_tx_publish(queue: u8) {
+    owner().pac_mut().validation_start_prepared_mac_tx(queue);
+}
+
+/// Production completion acknowledgement; the probe supplies selector two.
+#[inline(always)]
+pub fn ordinary_tx_acknowledge_completion(queue: u8) {
+    owner()
+        .pac_mut()
+        .validation_acknowledge_mac_tx_completion(queue);
+}
+
 #[inline(always)]
 pub fn hal_mac_tx_config_edca(
     queue: u32,

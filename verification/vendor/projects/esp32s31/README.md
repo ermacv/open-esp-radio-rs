@@ -91,6 +91,31 @@ using its unresolved interface observations and capability links. A missing or
 stale projection produces explicitly partial prioritization with no live
 fallback; rerun the limited `project analyze` command above.
 
+## Ordinary TX ownership edges
+
+`ordinary-tx-ownership` is a completion gate for three finite queue operations:
+the `hal_mac_txq_enable` publication prefix before `GetAccess`, selector-two
+completion acknowledgement, and the complete queue-disable leaf. It exercises
+compiled production PAC entries for queues zero through three and three retained
+register images. Publication preserves the production device fences as explicit
+effect-contract additions. It does not compare the rest of vendor enable's
+access/HE bookkeeping or the enclosing DMA lifecycle.
+
+Bind `source-artifact:libpp` and `source-inventory:libpp` to the authenticated
+archive named in the suite, and `rust-artifact` to a fresh production probe ELF:
+
+```console
+target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/projects/esp32s31/local.toml \
+  project verify --suite ordinary-tx-ownership
+```
+
+The selected-suite report is saved below `generated/reports/verification-suites/`;
+it does not replace the complete evidence index consumed by qualification.
+The [DMA owner contract](../../../../crates/hardware/esp32s31/driver/ieee80211/dma/README.md)
+connects these operations to buffer retention, host regressions and the remaining
+result-decoding, descriptor, abort and physical-release limits.
+
 ## Current PHY calibration gate
 
 The `phy-calibration-leaves` suite compares four production-bound leaves against

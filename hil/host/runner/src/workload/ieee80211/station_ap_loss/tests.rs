@@ -22,6 +22,7 @@ fn typed_configuration_preserves_workload_bounds() {
     assert!(
         Config {
             timeout: Duration::from_secs(29),
+            ..Config::default()
         }
         .validate()
         .is_err()

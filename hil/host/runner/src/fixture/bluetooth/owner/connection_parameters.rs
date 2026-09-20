@@ -1,5 +1,5 @@
 //! Kernel ATT defaults, not an HCI user-channel connection. MGMT 0x004b/0x004c:
-//! https://github.com/bluez/bluez/blob/master/doc/mgmt-protocol.rst
+//! <https://github.com/bluez/bluez/blob/master/doc/mgmt-protocol.rst>
 //!
 //! The root-owned journal precedes every mutation. EOF, cancellation and expiry
 //! restore the snapshot; SIGKILL leaves the journal and blocks further use until

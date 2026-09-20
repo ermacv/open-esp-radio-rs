@@ -22,6 +22,7 @@ static ARCHIVE_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum SourceRebuildStatus {
+    SourceSnapshot,
     CleanCommit,
     TrackedPatch,
     Incomplete,
@@ -262,42 +263,6 @@ pub(super) fn capture_sources(root: &Path, run_directory: &Path) -> Result<Vec<S
         )?);
     }
     Ok(materials)
-}
-
-pub(super) fn verify_sources_unchanged(root: &Path, expected: &[SourceMaterial]) -> Result<()> {
-    let repository = fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
-    let mut current_paths = vec![(String::from("repository"), repository)];
-    current_paths.extend(external_source_override_paths()?);
-    if current_paths.len() != expected.len()
-        || current_paths
-            .iter()
-            .zip(expected)
-            .any(|((name, path), source)| name != &source.name || path != &source.checkout_path)
-    {
-        return Err("HIL source override set changed while firmware was being built".into());
-    }
-    for source in expected {
-        verify_source_material_unchanged(source)?;
-    }
-    Ok(())
-}
-
-fn verify_source_material_unchanged(expected: &SourceMaterial) -> Result<()> {
-    let current = capture_git_source_state(&expected.checkout_path)?;
-    match current {
-        Some(current)
-            if current.commit == expected.commit
-                && current.workspace_sha256 == expected.workspace_sha256 =>
-        {
-            Ok(())
-        }
-        None if expected.commit.is_empty() => Ok(()),
-        _ => Err(format!(
-            "HIL source material `{}` changed while firmware was being built",
-            expected.name
-        )
-        .into()),
-    }
 }
 
 pub(super) fn capture_source_material(

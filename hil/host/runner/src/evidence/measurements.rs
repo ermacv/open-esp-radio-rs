@@ -23,6 +23,27 @@ pub(crate) struct CaptureRecorder {
 }
 
 impl Recorder {
+    /// Record the outcome of an actually attempted semantic check. A missing
+    /// check stays absent; scenario success must never synthesize it later.
+    pub(crate) fn check(&self, name: &str, passed: bool) {
+        use crate::evidence::run::{Comparison, MeasurementUnit};
+        let mut recorded = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A later successful attempt cannot erase an earlier failure in this
+        // repetition. Numeric telemetry still uses the ordinary record path.
+        let passed = passed
+            && recorded
+                .get(name)
+                .is_none_or(|previous| previous.value == 1);
+        recorded.insert(
+            name.to_owned(),
+            Measurement::observed(name, u64::from(passed), MeasurementUnit::Count)
+                .evaluated(Comparison::Exactly, 1),
+        );
+    }
+
     /// Publish the exact rate used by a workload's existing validator. Callers
     /// supply its resolved floor, including any legacy integer rounding.
     pub(crate) fn rate(&self, name: &str, value: u64, floor: Option<u64>) {

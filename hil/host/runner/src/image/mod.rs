@@ -20,6 +20,7 @@ pub(crate) use oer_firmware::network::Integration;
 mod class;
 pub(crate) mod mono;
 mod reproducibility;
+pub(crate) mod snapshot;
 pub(crate) mod stack;
 pub(crate) use class::ImageClass;
 
@@ -532,6 +533,7 @@ fn build_resolved(
     let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
     runtime
+        .current_dir(root)
         .arg("build")
         .arg("--manifest-path")
         .arg(&manifest)
@@ -579,6 +581,7 @@ fn build_resolved(
     fs::write(output.join("placement.txt"), placement)?;
 
     let mut bootstrap = cargo_command();
+    bootstrap.current_dir(root);
     oer_firmware::bootstrap_command(
         &mut bootstrap,
         root,

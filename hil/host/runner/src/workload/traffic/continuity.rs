@@ -2,6 +2,25 @@
 use crate::Result;
 use open_esp_radio_hil_protocol::TransportEvidence;
 
+pub(super) fn record_rx_silence(
+    recorder: &crate::evidence::measurements::Recorder,
+    limit_ms: Option<u32>,
+    evidence: TransportEvidence,
+) {
+    use crate::evidence::run::{Comparison, Measurement, MeasurementUnit};
+    if let Some(observed) = evidence.rx_maximum_silence_micros {
+        let measurement = Measurement::observed(
+            "udp.rx.maximum-silence",
+            observed,
+            MeasurementUnit::Microseconds,
+        );
+        recorder.record([match limit_ms {
+            Some(limit) => measurement.evaluated(Comparison::AtMost, u64::from(limit) * 1_000),
+            None => measurement,
+        }]);
+    }
+}
+
 pub(super) fn require_rx_silence(limit_ms: Option<u32>, evidence: TransportEvidence) -> Result<()> {
     let Some(limit_ms) = limit_ms else {
         return Ok(());
@@ -43,5 +62,30 @@ mod tests {
         assert!(require_rx_silence(None, evidence).is_ok());
         evidence.rx_maximum_silence_micros = Some(12_000_001);
         assert!(require_rx_silence(Some(20_000), evidence).is_err());
+    }
+
+    #[test]
+    fn recorder_preserves_missing_silence_and_the_absolute_bound() {
+        let mut evidence = TransportEvidence {
+            rx_maximum_silence_micros: None,
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_units: 0,
+            tx_units: 0,
+            elapsed_micros: 100_000,
+            transport_errors: 0,
+        };
+        let recorder = crate::evidence::measurements::Recorder::default();
+        record_rx_silence(&recorder, Some(50), evidence);
+        assert!(recorder.snapshot().is_empty());
+        evidence.rx_maximum_silence_micros = Some(50_001);
+        record_rx_silence(&recorder, Some(50), evidence);
+        let values = recorder.snapshot();
+        assert_eq!(values[0].name, "udp.rx.maximum-silence");
+        assert_eq!(values[0].threshold.unwrap().value, 50_000);
+        assert_eq!(
+            values[0].verdict,
+            Some(crate::evidence::run::MeasurementVerdict::Failed)
+        );
     }
 }

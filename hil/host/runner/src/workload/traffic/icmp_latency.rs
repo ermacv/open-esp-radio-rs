@@ -196,6 +196,41 @@ fn measurements(options: Config, summary: &LatencySummary) -> Vec<Measurement> {
     measurements
 }
 
+/// Called only after successful maintenance and completion of the original RX
+/// session, while its capture and station epoch remain live. A fresh socket
+/// prevents a previously queued reply from satisfying this new exchange.
+pub(crate) fn post_maintenance_echo(device: Ipv4Addr, output: &Path) -> Result<()> {
+    let result = fresh_echo(device);
+    fs::write(
+        output.join("post-maintenance-echo.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema":1, "target":device, "requested_replies":3,
+            "after":"completed-maintenance-and-original-rx-session",
+            "passed":result.is_ok(), "failure":result.as_ref().err().map(ToString::to_string),
+            "scope":"fresh ICMP exchange in the retained station epoch; no UDP rate or RF timing claim"
+        }))?,
+    )?;
+    result
+}
+
+/// Three new requests on a newly opened socket; no queued replies are reused.
+pub(crate) fn fresh_echo(device: Ipv4Addr) -> Result<()> {
+    let socket = IcmpSocket::connect(device)?;
+    require_fresh_echoes(|sequence| {
+        socket.send_echo(sequence, 32)?;
+        socket.wait_for_echo(sequence, Duration::from_secs(2))
+    })
+}
+
+fn require_fresh_echoes(mut exchange: impl FnMut(u16) -> Result<bool>) -> Result<()> {
+    for sequence in 0..3 {
+        if !exchange(sequence)? {
+            return Err(format!("fresh ICMP echo {sequence} did not return").into());
+        }
+    }
+    Ok(())
+}
+
 fn measure(socket: &IcmpSocket, options: Config) -> Result<LatencySummary> {
     let readiness_attempts = wait_until_reachable(socket, options.payload_bytes, options.timeout)?;
     let mut samples = Vec::with_capacity(usize::from(options.count));
@@ -481,3 +516,30 @@ fn checksum(bytes: &[u8]) -> u16 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    #[test]
+    fn post_maintenance_exchange_requires_every_fresh_reply() {
+        for missing in 0..3 {
+            let mut calls = Vec::new();
+            assert!(
+                require_fresh_echoes(|sequence| {
+                    calls.push(sequence);
+                    Ok(sequence != missing)
+                })
+                .is_err()
+            );
+            assert_eq!(calls.last(), Some(&missing));
+        }
+        assert!(require_fresh_echoes(|_| Err("disconnected".into())).is_err());
+        let mut calls = Vec::new();
+        require_fresh_echoes(|sequence| {
+            calls.push(sequence);
+            Ok(true)
+        })
+        .unwrap();
+        assert_eq!(calls, [0, 1, 2]);
+    }
+}

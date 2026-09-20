@@ -69,6 +69,16 @@ source-paths = [
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
 ]
 
+[capabilities.development]
+knowledge = ["verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md", "crates/hardware/esp32s31/phy/src/tracking/service/README.md"]
+host-tests = [
+  { manifest = "crates/protocols/bluetooth/le/ll/Cargo.toml", filter = "connection::maintenance::tests", source = "crates/protocols/bluetooth/le/ll/src/connection/maintenance/tests.rs" },
+]
+gap-work = [
+  { gap = "peripheral-qualified-phy-execution-restoration-and-observer-free-timing-bounds-missing", kind = "measurement-method", reason = "Functional ACL continuity does not measure worst-case PHY execution/restoration; identify the observation method and its perturbation before claiming those bounds." },
+  { gap = "peripheral-abrupt-rf-loss-stimulus-not-established-by-soft-rfkill", kind = "experiment", reason = "Define a reproducible RF-loss stimulus and peer observation for the available fixture; soft-rfkill alone does not establish that stimulus." },
+]
+
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "peripheral"
@@ -116,6 +126,12 @@ source-paths = [
   "crates/runtime/embassy/esp32s31/bluetooth/src/session/peripheral/active.rs",
 ]
 
+[capabilities.development]
+knowledge = ["crates/protocols/bluetooth/le/ll/src/security.rs", "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+host-tests = [
+  { manifest = "crates/protocols/bluetooth/le/ll/Cargo.toml", filter = "security::tests", source = "crates/protocols/bluetooth/le/ll/src/security.rs" },
+]
+
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "peripheral"
@@ -153,6 +169,9 @@ composition = "production"
 scope = "The Trouble composition retains the Host stack and hardware runner for the same Controller epoch using caller-owned bounded storage"
 limits = "The standalone secure application enforces Numeric Comparison with explicit boot/request-bound console confirmation, authenticated ATT read/write/notify, caller-owned asynchronous bond storage and a bounded RAM backend. Bond insertion must succeed before application authorization; restored encryption must match the retained record. Bonds do not require Controller privacy. RAM bonds survive Controller restart, not SoC reset; imported metadata does not prove pairing-method provenance. The reusable Host epoch runner preserves an outstanding bootstrap Reset until acknowledgement, drops producers, then awaits a distinct final Reset before physical retirement. The automated HIL scenario checks denied plaintext ATT, explicit pairing rejection, independent Numeric Comparison, authenticated traffic and notifications, then bonded reconnect before and after checked physical cold shutdown/restart with unchanged SoC boot identity and a closed old HCI handle. It removes only its temporary Linux bond during cleanup. The HIL operator does not prove human presence or durable storage. After a Host/application failure and successful final Reset, the HIL composition performs checked cold release without automatic restart. Unacknowledged bootstrap Reset, failed drain and failed final Reset retain physical execution without release/restart authorization. The scenario also injects a one-shot application bond-load error after an encrypted disconnect and requires the preserved cause, distinct successful Reset, checked terminal cold release, rejected restart and unchanged boot/epoch. This does not inject RF/IRQ failure or prove RF-stop timing. A HIL-only wrapper can hold the sole shutdown HCI reader while the real Reset and hardware runner remain live, then release that same reader. The scenario requires unchanged boot/epoch and no cold release during the hold, followed by checked restart and encrypted traffic after release. A separate scenario injects a distinct HCI read error at the reached gate, requires the preserved stop cause and Retain disposition without another cold release, restart or SoC reset, and removes the temporary Linux bond during cleanup. The real queued response is not consumed. This does not model a hung PHY or lost silicon IRQ; retained ownership is not an RF-off proof. Broader terminal-error and security/cancellation coverage remain incomplete. Repeated eligible evidence is required; source coverage and an engineering PASS do not qualify the product"
 source-paths = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs", "examples/esp32s31-bluetooth-controller/src/security/gatt.rs", "examples/esp32s31-bluetooth-controller/src/security/epoch.rs", "examples/esp32s31-bluetooth-controller/src/security/bonds.rs", "examples/esp32s31-bluetooth-controller/src/security/comparison.rs", "examples/esp32s31-bluetooth-controller/src/security/console.rs"]
+
+[capabilities.development]
+knowledge = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs", "examples/esp32s31-bluetooth-controller/src/security/gatt.rs"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"

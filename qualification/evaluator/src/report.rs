@@ -50,6 +50,7 @@ struct HilInputsReport {
     passing: usize,
     current_clean_producer: usize,
     qualifying: usize,
+    sealed_attempts: usize,
     evaluator_dirty: bool,
 }
 
@@ -67,6 +68,8 @@ struct CapabilityReport<'a> {
     ready: bool,
     dependencies: &'a [String],
     evidence: &'a [String],
+    hil_checks: &'a [crate::model::HilCheckEvidence],
+    hil_decisions: &'a [crate::hil::EvidenceDecision],
     gaps: Vec<GapReport<'a>>,
     source_contracts: &'a [crate::model::SourceContract],
 }
@@ -133,6 +136,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 passing: qualification.evidence_inputs.hil.passing,
                 current_clean_producer: qualification.evidence_inputs.hil.current_clean_producer,
                 qualifying: qualification.evidence_inputs.hil.qualifying,
+                sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
                 evaluator_dirty: qualification.evidence_inputs.hil.evaluator_dirty,
             },
         },
@@ -152,6 +156,8 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 ready: qualification.is_ready(&capability.id),
                 dependencies: &capability.dependencies,
                 evidence: &capability.evidence,
+                hil_checks: &capability.hil_checks,
+                hil_decisions: &capability.hil_decisions,
                 source_contracts: &capability.source_contracts,
                 gaps: capability
                     .gaps
@@ -169,7 +175,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-clean-producer={}\thil-qualifying={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-clean-producer={}\thil-qualifying={}\thil-sealed-attempts={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
@@ -181,6 +187,7 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.passing,
         qualification.evidence_inputs.hil.current_clean_producer,
         qualification.evidence_inputs.hil.qualifying,
+        qualification.evidence_inputs.hil.sealed_attempts,
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
     if qualification.evidence_inputs.hil.incomplete != 0 {
@@ -209,6 +216,34 @@ pub(crate) fn print(qualification: &Qualification) {
                 gap.id
             );
         }
+        for decision in &capability.hil_decisions {
+            println!(
+                "HIL-OBLIGATION\t{}\tscenario={}\tstatus={}\tevidence={}",
+                capability.id,
+                decision.scenario,
+                decision.status.label(),
+                decision.evidence.as_deref().unwrap_or("none")
+            );
+        }
+        for decision in &capability.hil_decisions {
+            for review in &decision.reviews {
+                println!(
+                    "HIL-REVIEW\t{}\t{}",
+                    capability.id,
+                    serde_json::to_string(review).expect("serializable review decision")
+                );
+            }
+        }
+        for check in &capability.hil_checks {
+            println!(
+                "HIL-CHECK\t{}\tscenario={}\tcheck={}\tminimum-repetitions={}\tevidence={}",
+                capability.id,
+                check.scenario,
+                check.check,
+                check.minimum_repetitions,
+                check.evidence.as_deref().unwrap_or("no-eligible-evidence")
+            );
+        }
     }
     let summary = summary(qualification);
     println!(
@@ -226,6 +261,10 @@ pub(crate) fn print(qualification: &Qualification) {
 }
 
 pub(crate) fn write_json(qualification: &Qualification, path: &Path) -> Result<()> {
+    write_serialized(&report(qualification), path)
+}
+
+pub(crate) fn write_serialized(value: &impl Serialize, path: &Path) -> Result<()> {
     let parent = path.parent().ok_or_else(|| {
         format!(
             "qualification report path has no parent: {}",
@@ -233,7 +272,7 @@ pub(crate) fn write_json(qualification: &Qualification, path: &Path) -> Result<(
         )
     })?;
     fs::create_dir_all(parent)?;
-    let mut output = serde_json::to_vec_pretty(&report(qualification))?;
+    let mut output = serde_json::to_vec_pretty(value)?;
     output.push(b'\n');
     let file_name = path
         .file_name()

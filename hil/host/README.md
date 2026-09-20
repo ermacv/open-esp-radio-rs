@@ -51,6 +51,54 @@ replay an asserted transition rather than an informational UART message.
 
 ## Build and run
 
+`cargo hil plan <scenario> --out target/hil/plan.json` prepares an executable
+plan without opening a lab configuration or device. `--network` records the
+chosen network implementation. The output path must not already exist.
+`--proof <check>` filters the selected scenarios by an actually implemented
+named check. Repeated `--proof` arguments require all named checks, and `--tag`
+can restrict the profile. For example:
+
+```console
+cargo hil plan --tag he20 --proof wifi.maintenance.same-link
+```
+
+This selects the HE20 calibration integration and adds its HE20 control. A
+control need not provide the experiment's named check. The plan lists provided
+checks and selection reasons; it does not infer success from tags, select by
+changed files, or claim minimum coverage of an arbitrary product program.
+Saved executable plans use schema 3; older plan schemas are rejected. Regenerating
+an offline plan neither executes hardware nor invalidates sealed observations.
+
+`cargo hil run-plan target/hil/plan.json --check` validates the saved plan
+offline, without loading lab configuration or acquiring fixtures.
+`cargo hil run-plan target/hil/plan.json` validates every selected scenario's
+semantic digest before acquiring fixtures, then builds/flashes once per image
+class. It records the plan as `campaign.json` inside the sealed run. The plan
+selects current builds; it does not pin or reuse a historical firmware image.
+Changed scenario settings require a new plan. Hardware-dependent preflight and
+cleanup remain mandatory for every execution.
+
+A scenario with a controlled comparison adds its declared control to the plan,
+once, before its experiment. Qualification dependencies never expand this
+execution selection. The HT40 high-load combined-calibration comparison checks
+that control and experiment differ only in the maintenance operation. This
+relation does not claim relative performance non-regression: the existing
+absolute criteria still apply. `run <scenario>` remains a standalone execution;
+it cannot supply the control evidence required for a controlled comparison.
+`comparisons.json` records raw repetition samples and differences of arithmetic
+means for RX throughput, host offered throughput and maximum RX silence. Its
+relative percentage is undefined when the control mean is zero. Missing,
+ambiguous or failed observations produce `unavailable`, never a synthetic delta.
+Every comparison explicitly retains `non_regression = "not-evaluated"`.
+Sequential series describe observed differences, not statistical significance
+or elimination of RF-environment drift. The report is sealed with the run;
+qualification does not treat its deltas as a relative PASS.
+
+The two initial controlled experiments are
+`diagnostic-station-phy-combined-high-load-delivery-rx` (HT40) and
+`udp-rx-he20-calibration` (HE20). Each selects its own baseline; their source
+declarations do not establish hardware qualification or cross-PHY equivalence.
+
 `cargo hil run <scenario>` builds and flashes the required image before the
 scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
 `upstream-smoltcp` or `owned-xarxa` to choose the stack implementation. The same choice
@@ -64,6 +112,41 @@ build emits one JSON report on stdout with class, target, profile, network,
 class-owned artifact paths and build-audit verdicts; diagnostics stay on stderr.
 An ELF or `application.bin` left beside a failed build is not a successful
 image report.
+
+For an explicit source snapshot, use:
+
+```console
+cargo hil image snapshot --source-include crates/path/to/new.rs
+cargo hil image build performance --source-snapshot target/hil/esp32s31/source-snapshots/<snapshot-id>
+```
+
+Snapshot capture is offline and does not load fixture secrets, build firmware or
+access a device. Tracked regular files are captured automatically. Every
+nonignored untracked file must be explicitly named with a repeated
+`--source-include`; unresolved files block capture with their names, before
+content is archived. Directory selections and ignored files are not accepted.
+For the configured local overrides, qualify each new file with `esp-hal:`,
+`embassy:` or `xarxa:`. No symlink or submodule content is silently followed;
+such inputs require review and are rejected by this capture interface.
+
+The content-addressed directory contains `manifest.json`, `snapshot.json` and
+`sources.tar`. It records exact file bytes and executable modes for the main
+source and configured overrides. Subsequent capture does not overwrite an
+existing identity, and corrupt stored material is rejected. Builds with
+`--source-snapshot` validate and materialize these inputs in a private temporary
+directory; Cargo uses that directory, including its copied configuration and
+snapshot-local override paths. Outputs and the snapshot reference remain under
+`target/hil/esp32s31/snapshot-builds/`. The live checkout is not a build source
+for this explicit mode.
+
+This fixes the source input set, not the entire build environment: tools, Cargo
+package caches and user-level configuration are still external. It does not
+prove byte-identical rebuilds or authorize transfer of HIL evidence. Fresh `run`, `run-all` and `run-plan` executions capture and bind a source
+snapshot before building firmware; pass explicit `--source-include` arguments
+for nonignored untracked inputs. Replay uses the archived artifact rather than
+claiming a current build. Standalone image builds use the snapshot only when
+`--source-snapshot` is supplied.
+
 `cargo hil run-all` reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
 `target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
@@ -71,6 +154,21 @@ XML, a standalone HTML report and the exact application image flashed for each
 firmware class. The flash operation reads that archived copy, binding firmware
 provenance to the bytes sent to the DUT. Completed and interrupted bundles also
 carry a deterministic integrity inventory covering every retained file.
+
+`RunSession` also publishes `attempts/<scenario>.json` immediately after a
+scenario's complete repetition set (including cleanup) has been recorded. This
+schema-1 seal contains a completion snapshot, the result and a size/SHA-256
+inventory of the scenario directory, its bound firmware class, source patches,
+run plan and lab provenance. Firmware bytes are referenced in place, not copied
+per scenario. A bound firmware class cannot be replaced within that invocation.
+The seal is published atomically and cannot be overwritten by the runner.
+
+Qualification can consume a closed attempt even if a later scenario or the
+campaign process is interrupted before the final suite seal. Unpublished
+temporary seals and unfinished repetition sets supply no completion proof.
+Sealing an attempt does not release or recover fixture resources, resume a
+partially executed protocol, or certify an early phase of an unfinished
+lifecycle. Fixture cleanup and recovery remain with their existing owners.
 
 ## Inspect evidence
 
@@ -83,9 +181,11 @@ also runs without a DUT or private lab configuration.
 
 Qualification v4 independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared
-scenario and repetition requirement is satisfied by a completed bundle for
-the exact current commit, and both the producer and evaluator worktrees are
-clean. Scenario IDs and achievable repetition counts are checked against the
+scenario and repetition requirement is satisfied by a completed bundle or a
+separately sealed attempt under the default current-clean-composition policy or an explicit
+[property-scoped applicability review](../../qualification/evidence-reviews.md)
+with validated build and owner bindings. A dirty but captured source snapshot
+is not promoted merely by its existence. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.
 
 ## Prepare and restore network fixtures

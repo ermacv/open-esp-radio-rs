@@ -13,10 +13,12 @@ use crate::{
 };
 
 mod catalog;
+mod development;
 mod source_contract;
 pub(crate) use catalog::{
     CAPABILITY_CATALOG_SCHEMA, CapabilityOrigin, CapabilityScope, CatalogView, SourceIdentity,
 };
+pub(crate) use development::{Development, WorkKind};
 pub(crate) use source_contract::SourceContract;
 
 pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
@@ -180,8 +182,20 @@ pub(crate) struct Capability {
     pub(crate) vendor_evidence: Vec<VendorEvidenceRef>,
     pub(crate) vendor_not_applicable: Option<String>,
     pub(crate) hil_requirements: Vec<HilRequirement>,
+    pub(crate) hil_checks: Vec<HilCheckEvidence>,
+    pub(crate) hil_decisions: Vec<crate::hil::EvidenceDecision>,
     pub(crate) hil_not_applicable: Option<String>,
     pub(crate) async_not_applicable: Option<String>,
+}
+
+/// Per-check diagnostics do not replace the same-run conjunction required by
+/// a HIL obligation. Separate observations must not be joined into a new PASS.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct HilCheckEvidence {
+    pub(crate) scenario: String,
+    pub(crate) check: String,
+    pub(crate) minimum_repetitions: u8,
+    pub(crate) evidence: Option<String>,
 }
 
 impl Capability {
@@ -200,6 +214,7 @@ pub(crate) struct Qualification {
     pub(crate) repository: RepositoryState,
     pub(crate) evidence_inputs: EvidenceInputs,
     pub(crate) capabilities: BTreeMap<String, Capability>,
+    pub(crate) declarations: BTreeMap<String, CapabilityDocument>,
     pub(crate) program_source: SourceIdentity,
     pub(crate) catalog_sources: Vec<SourceIdentity>,
     pub(crate) capability_origins: BTreeMap<String, CapabilityOrigin>,
@@ -324,6 +339,8 @@ pub(crate) struct VendorEvidenceRef {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) struct HilRequirementDocument {
     pub(crate) scenario: String,
+    #[serde(default)]
+    pub(crate) checks: Vec<String>,
     #[serde(default = "one_repetition")]
     pub(crate) minimum_repetitions: u8,
 }
@@ -340,6 +357,7 @@ impl HilRequirementDocument {
         }
         Ok(HilRequirement {
             scenario,
+            checks: self.checks.clone(),
             minimum_repetitions: self.minimum_repetitions,
         })
     }
@@ -377,6 +395,8 @@ pub(crate) struct CapabilityDocument {
     #[serde(default)]
     pub(crate) hil_requirements: Vec<HilRequirementDocument>,
     #[serde(default)]
+    pub(crate) hil_reviews: Vec<PathBuf>,
+    #[serde(default)]
     pub(crate) hil_not_applicable: Option<String>,
     #[serde(default)]
     pub(crate) async_not_applicable: Option<String>,
@@ -390,6 +410,8 @@ pub(crate) struct CapabilityDocument {
     pub(crate) source_fact_refs: Vec<String>,
     #[serde(default)]
     pub(crate) catalog_scope: Option<CapabilityScope>,
+    #[serde(default)]
+    pub(crate) development: Development,
 }
 
 impl ManifestDocument {
@@ -502,6 +524,11 @@ impl ValidatedProgram {
             hil_catalog: document.hil.catalog.clone(),
             hil_runs: document.hil.runs.clone(),
         };
+        let declarations = document
+            .capabilities
+            .iter()
+            .map(|value| (value.id.clone(), value.clone()))
+            .collect();
         let context = EvaluationContext {
             root,
             dispositions: &dispositions,
@@ -509,8 +536,8 @@ impl ValidatedProgram {
             scenario_catalog: &scenario_catalog,
             hil_index: &hil_index,
             evaluator_clean: !repository.dirty,
+            declarations: &declarations,
         };
-
         let mut capabilities = BTreeMap::new();
         for capability_document in document.capabilities {
             let capability = evaluate_capability(capability_document, &context)?;
@@ -527,6 +554,7 @@ impl ValidatedProgram {
             repository,
             evidence_inputs,
             capabilities,
+            declarations,
             program_source,
             catalog_sources: document.catalog_sources,
             capability_origins: document.capability_origins,
@@ -578,6 +606,7 @@ struct EvaluationContext<'a> {
     scenario_catalog: &'a ScenarioCatalog,
     hil_index: &'a HilEvidenceIndex,
     evaluator_clean: bool,
+    declarations: &'a BTreeMap<String, CapabilityDocument>,
 }
 
 fn evaluate_capability(
@@ -596,6 +625,44 @@ fn evaluate_capability(
     let dependencies = validated.dependencies;
     let mut gaps = validated.gaps;
     let hil_requirements = validated.hil_requirements.clone();
+    let (reviewed_index, reviews) = crate::hil::review::apply(
+        context.root,
+        &document,
+        context.declarations,
+        context.hil_index,
+        context.scenario_catalog,
+    )?;
+    let hil_decisions = hil_requirements
+        .iter()
+        .map(|requirement| {
+            let mut decision = reviewed_index.decision_for(requirement, context.scenario_catalog);
+            decision.attach_reviews(
+                context.root,
+                &document,
+                context.declarations,
+                context.scenario_catalog,
+                &reviews,
+            )?;
+            Ok(decision)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let hil_checks = hil_requirements
+        .iter()
+        .flat_map(|requirement| {
+            requirement.checks.iter().map(|check| {
+                let selected = HilRequirement {
+                    checks: vec![check.clone()],
+                    ..requirement.clone()
+                };
+                HilCheckEvidence {
+                    scenario: requirement.scenario.clone(),
+                    check: check.clone(),
+                    minimum_repetitions: requirement.minimum_repetitions,
+                    evidence: reviewed_index.evidence_for(&selected, context.scenario_catalog),
+                }
+            })
+        })
+        .collect();
     let implementation = document.implementation;
     let host = document.host;
 
@@ -630,10 +697,13 @@ fn evaluate_capability(
     } else {
         let requirements = validated.hil_requirements;
         let mut complete = !requirements.is_empty() && !has_gap(&gaps, Axis::Hil);
-        for requirement in &requirements {
-            match context.hil_index.evidence_for(requirement) {
-                Some(reference) => evidence.push(reference),
+        for decision in &hil_decisions {
+            match &decision.evidence {
+                Some(reference) => evidence.push(reference.clone()),
                 None => complete = false,
+            }
+            if decision.status == crate::hil::EvidenceStatus::UnresolvedFailure {
+                ensure_gap(&mut gaps, Axis::Hil, "current-hil-failure-unresolved");
             }
         }
         if complete {
@@ -669,6 +739,8 @@ fn evaluate_capability(
         vendor_evidence: document.vendor_evidence,
         vendor_not_applicable: document.vendor_not_applicable,
         hil_requirements,
+        hil_checks,
+        hil_decisions,
         hil_not_applicable: document.hil_not_applicable,
         async_not_applicable: document.async_not_applicable,
     })
@@ -687,6 +759,10 @@ fn validate_capability_declaration_inner(
 ) -> Result<ValidatedDeclaration> {
     let id = slug(&document.id, "capability id")?;
     source_contract::validate(&document.source_contracts, context.root)?;
+    crate::hil::review::validate(context.root, document, context.scenario_catalog)?;
+    document
+        .development
+        .validate(&document.gaps, context.root)?;
     if document.title.trim().is_empty() || document.scope.trim().is_empty() {
         return Err(format!("capability {id} needs a non-empty title and scope").into());
     }
@@ -1397,4 +1473,4 @@ fn valid_sha256(value: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

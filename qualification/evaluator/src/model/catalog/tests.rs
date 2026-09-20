@@ -1,5 +1,6 @@
 use super::*;
 mod bluetooth;
+mod maintenance;
 use crate::{
     hil::{HilEvidenceIndex, RepositoryState, ScenarioCatalog},
     model::{
@@ -188,7 +189,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         canonical.required_capabilities
     );
 
-    let mut canonical_documents = canonical.capabilities;
+    let mut canonical_documents = canonical.capabilities.clone();
     let mut legacy_documents = legacy.capabilities;
     canonical_documents.sort_by(|left, right| left.id.cmp(&right.id));
     legacy_documents.sort_by(|left, right| left.id.cmp(&right.id));
@@ -218,6 +219,10 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     let scenario_catalog = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let hil_index = HilEvidenceIndex::default();
     let context = EvaluationContext {
+        declarations: &canonical_documents
+            .iter()
+            .map(|d| (d.id.clone(), d.clone()))
+            .collect(),
         root: &root.path,
         dispositions: &dispositions,
         vendor_index: &vendor_index,
@@ -234,7 +239,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     };
     let evaluated = evaluate(canonical_documents);
     let legacy_evaluated = evaluate(legacy_documents);
-    assert_eq!(evaluated, legacy_evaluated);
+    assert_equivalent_proofs(evaluated.clone(), legacy_evaluated);
     validate_dependencies(&evaluated).unwrap();
     assert!(evaluated.values().all(|capability| {
         capability.vendor == VendorProof::Mapped
@@ -259,6 +264,11 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             hil_runs: PathBuf::from("runs"),
         },
         capabilities: evaluated,
+        declarations: canonical
+            .capabilities
+            .iter()
+            .map(|d| (d.id.clone(), d.clone()))
+            .collect(),
         program_source: canonical.program_source.unwrap(),
         catalog_sources: canonical.catalog_sources,
         capability_origins: canonical.capability_origins,
@@ -266,6 +276,17 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         catalog: Default::default(),
         direct_catalog_capabilities: Default::default(),
     };
+    assert_eq!(qualification.ready_count(), 0);
+    let map =
+        crate::engineering::ProjectMap::from_program(&qualification, Some("wifi-channel")).unwrap();
+    assert_eq!(map.mode, "saved-evidence");
+    assert_eq!(map.entries.len(), 2);
+    assert!(
+        map.entries
+            .iter()
+            .all(|entry| entry.implementation == "complete"
+                && entry.evidence.as_ref().unwrap().hil == "missing")
+    );
     assert_eq!(qualification.ready_count(), 0);
 }
 
@@ -576,6 +597,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         };
         let hil = HilEvidenceIndex::synthetic(&hil_entries);
         let context = EvaluationContext {
+            declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             root: &root.path,
             dispositions: &dispositions,
             vendor_index: &vendor,
@@ -592,7 +614,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         };
         let inline_result = evaluate(inline.clone());
         let catalog_result = evaluate(canonical.capabilities.clone());
-        assert_eq!(catalog_result, inline_result, "case {name}");
+        assert_equivalent_proofs(catalog_result.clone(), inline_result.clone());
         let qualification = Qualification {
             target: name.to_owned(),
             repository: RepositoryState {
@@ -609,6 +631,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
                 hil_runs: PathBuf::from("runs"),
             },
             capabilities: inline_result,
+            declarations: inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             program_source: SourceIdentity {
                 id: name.to_owned(),
                 schema: 4,
@@ -633,6 +656,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     };
     let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
     let context = EvaluationContext {
+        declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         dispositions: &dispositions,
         vendor_index: &only_wifi_vendor,
@@ -641,7 +665,8 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         evaluator_clean: true,
     };
     let evaluated = inline
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|document| evaluate_capability(document, &context).unwrap())
         .map(|capability| (capability.id.clone(), capability))
         .collect::<BTreeMap<_, _>>();
@@ -663,6 +688,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
             hil_runs: PathBuf::from("runs"),
         },
         capabilities: evaluated,
+        declarations: inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         program_source: SourceIdentity {
             id: "test".to_owned(),
             schema: 4,
@@ -686,6 +712,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     };
     let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
     let context = EvaluationContext {
+        declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         dispositions: &dispositions,
         vendor_index: &only_base_vendor,
@@ -1451,4 +1478,20 @@ fn peripheral_products_retain_lifecycle_and_security_without_other_radio_roles()
             "missing {scenario}"
         );
     }
+}
+
+// Catalog forms carry explicit scope metadata absent in legacy inline records.
+// Reviews must bind that metadata, while the unreviewed proof result is unchanged.
+fn assert_equivalent_proofs(
+    mut a: BTreeMap<String, crate::model::Capability>,
+    mut b: BTreeMap<String, crate::model::Capability>,
+) {
+    for map in [&mut a, &mut b] {
+        for capability in map.values_mut() {
+            for decision in &mut capability.hil_decisions {
+                decision.property = None;
+            }
+        }
+    }
+    assert_eq!(a, b);
 }

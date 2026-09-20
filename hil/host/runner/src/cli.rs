@@ -31,7 +31,28 @@ pub(crate) enum CliCommand {
         command: FixtureCommand,
     },
     /// Resolve scenario requirements offline, without opening a device or lab config.
-    Plan(Selection),
+    Plan {
+        #[command(flatten)]
+        selection: Selection,
+        /// Save the executable plan. Planning never accesses the lab or DUT.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, default_value = "upstream-xarxa")]
+        network: crate::image::Integration,
+        /// Require every named check; controls are added only after this filter.
+        #[arg(long = "proof")]
+        proofs: Vec<String>,
+    },
+    /// Execute an exact saved plan after validating its current scenario inputs.
+    RunPlan {
+        plan: PathBuf,
+        /// Explicit nonignored untracked source file; repeat for each included file.
+        #[arg(long = "source-include", value_name = "FILE", conflicts_with = "check")]
+        source_include: Vec<String>,
+        /// Validate the saved plan offline without acquiring fixtures or a DUT.
+        #[arg(long)]
+        check: bool,
+    },
     /// Inspect and validate the host-owned scenario catalog.
     Scenario {
         #[command(subcommand)]
@@ -55,6 +76,13 @@ pub(crate) enum CliCommand {
     /// Build, flash and execute one catalog scenario.
     Run {
         scenario: String,
+        /// Explicit nonignored untracked source file; repeat for each included file.
+        #[arg(
+            long = "source-include",
+            value_name = "FILE",
+            conflicts_with = "firmware_from"
+        )]
+        source_include: Vec<String>,
         /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
         #[arg(long, value_enum)]
         ap_scheduler: Option<ApScheduler>,
@@ -71,6 +99,9 @@ pub(crate) enum CliCommand {
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {
+        /// Explicit nonignored untracked source file; repeat for each included file.
+        #[arg(long = "source-include", value_name = "FILE")]
+        source_include: Vec<String>,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long, default_value = "upstream-xarxa")]
         network: crate::image::Integration,
@@ -133,10 +164,19 @@ pub(crate) enum ScenarioCommand {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ImageCommand {
+    /// Capture exact source inputs offline. Does not build, flash or qualify firmware.
+    Snapshot {
+        /// Explicit untracked file: repository-relative path or ROLE:path for a local override.
+        #[arg(long = "source-include", value_name = "FILE")]
+        source_include: Vec<String>,
+    },
     /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
     Mono { class: crate::image::ImageClass },
     Build {
         class: crate::image::ImageClass,
+        /// Build only from a verified source snapshot directory, not the live checkout.
+        #[arg(long)]
+        source_snapshot: Option<PathBuf>,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long, default_value = "upstream-xarxa")]
         network: crate::image::Integration,

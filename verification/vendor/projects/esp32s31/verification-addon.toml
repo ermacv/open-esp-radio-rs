@@ -403,3 +403,17 @@ symbols = [
 [[suites.vendor]]
 source = "rom"
 symbols = ["phy_pbus_clear_reg"]
+
+# Finite SRAM ordinary-TX queue edges; not a complete DMA-root claim.
+[[suites]]
+id = "ordinary-tx-ownership"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_ordinary_tx_ownership_"
+profiles = ["profiles/ordinary-tx-ownership.toml"]
+dispositions = ["dispositions/ordinary-tx-ownership.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "libpp"
+artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+symbols = ["hal_mac_txq_enable", "hal_mac_clr_txq_state", "hal_mac_txq_disable"]

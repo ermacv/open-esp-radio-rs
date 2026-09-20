@@ -18,16 +18,19 @@ use crate::evidence::{build, build::SourceMaterial};
 use crate::{Result, image::ImageClass};
 
 mod archive;
+mod attempt;
 mod integrity;
 mod lock;
+mod snapshot;
 pub(crate) use lock::IndexGuard;
 mod model;
 pub(crate) mod validation;
 use crate::reporting::render;
 
 pub(crate) use integrity::atomic_write;
+pub(crate) use integrity::sha256_file;
 pub(crate) use integrity::{atomic_json, collect_attachments};
-pub(super) use integrity::{collect_integrity_files, sha256_file, write_integrity_index};
+pub(super) use integrity::{collect_integrity_files, write_integrity_index};
 pub(crate) use model::RunManifest;
 pub(crate) use model::{
     Attachment, Comparison, CompletionReport, Failure, FailureKind, Measurement, MeasurementUnit,
@@ -47,6 +50,8 @@ pub(crate) struct RunSession {
     target_directory: PathBuf,
     directory: PathBuf,
     source_materials: Vec<SourceMaterial>,
+    frozen_sources: Option<crate::image::snapshot::FrozenSources>,
+    snapshot_materials: Vec<build::BuildFileMaterial>,
     manifest: RunManifest,
     started: Instant,
     events: File,
@@ -144,6 +149,8 @@ impl RunSession {
             target_directory,
             directory,
             source_materials,
+            frozen_sources: None,
+            snapshot_materials: Vec::new(),
             manifest,
             started,
             events,
@@ -164,6 +171,17 @@ impl RunSession {
 
     pub(crate) fn write_plan(&self, plan: &RunPlan) -> Result<()> {
         atomic_json(&self.directory.join("plan.json"), plan)
+    }
+
+    pub(crate) fn write_campaign(&self, plan: &crate::campaign::Plan) -> Result<()> {
+        atomic_json(&self.directory.join("campaign.json"), plan)
+    }
+
+    pub(crate) fn write_comparisons(
+        &self,
+        report: &crate::evidence::comparison::Report,
+    ) -> Result<()> {
+        atomic_json(&self.directory.join("comparisons.json"), report)
     }
 
     pub(crate) fn record_lab_provenance(

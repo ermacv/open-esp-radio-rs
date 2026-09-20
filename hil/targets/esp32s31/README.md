@@ -348,3 +348,26 @@ HIL retains its workload-specific `stack.toml` and diagnostic observers.
 Board initialization, relocation and interrupt-stack mechanics belong to the
 shared platform; application images use the same mechanism through `cargo xtask
 build firmware`. A hardware scenario verdict remains a separate HIL responsibility.
+
+## Station AP availability
+
+A successful station-start request admits the production station service; it
+does not imply association. With the AP initially absent, HIL requires this
+admission followed by generation-zero no-candidate exhaustion after three
+attempts, no connected edge, and a fresh control response. Retry policy and
+owner disposition remain in the production service.
+
+```console
+cargo hil doctor station-ap-loss
+cargo hil plan --tag ap-availability --out target/hil/ap-availability-plan.json
+cargo hil run-plan target/hil/ap-availability-plan.json --check
+cargo hil run-plan target/hil/ap-availability-plan.json
+```
+
+The selected scenarios distinguish recovery with fresh ICMP exchange, prolonged
+absence after a connection, and initial absence before any station start. The
+last two use the production three-attempt policy and verify that control still
+responds. See [scenario semantics](../../scenarios/README.md#ap-availability)
+and the [focused capability program](../../../qualification/targets/esp32s31/wifi-ap-availability.toml).
+Fresh runs capture build sources; explicitly include reviewed untracked inputs
+with `--source-include` as described in the [host guide](../../host/README.md).

@@ -1,0 +1,26 @@
+schema = 4
+id = "station-phy-maintenance-continuity"
+description = "HT20 connected station retains its link through combined calibration during UDP RX and then completes fresh ICMP exchange"
+repetitions = 3
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["functional", "phy-maintenance", "station", "ht20"]
+
+[link]
+phy = "ht20"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 12
+rx_rate_bps = 2000000
+payload_bytes = 1200
+station_pause = "calibration"
+station_pause_after_millis = 1000
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 100000
+require_no_beacon_loss = true
+require_post_maintenance_echo = true

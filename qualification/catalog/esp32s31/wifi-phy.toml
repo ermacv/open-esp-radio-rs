@@ -6,6 +6,27 @@ verification-project = "verification/vendor/projects/esp32s31/vendor-project.tom
 hil-catalog = "hil/scenarios"
 
 [[source-facts]]
+id = "station-lifecycle-owners"
+status = "implemented"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "station-lifecycle-owners"
+composition = "production"
+scope = "Finite station attempts and reconnect generations, exact returned role resources, and a permanent connected worker whose mailbox retains ownership across epochs"
+limits = "These owners implement the selected functional AP-loss and no-candidate paths; their presence does not prove every IRQ fault, physical teardown or timeout path"
+source-paths = [
+  "crates/protocols/ieee80211/sta/src/station.rs",
+  "crates/protocols/ieee80211/sta/src/link_monitor.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/sta/src/attempt.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution/exchange.rs",
+]
+
+[[source-facts]]
 id = "bluetooth-initial-phy-handoff"
 status = "implemented"
 level = "lower-primitive"
@@ -91,6 +112,64 @@ limits = "Old Host handles, pending futures and ACL credit authorities remain cl
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs",
+]
+
+[[source-facts]]
+id = "wifi-interrupt-epoch-owners"
+status = "implemented"
+level = "lower-primitive"
+[source-facts.source-contract]
+id = "wifi-interrupt-epoch-owners"
+composition = "production"
+scope = "Typed MAC acknowledgement and priority dispatch, finite platform route lifetime, retained pause/resume and Embassy wake coalescing"
+limits = "IRQ pause does not establish MAC or DMA idle; the station supervisor must compose it with physical stop and retained receive ownership"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq.rs",
+  "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch.rs",
+  "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch/storage.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/epoch.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/pause.rs",
+]
+
+[[source-facts]]
+id = "wifi-bounded-wait-owners"
+status = "implemented"
+level = "lower-primitive"
+[source-facts.source-contract]
+id = "wifi-bounded-wait-owners"
+composition = "production"
+scope = "Finite station scheduling and link deadlines, timer-driven MAC stop, and explicitly admitted synchronous PHY completion/settle waits"
+limits = "Cancellation retains the borrowed owner and does not prove physical completion; engineering deadlines do not establish worst-case RF execution or restoration timing"
+source-paths = [
+  "crates/protocols/ieee80211/sta/src/link_monitor.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/scheduler.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance.rs",
+  "crates/hardware/esp32s31/phy/src/executor.rs",
+  "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
+  "crates/hardware/esp32s31/phy/src/executor/wait/tx.rs",
+  "crates/hardware/esp32s31/phy/src/tracking/deadline.rs",
+]
+
+[[source-facts]]
+id = "connected-calibration-owners"
+status = "implemented"
+level = "lower-primitive"
+[source-facts.source-contract]
+id = "connected-calibration-owners"
+composition = "production"
+scope = "Temperature-selected calibration transaction, exclusive connected-station physical admission and restoration through the production supervisor"
+limits = "These owners implement the mechanism and retained station composition; neither successful IP exchange nor host transition tests establish RF quality, throughput ceilings or a physical pause bound"
+source-paths = [
+  "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
+  "crates/hardware/esp32s31/phy/src/tracking/service.rs",
+  "crates/hardware/esp32s31/phy/src/registered_wifi/maintenance.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/maintenance_policy.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/maintenance.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause/access.rs",
 ]
 
 [[capabilities]]
@@ -222,6 +301,8 @@ depends-on = ["interrupt-recovery"]
 vendor-anchors = [
   "registers/esp32s31/evidence/vendor-rom.toml",
   "registers/esp32s31/evidence/vendor-libpp.toml",
+  "verification/vendor/projects/esp32s31/profiles/ordinary-tx-ownership.toml",
+  "verification/vendor/projects/esp32s31/dispositions/ordinary-tx-ownership.toml",
 ]
 hil-requirements = [
   { scenario = "udp-bidirectional-ht40-rx-delivery-split", minimum-repetitions = 1 },
@@ -240,6 +321,9 @@ source-paths = [
   "crates/hardware/esp32s31/driver/ieee80211/dma/src/descriptor.rs",
   "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
   "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_storage.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/ordinary_tx.rs",
+  "crates/hardware/esp32s31/pac/src/wifi/mac/tx.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources.rs",
 ]
 
@@ -308,6 +392,17 @@ source-paths = [
 ]
 
 
+[capabilities.development]
+knowledge = ["crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/README.md", "crates/hardware/esp32s31/driver/ieee80211/dma/README.md"]
+host-tests = [
+  { manifest = "crates/hardware/esp32s31/driver/ieee80211/dma/Cargo.toml", filter = "rx_storage::tests", source = "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage/tests.rs" },
+  { manifest = "crates/hardware/esp32s31/driver/ieee80211/dma/Cargo.toml", filter = "tx_storage::tests", source = "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_storage/tests.rs" },
+  { manifest = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml", filter = "tx_ownership", source = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/cases/tx_ownership.rs" },
+]
+gap-work = [
+  { gap = "dma-root-contracts-not-executable", kind = "research", reason = "Ordinary TX publication-prefix, completion acknowledgement and queue-disable comparisons cover finite register edges. Descriptor preparation, complete result decoding, enclosing release/abort and RX DMA roots still need executable contracts; functional reconnect does not prove DMA quiescence." },
+]
+
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "station"
@@ -320,6 +415,8 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "interrupt-recovery"
+hil-reviews = ["qualification/reviews/interrupt-recovery-ap-loss.toml"]
+source-fact-refs = ["wifi-interrupt-epoch-owners"]
 title = "Interrupt acknowledgement and recovery ordering"
 scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
 implementation = "complete"
@@ -335,6 +432,10 @@ gaps = [
   { axis = "vendor", id = "libpp-interrupt-contract-not-executable" },
 ]
 
+
+[capabilities.development]
+knowledge = ["crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq.rs"]
+host-tests = [{ manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests.rs" }]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -406,6 +507,8 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "async-deadlines"
+hil-reviews = ["qualification/reviews/async-deadlines-ap-absence.toml"]
+source-fact-refs = ["wifi-bounded-wait-owners"]
 title = "Bounded asynchronous and direct hardware waits"
 scope = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
 implementation = "complete"
@@ -422,6 +525,10 @@ gaps = [
 ]
 
 
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md"]
+host-tests = [{ manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" }]
+
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "station"
@@ -434,6 +541,7 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "runtime-phy-calibration"
+source-fact-refs = ["connected-calibration-owners"]
 title = "Connected runtime PHY calibration"
 scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
 implementation = "complete"
@@ -449,7 +557,7 @@ hil-requirements = [
   { scenario = "diagnostic-station-phy-combined-delivery-rx", minimum-repetitions = 3 },
   { scenario = "diagnostic-station-phy-rxcal-high-load-delivery-rx", minimum-repetitions = 3 },
   { scenario = "diagnostic-station-phy-txcal-high-load-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-combined-high-load-delivery-rx", minimum-repetitions = 3 },
+  { scenario = "diagnostic-station-phy-combined-high-load-delivery-rx", minimum-repetitions = 3, checks = ["wifi.maintenance.transaction-valid", "wifi.maintenance.same-link", "udp.rx.target-rate", "udp.rx.maximum-silence"] },
   { scenario = "diagnostic-station-phy-calibration-task-poll", minimum-repetitions = 3 },
 ]
 gaps = [
@@ -457,6 +565,15 @@ gaps = [
   { axis = "hil", id = "repeated-current-clean-rf-quality-cells-missing" },
 ]
 
+
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/hardware/esp32s31/phy/src/tracking/service/README.md"]
+host-tests = [
+  { manifest = "crates/hardware/esp32s31/phy/Cargo.toml", filter = "tracking::calibration::tests", source = "crates/hardware/esp32s31/phy/src/tracking/calibration/tests.rs" },
+]
+gap-work = [
+  { gap = "repeated-current-clean-rf-quality-cells-missing", kind = "measurement-method", reason = "Separate connection-continuity observations from RF-quality claims and identify a suitable measurement method for the latter before planning repeated cells." },
+]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -467,6 +584,119 @@ composition = "connected-phy-maintenance"
 level = "lower-primitive"
 activation-boundary = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
 limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+
+[[capabilities]]
+id = "station-phy-maintenance-continuity"
+title = "Station IP exchange after PHY maintenance"
+scope = "One HT20 WPA2 station epoch: receive UDP, complete admitted combined calibration, then exchange three fresh ICMP requests/replies without restart, reassociation or beacon loss"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-not-applicable = "retained-station-ip-continuity-is-an-integration-contract"
+hil-reviews = ["qualification/reviews/station-maintenance-captured-functional-build.toml"]
+source-fact-refs = ["connected-calibration-owners", "wifi-interrupt-epoch-owners", "wifi-bounded-wait-owners"]
+hil-requirements = [
+  { scenario = "station-phy-maintenance-continuity", minimum-repetitions = 3, checks = ["wifi.maintenance.transaction-valid", "wifi.maintenance.same-link", "wifi.maintenance.ip-exchange-resumed"] },
+]
+
+[[capabilities.source-contracts]]
+id = "retained-station-datapath"
+composition = "production"
+scope = "Retain the connected station, RX DMA walker and packet publication owners around admitted maintenance"
+limits = "The claim is a composed functional exchange through the existing production owners; it does not qualify every DMA storage mode, AP-loss recovery, all wait paths or the wider runtime-phy-calibration scope"
+source-paths = [
+  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/pause.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/sta/src/connected_control.rs",
+  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/rx_service.rs",
+]
+
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq.rs"]
+host-tests = [
+  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests::pause", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests/pause/operation.rs" },
+  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "ht20"
+security = ["wpa2-personal"]
+composition = "connected-station-maintenance-ip-exchange"
+level = "composed-product"
+activation-boundary = "Within one connected station epoch across combined PHY calibration, from pre-maintenance UDP progress to post-maintenance ICMP exchange"
+limitations = "2 Mbit/s offered UDP load with a 100 kbit/s liveness floor; packet loss is allowed. Post-maintenance exchange is ICMP, not a separate proof of resumed UDP throughput. No HT40/HE20 coverage, RF-quality claim, pause bound, high-load or complete lifecycle qualification is implied. Broader calibration and recovery capabilities retain their independent requirements"
+
+[[capabilities]]
+id = "station-ap-loss-recovery"
+hil-reviews = ["qualification/reviews/station-ap-loss-current.toml"]
+title = "Station reconnects after controlled AP loss"
+scope = "A connected station detects beacon loss, reconnects as generation one, exchanges three fresh ICMP replies and answers a control request in the same boot"
+implementation = "incomplete"
+host = "covered"
+async = "bounded"
+vendor-not-applicable = "station-lifecycle-integration-is-an-owned-contract"
+source-fact-refs = ["station-lifecycle-owners", "wifi-interrupt-epoch-owners", "wifi-bounded-wait-owners"]
+hil-requirements = [
+  { scenario = "station-ap-loss", minimum-repetitions = 3, checks = ["wifi.station.ap-loss-reconnected", "wifi.station.recovered-ip-exchange", "wifi.station.control-responsive"] },
+]
+gaps = [
+  { axis = "implementation", id = "ordinary-tx-protection-required-unimplemented" },
+]
+
+[capabilities.development]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs"]
+gap-work = [
+  { gap = "ordinary-tx-protection-required-unimplemented", kind = "research", reason = "HT Nonmember protection can require CTS-to-Self during AP-loss recovery. The ordinary TX owner rejects this unimplemented physical publication before DMA and the connected runner ends with HardwareFailure. Establish the protected TX hardware contract and completion ownership; the unchanged reconnect/ICMP/control obligation remains unsatisfied." },
+]
+host-tests = [
+  { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
+  { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
+  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tests.rs" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "ht40"
+security = ["wpa2-personal"]
+composition = "station-ap-loss-recovery"
+level = "composed-product"
+activation-boundary = "A connected station detects beacon loss, reconnects as generation one, exchanges three fresh ICMP replies and answers a control request in the same boot"
+limitations = "Configured HT40 WPA2 OpenWrt peer, one AP stop/restart per repetition. Protection-required ordinary TX, including HT Nonmember CTS-to-Self, currently ends the connected runner before DMA publication and can prevent recovery. The full reconnect/IP/control obligation remains required; no throughput, all-interrupt-fault, AP replacement, credential-change or complete-radio-shutdown claim follows."
+
+[[capabilities]]
+id = "station-initial-ap-absence"
+hil-reviews = ["qualification/reviews/station-initial-absence-current.toml"]
+title = "Bounded station start without an AP"
+scope = "With the configured AP stopped before the first station start, the admitted station service exhausts three no-candidate attempts in generation zero without connecting and answers a control request"
+implementation = "complete"
+host = "covered"
+async = "bounded"
+vendor-not-applicable = "station-lifecycle-integration-is-an-owned-contract"
+source-fact-refs = ["station-lifecycle-owners", "wifi-interrupt-epoch-owners", "wifi-bounded-wait-owners"]
+hil-requirements = [
+  { scenario = "station-ap-initial-absence", minimum-repetitions = 3, checks = ["wifi.station.initial-retry-exhausted", "wifi.station.control-responsive"] },
+]
+
+[capabilities.development]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs"]
+host-tests = [
+  { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
+  { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
+  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tests.rs" },
+]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "ht40"
+security = ["wpa2-personal"]
+composition = "station-initial-ap-absence"
+level = "composed-product"
+activation-boundary = "With the configured AP stopped before the first station start, the admitted station service exhausts three no-candidate attempts in generation zero without connecting and answers a control request"
+limitations = "Configured HT40 WPA2 peer is absent. This confirms finite candidate-selection exhaustion and control responsiveness, not association/security timeouts, cancellation, later manual restart or all asynchronous deadlines."
 
 [[capabilities]]
 id = "runtime-rfpll-tracking"
@@ -488,6 +718,22 @@ gaps = [
   { axis = "hil", id = "opposite-thermal-correction-and-radiated-rf-quality-missing" },
 ]
 
+
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/rfpll/README.md"]
+host-tests = [
+  { manifest = "crates/hardware/esp32s31/phy/Cargo.toml", filter = "tracking::rfpll::tests", source = "crates/hardware/esp32s31/phy/src/tracking/rfpll/tests.rs" },
+]
+gap-work = [
+  { gap = "opposite-thermal-correction-and-radiated-rf-quality-missing", kind = "measurement-method", reason = "The existing thermal scenario observes correction behavior; radiated RF quality needs a separately identified observer and measurement procedure." },
+]
+
+[[capabilities.source-contracts]]
+id = "connected-rfpll-owners"
+composition = "production"
+scope = "Temperature demand, finite RFPLL correction and channel restoration"
+limits = "The mechanism does not by itself establish radiated RF quality or applicability of earlier observations to the current image"
+source-paths = ["crates/hardware/esp32s31/phy/src/tracking/rfpll.rs"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"

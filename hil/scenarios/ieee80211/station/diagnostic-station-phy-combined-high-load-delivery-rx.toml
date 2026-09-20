@@ -7,6 +7,10 @@ isolation = "reset"
 data_plane = "split-radio-network"
 tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40", "high-load"]
 
+[comparison]
+kind = "wifi-phy-maintenance"
+control = "diagnostic-station-phy-baseline-high-load-delivery-rx"
+
 [link]
 phy = "ht40"
 

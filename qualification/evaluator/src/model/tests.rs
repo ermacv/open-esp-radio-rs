@@ -143,6 +143,8 @@ fn dependency_cycles_fail_closed() {
         vendor_evidence: Vec::new(),
         vendor_not_applicable: Some("not-applicable".to_owned()),
         hil_requirements: Vec::new(),
+        hil_checks: Vec::new(),
+        hil_decisions: Vec::new(),
         hil_not_applicable: Some("not-applicable".to_owned()),
         async_not_applicable: Some("not-applicable".to_owned()),
     };
@@ -178,4 +180,154 @@ fn corrupt_and_invalid_vendor_indexes_fail_closed() {
         .to_string();
     assert!(error.contains("unsupported or incomplete"), "{error}");
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result() {
+    use serde_json::json;
+    let root = std::env::temp_dir().join(format!("oer-vendor-contracts-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let _cleanup = Cleanup(root.clone());
+    for name in ["bluetooth.rs", "wifi.rs"] {
+        fs::write(root.join(name), b"production-input").unwrap();
+    }
+    let make_entry = |path: &str, symbol: &str| {
+        json!({
+            "suite":"radio","source":"archive","symbol":symbol,
+            "evidence_class":"production-trace","status":"match","release_eligible":true,
+            "rust_component":symbol,"evidence_digest":"ab".repeat(32),"baseline_passed":true,
+            "artifact_hashes":[{"role":"vendor","sha256":"cd".repeat(32)},
+                {"role":"production","sha256":"ef".repeat(32)}],
+            "source_hashes":[{"path":path,"sha256":format!("{:x}",Sha256::digest(b"production-input"))}],
+            "release_blockers":[]
+        })
+    };
+    let mut document = json!({"schema_version":1,"command":"project verify vendor evidence index",
+        "project":"test","complete_project_run":true,
+        "entries":[make_entry("bluetooth.rs","ble-publish"),make_entry("wifi.rs","wifi-publish")]});
+    let path = root.join("index.json");
+    let write_index = |document: &serde_json::Value| {
+        fs::write(&path, serde_json::to_vec(document).unwrap()).unwrap();
+    };
+    write_index(&document);
+    let index = VendorEvidenceIndex::load(&path, "test").unwrap();
+    assert_eq!(index.current_release_count(&root, true), 2);
+    assert_eq!(index.current_release_count(&root, false), 0);
+    let ble = VendorEvidenceRef {
+        suite: "radio".into(),
+        source: "archive".into(),
+        symbol: "ble-publish".into(),
+    };
+    let wifi = VendorEvidenceRef {
+        symbol: "wifi-publish".into(),
+        ..ble.clone()
+    };
+    let absent = VendorEvidenceRef {
+        symbol: "unverified-root".into(),
+        ..ble.clone()
+    };
+    assert!(index.get(&absent).is_none());
+
+    // A producer's release flag cannot override DIFF/INCOMPLETE, baseline
+    // failure, supporting-only evidence, or unresolved comparison blockers.
+    for (field, value) in [
+        ("status", json!("diff")),
+        ("status", json!("incomplete")),
+        ("evidence_class", json!("shared-core")),
+        ("baseline_passed", json!(false)),
+        ("release_blockers", json!(["contract-not-closed"])),
+    ] {
+        let mut changed = document.clone();
+        changed["entries"][0][field] = value;
+        write_index(&changed);
+        let index = VendorEvidenceIndex::load(&path, "test").unwrap();
+        assert!(
+            !index
+                .get(&ble)
+                .unwrap()
+                .is_current_release_evidence(&root, true)
+        );
+        assert!(
+            index
+                .get(&wifi)
+                .unwrap()
+                .is_current_release_evidence(&root, true)
+        );
+    }
+    fs::write(root.join("bluetooth.rs"), b"changed-production-input").unwrap();
+    assert!(
+        !index
+            .get(&ble)
+            .unwrap()
+            .is_current_release_evidence(&root, true)
+    );
+    assert!(
+        index
+            .get(&wifi)
+            .unwrap()
+            .is_current_release_evidence(&root, true)
+    );
+    // This checks only the existing per-entry source binding. It does not
+    // assert that this synthetic file list is a complete cross-image impact set.
+
+    document["complete_project_run"] = json!(false);
+    write_index(&document);
+    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
+    document["complete_project_run"] = json!(true);
+    let duplicate = document["entries"][0].clone();
+    document["entries"].as_array_mut().unwrap().push(duplicate);
+    write_index(&document);
+    assert!(
+        VendorEvidenceIndex::load(&path, "test")
+            .unwrap_err()
+            .to_string()
+            .contains("repeats")
+    );
+}
+
+// Called with independently sealed archived observations by the review tests.
+pub(crate) fn assert_reviewed_hil(
+    root: &Path,
+    document: CapabilityDocument,
+    index: &HilEvidenceIndex,
+    catalog: &ScenarioCatalog,
+) {
+    let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
+    let dispositions = DispositionIndex {
+        entries: BTreeMap::new(),
+        project_id: "test".into(),
+        vendor_evidence_index: None,
+    };
+    let vendor = VendorEvidenceIndex {
+        schema_version: 1,
+        command: "project verify vendor evidence index".into(),
+        project: "test".into(),
+        complete_project_run: true,
+        entries: vec![],
+    };
+    let context = EvaluationContext {
+        root,
+        dispositions: &dispositions,
+        vendor_index: &vendor,
+        scenario_catalog: catalog,
+        hil_index: index,
+        evaluator_clean: false,
+        declarations: &declarations,
+    };
+    let capability = evaluate_capability(document, &context).unwrap();
+    assert_eq!(capability.hil, HilProof::Qualified);
+    assert!(capability.proof_ready());
+    assert_eq!(capability.hil_decisions[0].reviews[0].status, "applied");
+    assert!(
+        capability
+            .evidence
+            .iter()
+            .any(|r| r.starts_with("hil:old/exchange"))
+    );
 }

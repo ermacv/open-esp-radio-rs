@@ -5,7 +5,7 @@ use super::{
     PathBuf, QUALIFICATION_SCHEMA, Result, ScenarioCatalog, Sha256, StaticContext,
     VerificationConfig, fs, slug, validate_capability_declaration, validate_relative_path,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
 mod imports;
@@ -14,6 +14,7 @@ pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 2;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CatalogView {
+    pub(crate) research_projects: BTreeSet<PathBuf>,
     pub(crate) sources: Vec<SourceIdentity>,
     pub(crate) capabilities: BTreeMap<String, CapabilityDocument>,
     pub(crate) scopes: BTreeMap<String, CapabilityScope>,
@@ -38,7 +39,7 @@ pub(crate) enum CapabilityOrigin {
     Catalog { id: String, path: PathBuf },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum CapabilityLevel {
     NativeSilicon,
@@ -56,7 +57,7 @@ impl CapabilityLevel {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SourceStatus {
     Implemented,
@@ -80,7 +81,7 @@ impl SourceStatus {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) struct CapabilityScope {
     pub(crate) chip: String,
@@ -148,7 +149,7 @@ pub(crate) struct InventoryItem {
     pub(crate) source_fact: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum InventoryReferenceKind {
     QualificationMapping,
@@ -288,6 +289,7 @@ impl CatalogView {
                 ).into()),
             };
             validate_relative_path(&verification_project)?;
+            view.research_projects.insert(verification_project.clone());
             validate_relative_path(&hil_catalog)?;
             view.sources.push(SourceIdentity {
                 id: catalog_id.clone(),
@@ -717,7 +719,7 @@ pub(super) fn validate_catalog_dependencies(
     Ok(())
 }
 
-fn validate_regular_reference(root: &Path, relative: &Path, kind: &str) -> Result<()> {
+pub(super) fn validate_regular_reference(root: &Path, relative: &Path, kind: &str) -> Result<()> {
     validate_relative_path(relative)?;
     read_contained_file(root, relative, kind).map(|_| ())
 }

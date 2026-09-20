@@ -31,24 +31,40 @@ pub(crate) fn selection_description(tags: &[String]) -> String {
     }
 }
 
+pub(crate) enum SuiteSelection<'a> {
+    Catalog(String),
+    Campaign(&'a crate::campaign::Plan),
+}
+
+pub(crate) struct Invocation {
+    pub(crate) arguments: Vec<OsString>,
+    pub(crate) snapshot: Option<crate::image::snapshot::Snapshot>,
+}
+
 pub(crate) fn run_all(
     root: &Path,
     lab: &LabConfig,
     catalog: &Catalog,
     selected: &[&Scenario],
-    selection: String,
+    selection: SuiteSelection<'_>,
     network: Integration,
-    invocation: Vec<OsString>,
+    invocation: Invocation,
 ) -> Result<()> {
     let mut session = start_run(
         root,
         lab,
         catalog,
         selected,
-        selection,
+        match &selection {
+            SuiteSelection::Catalog(description) => description.clone(),
+            SuiteSelection::Campaign(_) => "saved executable campaign".to_owned(),
+        },
         Some(PlannedFirmware::BuildCurrent),
         invocation,
     )?;
+    if let SuiteSelection::Campaign(plan) = selection {
+        session.write_campaign(plan)?;
+    }
     let results = {
         let mut operations = LiveSuite {
             root,
@@ -57,7 +73,7 @@ pub(crate) fn run_all(
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
-    finish_run(session, results)
+    finish_run(session, results, selected)
 }
 
 pub(crate) fn run_one(
@@ -66,7 +82,7 @@ pub(crate) fn run_one(
     catalog: &Catalog,
     selected: &Scenario,
     firmware: RunFirmware,
-    invocation: Vec<OsString>,
+    invocation: Invocation,
 ) -> Result<()> {
     let selected_entries = [selected];
     let mut session = start_run(
@@ -86,7 +102,7 @@ pub(crate) fn run_one(
         };
         execute_one(&mut session, &mut operations, selected)?
     };
-    finish_run(session, results)
+    finish_run(session, results, &selected_entries)
 }
 
 enum FirmwarePreparation<'a> {
@@ -189,6 +205,7 @@ fn execute_selected(
             effects.check_cancelled()?;
             session.record_event("scenario-started", Some(&scenario.id), Some(class), None)?;
             let result = effects.execute_scenario(scenario, session)?;
+            session.seal_scenario(scenario, &result)?;
             session.record_event(
                 "scenario-finished",
                 Some(&scenario.id),
@@ -231,6 +248,7 @@ fn execute_one(
         None,
     )?;
     let result = effects.execute_scenario(selected, session)?;
+    session.seal_scenario(selected, &result)?;
     session.record_event(
         "scenario-finished",
         Some(&selected.id),
@@ -261,7 +279,7 @@ fn start_run(
     selected: &[&Scenario],
     selection: String,
     firmware: Option<PlannedFirmware>,
-    invocation: Vec<OsString>,
+    invocation: Invocation,
 ) -> Result<RunSession> {
     let mut session = RunSession::create(
         root,
@@ -269,8 +287,13 @@ fn start_run(
         lab.cell_id(),
         &lab.device.id,
         &lab.device.serial,
-        invocation,
+        invocation.arguments,
     )?;
+    if let Some(snapshot) = invocation.snapshot {
+        session.bind_source_snapshot(snapshot.directory())?;
+    } else if matches!(firmware, Some(PlannedFirmware::BuildCurrent)) {
+        return Err("current-source HIL run requires a source snapshot".into());
+    }
     let entries = catalog
         .all()
         .iter()
@@ -310,8 +333,15 @@ fn start_run(
     Ok(session)
 }
 
-fn finish_run(session: RunSession, results: Vec<ScenarioResult>) -> Result<()> {
+fn finish_run(
+    session: RunSession,
+    results: Vec<ScenarioResult>,
+    selected: &[&Scenario],
+) -> Result<()> {
     oer_process::check_cancelled()?;
+    if let Some(comparisons) = crate::evidence::comparison::collect(selected, &results) {
+        session.write_comparisons(&comparisons)?;
+    }
     let (suite, completion) = session.finish(results)?;
     emit_json(&completion, false)?;
     // Cancellation of a derived history update occurs after the run was
@@ -351,7 +381,8 @@ fn run_scenario(
         repetitions.push(run_scenario_repetition(
             lab, selected, number, &relative, &output,
         )?);
-        oer_process::check_cancelled()?;
+        // The next iteration checks cancellation. After the last repetition,
+        // publish its completed boundary before observing campaign cancellation.
     }
     let result = ScenarioResult::from_repetitions(
         selected.id.clone(),
@@ -464,7 +495,7 @@ fn apply_cleanup_failures(
 }
 
 fn write_blocked_scenario(
-    session: &RunSession,
+    session: &mut RunSession,
     selected: &Scenario,
     failure: Failure,
 ) -> Result<ScenarioResult> {
@@ -477,7 +508,7 @@ fn write_blocked_scenario(
         selected.repetitions,
         failure,
     );
-    crate::evidence::run::atomic_json(&output.join("result.json"), &result)?;
+    session.seal_scenario(selected, &result)?;
     Ok(result)
 }
 

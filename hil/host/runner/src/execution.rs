@@ -268,6 +268,9 @@ fn execute_workload_inner(
                         .link
                         .expect("validated station workload has a link expectation");
                     let config = traffic::rx_traffic::Config {
+                        require_post_maintenance_echo: selected
+                            .criteria
+                            .require_post_maintenance_echo,
                         maximum_rx_silence_ms: selected.criteria.maximum_rx_silence_ms,
                         require_nonzero_rfpll_correction: selected
                             .criteria
@@ -487,8 +490,12 @@ fn execute_workload_inner(
                 selected.criteria.require_no_beacon_loss,
             )
         }
-        Workload::StationApLoss { timeout_seconds } => {
+        Workload::StationApLoss {
+            timeout_seconds,
+            require_recovery_echo,
+        } => {
             let config = ieee80211::station_ap_loss::Config {
+                require_recovery_echo: *require_recovery_echo,
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
             };
             crate::workload::ieee80211::station_ap_loss::run(
@@ -501,8 +508,12 @@ fn execute_workload_inner(
                     .phy,
             )
         }
-        Workload::StationApAbsence { timeout_seconds } => {
+        Workload::StationApAbsence {
+            timeout_seconds,
+            initially_absent,
+        } => {
             let config = ieee80211::station_ap_absence::Config {
+                initially_absent: *initially_absent,
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
             };
             crate::workload::ieee80211::station_ap_absence::run(

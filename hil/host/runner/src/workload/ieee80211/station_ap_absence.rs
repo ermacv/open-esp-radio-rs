@@ -21,6 +21,7 @@ const QUALIFIED_ATTEMPTS: u16 = 3;
 
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
+    pub(crate) initially_absent: bool,
 }
 
 pub(crate) fn run(
@@ -35,7 +36,14 @@ pub(crate) fn run(
     let mut ap = context.ap()?;
     let result = context.with_capture(output, |capture| {
         let mut cursor = capture.station_lifecycle_cursor();
-        qualify(capture, context, &mut cursor, &mut ap, options.timeout)
+        qualify(
+            capture,
+            context,
+            &mut cursor,
+            &mut ap,
+            options.timeout,
+            options.initially_absent,
+        )
     });
     drop(ap);
     result?;
@@ -50,35 +58,46 @@ fn qualify(
     cursor: &mut usize,
     ap: &mut ControlledAp,
     timeout: Duration,
+    initially_absent: bool,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(context, timeout)?;
-    if !capabilities.features.station_lifecycle_events {
-        return Err("firmware does not advertise reliable station lifecycle events".into());
-    }
-
-    expect_event(
-        capture,
-        cursor,
-        timeout,
-        StationLifecycleEvent::Connected {
-            generation: 0,
-            association_bandwidth_mhz: None,
-            security: None,
-        },
-        "initial connection",
-    )?;
     let absence_started = Instant::now();
-    ap.stop()?;
-    expect_event(
-        capture,
-        cursor,
-        timeout,
-        StationLifecycleEvent::Disconnected {
-            generation: 0,
-            reason: StationDisconnectReason::BeaconLoss,
-        },
-        "beacon-loss disconnect",
-    )?;
+    let generation = if initially_absent {
+        ap.stop()?;
+        let (capabilities, handle) = capture.begin_station_attempt(context)?;
+        validate_service_admission(capture.wait_wifi_role_transition(handle, timeout)?)?;
+        if !capabilities.features.station_lifecycle_events {
+            return Err("firmware does not advertise reliable station lifecycle events".into());
+        }
+        0
+    } else {
+        let capabilities = capture.prepare_station(context, timeout)?;
+        if !capabilities.features.station_lifecycle_events {
+            return Err("firmware does not advertise reliable station lifecycle events".into());
+        }
+        expect_event(
+            capture,
+            cursor,
+            timeout,
+            StationLifecycleEvent::Connected {
+                generation: 0,
+                association_bandwidth_mhz: None,
+                security: None,
+            },
+            "initial connection",
+        )?;
+        ap.stop()?;
+        expect_event(
+            capture,
+            cursor,
+            timeout,
+            StationLifecycleEvent::Disconnected {
+                generation: 0,
+                reason: StationDisconnectReason::BeaconLoss,
+            },
+            "beacon-loss disconnect",
+        )?;
+        1
+    };
 
     for attempt in 1..QUALIFIED_ATTEMPTS {
         expect_event(
@@ -86,7 +105,7 @@ fn qualify(
             cursor,
             timeout,
             StationLifecycleEvent::AttemptFailed {
-                generation: 1,
+                generation,
                 attempt,
                 stage: StationFailureStage::CandidateSelection,
                 reason: StationAttemptFailureReason::NoCandidate,
@@ -99,17 +118,43 @@ fn qualify(
         cursor,
         timeout,
         StationLifecycleEvent::RetryExhausted {
-            generation: 1,
+            generation,
             attempts: QUALIFIED_ATTEMPTS,
             stage: StationFailureStage::CandidateSelection,
             reason: StationAttemptFailureReason::NoCandidate,
         },
         "retry exhaustion",
     )?;
+    context.measurements.check(
+        if initially_absent {
+            "wifi.station.initial-retry-exhausted"
+        } else {
+            "wifi.station.recovery-retry-exhausted"
+        },
+        true,
+    );
+    let responsive = capture.query_operation_status(Duration::from_secs(3));
+    context
+        .measurements
+        .check("wifi.station.control-responsive", responsive.is_ok());
+    responsive?;
     eprintln!(
         "station_ap_absence_exhausted_ms={}",
         absence_started.elapsed().as_millis()
     );
+    Ok(())
+}
+
+fn validate_service_admission(
+    evidence: open_esp_radio_hil_protocol::WifiRoleTransitionEvidence,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::WifiRole;
+    if evidence.previous != WifiRole::Idle || evidence.current != WifiRole::Station {
+        return Err(format!(
+            "initial absence did not admit the requested station service: {evidence:?}"
+        )
+        .into());
+    }
     Ok(())
 }
 
@@ -150,6 +195,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             timeout: DEFAULT_TIMEOUT,
+            initially_absent: false,
         }
     }
 }

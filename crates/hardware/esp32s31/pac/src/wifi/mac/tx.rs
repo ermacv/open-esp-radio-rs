@@ -1304,16 +1304,17 @@ impl WifiRadioRegisters {
         true
     }
 
-    fn start_prepared_mac_tx(&mut self, queue: u8) {
+    pub(crate) fn start_prepared_mac_tx(&mut self, queue: u8) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         device_fence();
-        // SOURCE: complete `libpp.a[hal_mac_tx.o]::
-        // hal_mac_txq_enable` offsets 0x00..0x1e. The vendor leaf reads the
+        // SOURCE: publication prefix of `libpp.a[hal_mac_tx.o]::
+        // hal_mac_txq_enable` offsets 0x00..0x1e, before GetAccess. It reads the
         // already prepared CONTROL word and ORs only ENABLE|VALID before
         // writing it back. In particular, it does not reconstruct PLCP0 from
         // the caller's earlier software image: formatter leaves may have
         // changed control fields after the initial PLCP0 publication.
-        //
+        // The remaining vendor body updates access/HE bookkeeping and
+        // statistics; equivalence of this prefix does not cover that body.
         queue::publish_queue(
             &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),

@@ -228,6 +228,17 @@ impl SerialCapture {
         .map(|_| ())
     }
 
+    /// Initialize and submit a real station start without assuming that an AP
+    /// exists. The caller must observe its lifecycle and terminal outcome.
+    pub(crate) fn begin_station_attempt(
+        &self,
+        context: &Context<'_>,
+    ) -> Result<(Capabilities, WifiCommandHandle)> {
+        let (capabilities, _) = self.prepare_protocol(context)?;
+        let handle = self.request_station_start(context)?;
+        Ok((capabilities, handle))
+    }
+
     pub(crate) fn prepare_station(
         &self,
         context: &Context<'_>,

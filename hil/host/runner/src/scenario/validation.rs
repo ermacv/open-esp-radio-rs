@@ -876,8 +876,12 @@ impl Scenario {
                 bounded(*boots, 1, 100, self, "boots")?;
                 bounded(*timeout_seconds, 10, 300, self, "timeout_seconds")?;
             }
-            Workload::StationApLoss { timeout_seconds }
-            | Workload::StationApAbsence { timeout_seconds } => {
+            Workload::StationApLoss {
+                timeout_seconds, ..
+            }
+            | Workload::StationApAbsence {
+                timeout_seconds, ..
+            } => {
                 bounded(*timeout_seconds, 30, 300, self, "timeout_seconds")?;
             }
             Workload::WifiRole {
@@ -1051,6 +1055,20 @@ impl Scenario {
     }
 
     fn validate_criteria(&self) -> Result<()> {
+        if self.criteria.require_post_maintenance_echo
+            && !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Rx,
+                    station_pause: Some(_),
+                    ..
+                }
+            )
+        {
+            return Err(
+                "post-maintenance echo requires station UDP RX with a maintenance operation".into(),
+            );
+        }
         let (
             rx_offer,
             tx_offer,

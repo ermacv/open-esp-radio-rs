@@ -33,12 +33,14 @@ kind = "boot-smoke"
     catalog
         .validate_requirement(&HilRequirement {
             scenario: "ble-direct-test".to_owned(),
+            checks: vec![],
             minimum_repetitions: 3,
         })
         .unwrap();
     let error = catalog
         .validate_requirement(&HilRequirement {
             scenario: "ble-direct-test".to_owned(),
+            checks: vec![],
             minimum_repetitions: 4,
         })
         .unwrap_err();
@@ -75,19 +77,15 @@ fn scenario_catalog_rejects_non_current_schema() {
 }
 
 pub(super) fn seal(run: &Path) {
-    let mut names = vec!["manifest.json", "suite.json"];
-    for name in ["plan.json", "build-provenance.json"] {
-        if run.join(name).is_file() {
-            names.push(name);
-        }
-    }
-    let files = names
+    let manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    let files = collect_integrity_inventory(run)
+        .unwrap()
         .into_iter()
-        .map(|name| {
-            let path = run.join(name);
+        .map(|(name, size)| {
+            let path = run.join(&name);
             json!({
                 "path": name,
-                "size_bytes": fs::metadata(&path).unwrap().len(),
+                "size_bytes": size,
                 "sha256": sha256_file(&path).unwrap(),
             })
         })
@@ -96,7 +94,7 @@ pub(super) fn seal(run: &Path) {
         run.join("integrity.json"),
         serde_json::to_vec_pretty(&json!({
             "schema": 2,
-            "run_id": "run-1",
+            "run_id": manifest["run_id"],
             "files": files,
         }))
         .unwrap(),
@@ -193,10 +191,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     let index = HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
     assert!(
         index
-            .evidence_for(&HilRequirement {
-                scenario: "station-reconnect".to_owned(),
-                minimum_repetitions: 2,
-            })
+            .evidence_for(
+                &HilRequirement {
+                    scenario: "station-reconnect".to_owned(),
+                    checks: vec![],
+                    minimum_repetitions: 2,
+                },
+                &ScenarioCatalog::default()
+            )
             .is_some()
     );
 

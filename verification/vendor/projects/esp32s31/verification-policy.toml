@@ -617,3 +617,43 @@ vendor = { source = "phy-current", symbol = "phy_reg_update_new", fingerprint = 
 disposition = "verified"
 requirement = "phy-current-post-init-agc-profile"
 rationale = "Fingerprint covers compact JSON arrays of case name and ordered matched vendor event tuples (kind, width, address, value). It describes only the declared finite input images; suite evidence binds the compiled production probe."
+
+[[surfaces]]
+id = "ordinary-tx-publish"
+description = "Publication prefix ending at GetAccess, before vendor access/HE bookkeeping and statistics."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-publish-edges"
+description = "Ordered MMIO effects match compiled production for four queues and three retained-register states."
+suite = "ordinary-tx-ownership"
+source = "libpp"
+symbol = "hal_mac_txq_enable"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-publish-mmio"
+vendor = { source = "libpp", symbol = "hal_mac_txq_enable", fingerprint = "sha256:d1d892f280ce733effe2e0ea35e4cc85c4d67ae181cac90011dd4227dd7fa8a2" }
+disposition = "verified"
+requirement = "ordinary-tx-publish-edges"
+rationale = "Fingerprint covers the complete unrelocated function bytes in the authenticated libpp archive. The requirement restricts the comparison to publication prefix ending at getaccess, before vendor access/he bookkeeping and statistics; it does not prove DMA quiescence, descriptor preparation, physical timing or the complete ordinary-TX root."
+
+[[surfaces]]
+id = "ordinary-tx-acknowledge"
+description = "Complete selector-two acknowledgement for ordinary queues zero through three."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-acknowledge-edges"
+description = "Ordered MMIO effects match compiled production for four queues and three retained-register states."
+suite = "ordinary-tx-ownership"
+source = "libpp"
+symbol = "hal_mac_clr_txq_state"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-acknowledge-mmio"
+vendor = { source = "libpp", symbol = "hal_mac_clr_txq_state", fingerprint = "sha256:29a23ff3fdff5e630725f40a6247b6abe79d23a33446cbe07b934caa3437ab12" }
+disposition = "verified"
+requirement = "ordinary-tx-acknowledge-edges"
+rationale = "Fingerprint covers the complete unrelocated function bytes in the authenticated libpp archive. The requirement restricts the comparison to complete selector-two acknowledgement for ordinary queues zero through three; it does not prove DMA quiescence, descriptor preparation, physical timing or the complete ordinary-TX root."

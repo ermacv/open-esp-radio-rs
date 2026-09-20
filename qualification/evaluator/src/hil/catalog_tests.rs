@@ -46,6 +46,7 @@ fn nested_catalog_consumes_shared_serialized_documents() {
     catalog
         .validate_requirement(&HilRequirement {
             scenario: "alpha-system".into(),
+            checks: vec![],
             minimum_repetitions: 3,
         })
         .unwrap();
@@ -53,6 +54,7 @@ fn nested_catalog_consumes_shared_serialized_documents() {
         catalog
             .validate_requirement(&HilRequirement {
                 scenario: "alpha-system".into(),
+                checks: vec![],
                 minimum_repetitions: 4
             })
             .is_err()

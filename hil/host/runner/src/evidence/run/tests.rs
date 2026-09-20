@@ -101,6 +101,8 @@ fn session(directory: &Path) -> RunSession {
         ),
     };
     RunSession {
+        frozen_sources: None,
+        snapshot_materials: Vec::new(),
         repository_root: repository_root.clone(),
         target_directory: directory
             .parent()
@@ -183,6 +185,43 @@ fn evaluated_measurement_binds_threshold_and_verdict() {
     assert_eq!(failed.verdict, Some(MeasurementVerdict::Failed));
     assert!(passed.is_consistent());
     assert!(failed.is_consistent());
+}
+
+#[test]
+fn current_measurement_contract_conformance() {
+    let cases: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/evidence/measurements.json"
+    ))
+    .unwrap();
+    for case in cases.as_array().unwrap() {
+        let outcome: Outcome = serde_json::from_value(case["outcome"].clone()).unwrap();
+        let accepted = serde_json::from_value::<Vec<Measurement>>(case["measurements"].clone())
+            .is_ok_and(|measurements| {
+                let mut suite = failed_suite();
+                let repetition = &mut suite.scenarios[0].repetitions[0];
+                repetition.measurements = measurements;
+                repetition.outcome = outcome;
+                repetition.failure =
+                    (!outcome.is_passed()).then(|| Failure::new(FailureKind::Scenario, "fixture"));
+                suite.scenarios[0].outcome = outcome;
+                suite.outcome = if outcome.is_passed() {
+                    Outcome::Passed
+                } else {
+                    Outcome::Failed
+                };
+                suite.counts = SuiteCounts::from_results(&suite.scenarios);
+                let mut manifest = manifest();
+                manifest.finished_unix_millis = Some(suite.finished_unix_millis);
+                manifest.duration_millis = Some(suite.duration_millis);
+                validation::validate_suite(&suite, &manifest).is_ok()
+            });
+        assert_eq!(
+            accepted,
+            case["valid"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
 }
 
 #[test]
@@ -331,6 +370,10 @@ fn firmware_record_archives_the_exact_application() {
     fs::write(&bootstrap_elf, b"bootstrap elf").unwrap();
 
     let mut first_session = session(&run_directory);
+    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(&root);
+    first_session
+        .bind_source_snapshot(snapshot.directory())
+        .unwrap();
     first_session
         .record_firmware(
             ImageClass::Correctness,
@@ -400,16 +443,33 @@ fn firmware_record_archives_the_exact_application() {
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
     }
-    assert!(!provenance.source_reconstructable);
+    assert!(provenance.source_reconstructable);
     let object_root = root.join("objects/sha256");
     let first_objects = collect_integrity_files(&object_root).unwrap();
-    assert_eq!(first_objects.len(), 5);
+    assert_eq!(first_objects.len(), 8);
+    assert!(
+        first_session
+            .record_firmware(
+                ImageClass::Correctness,
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                (&effective_embedded_lock, &effective_embedded_lock),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        collect_integrity_files(&object_root).unwrap(),
+        first_objects
+    );
     first_session.finished = true;
     drop(first_session);
 
     let second_run_directory = root.join("run-2");
     fs::create_dir(&second_run_directory).unwrap();
     let mut second = session(&second_run_directory);
+    second.bind_source_snapshot(snapshot.directory()).unwrap();
     second
         .record_firmware(
             ImageClass::Correctness,
@@ -454,6 +514,8 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     source.target_directory = target_directory.clone();
     source.repository_root = repository_root.clone();
     source.source_materials[0].checkout_path = repository_root.clone();
+    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(&repository_root);
+    source.bind_source_snapshot(snapshot.directory()).unwrap();
     source
         .record_firmware(
             ImageClass::Correctness,
@@ -544,6 +606,45 @@ fn finish_writes_all_views_and_completes_manifest() {
             .unwrap();
     assert_eq!(final_manifest.state, RunState::Completed);
     assert!(final_manifest.finished_unix_millis.is_some());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn campaign_and_unavailable_comparison_are_part_of_the_sealed_inventory() {
+    let catalog =
+        crate::scenario::Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios"))
+            .unwrap();
+    let experiment = catalog
+        .get("diagnostic-station-phy-combined-high-load-delivery-rx")
+        .unwrap();
+    let plan = crate::campaign::Plan::create(
+        &catalog,
+        &[experiment],
+        crate::image::Integration::UpstreamXarxa,
+    )
+    .unwrap();
+    let report = crate::evidence::comparison::collect(&[experiment], &[]).unwrap();
+    let root = temporary_directory("campaign-seal");
+    let session = integrated_session(&root);
+    session.write_campaign(&plan).unwrap();
+    session.write_comparisons(&report).unwrap();
+    let (_, completion) = session.finish(failed_suite().scenarios).unwrap();
+    let integrity: IntegrityIndex =
+        serde_json::from_slice(&fs::read(&completion.integrity_report).unwrap()).unwrap();
+    for name in ["campaign.json", "comparisons.json"] {
+        let entry = integrity
+            .files
+            .iter()
+            .find(|entry| entry.path == Path::new(name))
+            .unwrap();
+        assert_eq!(
+            entry.sha256,
+            sha256_file(&completion.run_directory.join(name)).unwrap()
+        );
+    }
+    let serialized = fs::read_to_string(completion.run_directory.join("comparisons.json")).unwrap();
+    assert!(serialized.contains("unavailable"));
+    assert!(serialized.contains("not-evaluated"));
     fs::remove_dir_all(root).unwrap();
 }
 

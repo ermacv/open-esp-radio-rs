@@ -90,21 +90,53 @@ pub(crate) fn run() -> Result<()> {
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             lab::doctor::run(&root, &lab, &selected)
         }
-        CliCommand::Plan(selection) => {
+        CliCommand::Plan {
+            selection,
+            out,
+            network,
+            proofs,
+        } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
-            emit_json(
-                &serde_json::json!({
-                    "schema": 1,
-                    "requirements": lab::requirements::Requirements::union(&selected),
-                    "scenarios": selected.iter().map(|scenario| serde_json::json!({
-                        "scenario": scenario.id,
-                        "image": scenario.image,
-                        "repetitions": scenario.repetitions,
-                        "requirements": lab::requirements::Requirements::for_scenario(scenario),
-                    })).collect::<Vec<_>>(),
-                }),
-                true,
+            let plan =
+                crate::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?;
+            if let Some(path) = out {
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)?;
+                serde_json::to_writer_pretty(&mut file, &plan)?;
+            }
+            emit_json(&plan, true)
+        }
+        CliCommand::RunPlan {
+            plan,
+            check,
+            source_include,
+        } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let plan: crate::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
+            let (selected, network) = plan.resolve(&catalog)?;
+            if check {
+                return emit_json(&plan, true);
+            }
+            let snapshot = image::snapshot::capture(&root, &source_include)?;
+            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let required = lab::requirements::Requirements::union(&selected);
+            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            fixture::network_helper::require_for(&lab, required)?;
+            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            orchestration::run_all(
+                &root,
+                &lab,
+                &catalog,
+                &selected,
+                orchestration::SuiteSelection::Campaign(&plan),
+                network,
+                orchestration::Invocation {
+                    arguments: invocation,
+                    snapshot: Some(snapshot),
+                },
             )
         }
         CliCommand::Scenario { command } => {
@@ -133,9 +165,20 @@ pub(crate) fn run() -> Result<()> {
             }
         }
         CliCommand::Image { command } => match command {
+            ImageCommand::Snapshot { source_include } => {
+                let snapshot = image::snapshot::capture(&root, &source_include)?;
+                emit_json(&snapshot, true)
+            }
             ImageCommand::Mono { class } => image::mono::capture(&root, class),
-            ImageCommand::Build { class, network } => {
-                let artifacts = image::build(&root, class, network)?;
+            ImageCommand::Build {
+                class,
+                network,
+                source_snapshot,
+            } => {
+                let artifacts = match source_snapshot {
+                    Some(snapshot) => image::snapshot::build(&root, &snapshot, class, network)?,
+                    None => image::build(&root, class, network)?,
+                };
                 image::print_artifacts(class, &artifacts, false)
             }
             ImageCommand::VerifyRebuild { class, trim_paths } => {
@@ -187,6 +230,7 @@ pub(crate) fn run() -> Result<()> {
         },
         CliCommand::Run {
             scenario: id,
+            source_include,
             ap_scheduler,
             firmware_from,
             network,
@@ -199,6 +243,11 @@ pub(crate) fn run() -> Result<()> {
                 firmware_from.is_some(),
                 network,
             )?;
+            let snapshot = if firmware_from.is_none() {
+                Some(image::snapshot::capture(&root, &source_include)?)
+            } else {
+                None
+            };
             let firmware = match firmware_from {
                 Some(run_id) => {
                     RunFirmware::Replay(Box::new(crate::evidence::verify::archived_firmware(
@@ -215,9 +264,23 @@ pub(crate) fn run() -> Result<()> {
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             fixture::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
-            orchestration::run_one(&root, &lab, &catalog, &selected, firmware, invocation)
+            orchestration::run_one(
+                &root,
+                &lab,
+                &catalog,
+                &selected,
+                firmware,
+                orchestration::Invocation {
+                    arguments: invocation,
+                    snapshot,
+                },
+            )
         }
-        CliCommand::RunAll { tag, network } => {
+        CliCommand::RunAll {
+            tag,
+            network,
+            source_include,
+        } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let selected = crate::cli::Selection {
@@ -225,6 +288,7 @@ pub(crate) fn run() -> Result<()> {
                 tag: tag.clone(),
             }
             .resolve(&catalog)?;
+            let snapshot = image::snapshot::capture(&root, &source_include)?;
             let required = lab::requirements::Requirements::union(&selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             fixture::network_helper::require_for(&lab, required)?;
@@ -234,9 +298,12 @@ pub(crate) fn run() -> Result<()> {
                 &lab,
                 &catalog,
                 &selected,
-                orchestration::selection_description(&tag),
+                orchestration::SuiteSelection::Catalog(orchestration::selection_description(&tag)),
                 network,
-                invocation,
+                orchestration::Invocation {
+                    arguments: invocation,
+                    snapshot: Some(snapshot),
+                },
             )
         }
     }

@@ -39,7 +39,7 @@ fn build_inputs(root: &Path) -> Artifacts {
 }
 
 fn session(root: &Path) -> RunSession {
-    RunSession::create(
+    let mut session = RunSession::create(
         root,
         "esp32s31",
         "test-cell",
@@ -47,7 +47,10 @@ fn session(root: &Path) -> RunSession {
         Path::new("/test/no-device"),
         vec![OsString::from("test")],
     )
-    .unwrap()
+    .unwrap();
+    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(root);
+    session.bind_source_snapshot(snapshot.directory()).unwrap();
+    session
 }
 
 #[test]

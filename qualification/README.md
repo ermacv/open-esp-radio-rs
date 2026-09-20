@@ -1,16 +1,113 @@
-# Qualification v4
+# Project capability map and qualification
 
-Qualification is the sole readiness authority for a supported product path.
-The checked-in TOML manifests declare capability roots, dependencies, required
-evidence and known blockers. The evaluator lives in `evaluator/`. Programs
-explicitly declare implementation, host and async states; vendor and HIL
-states are derived from independent evidence.
+Qualification owns the engineering map and the assessment of a selected supported
+path. The map connects hardware knowledge, implementation owners, checks,
+observations and remaining work. A program selects a precise scope for strict
+evaluation; the wider project inventory has no aggregate readiness verdict.
+The checked-in TOML catalogs and programs own these declarations, and
+`evaluator/` reads them independently of the evidence producers. Implementation,
+host coverage and async states are reviewed declarations; vendor and HIL
+states are derived from independent evidence. Qualification remains the sole
+readiness authority for the selected scope.
+
+## Everyday status and next work
+
+Read declarations without loading vendor results, HIL runs or Git state:
+
+```console
+cargo qualification status \
+  --catalog qualification/catalog/esp32s31/bluetooth-products.toml \
+  --capability secure-peripheral-gatt \
+  --json-report target/qualification/secure-gatt-map.json
+
+cargo qualification next \
+  --catalog qualification/catalog/esp32s31/wifi-phy.toml \
+  --capability runtime-phy-calibration
+```
+
+Read existing evidence for a selected program, without running any checks:
+
+```console
+cargo qualification status \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml \
+  --capability runtime-phy-calibration \
+  --json-report target/qualification/wifi-calibration-map.json
+
+cargo qualification next \
+  --manifest qualification/targets/esp32s31/bluetooth-secure-gatt.toml \
+  --capability secure-peripheral-gatt
+```
+
+Both commands accept multiple `--catalog` inputs, or one `--manifest`.
+`--capability` selects that capability and its transitive dependency context.
+An unknown or unselected ID is an error. This closure is not a change-impact
+analysis or an instruction to rerun its checks. Without a focus, catalog mode
+includes all source facts, inventory facets and references as well as capability
+declarations; program mode includes the selected program and linked source facts.
+Neither command changes a gate outcome or fails just because work remains.
+Invalid declarations and corrupt evidence still fail validation.
+`status` prints a compact state view and counts of original HIL observations,
+including excluded history. `status --details` expands scopes, limits, owner
+links and individual applicability decisions. JSON always contains the full
+selected map. Program mode validates the saved evidence archive and can take
+longer than the declarations-only view; it does not regenerate evidence.
+
+The schema-1 JSON map separates source declarations, knowledge links, test
+selectors, original HIL decisions and explained work candidates. Static mode
+marks evidence `null` / `not-evaluated`; it never labels unread results missing.
+Knowledge is `not-linked` or `linked-not-assessed`: the map does not infer how
+well hardware is understood from a file's existence or a vendor MATCH.
+Host selectors are navigation, not recorded test passes. HIL observations retain
+exclusion reasons and completion boundaries from the existing evaluator.
+
+Next work distinguishes research, implementation, host coverage, experiments,
+measurement methods, applicability review, incomplete attempts and unresolved
+failures. Declarations-only mode asks to inspect evidence before deciding to
+repeat an experiment. Existing gaps may carry a reviewed work classification;
+unclassified HIL gaps require review rather than interpretation of their names.
+Actions are deterministic candidates with reasons, not a priority ranking or an
+automatic execution plan. Choose the goal first, then inspect its owners and
+checks. Detailed research priorities stay in Blobray's existing `project status`
+and `project research next` views, linked through the selected verification projects.
+
+### Linking knowledge and focused checks
+
+Optional `[capabilities.development]` metadata adds references to existing
+owners and classifies existing gaps. For example:
+
+```toml
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/rfpll/README.md"]
+host-tests = [
+  { manifest = "crates/hardware/esp32s31/phy/Cargo.toml", filter = "tracking::rfpll::tests", source = "crates/hardware/esp32s31/phy/src/tracking/rfpll/tests.rs" },
+]
+gap-work = [
+  { gap = "opposite-thermal-correction-and-radiated-rf-quality-missing", kind = "measurement-method", reason = "Radiated RF quality requires a separately identified observer and procedure." },
+]
+```
+
+Knowledge and test paths must name regular repository files without symlinks.
+A test manifest must declare a Cargo package; its filter is a reviewed Cargo
+test selector, not a source-text discovery mechanism. Static validation does
+not compile tests or prove a filter currently matches a test. `gap-work` must
+name exactly one existing gap and retain a reason. Accepted declared kinds are
+`research`, `implement`, `host-test`, `experiment`, `measurement-method`,
+`inspect-vendor` and `review-gap`. Removing a gap requires removing its annotation.
+These links never alter readiness requirements. Source contracts continue to
+own implementation paths and limits; vendor roots, evidence rows and HIL
+requirements retain their existing owners.
+
+The initial focused links cover Wi-Fi DMA, calibration/RFPLL and peripheral BLE
+maintenance/security. Other declarations remain visible with missing links;
+missing navigation is not an absent implementation or an unexplored chip.
 
 The focused product programs are Wi-Fi STA and BLE peripheral/ACL, followed by
 secure peripheral GATT. Their definitions share canonical capability declarations:
 
 | Program | Required product boundary |
 | --- | --- |
+| [Wi-Fi maintenance continuity](targets/esp32s31/wifi-maintenance-continuity.toml) | One HT20 station epoch across combined calibration and fresh post-maintenance ICMP exchange; independent of RF-quality and throughput-ceiling claims |
+| [Wi-Fi AP availability](targets/esp32s31/wifi-ap-availability.toml) | Controlled AP-loss recovery with fresh IP exchange, and bounded initial no-candidate exhaustion |
 | [Wi-Fi STA](targets/esp32s31/wifi-sta.toml) | Station association/WPA2, datapath, recovery and PHY/power lifecycle |
 | [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
 | [Secure peripheral GATT](targets/esp32s31/bluetooth-secure-gatt.toml) | The complete peripheral/ACL boundary plus encrypted traffic, Secure Connections, protected ATT access and bonded reconnect |
@@ -134,9 +231,9 @@ cargo qualification catalog render \
   --out target/qualification/catalog/esp32s31-radio-static
 ```
 
-Static render writes `domain-inventory.md`, `capability-catalog.md`, and
-`migration-map.md`. Manifest render additionally writes
-`program-inventory.md` after evaluation. The program view records repository
+Static render writes `project-status.md`, `domain-inventory.md`,
+`capability-catalog.md`, and `migration-map.md`. Manifest render additionally
+writes `program-status.md` and `program-inventory.md` after evaluation. The program view records repository
 commit/dirty state and configured evidence provenance; a catalog or manifest
 hash is source identity, never firmware identity. All outputs are ignored
 views, not another readiness decision or tracked snapshot.
@@ -299,18 +396,81 @@ Blobray and the HIL runner never decide product readiness. Blobray owns vendor
 comparison truth; the HIL runner owns hardware execution truth; qualification
 maps both into the declared capability graph.
 
+Capability dependencies describe readiness, not instructions to re-execute
+every prerequisite scenario. Controlled HIL experiments instead declare their
+execution control in the scenario catalog. The independent evaluator validates
+that only the supported intervention differs, and requires a passing control
+in the same eligible run with the same number of repetitions. An older baseline
+or a result from another PHY/profile cannot substitute for that control. The
+pair establishes its absolute checks, not a relative non-regression verdict.
+
+HIL requirements may select named `checks` in addition to the scenario and
+minimum repetitions. The scenario owns thresholds; requirements reference
+names, not duplicate numeric limits. Static validation rejects unsupported or
+duplicate checks. The evaluator independently validates each recorded numeric
+value, unit, threshold and original verdict, then evaluates the value against
+the requested current criterion. A new criterion can be assessed from sufficient
+existing measurements without rewriting their original assessment. Missing observations
+remain missing even when the scenario says PASS. All checks in an obligation
+must be supplied by one eligible run; individual successes from different runs
+cannot be combined to satisfy it. JSON `hil_checks` exposes individual evidence
+references or `null`; those diagnostic rows do not replace the conjunction.
+The console exposes the same detail as `HIL-CHECK` rows. Absence means no
+eligible proof, not necessarily that the check has never been executed.
+
+JSON `hil_decisions` explains each complete obligation: its applicability policy,
+completion boundary, status, selected evidence, and every observed scenario's
+exclusion reasons and unmet requirements. Console `HIL-OBLIGATION` rows summarize
+these decisions. Completed scenarios remain candidates when an unrelated
+scenario fails in the same sealed suite. A failed current scenario or repetition
+cannot be hidden by selecting a later PASS. The status is `unresolved-failure`
+until an explicit [failure disposition](evidence-reviews.md#resolving-a-failure)
+binds its resolution or explains why it does not apply. `broken`, `blocked`, `skipped` and `interrupted` alone are
+neither PASS nor a product failure, but they do not erase a different repetition's
+explicit failure. Controlled experiments also retain their control's decision.
+
+The supported completion boundary remains one complete scenario repetition set.
+Named checks are not independently sealed lifecycle phases: a successful early
+check in a failed lifecycle cannot qualify that lifecycle or become independent
+evidence merely by selecting its name. Reassessment against a weaker numeric
+criterion likewise does not turn a failed lifecycle into PASS. A completed
+observation below the requested criterion is an unresolved failure; an absent
+measurement is missing evidence, not an invented failure.
+
+The initial named checks cover station UDP RX rates, configured maximum RX
+silence, a validated maintenance transaction, and absence of station lifecycle
+change through that transaction's traffic session. Semantic checks are recorded
+only when attempted. They do not establish RF quality, a qualified PHY execution
+bound, or relative performance non-regression. Default applicability is
+`current-clean-composition`: current clean commit, current source binding and no
+unbound replay. Optional [reviewed applicability](evidence-reviews.md) admits an
+original complete observation for a specific capability/property and destination
+build after validating an explicit engineering conclusion and its bindings.
+Original outcomes and exclusions remain visible; a commit change or another PASS
+does not establish that a failure was resolved.
+
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, clean repository provenance, commit equality,
 scenario outcome and repetition count. Markdown reports are not proof inputs.
-A generated run directory without a manifest and an unsealed bundle whose
-manifest is still `running` are incomplete mutable execution state and are
-ignored as evidence. The former is counted as `hil-incomplete` in console
+A generated run directory without a manifest is incomplete mutable execution
+state, ignored as evidence and counted as `hil-incomplete` in console
 output and `evidence_inputs.hil.incomplete` in schema-4 JSON reports;
 `hil-directories` counts every entry while `hil-bundles` counts only entries
 that have published a manifest. An existing malformed manifest still fails
-validation, and completed or interrupted bundles must have a valid integrity
-seal and fail closed otherwise.
+validation. Whole-invocation evidence requires a valid integrity seal and a
+completed run; a running invocation alone supplies no evidence.
+
+When `attempts/` is present, the evaluator consumes its independently published
+scenario seals instead of the aggregate suite. It validates their complete
+material inventory, image identity, result and repetition-set boundary without
+depending on completion of the enclosing campaign. Failed attempts are indexed
+too. Temporary publications are not evidence, and a corrupt seal fails closed;
+the aggregate suite is not used to replace a missing or invalid attempt.
+`hil-sealed-attempts` / `hil.sealed_attempts` counts these records. Each observation
+in `hil_decisions` includes its completion seal's path and digest. The same
+attempt is indexed once, not again when the enclosing run completes. Fixture
+recovery and applicability to another build are separate from this completion.
 
 Use a JSON report for CI and downstream presentation:
 
@@ -323,8 +483,57 @@ cargo qualification evaluate \
 The console `INPUT` row and JSON `evidence_inputs` object expose how many
 verification rows and HIL directories were observed, how many are incomplete
 or current, and whether a dirty evaluator worktree prevented otherwise valid
-evidence from entering the verdict.
+evidence from entering the verdict. `hil-qualifying` / `hil.qualifying` counts
+eligible runs containing at least one passed scenario, not qualified products;
+per-obligation decisions still enforce checks, repetitions, controls and failures.
 
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.
+
+## Functional station maintenance scope
+
+`station-phy-maintenance-continuity` is a separately selected composed capability.
+Its reviewed source facts link the calibration, IRQ and bounded-wait owners;
+its retained-datapath contract links the RX and station owners. These are code
+and hardware-contract dependencies. The focused program does not assert the
+broader `interrupt-recovery`, `async-deadlines`, DMA-mode or RF-calibration
+qualification promises. Those records retain their own requirements and gaps.
+
+The [scenario](../hil/scenarios/ieee80211/station/station-phy-maintenance-continuity.toml)
+requires three complete repetitions: UDP progress before combined maintenance,
+a successful physical transaction, fresh ICMP requests/replies afterwards, and
+no station-epoch change. It uses HT20, a 2 Mbit/s offered stream and a 100 kbit/s
+liveness floor. Loss is allowed. Fresh ICMP exchange establishes bidirectional
+IP reachability after maintenance, not resumed UDP throughput. RF quality,
+physical execution time, high-load continuity and other PHY profiles remain
+separate claims under `runtime-phy-calibration` and its existing scenarios.
+
+```console
+cargo qualification status --manifest qualification/targets/esp32s31/wifi-maintenance-continuity.toml --details
+cargo qualification next --manifest qualification/targets/esp32s31/wifi-maintenance-continuity.toml
+```
+
+## Functional AP availability
+
+The [focused program](targets/esp32s31/wifi-ap-availability.toml) selects two
+independent functional contracts. `station-ap-loss-recovery` requires the same
+boot to observe generation-zero connection, beacon-loss disconnection,
+generation-one connection, three fresh ICMP replies and a control response.
+`station-initial-ap-absence` stops the AP before the first station start and
+requires service admission, generation-zero no-candidate exhaustion after three
+attempts without a connection, and a control response. A successful start admits
+the station service; it does not report association. Each requires three complete
+repetitions on the configured HT40 WPA2 fixture.
+
+The existing `station-ap-absence` scenario instead removes an already connected
+AP and observes generation-one exhaustion. It does not establish initial-start
+behavior. The broader `interrupt-recovery`, `async-deadlines` and
+`timeout-error-recovery` capabilities retain their own vendor contracts and
+hardware gaps. Functional scope does not prove all fault, cancellation, timing,
+throughput or radio-retirement paths.
+
+```console
+cargo qualification status --manifest qualification/targets/esp32s31/wifi-ap-availability.toml --details
+cargo qualification next --manifest qualification/targets/esp32s31/wifi-ap-availability.toml
+```

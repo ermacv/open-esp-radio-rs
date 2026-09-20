@@ -1,16 +1,18 @@
 schema = 4
 id = "station-ap-loss"
-description = "Station detects controlled AP loss and reconnects"
+description = "Station detects controlled AP loss, reconnects and completes fresh IP exchange"
+repetitions = 3
 image = "correctness"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "psram-stack", "station", "lifecycle"]
+tags = ["ap-availability", "diagnostic", "psram-stack", "station", "lifecycle"]
 
 [link]
 phy = "ht40"
 
 [workload]
 kind = "station-ap-loss"
+require_recovery_echo = true
 timeout_seconds = 120
 
 [criteria]

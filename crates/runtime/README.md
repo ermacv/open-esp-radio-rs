@@ -9,7 +9,6 @@ Embassy. Directory boundaries describe the execution responsibility of each pack
 | `ieee80211/src/roles/access_point/network_tx.rs` | One AP TX owner, publication and cancellation |
 | `ieee80211/src/roles/access_point/network_tx/{queue,power_save,aggregate,completion}.rs` | Lease queues, TIM/DTIM release, standby aggregation and completion on that same owner |
 | `ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions |
-| `ieee80211/src/composition/` | Compatibility reexport of the `time::phy` binding |
 | `ieee80211/src/diagnostics/` | Optional execution observation |
 | `bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
 | `bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |

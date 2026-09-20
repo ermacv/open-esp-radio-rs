@@ -114,8 +114,6 @@ mod interrupt_fault;
 mod interrupt_publication;
 #[cfg(target_arch = "riscv32")]
 mod interrupt_runtime;
-#[cfg(target_arch = "riscv32")]
-mod phy_time;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod runner_policy;
 #[cfg(target_arch = "riscv32")]
@@ -141,7 +139,7 @@ pub use interrupt_runtime::{
     bind_production_bluetooth_interrupt_runtime,
 };
 #[cfg(target_arch = "riscv32")]
-pub use phy_time::{EmbassyPhyTime, EmbassyPhyTimeError};
+pub use oer_esp32s31_bluetooth_embassy::time::phy::{EmbassyPhyTime, EmbassyPhyTimeError};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,

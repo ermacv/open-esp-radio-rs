@@ -34,9 +34,9 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac,runtime}/` hold their lower ownership boundaries |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
-| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and compatibility network binding |
+| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and network stack bindings |
 | `runtime/embassy/esp32s31/{ieee80211,bluetooth}/` | Concrete radio execution; Wi-Fi role/datapath owners and Bluetooth controller/session owners, with their embedded time bindings |
-| `adapters/embassy-net/{owned,compat}/` | Owned-packet and released-interface network adapters |
+| `adapters/embassy-net/{owned,upstream}/` | Owned-packet and released-interface network adapters |
 | `adapters/xarxa/upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure |
 | `../experiments/network-engine/` | Experimental synchronous network engine; currently consumed only by a driver test |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |

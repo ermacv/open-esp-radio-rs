@@ -10,7 +10,6 @@
 #[cfg(test)]
 extern crate std;
 
-pub mod composition;
 pub mod datapath;
 pub mod diagnostics;
 pub mod roles;

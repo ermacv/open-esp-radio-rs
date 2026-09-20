@@ -27,6 +27,27 @@ fn missing_refresh_key_has_a_separate_finite_scenario() {
 use super::*;
 
 #[test]
+fn rx_ownership_images_require_the_measured_tcp_worker() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    for id in ["tcp-rx-dma-ownership", "tcp-tx-dma-ownership"] {
+        let scenario = catalog.get(id).unwrap();
+        assert_eq!(scenario.image, ImageClass::DiagnosticRxOwnership);
+        assert!(matches!(scenario.workload, Workload::Tcp { .. }));
+        assert!(scenario.validate().is_ok());
+    }
+    let mut unmeasured = catalog.get("udp-bidirectional-ht40-45-45").unwrap().clone();
+    unmeasured.image = ImageClass::DiagnosticRxOwnership;
+    assert!(
+        unmeasured
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("TCP workload")
+    );
+}
+
+#[test]
 fn secure_gatt_terminal_fault_is_explicit_and_has_independent_scenarios() {
     let catalog =
         Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();

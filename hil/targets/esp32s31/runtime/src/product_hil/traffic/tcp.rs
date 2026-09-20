@@ -104,6 +104,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         ));
 
         let qualification_start = qualification_sample(QualificationRequester::TcpBegin).await;
+        #[cfg(feature = "rx-ownership-telemetry")]
+        crate::product_hil::rx_ownership::begin();
         let hardware_start = qualification_start.rx_primary;
         let task_poll_start = TASK_POLLS.snapshot();
         let pipeline_start = pipeline_counters.snapshot();
@@ -231,6 +233,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         socket.abort();
 
         let qualification = qualification_sample(QualificationRequester::Tcp).await;
+        #[cfg(feature = "rx-ownership-telemetry")]
+        let ownership_valid = crate::product_hil::rx_ownership::report().await;
+        #[cfg(not(feature = "rx-ownership-telemetry"))]
+        let ownership_valid = true;
         let hardware_delta = qualification
             .rx_primary
             .zip(hardware_start)
@@ -250,7 +256,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             .errors
             .saturating_add(tx.errors)
             .saturating_add(health_errors);
-        let passed = connected
+        let passed = ownership_valid
+            && connected
             && transport_errors == 0
             && match session.config.direction {
                 HilDirection::Rx => rx.units == 1 && rx.pattern_ok,

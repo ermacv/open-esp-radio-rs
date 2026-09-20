@@ -1,5 +1,38 @@
 # HIL memory observations
 
+## RX DMA ownership measurements
+
+`cargo hil run tcp-rx-dma-ownership --network upstream-smoltcp` and
+`cargo hil run tcp-tx-dma-ownership --network upstream-smoltcp` select the
+separate `diagnostic-rx-ownership` image. They use the HT40 split-core TCP
+workload and retain the ordinary throughput and stack checks. TCP TX measures
+RX allocation lifetimes for incoming peer traffic, not TX-buffer residence.
+Ordinary performance images do not contain this observer.
+
+The DMA arena emits physical-buffer identities at detach, final lease Drop,
+software append completion and stopped-ring reclamation. No clock or recorder
+belongs to the radio: HIL supplies the cross-core Embassy monotonic clock and
+bounded storage. The observer follows rotated descriptor bindings and counts
+out-of-order returns independently from ring-order republication.
+
+`ORX_OWN_TIME` reports sample count, summed microseconds and observed maximum
+separately for detach-to-return and return-to-software-append. `ORX_OWN` retains
+outstanding held/returned counts, their peaks, owners crossing the start of the
+window (`carry`) and stopped reclamations. Cross-boundary samples retain their
+whole lifetime; they are not clipped into falsely shorter intervals.
+`ORX_OWN_CARRY` reports the subsets of hold/append samples that started before
+the window, so startup residence is not mistaken for steady traffic residence. Stopped
+reclamation is not an append sample. An append timestamp does not prove that
+hardware fetched the descriptor or settled a reload.
+
+The target rejects a successful TCP verdict if observation is invalid or has
+no completed hold/append samples. Recorder contention, missing transitions,
+clock reversal and arithmetic overflow invalidate evidence, with errors sticky
+across windows. Reports are emitted after the traffic measurement through the
+bounded reliable logger. These observations perturb execution and describe the
+instrumented workload, not worst-case timing or a reason by themselves to
+remove the upstream adapter's Ethernet copy.
+
 ## Memory copy measurements
 
 `diagnostic-memory-benchmark` exposes `ProbeMemoryBenchmark` before radio

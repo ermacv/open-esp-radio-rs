@@ -1,0 +1,21 @@
+schema = 4
+id = "tcp-rx-dma-ownership"
+description = "TCP receive with physical RX DMA lease and software republish timing"
+image = "diagnostic-rx-ownership"
+repetitions = 3
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "tcp", "station", "memory"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "tcp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 80000000
+chunk_bytes = 32768
+
+[criteria]
+minimum_rx_bps = 60000000

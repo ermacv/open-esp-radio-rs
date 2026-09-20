@@ -4,6 +4,11 @@ use super::*;
 
 impl Scenario {
     pub(crate) fn validate(&self) -> Result<()> {
+        if self.image == ImageClass::DiagnosticRxOwnership
+            && !matches!(self.workload, Workload::Tcp { .. })
+        {
+            return Err("RX ownership observation requires a TCP workload with a bounded measurement window".into());
+        }
         if matches!(
             self.workload,
             Workload::AccessPoint {

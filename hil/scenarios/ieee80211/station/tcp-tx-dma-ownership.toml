@@ -1,0 +1,21 @@
+schema = 4
+id = "tcp-tx-dma-ownership"
+description = "TCP transmit with receive-side DMA lease timing for peer traffic"
+image = "diagnostic-rx-ownership"
+repetitions = 3
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "tcp", "station", "memory"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "tcp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 120000000
+chunk_bytes = 32768
+
+[criteria]
+minimum_tx_bps = 65000000

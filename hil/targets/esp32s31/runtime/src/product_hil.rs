@@ -108,6 +108,8 @@ use static_cell::{ConstStaticCell, StaticCell};
 mod ap_scheduler;
 mod ieee802154;
 mod network;
+#[cfg(feature = "rx-ownership-telemetry")]
+mod rx_ownership;
 mod rx_qualification;
 mod rx_rejection;
 mod traffic;
@@ -1621,6 +1623,8 @@ pub async fn run(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
+    #[cfg(feature = "rx-ownership-telemetry")]
+    let config = config.with_rx_ownership_observer(&rx_ownership::RECORDER);
     let config = if let Some(model) = ap_scheduler::configuration(ap_scheduler) {
         config.with_access_point_airtime(model)
     } else {

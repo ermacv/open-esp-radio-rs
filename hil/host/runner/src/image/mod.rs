@@ -110,6 +110,12 @@ pub(crate) fn classify_flashed_capabilities(
         return (classify_flashed_capabilities(&control) == Some(ImageClass::Correctness))
             .then_some(ImageClass::DiagnosticPhyFault);
     }
+    if features.rx_ownership_evidence {
+        let mut control = *features;
+        control.rx_ownership_evidence = false;
+        return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
+            .then_some(ImageClass::DiagnosticRxOwnership);
+    }
     if features.phy_rx_hot_sram {
         let mut control = *features;
         control.phy_rx_hot_sram = false;

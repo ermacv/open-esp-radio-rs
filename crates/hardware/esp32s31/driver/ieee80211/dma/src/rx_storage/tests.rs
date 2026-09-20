@@ -4,6 +4,8 @@ use self::std::boxed::Box;
 use super::*;
 use crate::rx_dma::RxDmaBinding;
 
+#[cfg(feature = "rx-ownership-observation")]
+mod observation;
 mod pause;
 
 #[derive(Default)]

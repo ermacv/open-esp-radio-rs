@@ -23,6 +23,7 @@ pub enum ImageClass {
     DiagnosticCore0RxCoarse,
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
+    DiagnosticRxOwnership,
     DiagnosticRxDeliveryPhyHotSram,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
@@ -30,7 +31,7 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -49,6 +50,7 @@ impl ImageClass {
         Self::DiagnosticCore0RxCoarse,
         Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
+        Self::DiagnosticRxOwnership,
         Self::DiagnosticRxDeliveryPhyHotSram,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
@@ -75,6 +77,7 @@ impl ImageClass {
             Self::DiagnosticCore0RxCoarse => "diagnostic-core0-rx-coarse",
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
+            Self::DiagnosticRxOwnership => "diagnostic-rx-ownership",
             Self::DiagnosticRxDeliveryPhyHotSram => "diagnostic-rx-delivery-phy-hot-sram",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
@@ -105,6 +108,9 @@ impl ImageClass {
             }
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
+            Self::DiagnosticRxOwnership => {
+                "open-radio-hil,rx-ownership-telemetry,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::Correctness => {
                 "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
             }
@@ -167,6 +173,7 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCoarse
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
+            | Self::DiagnosticRxOwnership
             | Self::DiagnosticRxDeliveryPhyHotSram
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
@@ -194,6 +201,7 @@ impl ImageClass {
                 | Self::BluetoothWatchdogReset
                 | Self::BootSmoke
                 | Self::Performance
+                | Self::DiagnosticRxOwnership
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticCore0RxCoarse

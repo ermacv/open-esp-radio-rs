@@ -14,6 +14,8 @@ pub mod airtime;
 pub mod mac_irq;
 pub mod rx_delivery;
 pub mod rx_evidence;
+#[cfg(feature = "rx-ownership-observation")]
+pub mod rx_ownership;
 pub mod rx_pipeline;
 pub mod task_poll;
 #[cfg(any(feature = "tx-wait-probe", test))]

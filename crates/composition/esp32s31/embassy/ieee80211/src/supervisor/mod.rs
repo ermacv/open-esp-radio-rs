@@ -864,6 +864,8 @@ pub async fn new(
     diagnostics_event!("open-radio: cold PHY start");
 
     let crate::RadioConfig {
+        #[cfg(feature = "rx-ownership-observation")]
+        rx_ownership_observer,
         watchdog,
         access_point_airtime,
         station_mac,
@@ -943,6 +945,10 @@ pub async fn new(
         Ok(memory) => memory,
         Err(_error) => return Err(NewError::StationMemoryInUse),
     };
+    #[cfg(feature = "rx-ownership-observation")]
+    if let Some(observer) = rx_ownership_observer {
+        memory.rx_dma.set_ownership_observer(observer);
+    }
     let rx_storage: &'static RxStorage = memory.rx_dma;
     let buffer_addresses = RX_BUFFER_ADDRESSES.take();
     let monitor_memory =

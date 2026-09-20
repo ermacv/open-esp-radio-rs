@@ -307,6 +307,9 @@ impl ConnectedDatapathPollObserver {
 /// responsibility; credentials are supplied separately to `start_station`.
 #[cfg(target_arch = "riscv32")]
 pub struct RadioConfig {
+    #[cfg(feature = "rx-ownership-observation")]
+    pub(crate) rx_ownership_observer:
+        Option<&'static dyn oer_esp32s31_wifi_dma::rx_observation::RxOwnershipObserver>,
     pub(crate) watchdog: &'static WatchdogConfig,
     pub(crate) access_point_airtime: Option<
         oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
@@ -335,6 +338,8 @@ impl RadioConfig {
     ) -> Self {
         Self {
             watchdog,
+            #[cfg(feature = "rx-ownership-observation")]
+            rx_ownership_observer: None,
             station_mac,
             access_point_airtime: None,
             access_point_mac,
@@ -350,6 +355,17 @@ impl RadioConfig {
             #[cfg(feature = "diagnostics")]
             diagnostics: None,
         }
+    }
+
+    /// Observe physical RX allocation lifetimes using a caller-owned sink.
+    /// Timestamping and recorder storage remain outside the radio.
+    #[cfg(feature = "rx-ownership-observation")]
+    pub fn with_rx_ownership_observer(
+        mut self,
+        observer: &'static dyn oer_esp32s31_wifi_dma::rx_observation::RxOwnershipObserver,
+    ) -> Self {
+        self.rx_ownership_observer = Some(observer);
+        self
     }
 
     /// Supply a caller-owned retained PHY calibration cache. Cold registration

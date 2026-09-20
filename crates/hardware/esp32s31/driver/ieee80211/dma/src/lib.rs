@@ -10,6 +10,8 @@
 pub mod alignment;
 pub mod descriptor;
 pub mod rx_dma;
+#[cfg(feature = "rx-ownership-observation")]
+pub mod rx_observation;
 pub mod rx_ring;
 pub mod rx_storage;
 pub mod tx_ampdu_storage;

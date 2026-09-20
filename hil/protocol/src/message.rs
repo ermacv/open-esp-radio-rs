@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 168;
+pub const PROTOCOL_VERSION: u16 = 169;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -151,6 +151,8 @@ pub struct FeatureCapabilities {
     /// UDP RX sessions can return typed evidence for every delivery frontier
     /// from post-reorder publication through the application socket.
     pub rx_delivery_evidence: bool,
+    /// Diagnostic physical RX allocation lifetime observations.
+    pub rx_ownership_evidence: bool,
     /// The direct source-owned RX-gain transaction executes from internal SRAM.
     pub phy_rx_hot_sram: bool,
     /// This image instruments bounded Embassy task poll residence. Ordinary

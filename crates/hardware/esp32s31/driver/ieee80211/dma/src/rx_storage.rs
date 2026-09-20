@@ -11,6 +11,8 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
+#[cfg(feature = "rx-ownership-observation")]
+use crate::rx_observation::{RxOwnershipEdge, RxOwnershipObserver};
 use oer_memory::ExternalRxBuffer;
 
 use crate::{
@@ -119,7 +121,13 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
         unsafe { self.prepare_for_recycle() }
     }
 
-    fn detach(&self, length: usize, index: usize) -> Result<ExternalRxBuffer, RxRingError> {
+    fn detach_with(
+        &self,
+        length: usize,
+        index: usize,
+        owner: NonNull<()>,
+        release: unsafe fn(NonNull<()>, usize),
+    ) -> Result<ExternalRxBuffer, RxRingError> {
         if length == 0 || length > BUFFER_SIZE {
             return Err(RxRingError::Size);
         }
@@ -132,7 +140,6 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
             )
             .map_err(|_| RxRingError::Busy)?;
         let pointer = NonNull::new(self.0.get().cast::<u8>()).expect("RX DMA buffer is non-null");
-        let owner = NonNull::from(self).cast::<()>();
         // SAFETY: the completed-unit owner proved that DMA released this
         // buffer. The buffer is part of stable arena storage and the state
         // transition prevents recycle until the callback marks it released.
@@ -140,16 +147,7 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
             unsafe_code,
             reason = "completed descriptor detaches stable DMA buffer ownership"
         )]
-        Ok(unsafe {
-            ExternalRxBuffer::new(
-                pointer,
-                length,
-                BUFFER_SIZE,
-                owner,
-                index,
-                release_detached_buffer::<BUFFER_SIZE, STORAGE_SIZE>,
-            )
-        })
+        Ok(unsafe { ExternalRxBuffer::new(pointer, length, BUFFER_SIZE, owner, index, release) })
     }
 
     fn is_released(&self) -> bool {
@@ -218,7 +216,7 @@ unsafe fn release_detached_buffer<const BUFFER_SIZE: usize, const STORAGE_SIZE: 
     owner: NonNull<()>,
     _index: usize,
 ) {
-    // SAFETY: `RxDmaBuffer::detach` installed this callback with a pointer to
+    // SAFETY: `RxDmaStorage::detach_buffer` installed this callback with a pointer to
     // the same concrete buffer allocation, which remains static for the DMA
     // epoch.
     let buffer = unsafe {
@@ -242,6 +240,38 @@ unsafe fn release_detached_buffer<const BUFFER_SIZE: usize, const STORAGE_SIZE: 
 pub enum RxDmaStorageError {
     AddressWidth,
     Count,
+}
+
+#[cfg(feature = "rx-ownership-observation")]
+#[allow(
+    unsafe_code,
+    reason = "static arena and physical index retained by the unique external lease"
+)]
+unsafe fn release_observed_buffer<
+    const COUNT: usize,
+    const BUFFER_SIZE: usize,
+    const STORAGE_SIZE: usize,
+>(
+    owner: NonNull<()>,
+    index: usize,
+) {
+    // SAFETY: detach_buffer installs this callback only with its static arena.
+    let storage = unsafe {
+        owner
+            .cast::<RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>>()
+            .as_ref()
+    };
+    let buffer = storage
+        .buffer_by_id(index)
+        .expect("detached physical buffer belongs to arena");
+    // Observe before Release publication: another core may immediately rearm
+    // after that publication. No upper owner can still access this unique lease.
+    storage.observe(index, RxOwnershipEdge::Released);
+    // SAFETY: this is the same concrete allocation and unique release contract
+    // as the unobserved lease callback. The observer owns no payload authority.
+    unsafe {
+        release_detached_buffer::<BUFFER_SIZE, STORAGE_SIZE>(NonNull::from(buffer).cast(), index)
+    };
 }
 
 const fn identity_atomic_buffer_ids<const COUNT: usize>() -> [AtomicU8; COUNT] {
@@ -421,7 +451,7 @@ impl<
         if matches!(result, Ok(Some(_))) {
             self.requires_recycle = false;
         }
-        result
+        self.storage.observe_append(result)
     }
 
     /// Finish the staging handoff without returning this descriptor unit to
@@ -453,9 +483,7 @@ impl<
             .ok_or(RxRingError::Count)?;
         let buffer = self
             .storage
-            .buffer_for_descriptor(index)
-            .ok_or(RxRingError::Count)?
-            .detach(self.unit.total_length(), buffer_id)?;
+            .detach_buffer(self.unit.total_length(), buffer_id)?;
         self.requires_recycle = false;
         Ok(RxDmaDetachedUnit {
             buffer,
@@ -492,6 +520,8 @@ pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STOR
     buffers: [RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
     descriptor_buffer_ids: [AtomicU8; COUNT],
     lifecycle: AtomicU8,
+    #[cfg(feature = "rx-ownership-observation")]
+    observer: Option<&'static dyn RxOwnershipObserver>,
 }
 
 #[allow(unsafe_code, reason = "atomic bindings serialize cross-core ownership")]
@@ -509,7 +539,65 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             buffers: [const { RxDmaBuffer::new() }; COUNT],
             descriptor_buffer_ids: identity_atomic_buffer_ids(),
             lifecycle: AtomicU8::new(RxDmaArenaState::Reusable as u8),
+            #[cfg(feature = "rx-ownership-observation")]
+            observer: None,
         }
+    }
+
+    /// Install a diagnostic sink before a ring or detached lease can exist.
+    /// Ordinary builds contain neither the sink nor ownership callbacks.
+    #[cfg(feature = "rx-ownership-observation")]
+    pub fn set_ownership_observer(&mut self, observer: &'static dyn RxOwnershipObserver) {
+        self.observer = Some(observer);
+    }
+
+    #[cfg(feature = "rx-ownership-observation")]
+    fn observe(&self, buffer: usize, edge: RxOwnershipEdge) {
+        if let Some(observer) = self.observer {
+            observer.observe(core::ptr::from_ref(self).addr(), buffer, edge);
+        }
+    }
+
+    fn detach_buffer(
+        &'static self,
+        length: usize,
+        index: usize,
+    ) -> Result<ExternalRxBuffer, RxRingError> {
+        let buffer = self.buffer_by_id(index).ok_or(RxRingError::Count)?;
+        #[cfg(not(feature = "rx-ownership-observation"))]
+        let detached = buffer.detach_with(
+            length,
+            index,
+            NonNull::from(buffer).cast(),
+            release_detached_buffer::<BUFFER_SIZE, STORAGE_SIZE>,
+        );
+        #[cfg(feature = "rx-ownership-observation")]
+        let detached = buffer.detach_with(
+            length,
+            index,
+            NonNull::from(self).cast(),
+            release_observed_buffer::<COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+        );
+        let detached = detached?;
+        #[cfg(feature = "rx-ownership-observation")]
+        self.observe(index, RxOwnershipEdge::Detached);
+        Ok(detached)
+    }
+
+    fn observe_append(
+        &self,
+        result: Result<Option<RxLiveAppend>, RxRingError>,
+    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        #[cfg(feature = "rx-ownership-observation")]
+        if let Ok(Some(append)) = result {
+            for step in 0..append.descriptor_count {
+                let index = wrap_index::<COUNT>(append.head_index, step);
+                if let Some(buffer) = self.descriptor_buffer_id(index) {
+                    self.observe(buffer, RxOwnershipEdge::Republished);
+                }
+            }
+        }
+        result
     }
 
     /// Sticky lifecycle state stored with the static arena rather than in its
@@ -692,11 +780,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             |index| {
                 // SAFETY: stopped-ring preparation owns every descriptor and
                 // the validated address table binds `index` to this arena.
-                unsafe {
-                    self.buffer_for_descriptor(index)
-                        .ok_or(RxRingError::Count)?
-                        .prepare_for_stopped_ring()
-                }
+                unsafe { self.prepare_stopped_buffer(index) }
             },
             Some(&self.lifecycle),
         );
@@ -757,12 +841,28 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring.prepare_owned(mmio, buffer_size, |index| {
             // SAFETY: the halted owner proves that DMA is stopped, and the
             // validated layout binds the descriptor to this exact buffer.
-            unsafe {
-                self.buffer_for_descriptor(index)
-                    .ok_or(RxRingError::Count)?
-                    .prepare_for_stopped_ring()
-            }
+            unsafe { self.prepare_stopped_buffer(index) }
         })
+    }
+
+    /// # Safety
+    /// Called only by a stopped/halted ring's exclusive preparation closure.
+    #[allow(
+        unsafe_code,
+        reason = "stopped ring preparation owns this physical buffer"
+    )]
+    unsafe fn prepare_stopped_buffer(&self, index: usize) -> Result<(), RxRingError> {
+        let buffer = self
+            .buffer_for_descriptor(index)
+            .ok_or(RxRingError::Count)?;
+        // SAFETY: the enclosing ring preparation closure proves DMA stopped.
+        unsafe { buffer.prepare_for_stopped_ring()? };
+        #[cfg(feature = "rx-ownership-observation")]
+        self.observe(
+            self.descriptor_buffer_id(index).ok_or(RxRingError::Count)?,
+            RxOwnershipEdge::ReclaimedWhileStopped,
+        );
+        Ok(())
     }
 
     /// Transfer one completed descriptor together with its buffer read
@@ -810,7 +910,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         mmio: &mut M,
     ) -> Result<Option<RxLiveAppend>, RxRingError> {
         self.validate_live_ring(ring)?;
-        ring.recycle_completed_half_owned(mmio, |index| {
+        let result = ring.recycle_completed_half_owned(mmio, |index| {
             // SAFETY: the ring invokes the closure only after observing the
             // complete half and immediately before descriptor publication.
             unsafe {
@@ -818,7 +918,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                     .ok_or(RxRingError::Count)?
                     .prepare_observed_for_recycle()
             }
-        })
+        });
+        self.observe_append(result)
     }
 
     #[allow(
@@ -831,7 +932,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         mmio: &mut M,
     ) -> Result<Option<RxLiveAppend>, RxRingError> {
         self.validate_live_ring(ring)?;
-        ring.recycle_completed_prefix_owned::<MAX_BATCH, _, _>(mmio, |index| {
+        let result = ring.recycle_completed_prefix_owned::<MAX_BATCH, _, _>(mmio, |index| {
             // SAFETY: the ring invokes the closure only for its observed
             // prefix immediately before returning those buffers to DMA.
             unsafe {
@@ -839,7 +940,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                     .ok_or(RxRingError::Count)?
                     .prepare_observed_for_recycle()
             }
-        })
+        });
+        self.observe_append(result)
     }
 
     /// Return the longest contiguous prefix whose detached upper owners have
@@ -881,7 +983,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         if released == 0 {
             return Ok(None);
         }
-        ring.recycle_released_terminal_prefix_owned(mmio, released, |index| {
+        let result = ring.recycle_released_terminal_prefix_owned(mmio, released, |index| {
             // SAFETY: the prefix scan proved RELEASED and the ring revalidates
             // the complete descriptor image before invoking this callback.
             unsafe {
@@ -889,7 +991,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                     .ok_or(RxRingError::Count)?
                     .prepare_observed_for_recycle()
             }
-        })
+        });
+        self.observe_append(result)
     }
 
     /// Number of detached buffers already returned by upper owners but not
@@ -1128,7 +1231,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         descriptor_count: usize,
     ) -> Result<Option<RxLiveAppend>, RxRingError> {
         self.validate_live_ring(ring)?;
-        ring.recycle_completed_unit_through_frozen_last_owned(
+        let result = ring.recycle_completed_unit_through_frozen_last_owned(
             mmio,
             cursor,
             descriptor_count,
@@ -1141,7 +1244,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                         .prepare_for_recycle()
                 }
             },
-        )
+        );
+        self.observe_append(result)
     }
 
     fn validate_live_ring(&self, ring: &RxRingLive<'_, COUNT>) -> Result<(), RxRingError> {

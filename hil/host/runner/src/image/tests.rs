@@ -201,7 +201,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 22);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 23);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -462,6 +462,34 @@ fn removed_rx_phy_images_are_rejected_by_both_decoders() {
         assert!(serde_json::from_str::<ImageClass>(&format!("\"{id}\"")).is_err());
         assert!(id.parse::<ImageClass>().is_err());
     }
+}
+
+#[test]
+fn rx_ownership_is_an_explicit_overlay_not_a_performance_image() {
+    let mut features = FeatureCapabilities {
+        psram_task_stack: true,
+        rx_ownership_evidence: true,
+        ..FeatureCapabilities::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::DiagnosticRxOwnership)
+    );
+    assert!(!ImageClass::DiagnosticRxOwnership.requires_driver_observation());
+    assert!(
+        ImageClass::DiagnosticRxOwnership
+            .runtime_features()
+            .split(',')
+            .any(|f| f == "rx-ownership-telemetry")
+    );
+    features.driver_observation_evidence = true;
+    assert_eq!(classify_flashed_capabilities(&features), None);
+    features.driver_observation_evidence = false;
+    features.rx_ownership_evidence = false;
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::Performance)
+    );
 }
 
 #[test]

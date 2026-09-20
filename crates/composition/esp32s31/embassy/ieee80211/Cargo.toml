@@ -70,6 +70,7 @@ critical-section = { version = "1.2.0", features = ["std"] }
 
 [features]
 lifecycle-fault-injection = ["oer-esp32s31-phy/lifecycle-fault-injection"]
+rx-ownership-observation = ["oer-esp32s31-wifi-dma/rx-ownership-observation"]
 # Experimental direct RX-gain transaction SRAM placement for the RXCAL A/B profile.
 phy-rx-hot-sram = ["oer-esp32s31-wifi-embassy/phy-rx-hot-sram"]
 default = ["owned-network"]

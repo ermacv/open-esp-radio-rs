@@ -41,22 +41,6 @@ pub enum Direction {
     Bidirectional,
 }
 
-/// Removed RX-admission experiment retained only to decode sealed run inputs.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum HistoricalRxAdmissionPolicy {
-    SynchronousShared,
-    DeferredReadyDiagnostic,
-}
-
-/// Removed RX-dispatch experiment retained only to decode sealed run inputs.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum HistoricalRxDispatchPolicy {
-    Asynchronous,
-    DirectImmediateDiagnostic,
-}
-
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AccessPointClient {
@@ -448,18 +432,6 @@ pub struct Scenario {
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
     #[serde(default)]
     pub tx_buffer: WifiTxBufferPolicy,
-    #[serde(
-        default,
-        rename = "rx_admission",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub historical_rx_admission: Option<HistoricalRxAdmissionPolicy>,
-    #[serde(
-        default,
-        rename = "rx_dispatch",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub historical_rx_dispatch: Option<HistoricalRxDispatchPolicy>,
     #[serde(default)]
     pub rx_continuation: WifiRxContinuationPolicy,
     #[serde(default)]

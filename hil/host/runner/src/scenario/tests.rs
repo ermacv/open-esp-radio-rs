@@ -879,9 +879,7 @@ fn unsupported_rx_admission_selector_is_rejected_when_loading_scenarios() {
     );
     for value in ["synchronous-shared", "deferred-ready-diagnostic"] {
         let source = format!("rx_admission = \"{value}\"\n{source}");
-        let scenario = toml::from_str::<Scenario>(&source).unwrap();
-        assert!(scenario.historical_rx_admission.is_some());
-        assert!(scenario.validate().is_err());
+        assert!(toml::from_str::<Scenario>(&source).is_err());
     }
     let source = format!("rx_admission = \"invented\"\n{source}");
     assert!(toml::from_str::<Scenario>(&source).is_err());
@@ -894,12 +892,29 @@ fn unsupported_rx_dispatch_selector_is_rejected_when_loading_scenarios() {
     );
     for value in ["asynchronous", "direct-immediate-diagnostic"] {
         let source = format!("rx_dispatch = \"{value}\"\n{source}");
-        let scenario = toml::from_str::<Scenario>(&source).unwrap();
-        assert!(scenario.historical_rx_dispatch.is_some());
-        assert!(scenario.validate().is_err());
+        assert!(toml::from_str::<Scenario>(&source).is_err());
     }
     let source = format!("rx_dispatch = \"invented\"\n{source}");
     assert!(toml::from_str::<Scenario>(&source).is_err());
+}
+
+#[test]
+fn removed_rx_fields_are_not_accepted_in_sealed_json_inputs() {
+    let scenario: Scenario = toml::from_str(include_str!(
+        "../../../../scenarios/ieee80211/station/udp-rx-ht40-core0-coarse-diagnostic.toml"
+    ))
+    .unwrap();
+    let current = serde_json::to_value(&scenario).unwrap();
+    assert!(serde_json::from_value::<Scenario>(current.clone()).is_ok());
+    for field in ["rx_admission", "rx_dispatch"] {
+        for value in [serde_json::Value::Null, serde_json::json!("asynchronous")] {
+            let mut removed = current.clone();
+            removed[field] = value;
+            let error = serde_json::from_value::<Scenario>(removed).unwrap_err();
+            assert!(error.to_string().contains("unknown field"));
+            assert!(error.to_string().contains(field));
+        }
+    }
 }
 
 #[test]
@@ -1463,30 +1478,11 @@ fn bluetooth_peripheral_rf_loss_uses_peer_rfkill() {
 }
 
 #[test]
-fn historical_bluetooth_power_off_is_readable_but_cannot_enter_the_catalog() {
+fn removed_bluetooth_power_off_is_rejected_during_decoding() {
     let source = include_str!("../../../../scenarios/bluetooth/bluetooth-peripheral-rf-loss.toml")
         .replace("peer-rfkill", "peer-power-off");
-    let scenario: Scenario = toml::from_str(&source).unwrap();
-    let Workload::BluetoothPeripheral { termination, .. } = scenario.workload else {
-        panic!("historical RF-loss scenario changed workload kind");
-    };
-    assert_eq!(
-        termination,
-        BluetoothPeripheralTermination::LegacyPeerPowerOff
-    );
-    assert!(scenario.validate().is_err());
-    assert!(
-        serde_json::to_string(&scenario)
-            .unwrap()
-            .contains("peer-power-off")
-    );
-
-    let mut historical_image: Scenario = toml::from_str(include_str!(
-        "../../../../scenarios/bluetooth/bluetooth-peripheral-rf-loss.toml"
-    ))
-    .unwrap();
-    historical_image.image = ImageClass::LegacyDiagnosticRxDeliveryPhySettle;
-    assert!(historical_image.validate().is_err());
+    assert!(toml::from_str::<Scenario>(&source).is_err());
+    assert!(serde_json::from_str::<BluetoothPeripheralTermination>("\"peer-power-off\"").is_err());
 }
 
 #[test]

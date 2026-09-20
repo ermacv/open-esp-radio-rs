@@ -49,9 +49,6 @@ pub enum BluetoothPeripheralTermination {
     PeerRfkill,
     TargetDisconnect,
     TargetReset,
-    /// Historical scenario identity retained only for sealed-run decoding.
-    #[serde(rename = "peer-power-off")]
-    LegacyPeerPowerOff,
 }
 
 /// Diagnostic peripheral operation within one board boot.
@@ -508,6 +505,23 @@ impl BluetoothDtmEvidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn removed_power_off_variant_is_not_decodable() {
+        assert!(postcard::from_bytes::<BluetoothPeripheralTermination>(&[4]).is_err());
+        for mode in [
+            BluetoothPeripheralTermination::PeerReset,
+            BluetoothPeripheralTermination::PeerRfkill,
+            BluetoothPeripheralTermination::TargetDisconnect,
+            BluetoothPeripheralTermination::TargetReset,
+        ] {
+            let mut storage = [0; 8];
+            let bytes = postcard::to_slice(&mode, &mut storage).unwrap();
+            assert_eq!(
+                postcard::from_bytes::<BluetoothPeripheralTermination>(bytes).unwrap(),
+                mode
+            );
+        }
+    }
     #[test]
     fn maintenance_partition_is_exclusive_and_rejects_missing_or_late_edges() {
         let valid = BluetoothPhyMaintenanceEvidence {

@@ -1211,10 +1211,6 @@ impl Console {
                         Event::Rejected(RejectReason::InvalidState)
                     } else if start.is_some_and(|(_, hold_millis)| hold_millis > 5_000) {
                         Event::Rejected(RejectReason::InvalidConfiguration)
-                    } else if start.is_some_and(|(termination, _)| {
-                        termination == PeripheralTermination::LegacyPeerPowerOff
-                    }) {
-                        Event::Rejected(RejectReason::InvalidConfiguration)
                     } else {
                         let result = if operation == PeripheralOperation::Snapshot {
                             PeripheralResult::Snapshot
@@ -1242,7 +1238,6 @@ impl Console {
                                         | PeripheralTermination::PeerRfkill => 0,
                                         PeripheralTermination::TargetDisconnect => 1,
                                         PeripheralTermination::TargetReset => 2,
-                                        PeripheralTermination::LegacyPeerPowerOff => unreachable!(),
                                     };
                                     PERIPHERAL_TERMINATION_HOLD_MILLIS
                                         .store(u32::from(hold_millis), Ordering::Release);

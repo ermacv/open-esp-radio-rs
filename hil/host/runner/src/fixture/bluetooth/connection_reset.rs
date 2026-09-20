@@ -471,8 +471,7 @@ fn finish_connection(
                 BluetoothPeripheralTermination::TargetDisconnect => 0x13,
                 BluetoothPeripheralTermination::TargetReset => 0x08,
                 BluetoothPeripheralTermination::PeerReset
-                | BluetoothPeripheralTermination::PeerRfkill
-                | BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+                | BluetoothPeripheralTermination::PeerRfkill => unreachable!(),
             };
             let deadline =
                 Instant::now() + Duration::from_millis(u64::from(hold_ms)) + Duration::from_secs(8);
@@ -487,8 +486,7 @@ fn finish_connection(
                 }
             }
         }
-        BluetoothPeripheralTermination::PeerRfkill
-        | BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+        BluetoothPeripheralTermination::PeerRfkill => unreachable!(),
     }
     Ok(())
 }

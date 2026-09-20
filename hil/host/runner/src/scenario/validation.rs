@@ -45,23 +45,6 @@ impl Scenario {
             )
             .into());
         }
-        if self.image.historical_only()
-            || self.historical_rx_admission.is_some()
-            || self.historical_rx_dispatch.is_some()
-            || matches!(
-                self.workload,
-                Workload::BluetoothPeripheral {
-                    termination: BluetoothPeripheralTermination::LegacyPeerPowerOff,
-                    ..
-                }
-            )
-        {
-            return Err(format!(
-                "{}: historical image or workload identities cannot be selected for a new run",
-                self.source.display()
-            )
-            .into());
-        }
         if self.id.is_empty()
             || !self
                 .id

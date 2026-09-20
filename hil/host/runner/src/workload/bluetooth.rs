@@ -496,9 +496,6 @@ fn peripheral_cycle_complete(
     current: &BluetoothPeripheralEvidence,
     termination: BluetoothPeripheralTermination,
 ) -> Result<bool> {
-    if termination == BluetoothPeripheralTermination::LegacyPeerPowerOff {
-        return Err("historical peer-power-off mode cannot be executed".into());
-    }
     if current.terminal || current.saturated {
         return Err("Bluetooth peripheral entered a terminal or saturated state".into());
     }
@@ -607,7 +604,6 @@ fn peripheral_cycle_complete(
             current.last_disconnect_reason == Some(0x16)
         }
         BluetoothPeripheralTermination::TargetReset => true,
-        BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
     };
     if complete && !reason_matches {
         return Err(
@@ -800,8 +796,7 @@ mod peripheral_tests {
                     current.target_reset_commands = 1;
                 }
                 BluetoothPeripheralTermination::PeerReset
-                | BluetoothPeripheralTermination::PeerRfkill
-                | BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
+                | BluetoothPeripheralTermination::PeerRfkill => unreachable!(),
             }
             assert!(peripheral_cycle_complete(baseline, &current, termination).unwrap());
             current.target_disconnect_commands = 0;

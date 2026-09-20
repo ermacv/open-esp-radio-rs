@@ -454,25 +454,13 @@ fn rx_hot_sram_image_is_the_delivery_control_with_one_placement_change() {
 }
 
 #[test]
-fn historical_rx_phy_images_round_trip_without_entering_the_current_catalog() {
-    for (id, expected) in [
-        (
-            "diagnostic-rx-delivery-phy-steps",
-            ImageClass::LegacyDiagnosticRxDeliveryPhySteps,
-        ),
-        (
-            "diagnostic-rx-delivery-phy-settle",
-            ImageClass::LegacyDiagnosticRxDeliveryPhySettle,
-        ),
+fn removed_rx_phy_images_are_rejected_by_both_decoders() {
+    for id in [
+        "diagnostic-rx-delivery-phy-steps",
+        "diagnostic-rx-delivery-phy-settle",
     ] {
-        let historical: ImageClass = serde_json::from_str(&format!("\"{id}\"")).unwrap();
-        assert_eq!(historical, expected);
-        assert!(historical.historical_only());
-        assert_eq!(
-            serde_json::to_string(&historical).unwrap(),
-            format!("\"{id}\"")
-        );
-        assert!(historical.id().parse::<ImageClass>().is_err());
+        assert!(serde_json::from_str::<ImageClass>(&format!("\"{id}\"")).is_err());
+        assert!(id.parse::<ImageClass>().is_err());
     }
 }
 

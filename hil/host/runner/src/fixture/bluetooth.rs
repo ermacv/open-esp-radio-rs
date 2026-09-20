@@ -272,9 +272,6 @@ pub(crate) fn connect_profile_in(
     if hold_ms > 5_000 {
         return Err("connection hold must be at most 5000 ms".into());
     }
-    if termination == BluetoothPeripheralTermination::LegacyPeerPowerOff {
-        return Err("historical peer-power-off mode cannot be executed".into());
-    }
     let mut command = Command::new("sudo");
     command
         .args([
@@ -293,7 +290,6 @@ pub(crate) fn connect_profile_in(
                 BluetoothPeripheralTermination::PeerRfkill => "peer-rfkill",
                 BluetoothPeripheralTermination::TargetDisconnect => "target-disconnect",
                 BluetoothPeripheralTermination::TargetReset => "target-reset",
-                BluetoothPeripheralTermination::LegacyPeerPowerOff => unreachable!(),
             },
         ])
         .stdin(Stdio::null())

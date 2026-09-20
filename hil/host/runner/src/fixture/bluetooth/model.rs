@@ -320,7 +320,6 @@ impl ConnectionReset {
                     && self.peer_disconnection_complete
                     && self.peer_disconnect_reason == Some(0x08)
             }
-            BluetoothPeripheralTermination::LegacyPeerPowerOff => false,
         };
         (!key_refresh || encrypted)
             && self.key_refresh == key_refresh

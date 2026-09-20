@@ -28,11 +28,24 @@ const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 // The buffer is CPU-only storage placed in PSRAM by the qualification profile.
 const TCP_TX_BUFFER_CAPACITY: usize = 131_072;
 
+// Keep the zero-initialized payload storage separate from channels and socket
+// metadata. Nonzero control initializers would otherwise materialize these
+// large buffers in the flash image's .data rather than runtime-zeroed .bss.
+// Each cell still grants exactly one exclusive mutable lease to its TCP task.
+static STATION_TCP_RX_BUFFER: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]);
+static STATION_TCP_TX_BUFFER: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]);
+static ACCESS_POINT_TCP_RX_BUFFER: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]);
+static ACCESS_POINT_TCP_TX_BUFFER: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]);
+
 struct ConnectedTrafficResources {
     udp_rx: ConstStaticCell<UdpRxStorage>,
     udp_tx: ConstStaticCell<[UdpTxStorage; open_esp_radio_hil_protocol::SESSION_FLOW_CAPACITY]>,
-    tcp_rx_buffer: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
-    tcp_tx_buffer: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
+    tcp_rx_buffer: &'static ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
+    tcp_tx_buffer: &'static ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
     bidirectional_rx_sessions: BidirectionalSessionChannel,
     bidirectional_tx_sessions: BidirectionalSessionChannel,
     bidirectional_results: BidirectionalResultChannel,
@@ -41,14 +54,17 @@ struct ConnectedTrafficResources {
 }
 
 impl ConnectedTrafficResources {
-    const fn new() -> Self {
+    const fn new(
+        tcp_rx_buffer: &'static ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
+        tcp_tx_buffer: &'static ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
+    ) -> Self {
         Self {
             udp_rx: ConstStaticCell::new(UdpRxStorage::new()),
             udp_tx: ConstStaticCell::new(
                 [const { UdpTxStorage::new() }; open_esp_radio_hil_protocol::SESSION_FLOW_CAPACITY],
             ),
-            tcp_rx_buffer: ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]),
-            tcp_tx_buffer: ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]),
+            tcp_rx_buffer,
+            tcp_tx_buffer,
             bidirectional_rx_sessions: Channel::new(),
             bidirectional_tx_sessions: Channel::new(),
             bidirectional_results: Channel::new(),
@@ -58,8 +74,10 @@ impl ConnectedTrafficResources {
     }
 }
 
-static STATION_TRAFFIC: ConnectedTrafficResources = ConnectedTrafficResources::new();
-static ACCESS_POINT_TRAFFIC: ConnectedTrafficResources = ConnectedTrafficResources::new();
+static STATION_TRAFFIC: ConnectedTrafficResources =
+    ConnectedTrafficResources::new(&STATION_TCP_RX_BUFFER, &STATION_TCP_TX_BUFFER);
+static ACCESS_POINT_TRAFFIC: ConnectedTrafficResources =
+    ConnectedTrafficResources::new(&ACCESS_POINT_TCP_RX_BUFFER, &ACCESS_POINT_TCP_TX_BUFFER);
 
 fn resources(network_interface: WifiNetworkInterface) -> &'static ConnectedTrafficResources {
     match network_interface {

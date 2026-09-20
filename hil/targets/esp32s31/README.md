@@ -178,7 +178,7 @@ including the offset of the longest gap and the trailing gap; `ORX_SOCKET`
 identifies the last receive error when errors occurred.
 Silence means no data reached the UDP consumer; it does not identify an RF,
 stack or driver cause. `ORX_POOL` reports shared Xarxa allocation refusals;
-`ORX_RESOURCES` reports compatibility RX/TX free and queued slots plus cumulative
+`ORX_RESOURCES` reports released-Embassy RX/TX free and queued slots plus cumulative
 `rx_queue_full` publication refusals. Both records name the selected STA/AP
 interface; unavailable monitors remain absent rather than reporting zero. These observations can be
 read even when the radio executor is blocked. Slot snapshots include neither

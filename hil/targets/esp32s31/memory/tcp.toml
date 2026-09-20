@@ -163,7 +163,7 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
-symbol = "*::product_hil::traffic::runtime::TCP_RX_BUFFER"
+symbol = "*::product_hil::traffic::runtime::*_TCP_RX_BUFFER"
 owner = "hil.tcp.rx-window"
 scope = "hil"
 reason = "qualification-window"
@@ -171,17 +171,17 @@ placement = "required-psram"
 region = "external-psram"
 count = 1
 element_capacity = 262144
-optimization = "HIL throughput window; production applications choose their own socket capacity."
+optimization = "One zero-initialized window per interface, separate from channel controls; production applications choose their own socket capacity."
 
 [[rules]]
-symbol = "*::product_hil::traffic::runtime::TCP_TX_BUFFER"
+symbol = "*::product_hil::traffic::runtime::*_TCP_TX_BUFFER"
 owner = "hil.tcp.tx-window"
 scope = "hil"
 reason = "qualification-window"
 placement = "required-psram"
 region = "external-psram"
 count = 1
-element_capacity = 65536
+element_capacity = 131072
 
 [[rules]]
 symbol = "*::TCP_RX_PATTERN_BUFFER"

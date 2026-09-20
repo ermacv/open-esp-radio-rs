@@ -46,16 +46,70 @@ pub struct CodeDiff {
     pub after_text_bytes: u64,
     pub text_delta_bytes: i128,
     pub section_delta_bytes: BTreeMap<String, i128>,
+    /// Diagnostic symbol ranges, not additive attribution. Matching uses the
+    /// complete alias set and section, never a demangled substring. A changed
+    /// alias set is reported as removed/added, not guessed to be the same code.
+    pub symbols: Vec<CodeSymbolDiff>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CodeSymbolDiff {
+    pub section: String,
+    pub aliases: Vec<String>,
+    pub before: Vec<CodeSymbolRange>,
+    pub after: Vec<CodeSymbolRange>,
+    /// Sum of this identity's ranges only; not additive across identities that
+    /// overlap. Section deltas remain the linked-image size authority.
+    pub range_delta_bytes: i128,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CodeSymbolRange {
+    pub address: u64,
+    pub bytes: u64,
 }
 
 /// Exact section deltas, not guessed ownership of inlined generic code.
 pub fn diff_code(before: &CodeReport, after: &CodeReport) -> CodeDiff {
     let mut sections = BTreeMap::new();
+    let mut symbols = BTreeMap::<(String, Vec<String>), CodeSymbolDiff>::new();
     for (report, sign) in [(before, -1i128), (after, 1)] {
         for section in &report.sections {
             *sections.entry(section.name.clone()).or_default() += sign * i128::from(section.bytes);
+            for symbol in &section.symbols {
+                let mut aliases = symbol.aliases.clone();
+                aliases.sort();
+                aliases.dedup();
+                let diff = symbols
+                    .entry((section.name.clone(), aliases.clone()))
+                    .or_insert_with(|| CodeSymbolDiff {
+                        section: section.name.clone(),
+                        aliases,
+                        before: Vec::new(),
+                        after: Vec::new(),
+                        range_delta_bytes: 0,
+                    });
+                let ranges = if sign < 0 {
+                    &mut diff.before
+                } else {
+                    &mut diff.after
+                };
+                ranges.push(CodeSymbolRange {
+                    address: symbol.address,
+                    bytes: symbol.bytes,
+                });
+                diff.range_delta_bytes += sign * i128::from(symbol.bytes);
+            }
         }
     }
+    let mut symbols: Vec<_> = symbols.into_values().collect();
+    symbols.sort_by(|a, b| {
+        b.range_delta_bytes
+            .abs()
+            .cmp(&a.range_delta_bytes.abs())
+            .then(a.section.cmp(&b.section))
+            .then(a.aliases.cmp(&b.aliases))
+    });
     CodeDiff {
         before_elf: before.elf.clone(),
         after_elf: after.elf.clone(),
@@ -63,7 +117,37 @@ pub fn diff_code(before: &CodeReport, after: &CodeReport) -> CodeDiff {
         after_text_bytes: after.text_bytes,
         text_delta_bytes: i128::from(after.text_bytes) - i128::from(before.text_bytes),
         section_delta_bytes: sections,
+        symbols,
     }
+}
+
+pub fn render_code_diff(report: &CodeDiff) -> String {
+    use std::fmt::Write;
+    let mut out = format!(
+        "Linked text: {} -> {} bytes ({:+})\n{:?}\nSymbol ranges below are diagnostic and are NOT additive generic attribution.\n",
+        report.before_text_bytes,
+        report.after_text_bytes,
+        report.text_delta_bytes,
+        report.section_delta_bytes,
+    );
+    for symbol in report
+        .symbols
+        .iter()
+        .filter(|s| s.range_delta_bytes != 0)
+        .take(40)
+    {
+        writeln!(
+            out,
+            "  {:+} bytes {} {} ({} -> {} ranges)",
+            symbol.range_delta_bytes,
+            symbol.section,
+            symbol.aliases.join(" | "),
+            symbol.before.len(),
+            symbol.after.len()
+        )
+        .unwrap();
+    }
+    out
 }
 
 /// Inspect the supplied final image without rebuilding it or changing flags.
@@ -191,6 +275,65 @@ pub fn render_code_report(report: &CodeReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn diff_retains_alias_groups_added_removed_and_ambiguous_names() {
+        let report = |symbols: Vec<CodeSymbol>| CodeReport {
+            schema: 1,
+            elf: "fixture.elf".into(),
+            text_bytes: 100,
+            symbol_covered_bytes: 100,
+            sections: vec![CodeSection {
+                name: ".text".into(),
+                address: 100,
+                bytes: 100,
+                symbol_covered_bytes: 100,
+                unattributed_bytes: 0,
+                symbols,
+            }],
+        };
+        let symbol = |address, bytes, names: &[&str]| CodeSymbol {
+            address,
+            bytes,
+            aliases: names.iter().map(|s| (*s).into()).collect(),
+        };
+        let before = report(vec![
+            symbol(100, 20, &["a", "alias"]),
+            symbol(130, 10, &["duplicate"]),
+            symbol(150, 5, &["duplicate"]),
+            symbol(160, 4, &["gone"]),
+        ]);
+        let after = report(vec![
+            symbol(110, 25, &["alias", "a"]),
+            symbol(140, 12, &["duplicate"]),
+            symbol(170, 9, &["new"]),
+        ]);
+        let diff = diff_code(&before, &after);
+        assert_eq!(diff.text_delta_bytes, 0); // Symbol deltas are not section deltas.
+        let aliases = diff
+            .symbols
+            .iter()
+            .find(|s| s.aliases == ["a", "alias"])
+            .unwrap();
+        assert_eq!(aliases.range_delta_bytes, 5);
+        assert_eq!(aliases.before.len(), 1); // alias is not charged twice
+        let duplicate = diff
+            .symbols
+            .iter()
+            .find(|s| s.aliases == ["duplicate"])
+            .unwrap();
+        assert_eq!(duplicate.before.len(), 2); // no arbitrary first match
+        assert_eq!(duplicate.range_delta_bytes, -3);
+        assert!(
+            diff.symbols
+                .iter()
+                .any(|s| s.aliases == ["gone"] && s.after.is_empty())
+        );
+        assert!(
+            diff.symbols
+                .iter()
+                .any(|s| s.aliases == ["new"] && s.before.is_empty())
+        );
+    }
     #[test]
     fn actual_linked_test_binary_is_accounted_without_double_counting() {
         let report = analyze_code(&std::env::current_exe().unwrap()).unwrap();

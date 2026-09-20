@@ -77,6 +77,10 @@ an allowance or execution stack. A rule may match multiple monomorphizations;
 an unused rule does not by itself fail an image with a different composition.
 The report lists the actual measured addresses matched by every rule, including
 unused rules, small frames and all sides of an ambiguous match.
+An optional positive `max_matches` bounds distinct measured addresses for a
+reviewed selector, including small frames. Use it only where the review asserts
+that cardinality (for example one concrete task entry). Aliases count once;
+zero matches remain valid when an image omits the component.
 
 The analyzer reports linker-region capacity, allocated sections, explicit
 reservations, genuinely unassigned address space, policy-attributed consumers
@@ -86,7 +90,12 @@ symbols change between builds.
 
 `code` inventories surviving text-symbol ranges in the supplied linked image.
 Aliases and overlapping ranges count once; padding and unsized/stripped code
-remain unattributed. `code-diff` compares exact text-section totals.
+remain unattributed. `code-diff` compares exact text-section totals and retains
+before/after address ranges for each complete alias-set identity. Duplicate
+names retain all ranges; changed alias sets appear as removed/added rather than
+being heuristically merged. Symbol-range deltas are not additive when symbols
+overlap, and hash/name changes can prevent matching across builds. Section
+deltas, not these diagnostic identities, establish the total image change.
 `mono` reads one compiler-generated JSON file produced with
 `-Zdump-mono-stats=DIR -Zdump-mono-stats-format=json` on the pinned toolchain.
 Its counts and estimates are not linked bytes. Keep build provenance with the

@@ -36,6 +36,7 @@ reported_frame_count = 30
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
 function_contains = "::bluetooth_gatt::__task_task::__task_task_inner_function"
+max_matches = 1
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 8704
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }

@@ -58,6 +58,10 @@ pub struct ReviewedStackFrame {
     pub source_ends_with: Vec<String>,
     pub max_bytes: u64,
     pub reason: String,
+    /// Optional upper bound on distinct measured addresses matched by this
+    /// selector. Zero matches are valid for images that omit the component.
+    /// Aliases sharing an address count once, even for small frames.
+    pub max_matches: Option<usize>,
     #[serde(default)]
     pub execution_stack: Option<ExecutionStack>,
 }
@@ -124,6 +128,11 @@ impl StackBudget {
             ));
         }
         for reviewed in &self.reviewed_frames {
+            if reviewed.max_matches == Some(0) {
+                return Err(Error::InvalidPolicy(
+                    "reviewed frame max_matches must be positive when specified".into(),
+                ));
+            }
             if reviewed.execution_stack.as_ref().is_some_and(|stack| {
                 stack.storage_symbol.is_empty() || stack.minimum_free_bytes == 0
             }) {
@@ -182,6 +191,7 @@ pub struct StackReport {
 pub struct StackReviewedRuleMatches {
     pub index: usize,
     pub function_contains: String,
+    pub max_matches: Option<usize>,
     pub addresses: Vec<u64>,
 }
 
@@ -289,6 +299,7 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         .map(|(index, rule)| StackReviewedRuleMatches {
             index,
             function_contains: rule.function_contains.clone(),
+            max_matches: rule.max_matches,
             addresses: Vec::new(),
         })
         .collect::<Vec<_>>();
@@ -404,6 +415,15 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
 
     for rule in &mut reviewed_rule_matches {
         rule.addresses.sort_unstable();
+        rule.addresses.dedup();
+        if let Some(maximum) = rule.max_matches
+            && rule.addresses.len() > maximum
+        {
+            audit.errors.push(format!(
+                "reviewed_frames[{}] `{}` matches {} distinct measured addresses, exceeding max_matches={maximum}; review the expanded selector",
+                rule.index, rule.function_contains, rule.addresses.len(),
+            ));
+        }
     }
     Ok(StackReport {
         schema: 2,

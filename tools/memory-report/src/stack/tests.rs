@@ -112,7 +112,6 @@ fn symbol_coverage_distinguishes_aliases_missing_rust_other_text_and_rom() {
             if include_missing { 0 } else { 2 }
         );
         fs::remove_file(coverage_path).unwrap();
-        fs::remove_file(path).unwrap();
         assert_eq!(report.coverage.linked_text_addresses, 3);
         assert_eq!(
             report.coverage.measured_linked_text_addresses,
@@ -127,6 +126,28 @@ fn symbol_coverage_distinguishes_aliases_missing_rust_other_text_and_rom() {
             }
         );
         assert_eq!(report.coverage.metadata_without_text_symbol, [0x3050]);
+        // Both aliases at 0x3000 are one match; a new measured function
+        // expands the review even when its frame has zero bytes.
+        let mut cardinality = budget();
+        cardinality.reviewed_frames[0].function_contains = "measured".into();
+        cardinality.reviewed_frames[0].max_matches = Some(1);
+        let bounded = analyze_stack(&path, &cardinality);
+        assert!(audit_stack(&bounded.unwrap()).is_ok());
+        // measured, lost and asm_or_c contain 's'; the metadata-only
+        // unknown-function address does not.
+        cardinality.reviewed_frames[0].function_contains = "s".into();
+        let expanded = analyze_stack(&path, &cardinality).unwrap();
+        assert_eq!(audit_stack(&expanded).is_err(), include_missing);
+        if include_missing {
+            assert!(
+                expanded
+                    .audit
+                    .errors
+                    .iter()
+                    .any(|e| e.contains("max_matches=1"))
+            );
+        }
+        fs::remove_file(path).unwrap();
         let missing = &report.coverage.unmeasured_functions;
         if include_missing {
             assert_eq!(missing.len(), 1);
@@ -194,6 +215,7 @@ fn budget() -> StackBudget {
             source_ends_with: Vec::new(),
             max_bytes: 32 * 1024,
             reason: "synthetic fixture".into(),
+            max_matches: None,
             execution_stack: None,
         }],
     }
@@ -214,6 +236,19 @@ fn irq_stack_policy_requires_a_nonzero_reserve() {
     assert!(policy.validate().is_err());
     policy.runtime_irq_minimum_free_bytes = 1;
     assert!(policy.validate().is_ok());
+}
+
+#[test]
+fn cardinality_is_optional_but_not_zero() {
+    let mut policy = budget();
+    policy.reviewed_frames[0].max_matches = Some(0);
+    assert!(policy.validate().is_err());
+    policy.reviewed_frames[0].max_matches = Some(1);
+    let path = test_elf(true, 0, 0x2000, 0x1000);
+    assert!(audit_stack(&analyze_stack(&path, &policy).unwrap()).is_ok());
+    policy.reviewed_frames[0].function_contains = "absent_in_this_image".into();
+    assert!(audit_stack(&analyze_stack(&path, &policy).unwrap()).is_ok());
+    fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -274,6 +309,7 @@ fn unreviewed_large_frame_and_reviewed_growth_fail() {
         source_ends_with: Vec::new(),
         max_bytes: 8 * 1024 + 512,
         reason: "synthetic fixture".into(),
+        max_matches: None,
         execution_stack: None,
     });
     let report = analyze_stack(&path, &policy).unwrap();
@@ -292,6 +328,7 @@ fn reviewed_source_accepts_repository_and_cargo_trimmed_identities() {
         ],
         max_bytes: 16 * 1024,
         reason: "fixture".into(),
+        max_matches: None,
         execution_stack: None,
     };
     let frame = |file: &str| StackFrame {

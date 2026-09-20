@@ -28,7 +28,8 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub use code::{
-    CodeDiff, CodeReport, CodeSection, CodeSymbol, analyze_code, diff_code, render_code_report,
+    CodeDiff, CodeReport, CodeSection, CodeSymbol, CodeSymbolDiff, CodeSymbolRange, analyze_code,
+    diff_code, render_code_diff, render_code_report,
 };
 pub use mono::{MonoDefinition, MonoReport, analyze_mono, render_mono_report};
 

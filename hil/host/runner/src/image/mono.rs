@@ -131,10 +131,18 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
             return Err("unexpected compiler mono output; inspect the retained capture".into());
         }
         let report = open_esp_radio_memory_report::analyze_mono(&entry.path())?;
-        files.push(serde_json::json!({"identity":identity(&entry.path())?,"definitions":report.definitions.len()}));
+        files.push(serde_json::json!({"identity":identity(&entry.path())?,
+            "compiler_output_empty":report.compiler_output_empty,
+            "definitions":report.definitions.len()}));
     }
     if files.is_empty() {
         return Err("compiler produced no mono JSON; capture is incomplete".into());
+    }
+    if !files
+        .iter()
+        .any(|file| file["definitions"].as_u64().unwrap_or(0) > 0)
+    {
+        return Err("compiler produced no definition estimates; capture is incomplete".into());
     }
     let linked = open_esp_radio_memory_report::analyze_code(&artifacts.runtime_elf)?;
     crate::evidence::run::atomic_json(&directory.join("linked-code.json"), &linked)?;

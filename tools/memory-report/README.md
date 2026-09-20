@@ -100,6 +100,11 @@ deltas, not these diagnostic identities, establish the total image change.
 `-Zdump-mono-stats=DIR -Zdump-mono-stats-format=json` on the pinned toolchain.
 Its counts and estimates are not linked bytes. Keep build provenance with the
 compiler output; neither command rebuilds firmware or adds a mandatory gate.
+The pinned compiler can emit a zero-byte file for crates without mono items.
+Reports preserve this as `compiler_output_empty`, distinct from an empty JSON
+array; malformed nonempty JSON remains an error. Capture retains every file
+identity and requires at least one reported definition overall. This is not a
+proof of compiler metadata coverage.
 
 For a complete compiler capture through the HIL image constructor, run manually
 from a clean checkout:

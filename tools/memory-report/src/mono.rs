@@ -22,6 +22,9 @@ pub struct MonoDefinition {
 pub struct MonoReport {
     pub schema: u32,
     pub input: PathBuf,
+    /// The pinned compiler emitted a zero-byte file, not a JSON array. This is
+    /// an observed output shape, not a claim of complete compiler coverage.
+    pub compiler_output_empty: bool,
     pub definitions: Vec<MonoDefinition>,
 }
 
@@ -33,7 +36,10 @@ pub fn analyze_mono(path: &Path) -> Result<MonoReport> {
         path: path.into(),
         source,
     })?;
-    let mut definitions: Vec<MonoDefinition> = serde_json::from_slice(&data)?;
+    // rustc 1.97.1 emits a zero-byte file for a crate with no mono items
+    // (reproduced with a no_std, trait-only rlib). Preserve that distinction;
+    // whitespace, truncated JSON and changed schemas still fail closed.
+    let mut definitions = parse_definitions(&data)?;
     definitions.sort_by(|a, b| {
         b.total_estimate
             .cmp(&a.total_estimate)
@@ -42,7 +48,16 @@ pub fn analyze_mono(path: &Path) -> Result<MonoReport> {
     Ok(MonoReport {
         schema: 1,
         input: path.into(),
+        compiler_output_empty: data.is_empty(),
         definitions,
+    })
+}
+
+fn parse_definitions(data: &[u8]) -> Result<Vec<MonoDefinition>> {
+    Ok(if data.is_empty() {
+        Vec::new()
+    } else {
+        serde_json::from_slice(data)?
     })
 }
 
@@ -52,6 +67,9 @@ pub fn render_mono_report(report: &MonoReport) -> String {
         "Compiler mono estimates from {} (not linked bytes)\n",
         report.input.display()
     );
+    if report.compiler_output_empty {
+        out.push_str("Compiler emitted an empty file; no definition estimates reported.\n");
+    }
     for d in &report.definitions {
         writeln!(
             out,
@@ -66,6 +84,14 @@ pub fn render_mono_report(report: &MonoReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn empty_compiler_output_is_distinct_from_json_and_truncation() {
+        assert!(parse_definitions(b"").unwrap().is_empty());
+        assert!(parse_definitions(b"[]").unwrap().is_empty());
+        for malformed in [" ", "[", "[{", "null"] {
+            assert!(parse_definitions(malformed.as_bytes()).is_err());
+        }
+    }
     #[test]
     fn pinned_compiler_json_preserves_estimates_without_byte_conversion() {
         // Shape checked using the repository's pinned rustc and a two-type generic.

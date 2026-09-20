@@ -16,6 +16,7 @@ use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
 
 mod access;
 mod observation;
+use super::pause_request::timeline::Edge;
 
 pub(super) type Role = oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>;
 type TrackingOutcome = Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>;
@@ -38,6 +39,15 @@ pub(super) struct Storage {
     observations: &'static observation::Storage,
 }
 impl Storage {
+    pub(super) fn edge(&self, edge: Edge) {
+        self.observations.edge(edge);
+    }
+
+    #[cfg(feature = "diagnostics")]
+    pub(super) fn timeline(&self) -> Option<super::PauseTimeline> {
+        self.observations.timeline()
+    }
+
     pub fn new() -> Self {
         Self {
             paused: core::cell::RefCell::new(None),
@@ -286,6 +296,7 @@ async fn physical_round_trip(
     };
     match suspended {
         Suspended::Ready(irq) => {
+            storage.edge(Edge::Quiesced);
             // The complete IRQ epoch is consumed through access admission.
             // Arena borrows end before tracking awaits. A failed operation
             // cannot recover a resumable route.
@@ -309,8 +320,9 @@ async fn physical_round_trip(
                 .as_mut()
                 .expect("restored logical PHY owner")
                 .radio_mut();
-            resume(irq, platform, &mut storage.paused.borrow_mut(), runner)
-                .map(|irq| (irq, Ok(tracking)))
+            let irq = resume(irq, platform, &mut storage.paused.borrow_mut(), runner)?;
+            storage.edge(Edge::HardwareRestored);
+            Ok((irq, Ok(tracking)))
         }
         Suspended::Busy(irq) => Ok((irq, Err(PauseError::RxBusy))),
     }

@@ -16,6 +16,7 @@ fn detail_requires_matching_request_boot_session_and_preceding_completion() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,
@@ -82,6 +83,7 @@ fn timer_detail_is_distinct_from_tx_detail_and_requires_its_own_correlation() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,
@@ -144,6 +146,7 @@ fn service_detail_is_correlated_and_cannot_arrive_after_completion() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,
@@ -196,6 +199,7 @@ fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,
@@ -252,6 +256,7 @@ fn temperature_detail_is_correlated_before_completion() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,
@@ -284,6 +289,7 @@ fn rx_gain_requires_matching_request_boot_session_and_preceding_completion() {
         0,
         42,
         Event::StationPauseCompleted(StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: StationPauseResult::Resumed,

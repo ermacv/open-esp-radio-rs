@@ -1,4 +1,5 @@
 //! Diagnostic storage is outside the nested PHY future and borrowed per event.
+use super::super::pause_request::timeline::Edge;
 use oer_esp32s31_phy::PhyTargetObserver;
 #[cfg(feature = "diagnostics")]
 use oer_esp32s31_phy::tracking::observation::Report;
@@ -7,9 +8,29 @@ use oer_esp32s31_phy::tracking::observation::Report;
 pub(super) struct Storage {
     #[cfg(feature = "diagnostics")]
     recorder: core::cell::RefCell<oer_esp32s31_phy::tracking::observation::Recorder>,
+    #[cfg(feature = "diagnostics")]
+    timeline: core::cell::RefCell<super::super::pause_request::timeline::Recorder>,
 }
 
 impl Storage {
+    #[inline(never)]
+    pub fn edge(&self, _edge: Edge) {
+        #[cfg(feature = "diagnostics")]
+        {
+            let now = embassy_time::Instant::now().as_micros();
+            let mut timeline = self.timeline.borrow_mut();
+            if _edge == Edge::Requested {
+                *timeline = Default::default();
+            }
+            timeline.observe(_edge, now);
+        }
+    }
+
+    #[cfg(feature = "diagnostics")]
+    pub fn timeline(&self) -> Option<super::super::PauseTimeline> {
+        self.timeline.borrow().report()
+    }
+
     /// Claim once with the station checkpoint. Separate static storage avoids
     /// moving the recorder together with the complete paused runner at startup.
     pub fn initialize() -> &'static Self {

@@ -74,6 +74,11 @@ pub(crate) fn run(
                 )?;
             }
             validate_pause(Op::Temperature, sample.evidence)?;
+            validate_timeline(
+                Op::Temperature,
+                sample.evidence,
+                features.driver_observation_evidence,
+            )?;
             validate_temperature(Op::Temperature, sample.temperature)?;
             validate_rfpll(
                 Op::Temperature,
@@ -118,6 +123,7 @@ pub(crate) fn run(
             "maximum_attempts": attempts,
             "progress_before_request": &progress,
             "evidence": evidence,
+            "exclusive_intervals": evidence.timeline.and_then(|value| value.exclusive_intervals()),
             "tx_waits": tx_waits,
             "rx_gain": report.rx_gain,
             "phy_rx_hot_sram": features.phy_rx_hot_sram,
@@ -134,6 +140,7 @@ pub(crate) fn run(
             )?;
         }
         validate_pause(operation, evidence)?;
+        validate_timeline(operation, evidence, features.driver_observation_evidence)?;
         validate_temperature(operation, report.temperature)?;
         validate_rfpll(operation, evidence.timings, rfpll, false)?;
         validate_service(operation, service)?;
@@ -204,6 +211,50 @@ fn validate_temperature(
         }
     } else if temperature.is_some() {
         return Err("unexpected temperature detail for non-temperature operation".into());
+    }
+    Ok(())
+}
+
+/// Missing observations are permitted only for compact firmware or an aggregate
+/// service window, never as a fallback for a diagnostic physical transaction.
+fn validate_timeline(
+    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
+    required: bool,
+) -> Result<()> {
+    use open_esp_radio_hil_protocol::StationPauseOperation as Op;
+    if operation == Op::TrackingService {
+        return if evidence.timeline.is_none() {
+            Ok(())
+        } else {
+            Err("aggregate tracking window contains a single-transaction timeline".into())
+        };
+    }
+    let Some(timeline) = evidence.timeline else {
+        return if required {
+            Err("missing full station maintenance timeline".into())
+        } else {
+            Ok(())
+        };
+    };
+    let intervals = timeline
+        .exclusive_intervals()
+        .ok_or("non-monotonic station maintenance timeline")?;
+    if intervals.total_micros < evidence.elapsed_micros {
+        return Err("full station timeline does not contain stop/resume elapsed time".into());
+    }
+    if evidence
+        .timings
+        .is_some_and(|timings| u64::from(timings.tracking.elapsed_micros) > intervals.work_micros)
+    {
+        return Err("nested PHY timing exceeds the exclusive work interval".into());
+    }
+    if let Op::Synthetic {
+        duration_micros, ..
+    } = operation
+        && intervals.work_micros < u64::from(duration_micros)
+    {
+        return Err("exclusive work interval does not cover the synthetic hold".into());
     }
     Ok(())
 }

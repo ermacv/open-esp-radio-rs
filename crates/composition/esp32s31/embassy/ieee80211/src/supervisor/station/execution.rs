@@ -226,6 +226,9 @@ pub(super) async fn wait_connected_datapath_completion(
                 Either::Second(operation) => (PauseOperation::Automatic(operation), true),
             };
             // Include draining the active datapath, not just the PHY poll.
+            mailbox
+                .pause
+                .edge(super::pause_request::timeline::Edge::Requested);
             let protection = mailbox.watchdog.maintenance(None);
             mailbox.control.borrow().request_pause();
             match select(mailbox.wait_completed(), control.wait()).await {
@@ -281,6 +284,9 @@ pub(super) async fn run(
         let result = take_runner(mailbox, runner);
         match result {
             Ok(Exit::Paused) => {
+                use super::pause_request::timeline::Edge;
+                mailbox.pause.edge(Edge::Drained);
+                let mut completion = None;
                 if requested_command.is_none() {
                     let started = embassy_time::Instant::now();
                     match await_stack_boundary!(pause::round_trip(
@@ -292,25 +298,9 @@ pub(super) async fn run(
                     )) {
                         Ok((irq, result)) => {
                             interrupt_epoch = irq;
-                            if automatic {
-                                let super::PauseOperation::Automatic(operation) = operation else {
-                                    unreachable!("automatic selected operation")
-                                };
-                                match result {
-                                    Ok(outcome) => {
-                                        super::pause_request::REQUESTS.automatic.completed(
-                                            operation,
-                                            started.elapsed().as_micros(),
-                                            outcome,
-                                        )
-                                    }
-                                    Err(error) => super::pause_request::REQUESTS
-                                        .automatic
-                                        .report(super::TrackingStatus::Failed(error)),
-                                }
-                            } else {
-                                finish_pause(mailbox, result, started);
-                            }
+                            mailbox.pause.edge(Edge::ProtocolRestored);
+                            let elapsed_micros = started.elapsed().as_micros();
+                            completion = Some((result, elapsed_micros));
                         }
                         Err(failure) => {
                             let stage = failure.stage();
@@ -336,7 +326,29 @@ pub(super) async fn run(
                     mailbox.request_stop();
                 }
                 mailbox.resume(runner);
+                mailbox.pause.edge(Edge::WorkerReleased);
                 complete_protection(&mut protection);
+                // Publish success only after returning the restored owner to
+                // its worker. Capture the older stop/resume elapsed separately.
+                if let Some((result, elapsed_micros)) = completion {
+                    if automatic {
+                        let super::PauseOperation::Automatic(operation) = operation else {
+                            unreachable!("automatic selected operation")
+                        };
+                        match result {
+                            Ok(outcome) => pause_request::REQUESTS.automatic.completed(
+                                operation,
+                                elapsed_micros,
+                                outcome,
+                            ),
+                            Err(error) => pause_request::REQUESTS
+                                .automatic
+                                .report(super::TrackingStatus::Failed(error)),
+                        }
+                    } else {
+                        finish_pause(mailbox, result, elapsed_micros);
+                    }
+                }
             }
             Ok(Exit::Stopped) => {
                 complete_protection(&mut protection);
@@ -379,17 +391,15 @@ fn finish_pause(
         Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
         super::PauseError,
     >,
-    started: embassy_time::Instant,
+    elapsed_micros: u64,
 ) {
-    super::pause_request::REQUESTS.finish(result.map(|tracking| {
-        super::PauseReport {
-            #[cfg(feature = "diagnostics")]
-            timings: _mailbox.pause.timings(),
-            tracking,
-            elapsed_micros: embassy_time::Instant::now()
-                .duration_since(started)
-                .as_micros(),
-        }
+    super::pause_request::REQUESTS.finish(result.map(|tracking| super::PauseReport {
+        #[cfg(feature = "diagnostics")]
+        timings: _mailbox.pause.timings(),
+        #[cfg(feature = "diagnostics")]
+        timeline: _mailbox.pause.timeline(),
+        tracking,
+        elapsed_micros,
     }));
 }
 

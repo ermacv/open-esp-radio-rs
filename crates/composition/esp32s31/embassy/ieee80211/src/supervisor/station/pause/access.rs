@@ -144,6 +144,7 @@ pub(super) async fn round_trip(
         }
     };
     let mut clock = EmbassyPhyClock;
+    observations.edge(Edge::Acquired);
     if let PauseOperation::Synthetic {
         duration_micros, ..
     } = operation
@@ -207,6 +208,7 @@ pub(super) async fn round_trip(
         };
         *role = Some(owner);
         access = returned;
+        observations.edge(Edge::WorkCompleted);
         #[cfg(feature = "lifecycle-fault-injection")]
         oer_esp32s31_phy::fault_injection::checkpoint(
             oer_esp32s31_phy::fault_injection::Boundary::Restoration,
@@ -236,6 +238,7 @@ pub(super) async fn round_trip(
         }
         outcome
     } else {
+        observations.edge(Edge::WorkCompleted);
         None
     };
     let (registers, interrupts) = match access.try_release() {

@@ -325,6 +325,18 @@ pub(super) async fn run_station_pause(
                     next_dac: value.next_dac,
                 });
             StationPauseEvidence {
+                timeline: report.timeline().map(|value| {
+                    open_esp_radio_hil_protocol::StationPauseTimeline {
+                        requested: value.requested,
+                        drained: value.drained,
+                        quiesced: value.quiesced,
+                        acquired: value.acquired,
+                        work_completed: value.work_completed,
+                        hardware_restored: value.hardware_restored,
+                        protocol_restored: value.protocol_restored,
+                        worker_released: value.worker_released,
+                    }
+                }),
                 timings: report.timings().map(phy_timing_evidence),
                 tracking: report.tracking.map(|outcome| {
                     open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
@@ -339,6 +351,7 @@ pub(super) async fn run_station_pause(
             }
         }
         Err(error) => StationPauseEvidence {
+            timeline: None,
             timings: None,
             tracking: None,
             result: match error {

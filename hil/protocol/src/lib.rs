@@ -44,6 +44,8 @@ pub use phy::{
 mod memory_benchmark;
 mod message;
 mod wifi_airtime;
+mod wifi_maintenance;
+pub use wifi_maintenance::{StationPauseIntervals, StationPauseTimeline};
 mod wifi_rx;
 mod wifi_tx;
 pub use wifi_airtime::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};

@@ -142,6 +142,19 @@ that worker. It excludes the earlier TX drain/admission wait and subsequent
 worker scheduling. RFPLL timing is nested inside this interval; neither value
 alone measures end-to-end traffic interruption.
 
+Diagnostic physical transactions additionally return `timeline`, from selection
+of the maintenance request through release of the restored worker into its
+mailbox. Its adjacent intervals cover TX drain, MAC/RX/IRQ quiescence (including
+optional PM=1), exclusive access acquisition, work, hardware restoration,
+protocol restoration (including optional PM=0), and worker release. The runner
+retains these as `exclusive_intervals` in `station-pause.json` and requires a
+complete monotonic timeline when driver observation is advertised. Their sum
+is the full software transaction duration; nested PHY timings are not added.
+Worker release does not imply an executor poll or an over-the-air completion.
+Neither this timeline nor its timestamps qualify RF-off or worst-case bounds.
+Compact images and aggregate tracking-service windows omit the timeline;
+physical failures do not manufacture a completed report.
+
 Station PHY maintenance workloads support UDP RX, TX and bidirectional traffic.
 `diagnostic-station-phy-calibration-rx` and `-bidirectional` execute the same
 combined calibration request as the TX scenario. RX waits for a session-correlated

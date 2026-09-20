@@ -42,6 +42,59 @@ fn parent_timing(common: bool, wifi: bool) -> open_esp_radio_hil_protocol::PhyTi
 }
 
 #[test]
+fn physical_timeline_cannot_be_missing_reversed_or_smaller_than_nested_work() {
+    use super::validate_timeline;
+    use open_esp_radio_hil_protocol::StationPauseTimeline;
+    let mut evidence = StationPauseEvidence {
+        timeline: None,
+        timings: Some(parent_timing(true, true)),
+        result: StationPauseResult::Resumed,
+        tracking: None,
+        elapsed_micros: 10,
+    };
+    let operation = StationPauseOperation::Calibration;
+    assert!(validate_timeline(operation, evidence, true).is_err());
+    assert!(validate_timeline(operation, evidence, false).is_ok());
+    assert!(validate_timeline(StationPauseOperation::TrackingService, evidence, true).is_ok());
+    let timeline = StationPauseTimeline {
+        requested: 0,
+        drained: 10,
+        quiesced: 20,
+        acquired: 30,
+        work_completed: 40,
+        hardware_restored: 50,
+        protocol_restored: 60,
+        worker_released: 70,
+    };
+    evidence.timeline = Some(timeline);
+    assert!(validate_timeline(operation, evidence, true).is_ok());
+    assert!(validate_timeline(StationPauseOperation::TrackingService, evidence, true).is_err());
+    evidence.timeline.as_mut().unwrap().drained = 71;
+    assert!(validate_timeline(operation, evidence, false).is_err());
+    evidence.timeline = Some(timeline);
+    evidence.elapsed_micros = 71;
+    assert!(validate_timeline(operation, evidence, true).is_err());
+    evidence.elapsed_micros = 10;
+    evidence.timings.as_mut().unwrap().tracking.elapsed_micros = 11;
+    assert!(validate_timeline(operation, evidence, true).is_err());
+    evidence.timings = None;
+    for (duration_micros, valid) in [(10, true), (11, false)] {
+        assert_eq!(
+            validate_timeline(
+                StationPauseOperation::Synthetic {
+                    duration_micros,
+                    notify_ap: false,
+                },
+                evidence,
+                true
+            )
+            .is_ok(),
+            valid
+        );
+    }
+}
+
+#[test]
 fn repeated_rfpll_polling_stops_only_for_a_nonzero_correction() {
     use open_esp_radio_hil_protocol::{RfpllCorrectionEvidence, RfpllEvidence};
     let skipped = RfpllEvidence {
@@ -78,6 +131,7 @@ fn calibration_requires_success_and_both_committed_branches() {
             for common_calibrated in [false, true] {
                 for wifi_calibrated in [false, true] {
                     let evidence = StationPauseEvidence {
+                        timeline: None,
                         timings: Some(parent_timing(common_calibrated, wifi_calibrated)),
                         result,
                         elapsed_micros: 1,
@@ -108,6 +162,7 @@ fn calibration_requires_success_and_both_committed_branches() {
 #[test]
 fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flags() {
     let evidence = StationPauseEvidence {
+        timeline: None,
         result: StationPauseResult::Resumed,
         elapsed_micros: 20,
         tracking: Some(StationPhyTrackingEvidence {
@@ -127,6 +182,7 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
             validate_pause(
                 operation,
                 StationPauseEvidence {
+                    timeline: None,
                     timings: None,
                     ..evidence
                 }
@@ -165,6 +221,7 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
 #[test]
 fn access_alone_accepts_no_tracking_work() {
     let evidence = StationPauseEvidence {
+        timeline: None,
         timings: None,
         result: StationPauseResult::Resumed,
         elapsed_micros: 1,
@@ -191,6 +248,7 @@ fn resumed_pause_rejects_incomplete_failed_or_invalid_timing() {
             ..Default::default()
         };
         let evidence = StationPauseEvidence {
+            timeline: None,
             result: StationPauseResult::Resumed,
             elapsed_micros: 20,
             tracking: None,
@@ -274,6 +332,7 @@ fn rfpll_requires_one_completed_measured_operation_and_no_other_branch() {
         ..Default::default()
     };
     let evidence = StationPauseEvidence {
+        timeline: None,
         result: StationPauseResult::Resumed,
         elapsed_micros: 20,
         tracking: Some(StationPhyTrackingEvidence {
@@ -308,6 +367,7 @@ fn rfpll_requires_one_completed_measured_operation_and_no_other_branch() {
             validate_pause(
                 StationPauseOperation::Rfpll,
                 StationPauseEvidence {
+                    timeline: None,
                     timings,
                     ..evidence
                 }
@@ -475,6 +535,7 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
     use open_esp_radio_hil_protocol::PhyTimingEvidence;
     let mut timings = PhyTimingEvidence::default();
     let evidence = StationPauseEvidence {
+        timeline: None,
         result: StationPauseResult::Resumed,
         elapsed_micros: 1,
         timings: Some(timings),
@@ -492,6 +553,7 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
         validate_pause(
             StationPauseOperation::Temperature,
             StationPauseEvidence {
+                timeline: None,
                 timings: Some(timings),
                 ..evidence
             }
@@ -504,6 +566,7 @@ fn temperature_prerequisite_requires_a_completed_acquisition_only() {
         validate_pause(
             StationPauseOperation::Temperature,
             StationPauseEvidence {
+                timeline: None,
                 timings: Some(timings),
                 ..evidence
             }
@@ -538,6 +601,7 @@ fn synthetic_pause_requires_its_hold_and_cannot_hide_phy_work() {
         notify_ap: true,
     };
     let mut evidence = StationPauseEvidence {
+        timeline: None,
         timings: None,
         tracking: None,
         result: open_esp_radio_hil_protocol::StationPauseResult::Resumed,

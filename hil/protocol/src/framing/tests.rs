@@ -1436,6 +1436,7 @@ fn station_pause_completion_preserves_request_identity_and_failure_stage() {
             0,
             23,
             Event::StationPauseCompleted(StationPauseEvidence {
+                timeline: None,
                 timings: None,
                 tracking: None,
                 result,
@@ -1483,6 +1484,7 @@ fn tracking_pause_request_and_committed_branches_round_trip() {
         0,
         3,
         Event::StationPauseCompleted(crate::StationPauseEvidence {
+            timeline: None,
             timings: None,
             result: crate::StationPauseResult::Resumed,
             elapsed_micros: 1500,
@@ -1533,6 +1535,16 @@ fn maximum_phy_timing_evidence_fits_existing_frame_and_round_trips() {
         0,
         3,
         Event::StationPauseCompleted(crate::StationPauseEvidence {
+            timeline: Some(crate::StationPauseTimeline {
+                requested: u64::MAX,
+                drained: u64::MAX,
+                quiesced: u64::MAX,
+                acquired: u64::MAX,
+                work_completed: u64::MAX,
+                hardware_restored: u64::MAX,
+                protocol_restored: u64::MAX,
+                worker_released: u64::MAX,
+            }),
             timings: Some(crate::PhyTimingEvidence {
                 tracking: timing,
                 dcode_waits: crate::PhyDcodeWaitEvidence {

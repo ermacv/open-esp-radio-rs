@@ -20,6 +20,15 @@ internal SRAM without changing its graph or ROM short-delay policy.
 
 ## Timing scopes
 
+`StationPauseEvidence.timeline` partitions one connected Wi-Fi maintenance
+transaction into adjacent software ownership intervals, including TX drain
+and return of the restored worker. `exclusive_intervals()` rejects reversed
+timestamps. Compact images and aggregate service reports omit this field;
+diagnostic physical transactions require it. See the
+[station timing boundaries](../targets/esp32s31/phy.md#same-connection-pause).
+The inclusive `elapsed_micros` and nested PHY timings are not added to that
+partition. Worker release is a scheduling handoff, not an RF or first-poll edge.
+
 `BluetoothPhyMaintenanceEvidence` carries ordered admission, IRQ/register/timer
 retirement, PHY entry/exit, physical return and guarded RUN timestamps. Its
 `exclusive_intervals()` partitions the measured admission-to-RUN span without

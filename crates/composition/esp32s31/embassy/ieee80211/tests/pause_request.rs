@@ -57,6 +57,8 @@ fn simultaneous_explicit_request_leaves_automatic_observation_available() {
     ));
     let report = PauseReport {
         #[cfg(feature = "diagnostics")]
+        timeline: None,
+        #[cfg(feature = "diagnostics")]
         timings: None,
         tracking: None,
         elapsed_micros: 7,
@@ -139,6 +141,8 @@ fn cancellation_cannot_reuse_an_inflight_request_or_deliver_a_stale_completion()
         Poll::Ready(Err(PauseError::Busy))
     );
     requests.finish(Ok(PauseReport {
+        #[cfg(feature = "diagnostics")]
+        timeline: None,
         #[cfg(feature = "diagnostics")]
         timings: None,
         tracking: None,
@@ -322,6 +326,7 @@ fn operational_pause_report_excludes_the_diagnostic_snapshot_layout() {
         elapsed_micros: 1,
     };
     assert!(report.timings().is_none());
+    assert!(report.timeline().is_none());
     report.discard_timings();
     assert!(report.timings().is_none());
 }
@@ -331,10 +336,22 @@ fn operational_pause_report_excludes_the_diagnostic_snapshot_layout() {
 fn diagnostic_pause_report_exposes_and_discards_its_snapshot() {
     let mut report = PauseReport {
         timings: Some(Default::default()),
+        timeline: Some(pause_request::PauseTimeline {
+            requested: 0,
+            drained: 1,
+            quiesced: 2,
+            acquired: 3,
+            work_completed: 4,
+            hardware_restored: 5,
+            protocol_restored: 6,
+            worker_released: 7,
+        }),
         tracking: None,
         elapsed_micros: 1,
     };
     assert!(report.timings().is_some());
+    assert!(report.timeline().is_some());
     report.discard_timings();
     assert!(report.timings().is_none());
+    assert!(report.timeline().is_none());
 }

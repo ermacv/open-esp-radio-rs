@@ -80,6 +80,7 @@ mod tests {
     #[test]
     fn normal_control_requires_real_calibration_and_restoration() {
         let valid = StationPauseEvidence {
+            timeline: None,
             result: StationPauseResult::Resumed,
             elapsed_micros: 1,
             timings: None,
@@ -93,6 +94,7 @@ mod tests {
         assert!(require_calibrated(valid).is_ok());
         assert!(
             require_calibrated(StationPauseEvidence {
+                timeline: None,
                 tracking: None,
                 ..valid
             })
@@ -100,6 +102,7 @@ mod tests {
         );
         assert!(
             require_calibrated(StationPauseEvidence {
+                timeline: None,
                 result: StationPauseResult::Busy,
                 ..valid
             })

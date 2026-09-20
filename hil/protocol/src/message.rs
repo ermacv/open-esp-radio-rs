@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 167;
+pub const PROTOCOL_VERSION: u16 = 168;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -624,6 +624,8 @@ pub struct StationPhyTrackingEvidence {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StationPauseEvidence {
+    /// Full owner-handoff timeline; absent in compact images or aggregate reports.
+    pub timeline: Option<crate::StationPauseTimeline>,
     /// None when timing observers are unavailable or no physical report returned.
     pub timings: Option<crate::PhyTimingEvidence>,
     pub tracking: Option<StationPhyTrackingEvidence>,

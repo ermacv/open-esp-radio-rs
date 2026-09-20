@@ -1,7 +1,10 @@
 #[path = "pause_request/automatic.rs"]
 mod automatic;
+#[path = "pause_request/timeline.rs"]
+pub(super) mod timeline;
 pub use automatic::{Report as TrackingReport, Status as TrackingStatus};
 pub use oer_esp32s31_phy::tracking::service::Config as TrackingConfig;
+pub use timeline::PauseTimeline;
 // Same-connection maintenance requests; no shared RF grant.
 use core::cell::RefCell;
 use embassy_sync::{
@@ -44,12 +47,27 @@ pub struct PauseReport {
     /// runtime futures when diagnostics are disabled.
     #[cfg(feature = "diagnostics")]
     pub timings: Option<oer_esp32s31_phy::tracking::observation::Report>,
+    /// Complete composition handoffs, including TX drain and worker release.
+    #[cfg(feature = "diagnostics")]
+    pub timeline: Option<PauseTimeline>,
     /// Stop/resume plus optional PM exchanges; excludes requester queuing and prior TX drain.
     pub elapsed_micros: u64,
     pub tracking: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
 }
 
 impl PauseReport {
+    /// Return the full physical transaction timeline in diagnostic firmware.
+    pub const fn timeline(&self) -> Option<&PauseTimeline> {
+        #[cfg(feature = "diagnostics")]
+        {
+            self.timeline.as_ref()
+        }
+        #[cfg(not(feature = "diagnostics"))]
+        {
+            None
+        }
+    }
+
     /// Return detailed timing observations when this firmware includes them.
     ///
     /// Keeping this accessor available in every feature profile lets HIL and
@@ -73,6 +91,7 @@ impl PauseReport {
         #[cfg(feature = "diagnostics")]
         {
             self.timings = None;
+            self.timeline = None;
         }
     }
 }

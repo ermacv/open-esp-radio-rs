@@ -244,9 +244,9 @@ pub use status::{
 pub use supervisor::station::{DiagnosticRxStatistics, DiagnosticSnapshot, DiagnosticTxVector};
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::station::{
-    PauseError, PauseOperation, PauseReport, TrackingConfig, TrackingReport, TrackingStatus,
-    configure_station_tracking, request_station_temperature_observation, station_pause_round_trip,
-    station_tracking_report, station_tracking_status,
+    PauseError, PauseOperation, PauseReport, PauseTimeline, TrackingConfig, TrackingReport,
+    TrackingStatus, configure_station_tracking, request_station_temperature_observation,
+    station_pause_round_trip, station_tracking_report, station_tracking_status,
 };
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::{RadioRunners, RadioSystem, SystemRunner, new};

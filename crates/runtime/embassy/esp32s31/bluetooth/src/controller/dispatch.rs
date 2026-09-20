@@ -144,7 +144,10 @@ pub(super) const fn reduce_controller_command_transition(
             LegacyAdvertisingActivePhase | LegacyConnectableAdvertisingActivePhase,
             LegacyAdvertisingStopCompletion,
         ) => Advance(LegacyAdvertisingStopCompletionPhase),
-        (LegacyConnectableAdvertisingFirstPhase, LegacyConnectableAdvertisingResponse) => {
+        // The first drive can complete all three time samples without an
+        // executor wait. Only the lower Running owner emits this stimulus;
+        // it still has to publish the ordered HCI response before Active.
+        (Idle | LegacyConnectableAdvertisingFirstPhase, LegacyConnectableAdvertisingResponse) => {
             Advance(LegacyConnectableAdvertisingResponsePhase)
         }
         (LegacyConnectableAdvertisingResponsePhase, LegacyConnectableAdvertisingActive) => {

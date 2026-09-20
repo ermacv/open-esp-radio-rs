@@ -301,6 +301,47 @@ fn connectable_active_owner_cannot_be_fabricated_as_idle_completion() {
 }
 
 #[test]
+fn connectable_immediate_run_enters_response_without_an_artificial_wait() {
+    use ControllerCommandAction::Advance;
+    use ControllerCommandPhase as Phase;
+    use ControllerCommandStimulus as Stimulus;
+
+    // The real lower runner may return Running on the initial drive. Its
+    // typed running owner authorizes only response publication, not an idle
+    // completion or a fabricated active Host session.
+    assert_eq!(
+        reduce_controller_command_transition(
+            Phase::Idle,
+            Stimulus::LegacyConnectableAdvertisingResponse
+        ),
+        Advance(Phase::LegacyConnectableAdvertisingResponse)
+    );
+    assert_eq!(
+        reduce_controller_command_transition(
+            Phase::LegacyConnectableAdvertisingResponse,
+            Stimulus::Retain
+        ),
+        ControllerCommandAction::Retain
+    );
+    assert_eq!(
+        reduce_controller_command_transition(
+            Phase::LegacyConnectableAdvertisingResponse,
+            Stimulus::LegacyConnectableAdvertisingActive
+        ),
+        Advance(Phase::LegacyConnectableAdvertisingActive)
+    );
+}
+
+#[test]
+#[should_panic(expected = "invalid Controller command actor transition")]
+fn connectable_immediate_run_cannot_skip_its_hci_response_owner() {
+    let _ = reduce_controller_command_transition(
+        ControllerCommandPhase::Idle,
+        ControllerCommandStimulus::LegacyConnectableAdvertisingActive,
+    );
+}
+
+#[test]
 fn owner_slot_transfers_exactly_once() {
     let mut slot = ControllerOwnerSlot::new(41_u8);
     assert_eq!(slot.take(), 41);

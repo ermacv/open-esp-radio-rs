@@ -100,6 +100,18 @@ fn symbol_coverage_distinguishes_aliases_missing_rust_other_text_and_rom() {
         ));
         fs::write(&path, object.write().unwrap()).unwrap();
         let report = analyze_stack(&path, &budget()).unwrap();
+        let coverage_path = path.with_extension("toml");
+        fs::write(&coverage_path, "schema = 1\nreviewed = []\n").unwrap();
+        let mut strict_budget = budget();
+        strict_budget.coverage_policy = Some(coverage_path.clone());
+        let strict = analyze_stack(&path, &strict_budget).unwrap();
+        assert!(strict.coverage_reviewed);
+        assert_eq!(audit_stack(&strict).is_ok(), include_missing);
+        assert_eq!(
+            strict.audit.errors.len(),
+            if include_missing { 0 } else { 2 }
+        );
+        fs::remove_file(coverage_path).unwrap();
         fs::remove_file(path).unwrap();
         assert_eq!(report.coverage.linked_text_addresses, 3);
         assert_eq!(
@@ -167,6 +179,7 @@ fn reviewed_match_inventory_includes_small_frames_and_unused_rules() {
 fn budget() -> StackBudget {
     StackBudget {
         schema: 4,
+        coverage_policy: None,
         stack_start_symbol: "_stack_start".into(),
         stack_end_symbol: "_stack_end".into(),
         warn_frame_bytes: 8 * 1024,

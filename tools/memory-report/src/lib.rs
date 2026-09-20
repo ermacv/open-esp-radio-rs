@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 mod analyze;
+mod code;
+mod mono;
 mod policy;
 mod render;
 mod stack;
@@ -17,13 +19,18 @@ pub use policy::{
 };
 pub use render::{MemoryDiff, diff, render_audit, render_diff, render_report};
 pub use stack::{
-    ExecutionStack, StackBudget, StackCoverage, StackCoverageFunction, StackCoverageOrigin,
-    StackCoverageStatus, StackFrame, StackReport, StackReviewedRuleMatches, StackSourceLocation,
-    analyze_stack, audit_stack, render_stack_report,
+    CoverageCategory, CoveragePolicy, CoverageReview, ExecutionStack, StackBudget, StackCoverage,
+    StackCoverageFunction, StackCoverageOrigin, StackCoverageStatus, StackFrame, StackReport,
+    StackReviewedRuleMatches, StackSourceLocation, analyze_stack, audit_stack, render_stack_report,
 };
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub use code::{
+    CodeDiff, CodeReport, CodeSection, CodeSymbol, analyze_code, diff_code, render_code_report,
+};
+pub use mono::{MonoDefinition, MonoReport, analyze_mono, render_mono_report};
 
 #[derive(Debug, Error)]
 pub enum Error {

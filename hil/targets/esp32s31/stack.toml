@@ -1,4 +1,5 @@
 schema = 4
+coverage_policy = "../../../platform/esp32s31/stack-coverage.toml"
 
 # Primary thread stack bounds. Dedicated SRAM interrupt stacks have separate
 # placement checks.

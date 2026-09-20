@@ -18,6 +18,9 @@ cargo memory report \
 
 cargo memory audit --elf ELF --policy POLICY
 cargo memory stack --elf ELF --policy hil/targets/esp32s31/stack.toml
+cargo memory code --elf ELF
+cargo memory code-diff --before OLD.ELF --after NEW.ELF
+cargo memory mono --input CRATE.mono_items.json
 cargo memory diff \
   --before OLD.ELF --after NEW.ELF --policy POLICY
 ```
@@ -46,8 +49,12 @@ This is a symbol inventory, not proof that every compiled function has metadata:
 stripped symbols and inlined code are outside that inventory. Rust names can
 also identify naked assembly functions; other text symbols can identify vector
 tables rather than callable functions. Missing entries remain visible without
-automatic exemptions or inferred zero-byte frames. The command's budget audit
-and exit status check measured frames only; consult `coverage` separately.
+automatic exemptions or inferred zero-byte frames. When a stack policy specifies
+`coverage_policy`, every unmeasured linked symbol must have exactly one explicit
+review; unexplained symbols fail the audit. Both ESP32-S31 policies use the
+shared platform review. Reviews classify assembly, vector data and pinned
+compiler runtime without inventing frame sizes. Without that policy, the exit
+status checks measured budgets only; `coverage_reviewed` distinguishes scopes.
 Target policy schema 4 owns separate task and dedicated-IRQ runtime headroom
 reserves, a review threshold, a hard per-frame limit, the compiler move limit and runtime
 headroom. Generated async `poll` functions are included. Local frames do not
@@ -76,3 +83,11 @@ reservations, genuinely unassigned address space, policy-attributed consumers
 and the largest unclassified symbols. `diff` compares both region totals and
 semantic consumers, which makes buffer changes visible even when mangled Rust
 symbols change between builds.
+
+`code` inventories surviving text-symbol ranges in the supplied linked image.
+Aliases and overlapping ranges count once; padding and unsized/stripped code
+remain unattributed. `code-diff` compares exact text-section totals.
+`mono` reads one compiler-generated JSON file produced with
+`-Zdump-mono-stats=DIR -Zdump-mono-stats-format=json` on the pinned toolchain.
+Its counts and estimates are not linked bytes. Keep build provenance with the
+compiler output; neither command rebuilds firmware or adds a mandatory gate.

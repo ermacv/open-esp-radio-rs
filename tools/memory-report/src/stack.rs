@@ -14,9 +14,11 @@ const STACK_SIZES_SECTION: &str = ".stack_sizes";
 const DEFAULT_REPORTED_FRAME_COUNT: usize = 20;
 
 mod coverage;
+mod review;
 pub use coverage::{
     StackCoverage, StackCoverageFunction, StackCoverageOrigin, StackCoverageStatus,
 };
+pub use review::{CoverageCategory, CoveragePolicy, CoverageReview};
 
 /// Target-owned policy applied to compiler-emitted stack-frame metadata.
 ///
@@ -28,6 +30,9 @@ pub use coverage::{
 #[serde(deny_unknown_fields)]
 pub struct StackBudget {
     pub schema: u32,
+    /// Optional target-owned review of all unmeasured linked text. Relative to
+    /// this policy file, not the invocation's working directory.
+    pub coverage_policy: Option<PathBuf>,
     pub stack_start_symbol: String,
     pub stack_end_symbol: String,
     pub warn_frame_bytes: u64,
@@ -71,10 +76,14 @@ impl StackBudget {
             path: path.to_owned(),
             source,
         })?;
-        let budget: Self = toml_edit::de::from_str(&source).map_err(|source| Error::Policy {
-            path: path.to_owned(),
-            source,
-        })?;
+        let mut budget: Self =
+            toml_edit::de::from_str(&source).map_err(|source| Error::Policy {
+                path: path.to_owned(),
+                source,
+            })?;
+        if let Some(review) = &mut budget.coverage_policy {
+            *review = path.parent().unwrap_or(Path::new(".")).join(&*review);
+        }
         budget.validate()?;
         Ok(budget)
     }
@@ -160,6 +169,8 @@ pub struct StackReport {
     pub max_frame_bytes: u64,
     pub measured_frame_count: usize,
     pub coverage: StackCoverage,
+    pub coverage_reviewed: bool,
+    pub coverage_reviews: Vec<review::CoverageMatch>,
     pub reviewed_rule_matches: Vec<StackReviewedRuleMatches>,
     pub largest_frames: Vec<StackFrame>,
     pub violations: Vec<StackFrame>,
@@ -286,6 +297,11 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
     frames.sort_by_key(|frame| (core::cmp::Reverse(frame.size), frame.address));
     let mut violations = Vec::new();
     let mut audit = AuditReport::default();
+    let coverage_reviews = if let Some(path) = &budget.coverage_policy {
+        CoveragePolicy::load(path)?.audit(&coverage, &mut audit)
+    } else {
+        Vec::new()
+    };
     for frame in &frames {
         let matches = budget
             .reviewed_frames
@@ -399,6 +415,8 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         max_frame_bytes: budget.max_frame_bytes,
         measured_frame_count,
         coverage,
+        coverage_reviewed: budget.coverage_policy.is_some(),
+        coverage_reviews,
         reviewed_rule_matches,
         largest_frames,
         violations,
@@ -439,7 +457,7 @@ pub fn render_stack_report(report: &StackReport) -> String {
         report.measured_frame_count,
     );
     output.push_str(&format!(
-        "Linked text symbol coverage: {:?} ({}/{} address groups measured)\nUnmeasured symbol groups: {}; metadata without a text symbol: {}\nCoverage is independent of the measured-frame budget audit; it is not call-chain or IRQ-stack evidence.\n\n",
+        "Linked text symbol coverage: {:?} ({}/{} address groups measured)\nUnmeasured symbol groups: {}; metadata without a text symbol: {}\nCoverage review explains missing metadata; it does not measure excluded frames or prove call-chain or IRQ-stack bounds.\n\n",
         report.coverage.linked_text_status, report.coverage.measured_linked_text_addresses,
         report.coverage.linked_text_addresses, report.coverage.unmeasured_functions.len(),
         report.coverage.metadata_without_text_symbol.len(),
@@ -450,6 +468,12 @@ pub fn render_stack_report(report: &StackReport) -> String {
             function.origin,
             function.address,
             function.functions.join(" | ")
+        ));
+    }
+    for review in &report.coverage_reviews {
+        output.push_str(&format!(
+            "  reviewed {:?} {:#010x} {}: {} — {}\n",
+            review.category, review.address, review.symbol, review.source, review.reason
         ));
     }
     for address in &report.coverage.metadata_without_text_symbol {
@@ -477,7 +501,11 @@ pub fn render_stack_report(report: &StackReport) -> String {
             compact_source(frame),
         ));
     }
-    output.push_str("\nMeasured-frame budget audit only\n");
+    output.push_str(if report.coverage_reviewed {
+        "\nMeasured-frame budgets and explicit linked-coverage review (not whole-stack proof)\n"
+    } else {
+        "\nMeasured-frame budget audit only\n"
+    });
     output.push_str(&crate::render_audit(&report.audit));
     output
 }

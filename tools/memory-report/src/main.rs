@@ -4,8 +4,9 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use open_esp_radio_memory_report::{
-    MemoryPolicy, Result, StackBudget, analyze, analyze_stack, audit, audit_stack, diff,
-    render_audit, render_diff, render_report, render_stack_report,
+    MemoryPolicy, Result, StackBudget, analyze, analyze_code, analyze_mono, analyze_stack, audit,
+    audit_stack, diff, diff_code, render_audit, render_code_report, render_diff,
+    render_mono_report, render_report, render_stack_report,
 };
 
 #[derive(Debug, Parser)]
@@ -17,6 +18,29 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Compare exact linked text totals without rebuilding either image.
+    CodeDiff {
+        #[arg(long)]
+        before: PathBuf,
+        #[arg(long)]
+        after: PathBuf,
+        #[arg(long, value_enum, default_value_t)]
+        format: OutputFormat,
+    },
+    /// Read rustc JSON mono estimates (not linked bytes); never rebuild firmware.
+    Mono {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long, value_enum, default_value_t)]
+        format: OutputFormat,
+    },
+    /// Inspect surviving text ranges in an exact linked image, without rebuilding.
+    Code {
+        #[arg(long)]
+        elf: PathBuf,
+        #[arg(long, value_enum, default_value_t)]
+        format: OutputFormat,
+    },
     /// Report regions, consumers, reservations and unclassified allocations.
     Report(OneElf),
     /// Fail when a required symbol or placement contract is violated.
@@ -62,6 +86,30 @@ enum OutputFormat {
 
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
+        Command::CodeDiff {
+            before,
+            after,
+            format,
+        } => {
+            let report = diff_code(&analyze_code(&before)?, &analyze_code(&after)?);
+            print_value(format, &report, || {
+                format!(
+                    "Linked text: {} -> {} bytes ({:+})\n{:?}\n",
+                    report.before_text_bytes,
+                    report.after_text_bytes,
+                    report.text_delta_bytes,
+                    report.section_delta_bytes
+                )
+            })?;
+        }
+        Command::Mono { input, format } => {
+            let report = analyze_mono(&input)?;
+            print_value(format, &report, || render_mono_report(&report))?;
+        }
+        Command::Code { elf, format } => {
+            let report = analyze_code(&elf)?;
+            print_value(format, &report, || render_code_report(&report))?;
+        }
         Command::Report(arguments) => {
             let policy = MemoryPolicy::load(&arguments.policy)?;
             let report = analyze(&arguments.elf, &policy)?;

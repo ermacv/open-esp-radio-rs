@@ -59,6 +59,10 @@ nix = { version = "=0.26.4", default-features = false, features = ["fs", "inotif
 [lints]
 workspace = true
 
+[dev-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
+tempfile = "=3.27.0"
+
 [package.metadata.open-radio]
 scope = "development"
 layer = "tool"

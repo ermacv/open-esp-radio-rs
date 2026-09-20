@@ -128,10 +128,15 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap, target: &TargetSpec)
     let concrete_only = arguments.concrete_only;
     let print_timeline = arguments.timeline;
     let companion = arguments.companion;
-    let mut image = execution::ExecutableImage::load_entry(&artifact, &symbol)?;
-    if let Some(companion) = companion.as_deref() {
-        image.add_companion(companion)?;
-    }
+    // Archive data relocations need companion definitions during the analysis
+    // link. Adding its symbols afterwards resolves calls but leaves HI20/LO12
+    // data accesses poisoned, even when the companion supplies the definition.
+    let mut image = execution::ExecutableImage::load_entry_with_roots(
+        &artifact,
+        &symbol,
+        &[],
+        companion.as_deref(),
+    )?;
     let diagnostic_contracts =
         crate::providers::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
     image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;

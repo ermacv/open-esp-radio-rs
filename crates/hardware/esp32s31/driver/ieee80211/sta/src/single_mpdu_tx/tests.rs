@@ -275,31 +275,36 @@ fn completion_releases_the_slot_and_network_lease_boundary() {
 
 #[test]
 fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut hardware = Hardware::default();
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
-    let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LongRange);
-    let config = EspNowTxConfig::new(4, 250_000).unwrap();
+    for rate in [
+        oer_wifi_softmac::EspressifLongRangeRate::Kbps250,
+        oer_wifi_softmac::EspressifLongRangeRate::Kbps500,
+    ] {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware::default();
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LongRange(rate));
+        let config = EspNowTxConfig::new(4, 250_000).unwrap();
 
-    let error = tx
-        .start_esp_now_v1_plaintext(
-            &mut hardware,
-            &protocol,
-            peer,
-            EspNowRandomValue::new([1, 2, 3, 4]),
-            &[9, 8, 7],
-            channel,
-            station,
-            config,
-        )
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        SingleMpduEspNowTxError::Backend(EspNowTxError::LongRangeUnsupported(_))
-    ));
-    assert_eq!(tx.sequences.peek_non_qos(), 7);
-    assert_eq!(hardware.publications, 0);
-    assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+        let error = tx
+            .start_esp_now_v1_plaintext(
+                &mut hardware,
+                &protocol,
+                peer,
+                EspNowRandomValue::new([1, 2, 3, 4]),
+                &[9, 8, 7],
+                channel,
+                station,
+                config,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            SingleMpduEspNowTxError::Backend(EspNowTxError::LongRangeUnsupported(unsupported)) if unsupported.selection == rate
+        ));
+        assert_eq!(tx.sequences.peek_non_qos(), 7);
+        assert_eq!(hardware.publications, 0);
+        assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+    }
 }
 
 #[test]

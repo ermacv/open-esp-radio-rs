@@ -16,10 +16,9 @@ pub use oer_radio::wifi::{
 
 pub use oer_esp32s31_wifi::esp_now::{
     EspNowCryptoDiagnostics, EspNowCryptoError, EspNowKeyOwner, EspNowKeySlot,
-    EspNowLongRangeMissing, EspNowLongRangeRate, EspNowLongRangeReached,
-    EspNowLongRangeUnsupported, EspNowPhySupport, EspNowRxMetadata, EspNowRxRateNormalization,
-    EspNowTxConfig, EspNowTxConfigError, EspNowTxError, esp32s31_esp_now_phy_support,
-    normalize_esp_now_rx_metadata,
+    EspNowLongRangeMissing, EspNowLongRangeReached, EspNowLongRangeUnsupported, EspNowPhySupport,
+    EspNowRxMetadata, EspNowRxRateNormalization, EspNowTxConfig, EspNowTxConfigError,
+    EspNowTxError, esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
 };
 
 pub use oer_esp32s31_wifi_embassy::roles::{
@@ -68,7 +67,8 @@ pub use oer_wifi_softmac::{
     EspNowPmk, EspNowPmkError, EspNowPmkId, EspNowPmkMutationFailure, EspNowPmkOwner,
     EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx, EspNowProtocol, EspNowReceivedV2,
     EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate, EspNowV2ReceiveError, EspNowV2RxOutcome,
-    EspNowV2SendError, encrypted_peer_destination, esp_now_encrypted_v1_codec_status,
+    EspNowV2SendError, EspressifLongRangeRate, encrypted_peer_destination,
+    esp_now_encrypted_v1_codec_status,
 };
 
 /// Failed standalone materialization retains the portable owners unchanged.

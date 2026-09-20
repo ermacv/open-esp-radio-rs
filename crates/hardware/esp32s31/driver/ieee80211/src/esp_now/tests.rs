@@ -1,32 +1,6 @@
 use super::*;
 
 #[test]
-fn long_range_records_preserve_both_descriptor_identities_and_limits() {
-    let fast = EspNowLongRangeRate::RateCode2a;
-    assert_eq!(fast.descriptor_rate_code(), 0x2a);
-    assert_eq!(fast.retry_publication_limit(), 32);
-    assert_eq!(fast.retry_rate_after_failures(0), Some(fast));
-    assert_eq!(fast.retry_rate_after_failures(17), Some(fast));
-    assert_eq!(
-        fast.retry_rate_after_failures(18),
-        Some(EspNowLongRangeRate::RateCode29)
-    );
-    assert_eq!(
-        fast.retry_rate_after_failures(31),
-        Some(EspNowLongRangeRate::RateCode29)
-    );
-    assert_eq!(fast.retry_rate_after_failures(32), None);
-
-    let robust = EspNowLongRangeRate::RateCode29;
-    assert_eq!(robust.descriptor_rate_code(), 0x29);
-    assert_eq!(robust.retry_publication_limit(), 32);
-    assert_eq!(robust.retry_rate_after_failures(0), Some(robust));
-    assert_eq!(robust.retry_rate_after_failures(31), Some(robust));
-    assert_eq!(robust.retry_rate_after_failures(32), None);
-    assert_eq!(EspNowLongRangeRate::from_descriptor_rate_code(0x28), None);
-}
-
-#[test]
 fn capability_surface_is_live_for_every_standard_phy_and_closed_for_lr() {
     for mode in [
         EspNowPhyMode::LegacyDsss1M,
@@ -43,13 +17,18 @@ fn capability_surface_is_live_for_every_standard_phy_and_closed_for_lr() {
     ] {
         assert_eq!(esp32s31_esp_now_phy_support(mode), EspNowPhySupport::Live);
     }
-    assert_eq!(
-        esp32s31_esp_now_phy_support(EspNowPhyMode::LongRange),
-        EspNowPhySupport::LongRangeFailClosed {
-            tx_missing: EspNowLongRangeMissing::TxPlcpQueueVector,
-            rx_missing: EspNowLongRangeMissing::RxRateNormalization,
-        }
-    );
+    for rate in [
+        oer_wifi_softmac::EspressifLongRangeRate::Kbps250,
+        oer_wifi_softmac::EspressifLongRangeRate::Kbps500,
+    ] {
+        assert_eq!(
+            esp32s31_esp_now_phy_support(EspNowPhyMode::LongRange(rate)),
+            EspNowPhySupport::LongRangeFailClosed {
+                tx_missing: EspNowLongRangeMissing::TxPlcpQueueVector,
+                rx_missing: EspNowLongRangeMissing::RxRateNormalization,
+            }
+        );
+    }
 }
 
 #[test]
@@ -83,7 +62,10 @@ fn lr_rx_rate_is_quarantined_from_the_truncated_public_field() {
     let mut metadata = MacRxMetadata::unavailable();
     metadata.rate = MacRxEvidence::HardwareObserved(lr_raw);
 
-    let lr = normalize_esp_now_rx_metadata(EspNowPhyMode::LongRange, metadata);
+    let lr = normalize_esp_now_rx_metadata(
+        EspNowPhyMode::LongRange(oer_wifi_softmac::EspressifLongRangeRate::Kbps500),
+        metadata,
+    );
     assert_eq!(lr.normalized.rate, MacRxEvidence::Unavailable);
     assert_eq!(
         lr.rate_normalization,

@@ -140,7 +140,7 @@ pub enum EspNowPhyMode {
     LegacyDsss1M,
     StandardP2pOfdm(EspNowOfdmRate),
     StandardP2pHt20(EspNowHt20Rate),
-    LongRange,
+    LongRange(crate::EspressifLongRangeRate),
 }
 
 /// Security profile of one typed ESP-NOW handoff.

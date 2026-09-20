@@ -21,10 +21,7 @@ use crate::{
 use oer_esp32s31_wifi_mac::{
     rate::{
         low::{MacLowRateGateProbe, MacLowRateTransitionError},
-        schedule::{
-            RateScheduleKind, RateScheduleRef, schedule_publication_limit,
-            schedule_rate_after_failures,
-        },
+        schedule::{RateScheduleKind, RateScheduleRef},
     },
     rx::{RxBasebandFormat, RxPhyInfo},
     tx::{
@@ -35,68 +32,13 @@ use oer_esp32s31_wifi_mac::{
 
 use oer_ieee80211::{channel::WifiChannel, qos::WmmAccessCategory};
 
+use oer_wifi_softmac::EspressifLongRangeRate;
+
 use oer_wifi_softmac::{
     EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
     EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx,
     MacRxEvidence, MacRxMetadata, MacTxPlan, interface::BoundVirtualInterface,
 };
-
-/// One recovered ESP32-S31 LoRa schedule rate selected without assigning an
-/// unevidenced on-air bitrate or PLCP interpretation.
-///
-/// The reviewed source-owned LoRa callback and schedule reconstruction maps
-/// code `0x2a` to record zero and code `0x29` to record one. These codes remain
-/// chip descriptor values; neither variant authorizes queue-vector
-/// publication.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum EspNowLongRangeRate {
-    #[default]
-    RateCode2a,
-    RateCode29,
-}
-
-impl EspNowLongRangeRate {
-    pub const fn from_descriptor_rate_code(code: u8) -> Option<Self> {
-        match code {
-            0x2a => Some(Self::RateCode2a),
-            0x29 => Some(Self::RateCode29),
-            _ => None,
-        }
-    }
-
-    pub const fn descriptor_rate_code(self) -> u8 {
-        match self {
-            Self::RateCode2a => 0x2a,
-            Self::RateCode29 => 0x29,
-        }
-    }
-
-    pub const fn retry_schedule(self) -> RateScheduleRef {
-        RateScheduleRef {
-            kind: RateScheduleKind::Lora,
-            index: match self {
-                Self::RateCode2a => 0,
-                Self::RateCode29 => 1,
-            },
-        }
-    }
-
-    /// Decode one exact attempt from the reviewed LoRa retry record.
-    ///
-    /// The return value remains a descriptor-code identity. It does not
-    /// authorize LR PLCP or queue-vector publication.
-    pub fn retry_rate_after_failures(self, failed_attempts: u8) -> Option<Self> {
-        Self::from_descriptor_rate_code(schedule_rate_after_failures(
-            self.retry_schedule(),
-            failed_attempts,
-        )?)
-    }
-
-    /// Complete ordinary-MPDU publication budget stored in this LoRa record.
-    pub fn retry_publication_limit(self) -> u8 {
-        schedule_publication_limit(self.retry_schedule())
-    }
-}
 
 /// Deepest completed part of one ESP-NOW Long Range TX attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -140,7 +82,7 @@ pub const fn esp32s31_esp_now_phy_support(mode: EspNowPhyMode) -> EspNowPhySuppo
         EspNowPhyMode::LegacyDsss1M
         | EspNowPhyMode::StandardP2pOfdm(_)
         | EspNowPhyMode::StandardP2pHt20(_) => EspNowPhySupport::Live,
-        EspNowPhyMode::LongRange => EspNowPhySupport::LongRangeFailClosed {
+        EspNowPhyMode::LongRange(_) => EspNowPhySupport::LongRangeFailClosed {
             tx_missing: EspNowLongRangeMissing::TxPlcpQueueVector,
             rx_missing: EspNowLongRangeMissing::RxRateNormalization,
         },
@@ -186,7 +128,7 @@ pub fn normalize_esp_now_rx_metadata(
     mut metadata: MacRxMetadata<RxPhyInfo>,
 ) -> EspNowRxMetadata {
     let observed = metadata.rate;
-    let rate_normalization = if phy_mode == EspNowPhyMode::LongRange {
+    let rate_normalization = if matches!(phy_mode, EspNowPhyMode::LongRange(_)) {
         metadata.rate = MacRxEvidence::Unavailable;
         EspNowRxRateNormalization::LongRangeUnavailable {
             observed,
@@ -220,7 +162,7 @@ const fn decoded_standard_format(evidence: MacRxEvidence<RxPhyInfo>) -> Option<R
 /// Precise fail-closed Long Range frontier returned before DMA publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EspNowLongRangeUnsupported {
-    pub selection: EspNowLongRangeRate,
+    pub selection: EspressifLongRangeRate,
     pub reached: EspNowLongRangeReached,
     pub missing: EspNowLongRangeMissing,
 }
@@ -230,7 +172,6 @@ pub struct EspNowLongRangeUnsupported {
 pub struct EspNowTxConfig {
     unicast_publication_limit: u8,
     publication_timeout_micros: u64,
-    long_range_rate: EspNowLongRangeRate,
 }
 
 impl EspNowTxConfig {
@@ -247,10 +188,6 @@ impl EspNowTxConfig {
         Ok(Self {
             unicast_publication_limit,
             publication_timeout_micros,
-            // Complete rcUpdatePhyMode starts the LoRa family at schedule
-            // record zero. This is only a typed selection; LR publication
-            // remains fail-closed below.
-            long_range_rate: EspNowLongRangeRate::RateCode2a,
         })
     }
 
@@ -260,17 +197,6 @@ impl EspNowTxConfig {
 
     pub const fn publication_timeout_micros(self) -> u64 {
         self.publication_timeout_micros
-    }
-
-    pub const fn long_range_rate(self) -> EspNowLongRangeRate {
-        self.long_range_rate
-    }
-
-    /// Select one of the two recovered LR rate-control records. This does not
-    /// bypass the PLCP/queue-vector frontier.
-    pub const fn with_long_range_rate(mut self, rate: EspNowLongRangeRate) -> Self {
-        self.long_range_rate = rate;
-        self
     }
 }
 
@@ -455,8 +381,7 @@ where
             active: active_station,
         });
     }
-    let (initial_rate, retry_rate_policy) =
-        plaintext_tx_policy(hardware, prepared.phy_mode(), config)?;
+    let (initial_rate, retry_rate_policy) = plaintext_tx_policy(hardware, prepared.phy_mode())?;
 
     let frame_length = {
         let buffer = ordinary.buffer_mut().map_err(EspNowTxError::Tx)?;
@@ -519,8 +444,7 @@ where
             available: BUFFER_SIZE,
         });
     }
-    let (initial_rate, retry_rate_policy) =
-        plaintext_tx_policy(hardware, prepared.phy_mode(), config)?;
+    let (initial_rate, retry_rate_policy) = plaintext_tx_policy(hardware, prepared.phy_mode())?;
     let frame_length = {
         let buffer = ordinary.buffer_mut().map_err(EspNowTxError::Tx)?;
         let frame_buffer = &mut buffer[TX_METADATA_SIZE..];
@@ -542,7 +466,6 @@ where
 fn plaintext_tx_policy<H: TxHardware>(
     hardware: &mut H,
     phy_mode: EspNowPhyMode,
-    config: EspNowTxConfig,
 ) -> Result<(TxPhyRate, OrdinaryRetryRatePolicy), EspNowTxError> {
     Ok(match phy_mode {
         EspNowPhyMode::LegacyDsss1M => (
@@ -577,8 +500,7 @@ fn plaintext_tx_policy<H: TxHardware>(
                 retry_rate_policy,
             )
         }
-        EspNowPhyMode::LongRange => {
-            let selection = config.long_range_rate();
+        EspNowPhyMode::LongRange(selection) => {
             let probe = hardware
                 .probe_phy_low_rate_gate()
                 .map_err(|error| EspNowTxError::LongRangeLowRateTransition { selection, error })?;
@@ -706,7 +628,7 @@ pub enum EspNowTxError {
         guard_interval: EspNowHtGuardInterval,
     },
     LongRangeLowRateTransition {
-        selection: EspNowLongRangeRate,
+        selection: EspressifLongRangeRate,
         error: MacLowRateTransitionError,
     },
     LongRangeUnsupported(EspNowLongRangeUnsupported),

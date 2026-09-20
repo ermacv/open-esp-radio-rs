@@ -675,7 +675,7 @@ where
                         continue;
                     };
 
-                    if peer.phy_mode() == EspNowPhyMode::LongRange {
+                    if matches!(peer.phy_mode(), EspNowPhyMode::LongRange(_)) {
                         self.report.tx_rejected = self.report.tx_rejected.saturating_add(1);
                         let error = SingleMpduEspNowTxError::Backend(
                             EspNowTxError::OffChannelLongRangeUnsupported {

@@ -69,7 +69,7 @@ impl<const PEERS: usize> StandaloneEspNowRequest<PEERS> {
         &mut self,
         peer: EspNowPeerConfig,
     ) -> Result<EspNowPeerId, StandaloneEspNowPeerError> {
-        if peer.phy_mode() == EspNowPhyMode::LongRange {
+        if matches!(peer.phy_mode(), EspNowPhyMode::LongRange(_)) {
             return Err(StandaloneEspNowPeerError::LongRangeUnsupported);
         }
         self.protocol

@@ -51,6 +51,7 @@ fn power(adapter: Adapter, powered: bool) -> Result<()> {
     }
 }
 pub(crate) fn preflight(adapter: Adapter) -> Result<()> {
+    super::att_parameters::require_clean(adapter)?;
     if bus(adapter, &["get-property", "Powered"])? != "b false" {
         return Err("ATT calibration fixture requires an initially powered-off adapter".into());
     }
@@ -64,9 +65,16 @@ pub(crate) struct Owner {
     index: u32,
     blocked: bool,
     restored: bool,
+    parameters: Option<super::att_parameters::Lease>,
 }
 impl Owner {
     pub(crate) fn acquire(adapter: Adapter, output: &Path) -> Result<Self> {
+        Self::acquire_profile(adapter, output, false)
+    }
+    pub(crate) fn acquire_calibration(adapter: Adapter, output: &Path) -> Result<Self> {
+        Self::acquire_profile(adapter, output, true)
+    }
+    fn acquire_profile(adapter: Adapter, output: &Path, calibration: bool) -> Result<Self> {
         preflight(adapter)?;
         let address = bus(adapter, &["get-property", "Address"])?;
         let address: PeerAddress = address
@@ -84,7 +92,7 @@ impl Owner {
         if fs::read_to_string(rfkill.join("hard"))?.trim() != "0" {
             return Err("Bluetooth adapter hardware blocked".into());
         }
-        let owner = Self {
+        let mut owner = Self {
             adapter,
             address,
             identity: fs::canonicalize(&rfkill)?,
@@ -92,11 +100,15 @@ impl Owner {
             blocked: fs::read_to_string(rfkill.join("soft"))?.trim() == "1",
             rfkill,
             restored: false,
+            parameters: None,
         };
         crate::evidence::run::atomic_json(
             &output.join("adapter-before.json"),
             &serde_json::json!({"adapter": adapter.to_string(), "address": address.to_string(), "powered": false, "soft_blocked": owner.blocked}),
         )?;
+        if calibration {
+            owner.parameters = Some(super::att_parameters::Lease::acquire(adapter, output)?);
+        }
         owner.block(false)?;
         power(adapter, true)?;
         if bus(adapter, &["get-property", "Powered"])? != "b true" {
@@ -126,8 +138,19 @@ impl Owner {
         }
         let power = power(self.adapter, false);
         let block = self.block(self.blocked);
-        power?;
-        block?;
+        // Even a failed power/rfkill request must release the helper. It checks
+        // adapter identity and independently restores the original snapshot.
+        let parameters = self
+            .parameters
+            .as_mut()
+            .map_or(Ok(()), |lease| lease.restore());
+        let errors: Vec<_> = [power, block, parameters]
+            .into_iter()
+            .filter_map(|result| result.err().map(|error| error.to_string()))
+            .collect();
+        if !errors.is_empty() {
+            return Err(errors.join("; ").into());
+        }
         if bus(self.adapter, &["get-property", "Powered"])? != "b false" {
             return Err("adapter power restore mismatch".into());
         }

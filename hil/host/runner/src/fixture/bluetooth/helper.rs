@@ -43,6 +43,16 @@ struct Cli {
 enum Command {
     /// Print the exact finite interface understood by this helper.
     Capabilities,
+    /// Hold fixed 7.5-ms kernel ATT defaults until stdin closes (maximum 120 s).
+    AttParameters {
+        #[arg(long)]
+        adapter: model::Adapter,
+    },
+    /// Restore a durable interrupted ATT-parameter snapshot, without starting a test.
+    RestoreAttParameters {
+        #[arg(long)]
+        adapter: model::Adapter,
+    },
     /// Exercise one fixed initial-key failure or missing refresh key, without sending application data.
     SecurityFailure {
         #[arg(long)]
@@ -107,6 +117,28 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if let Command::AttParameters { adapter } | Command::RestoreAttParameters { adapter } = &command
+    {
+        let result = (|| -> Result<()> {
+            let _signals = oer_process::install_signal_handlers()?;
+            #[cfg(target_os = "linux")]
+            {
+                owner::connection_parameters::run(
+                    *adapter,
+                    matches!(command, Command::RestoreAttParameters { .. }),
+                )
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err("Bluetooth fixture requires Linux".into())
+            }
+        })();
+        if let Err(error) = result {
+            eprintln!("ATT parameter lease: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Command::SecurityFailure {
         adapter,
         peer,
@@ -215,6 +247,22 @@ fn main() {
 mod cli_tests {
     use super::*;
     use clap::Parser as _;
+
+    #[test]
+    fn att_parameters_do_not_accept_arbitrary_settings_or_paths() {
+        for operation in ["att-parameters", "restore-att-parameters"] {
+            let args = ["helper", operation, "--adapter", "hci0"];
+            assert!(Cli::try_parse_from(args).is_ok());
+            for tail in [
+                ["--interval", "12"],
+                ["--output", "/etc/test"],
+                ["--opcode", "0x004c"],
+                ["--timeout", "9999"],
+            ] {
+                assert!(Cli::try_parse_from(args.into_iter().chain(tail)).is_err());
+            }
+        }
+    }
 
     #[test]
     fn dtm_profile_defaults_to_v2_and_rejects_unbounded_arguments() {

@@ -1356,6 +1356,11 @@ mod linux {
             }
             Provider::LinuxBluetooth => {
                 for adapter in &bundle.allowed_bluetooth_adapters {
+                    for operation in ["att-parameters", "restore-att-parameters"] {
+                        lines.push(format!(
+                            "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth {operation} --adapter {adapter}"
+                        ));
+                    }
                     lines.push(format!(
                         "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter}"
                     ));

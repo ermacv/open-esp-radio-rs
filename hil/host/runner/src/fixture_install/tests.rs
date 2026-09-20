@@ -1089,6 +1089,10 @@ fn policy_never_grants_installer_runner_or_wildcard_adapter() {
     assert!(policy.contains("--adapter hci0"));
     assert!(policy.contains("--adapter hci2"));
     for adapter in ["hci0", "hci2"] {
+        for operation in ["att-parameters", "restore-att-parameters"] {
+            assert!(policy.contains(&format!("{operation} --adapter {adapter}\n")));
+            assert!(!policy.contains(&format!("{operation} --adapter *")));
+        }
         assert!(policy.contains(&format!("check --adapter {adapter}\n")));
         assert!(policy.contains(&format!("check --adapter {adapter} --dtm-version v1\n")));
         assert!(policy.contains(&format!(

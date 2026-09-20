@@ -19,6 +19,8 @@ use std::{
 
 const PEER_RF_LOSS_MILLIS: u16 = 2_500;
 
+pub(super) mod connection_parameters;
+
 struct Rfkill {
     index: u32,
     path: PathBuf,
@@ -84,6 +86,10 @@ struct Owner {
 
 impl Owner {
     fn snapshot(adapter: Adapter) -> Result<Self> {
+        Self::snapshot_for_parameters(adapter, false)
+    }
+
+    fn snapshot_for_parameters(adapter: Adapter, recovery: bool) -> Result<Self> {
         // SAFETY: geteuid only reads the process identity.
         if unsafe { libc::geteuid() } != 0 {
             return Err("DTM requires the installed privileged Bluetooth helper".into());
@@ -111,6 +117,9 @@ impl Owner {
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
             .open(format!("/run/open-radio-bluetooth/{adapter}.lock"))?;
         fs2::FileExt::try_lock_exclusive(&lock)?;
+        if !recovery && connection_parameters::journal_path(adapter).try_exists()? {
+            return Err("Bluetooth connection parameters require explicit helper recovery".into());
+        }
         let management = Socket::open(u16::MAX, 3)?;
         let info = management.management(adapter.0, 4, &[])?;
         let powered = powered(&info)?;

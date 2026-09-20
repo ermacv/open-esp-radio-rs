@@ -1,6 +1,7 @@
 //! Linux DTM fixture preparation, isolated from ESP firmware execution.
 
 pub(crate) mod att;
+pub(crate) mod att_parameters;
 pub(crate) mod model;
 pub(crate) mod secure_gatt;
 
@@ -109,6 +110,7 @@ fn checked_report(
 }
 
 pub(crate) fn preflight(adapter: Adapter) -> crate::Result<()> {
+    att_parameters::require_clean(adapter)?;
     const HELPER: &str = "/usr/local/libexec/open-radio-bluetooth";
     if !Path::new(HELPER).is_file() {
         return Err(

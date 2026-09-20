@@ -71,6 +71,37 @@ TX v1 command correction because the pinned `bt-hci 0.10.1` assigns that command
 the Read Supported States opcode; its parameters and completion handling still
 use `bt-hci`. Socket tests exercise the corrected TX command bytes.
 
+## Kernel ATT calibration parameters
+
+The ACL-calibration runner retains Linux/BlueZ as its independent ATT peer.
+Its `att-parameters --adapter hci0` helper lease requires an initially
+powered-off dedicated adapter and sets only the kernel's default LE connection
+minimum/maximum interval (7.5 ms), latency (zero) and supervision timeout (2 s).
+It snapshots those four values through MGMT Read Default System Configuration,
+persists a root-owned recovery journal before mutation, and verifies Set Default
+System Configuration by readback. It never edits BlueZ configuration, bonds,
+per-peer parameter lists or another controller. The DUT must still report the
+actual 7.5-ms interval; a cached peer override is a failure, not a slower fallback.
+
+The runner holds the helper's stdin open. EOF, cancellation or the fixed 120-s
+lease expiry power down the dedicated adapter and restore/verify its original
+defaults and soft rfkill state. Successful cleanup removes the journal. Forced
+termination or incomplete recovery leaves
+`/run/open-radio-bluetooth/hci0.att-parameters.json`; subsequent fixture preflight
+and privileged operations refuse to use that adapter. With no active connection,
+explicitly recover the matching adapter before running another scenario:
+
+```console
+sudo /usr/local/libexec/open-radio-bluetooth restore-att-parameters --adapter hci0
+```
+
+Recovery validates the adapter and rfkill identities and never replaces the
+saved snapshot with current settings. Reinstall the helper after changing its
+interface. Per-run `att-parameters.stderr` records the original and selected
+values; the runner requires both the ready and restored handshakes plus a
+successful helper exit. These values are test configuration, not production
+connection policy or qualified PHY budgets.
+
 ## Connection loss fixture
 
 With a public-address LE peripheral already advertising, run:

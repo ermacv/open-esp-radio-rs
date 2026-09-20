@@ -156,6 +156,64 @@ fn dependency_cycles_fail_closed() {
 }
 
 #[test]
+fn hardware_sources_are_bound_to_the_selected_project_and_suite() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let dispositions = DispositionIndex::load_project(
+        &root.join("verification/vendor/projects/esp32s31/vendor-project.toml"),
+    )
+    .unwrap();
+    let scenarios = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
+    let context = StaticContext {
+        root: &root,
+        dispositions: &dispositions,
+        scenario_catalog: &scenarios,
+    };
+    let mut capability = toml_edit::de::from_str::<ManifestDocument>(COMPLETE)
+        .unwrap()
+        .capabilities
+        .remove(0);
+    capability.hil_requirements.clear();
+    capability.hil_not_applicable = Some("hardware-comparison-fixture".into());
+    capability.vendor_roots[0].source = "libpp".into();
+    capability.vendor_roots[0].symbol = "hal_mac_txq_enable".into();
+    capability.vendor_evidence[0] = VendorEvidenceRef {
+        suite: "ordinary-tx-ownership".into(),
+        source: "libpp".into(),
+        symbol: "hal_mac_txq_enable".into(),
+    };
+    validate_capability_declaration(&capability, &context).unwrap();
+
+    for (source, symbol, suite) in [
+        (
+            "unknown-source",
+            "hal_mac_txq_enable",
+            "ordinary-tx-ownership",
+        ),
+        ("libpp", "unknown_symbol", "ordinary-tx-ownership"),
+        ("libpp", "hal_mac_txq_enable", "unknown-suite"),
+        ("libpp", "hal_mac_txq_enable", "tx-protection-control"),
+        ("archive", "hal_mac_txq_enable", "ordinary-tx-ownership"),
+    ] {
+        let mut invalid = capability.clone();
+        invalid.vendor_roots[0].source = source.into();
+        invalid.vendor_roots[0].symbol = symbol.into();
+        invalid.vendor_evidence[0] = VendorEvidenceRef {
+            suite: suite.into(),
+            source: source.into(),
+            symbol: symbol.into(),
+        };
+        assert!(validate_capability_declaration(&invalid, &context).is_err());
+        invalid.vendor_evidence.clear();
+        if source != "libpp" || symbol != "hal_mac_txq_enable" {
+            assert!(validate_capability_declaration(&invalid, &context).is_err());
+        }
+    }
+}
+
+#[test]
 fn corrupt_and_invalid_vendor_indexes_fail_closed() {
     let path = std::env::temp_dir().join(format!(
         "open-radio-invalid-vendor-index-{}.json",
@@ -315,6 +373,7 @@ pub(crate) fn assert_reviewed_hil(
     let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
     let dispositions = DispositionIndex {
         entries: BTreeMap::new(),
+        suite_entries: BTreeSet::new(),
         project_id: "test".into(),
         vendor_evidence_index: None,
     };

@@ -167,7 +167,10 @@ rust-prefix = "open_libpp_tx_retry_trace_"
 profiles = ["profiles/libpp-tx-retry.toml"]
 dispositions = ["dispositions/libpp-tx-retry.toml"]
 baselines = ["baselines/libpp-tx-retry.toml"]
-gate = "completion"
+# Research into vendor software policy; rate selection, retry budgets and
+# Embassy dispatch are owned contracts, not vendor-equivalence requirements.
+# Hardware completion/publication stays in the ordinary TX ownership suites.
+gate = "informational"
 [[suites.vendor]]
 source = "libpp"
 symbols = ["rcGetRate"]

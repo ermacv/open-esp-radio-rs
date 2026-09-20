@@ -823,9 +823,7 @@ fn validate_capability_declaration_inner(
     let mut evidence = BTreeSet::new();
     for reference in &document.vendor_evidence {
         slug(&reference.suite, "vendor evidence suite")?;
-        if !matches!(reference.source.as_str(), "rom" | "archive") {
-            return Err(format!("invalid vendor source {:?} for {id}", reference.source).into());
-        }
+        slug(&reference.source, "vendor source")?;
         let key = (
             reference.suite.as_str(),
             reference.source.as_str(),
@@ -845,11 +843,20 @@ fn validate_capability_declaration_inner(
             )
             .into());
         }
+        if !context.dispositions.suite_entries.contains(&(
+            reference.suite.clone(),
+            reference.source.clone(),
+            reference.symbol.clone(),
+        )) {
+            return Err(format!(
+                "vendor evidence {} {} {} for {id} is not selected with a disposition in that suite",
+                reference.suite, reference.source, reference.symbol
+            )
+            .into());
+        }
     }
     for root in &document.vendor_roots {
-        if !matches!(root.source.as_str(), "rom" | "archive") {
-            return Err(format!("invalid vendor source {:?} for {id}", root.source).into());
-        }
+        slug(&root.source, "vendor source")?;
         if root.symbol.trim().is_empty() {
             return Err(format!("vendor root for {id} has an empty symbol").into());
         }
@@ -1006,9 +1013,6 @@ fn validate_vendor_contract(
         VendorProof::Unmapped | VendorProof::NotApplicable => {}
     }
     for root in &document.vendor_roots {
-        if !matches!(root.source.as_str(), "rom" | "archive") {
-            return Err(format!("invalid vendor source {:?} for {id}", root.source).into());
-        }
         let disposition = dispositions.get(root).ok_or_else(|| {
             format!(
                 "vendor root {} {} for {id} has no disposition",
@@ -1224,6 +1228,7 @@ struct DispositionEntry {
 #[derive(Debug)]
 struct DispositionIndex {
     entries: BTreeMap<(String, String), DispositionEntry>,
+    suite_entries: BTreeSet<(String, String, String)>,
     project_id: String,
     vendor_evidence_index: Option<PathBuf>,
 }
@@ -1258,6 +1263,7 @@ impl DispositionIndex {
             })
             .transpose()?;
         let mut entries = BTreeMap::new();
+        let mut suite_entries = BTreeSet::new();
         for suite in addon.suites {
             for relative in suite.dispositions {
                 validate_relative_path(&relative)?;
@@ -1265,6 +1271,22 @@ impl DispositionIndex {
                 let document: DispositionDocument =
                     toml_edit::de::from_str(&fs::read_to_string(&path)?)?;
                 for function in document.functions {
+                    if !suite.vendor.iter().any(|selection| {
+                        selection.source == function.source
+                            && (selection.all
+                                || selection.symbols.contains(&function.symbol)
+                                || selection
+                                    .prefix
+                                    .as_ref()
+                                    .is_some_and(|prefix| function.symbol.starts_with(prefix)))
+                    }) {
+                        continue;
+                    }
+                    suite_entries.insert((
+                        suite.id.clone(),
+                        function.source.clone(),
+                        function.symbol.clone(),
+                    ));
                     let key = (function.source, function.symbol);
                     let entry = DispositionEntry {
                         has_rust_component: function.rust_component.is_some(),
@@ -1284,6 +1306,7 @@ impl DispositionIndex {
         }
         Ok(Self {
             entries,
+            suite_entries,
             project_id: project.id,
             vendor_evidence_index,
         })
@@ -1312,8 +1335,21 @@ struct VerificationAddonDocument {
 
 #[derive(Deserialize)]
 struct VerificationSuiteDocument {
+    id: String,
+    #[serde(default)]
+    vendor: Vec<VerificationSelectionDocument>,
     #[serde(default)]
     dispositions: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct VerificationSelectionDocument {
+    source: String,
+    prefix: Option<String>,
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    symbols: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1347,12 +1383,26 @@ struct VendorEvidenceIndex {
 
 impl VendorEvidenceIndex {
     fn load(path: &Path, expected_project: &str) -> Result<Self> {
-        let input = fs::read_to_string(path).map_err(|error| {
-            format!(
-                "cannot read vendor evidence index {}: {error}",
-                path.display()
-            )
-        })?;
+        let input = match fs::read_to_string(path) {
+            Ok(input) => input,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self {
+                    schema_version: 2,
+                    command: "project verify vendor evidence index".into(),
+                    project: expected_project.into(),
+                    complete_project_run: false,
+                    entries: Vec::new(),
+                    suite_states: BTreeMap::new(),
+                });
+            }
+            Err(error) => {
+                return Err(format!(
+                    "cannot read vendor evidence index {}: {error}",
+                    path.display()
+                )
+                .into());
+            }
+        };
         let index: Self = serde_json::from_str(&input)?;
         if !matches!(index.schema_version, 1 | 2)
             || index.command != "project verify vendor evidence index"

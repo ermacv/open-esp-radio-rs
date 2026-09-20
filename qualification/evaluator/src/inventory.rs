@@ -932,7 +932,7 @@ scope-and-limitations = "No composition"
         .unwrap();
         fs::write(
             root.path.join("verification-addon.toml"),
-            "evidence-index = \"vendor.json\"\n[[suites]]\ndispositions = [\"disposition.toml\"]\n",
+            "evidence-index = \"vendor.json\"\n[[suites]]\nid = \"explicit-suite\"\ndispositions = [\"disposition.toml\"]\n[[suites.vendor]]\nsource = \"archive\"\nall = true\n",
         )
         .unwrap();
         root.write_catalog(

@@ -429,7 +429,7 @@ hil-requirements = [
   { scenario = "station-ap-loss", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "libpp-interrupt-contract-not-executable" },
+  { axis = "vendor", id = "mac-interrupt-mask-acknowledgement-and-rearm-traces-missing" },
 ]
 
 
@@ -445,7 +445,7 @@ security = ["independent-of-link-security"]
 composition = "connected-station-interrupts"
 level = "composed-product"
 activation-boundary = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Vendor proof covers MAC interrupt masks, acknowledgement ordering, pending state and rearm preconditions. CPU route epoch ownership, dispatch priority and Embassy wake coalescing use their own host and HIL contracts"
 
 [[capabilities]]
 id = "authentication-association"
@@ -455,17 +455,21 @@ implementation = "complete"
 host = "covered"
 async = "bounded"
 depends-on = ["channel-selection-switch", "rx-tx-dma"]
-vendor-anchors = [
-  "crates/protocols/ieee80211/mac/src/station.rs",
-]
+vendor-not-applicable = "station-authentication-and-association-are-owned-protocol-contracts"
 hil-requirements = [
   { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
 ]
-gaps = [
-  { axis = "vendor", id = "net80211-auth-association-contract-not-executable" },
-]
 
+[[capabilities.source-contracts]]
+id = "station-authentication-association-policy"
+composition = "production"
+scope = "Selected-peer authentication and association state transitions and accepted-response validation"
+limits = "Protocol policy uses host tests and peer-observed HIL; physical frame transport remains required through rx-tx-dma"
+source-paths = ["crates/protocols/ieee80211/mac/src/station.rs"]
 
+[capabilities.development]
+knowledge = ["crates/protocols/ieee80211/mac/src/station.rs"]
+host-tests = [{ manifest = "crates/protocols/ieee80211/mac/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/mac/src/station/tests.rs" }]
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "station"
@@ -483,18 +487,25 @@ scope = "Four-way handshake replay protection key installation response deadline
 implementation = "complete"
 host = "covered"
 async = "bounded"
-depends-on = ["authentication-association"]
-vendor-anchors = [
-  "crates/protocols/ieee80211/security/wpa2/src/supplicant.rs",
-]
+depends-on = ["authentication-association", "station-hardware-crypto"]
+vendor-not-applicable = "wpa2-handshake-replay-and-deadline-policy-are-owned-protocol-contracts"
 hil-requirements = [
   { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
 ]
-gaps = [
-  { axis = "vendor", id = "supplicant-contract-not-executable" },
+
+[[capabilities.source-contracts]]
+id = "station-wpa2-protocol-policy"
+composition = "production"
+scope = "Four-way handshake, replay admission, key-installation protocol transitions and response deadlines"
+limits = "Protocol correctness uses host tests and protected-traffic HIL; physical key publication and retirement remain required through station-hardware-crypto"
+source-paths = ["crates/protocols/ieee80211/security/wpa2/src/supplicant.rs", "crates/protocols/ieee80211/security/wpa2/src/runner.rs"]
+
+[capabilities.development]
+knowledge = ["crates/protocols/ieee80211/security/wpa2/src/supplicant.rs"]
+host-tests = [
+  { manifest = "crates/protocols/ieee80211/security/wpa2/Cargo.toml", filter = "supplicant::tests", source = "crates/protocols/ieee80211/security/wpa2/src/supplicant/tests.rs" },
+  { manifest = "crates/protocols/ieee80211/security/wpa2/Cargo.toml", filter = "runner::tests", source = "crates/protocols/ieee80211/security/wpa2/src/runner/tests.rs" },
 ]
-
-
 [capabilities.catalog-scope]
 chip = "esp32s31"
 role = "station"
@@ -503,7 +514,45 @@ security = ["wpa2-personal"]
 composition = "station-wpa2"
 level = "composed-product"
 activation-boundary = "Four-way handshake replay protection key installation response deadline and protected traffic"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Handshake, replay admission, response deadlines and protocol key ownership use their own contracts, host tests and HIL. Hardware key-slot publication, crypto activation and retirement are required through station-hardware-crypto"
+
+[[capabilities]]
+id = "station-hardware-crypto"
+title = "STA hardware CCMP key publication and retirement"
+scope = "STA pairwise and group key-slot writes, hardware crypto activation, selected-key use by the MAC and clearing retired hardware key state"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+async-not-applicable = "finite-synchronous-hardware-key-transactions"
+depends-on = ["rx-tx-dma"]
+vendor-anchors = ["registers/esp32s31/evidence/vendor-libpp.toml"]
+hil-requirements = [
+  { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "station-key-slot-crypto-activation-and-retirement-traces-missing" },
+]
+
+[[capabilities.source-contracts]]
+id = "station-hardware-key-transactions"
+composition = "production"
+scope = "Typed STA pairwise/group key installation, replacement and hardware retirement"
+limits = "Requires the hardware slot, crypto enable and invalidation contract. WPA2 derivation, replay policy and handshake transitions are owned by the protocol; their correctness does not depend on vendor software equivalence"
+source-paths = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
+
+[capabilities.development]
+knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
+host-tests = [{ manifest = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml", filter = "crypto::tests", source = "crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto/tests.rs" }]
+
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["wpa2-personal"]
+composition = "station-hardware-ccmp"
+level = "lower-primitive"
+activation-boundary = "Key-slot admission through crypto use and hardware invalidation before slot reuse"
+limitations = "Hardware publication and retirement require vendor evidence and protected-traffic HIL; a successful handshake alone does not establish these operations"
 
 [[capabilities]]
 id = "async-deadlines"
@@ -521,7 +570,7 @@ hil-requirements = [
   { scenario = "station-ap-absence", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "iq-estimator-and-remaining-wait-contracts-not-bound" },
+  { axis = "vendor", id = "phy-readiness-polling-settle-and-terminal-register-contracts-not-bound" },
 ]
 
 
@@ -537,7 +586,7 @@ security = ["independent-of-link-security"]
 composition = "station-runtime"
 level = "composed-product"
 activation-boundary = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Vendor proof covers readiness register polling, physical settle requirements and terminal hardware state; phy_iq_est_enable covers only the IQ estimator transaction. Protocol deadlines, scheduler admission, future cancellation and error delivery use their own host and HIL contracts"
 
 [[capabilities]]
 id = "runtime-phy-calibration"
@@ -793,7 +842,7 @@ hil-requirements = [
   { scenario = "wifi-radio-restart", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "vendor", id = "combined-close-cache-replay-restart-not-release-evidence" },
+  { axis = "vendor", id = "rf-close-clock-reset-and-calibration-cache-replay-traces-missing" },
 ]
 
 
@@ -805,7 +854,7 @@ security = ["independent-of-link-security"]
 composition = "radio-cold-restart"
 level = "composed-product"
 activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Vendor proof covers RF close, clock/reset transitions and hardware calibration cache replay with their physical preconditions. Rust owner return, restart admission, epoch reconstruction and reconnect use their own host and HIL contracts"
 
 [[capabilities]]
 id = "radio-retained-wake"
@@ -822,7 +871,7 @@ hil-requirements = [
   { scenario = "wifi-radio-retained-cycle", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "vendor", id = "retained-close-wake-parent-production-trace-missing" },
+  { axis = "vendor", id = "retained-rf-close-wake-and-register-restoration-traces-missing" },
 ]
 
 [[capabilities.source-contracts]]
@@ -845,7 +894,7 @@ security = ["independent-of-link-security"]
 composition = "radio-retained-wake"
 level = "composed-product"
 activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Vendor proof covers physical RF close/wake, retained calibration inputs and register restoration before RX reactivation. Rust client ownership, retained epoch continuity and runtime reconstruction use their own host and HIL contracts"
 
 [[capabilities]]
 id = "timeout-error-recovery"
@@ -863,7 +912,7 @@ hil-requirements = [
   { scenario = "station-ap-absence", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "failure-cleanup-contracts-incomplete" },
+  { axis = "vendor", id = "fault-path-dma-irq-quiescence-and-reset-contracts-incomplete" },
   { axis = "hil", id = "faulted-quiescence-cell-missing" },
 ]
 
@@ -875,7 +924,7 @@ security = ["independent-of-link-security"]
 composition = "station-error-recovery"
 level = "composed-product"
 activation-boundary = "Typed cleanup returns the reusable owner only after proven quiescence; otherwise a terminal fault retains the exact hardware frontier"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "Vendor proof covers stopping DMA, draining or acknowledging pending IRQ state and physical reset/reuse preconditions. Error propagation, owner retention, cancellation and permission to reconstruct the runtime use their own host and HIL contracts; unproven physical quiescence still prohibits reuse"
 
 [[sections]]
 id = "wifi-overview"

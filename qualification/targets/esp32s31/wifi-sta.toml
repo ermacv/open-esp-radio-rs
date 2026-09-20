@@ -9,6 +9,7 @@ required-capabilities = [
   "interrupt-recovery",
   "authentication-association",
   "wpa2",
+  "station-hardware-crypto",
   "async-deadlines",
   "runtime-phy-calibration",
   "runtime-rfpll-tracking",

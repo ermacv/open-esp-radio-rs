@@ -206,6 +206,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
 
     let dispositions = DispositionIndex {
         entries: BTreeMap::new(),
+        suite_entries: BTreeSet::new(),
         project_id: "test".to_owned(),
         vendor_evidence_index: None,
     };
@@ -490,6 +491,10 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     .unwrap();
 
     let dispositions = DispositionIndex {
+        suite_entries: [("base-suite", "base_root"), ("wifi-suite", "wifi_root")]
+            .into_iter()
+            .map(|(suite, symbol)| (suite.into(), "archive".into(), symbol.into()))
+            .collect(),
         entries: ["base_root", "wifi_root"]
             .into_iter()
             .map(|symbol| {

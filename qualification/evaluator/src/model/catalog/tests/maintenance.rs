@@ -2,6 +2,88 @@
 use super::*;
 
 #[test]
+fn software_policy_does_not_require_vendor_equivalence_or_hide_hardware_obligations() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let program = ManifestDocument::load_and_validate(
+        &root.join("qualification/targets/esp32s31/wifi-sta.toml"),
+        &root,
+    )
+    .unwrap()
+    .document;
+    let capability = |id: &str| program.capabilities.iter().find(|c| c.id == id).unwrap();
+    for id in ["authentication-association", "wpa2"] {
+        let owned = capability(id);
+        assert!(owned.vendor_not_applicable.is_some());
+        assert!(owned.vendor_roots.is_empty());
+        assert!(owned.vendor_anchors.is_empty());
+        assert!(!owned.hil_requirements.is_empty());
+        assert!(!owned.source_contracts.is_empty());
+        assert!(!owned.development.host_tests.is_empty());
+    }
+    assert!(
+        capability("wpa2")
+            .depends_on
+            .iter()
+            .any(|d| d == "station-hardware-crypto")
+    );
+    for id in [
+        "station-hardware-crypto",
+        "interrupt-recovery",
+        "async-deadlines",
+        "radio-cold-restart",
+        "radio-retained-wake",
+        "timeout-error-recovery",
+    ] {
+        let hardware = capability(id);
+        assert!(hardware.vendor_not_applicable.is_none());
+        assert!(!hardware.vendor_roots.is_empty() || !hardware.vendor_anchors.is_empty());
+        assert!(
+            hardware
+                .gaps
+                .iter()
+                .any(|g| g.axis == crate::model::Axis::Vendor)
+        );
+    }
+    let bluetooth = ManifestDocument::load_and_validate(
+        &root.join("qualification/targets/esp32s31/bluetooth-peripheral-acl.toml"),
+        &root,
+    )
+    .unwrap()
+    .document;
+    for id in ["peripheral-acl", "peripheral-link-security"] {
+        let hardware = bluetooth.catalog.capabilities.get(id).unwrap();
+        assert!(hardware.vendor_not_applicable.is_none());
+        assert!(
+            hardware
+                .gaps
+                .iter()
+                .any(|g| g.axis == crate::model::Axis::Vendor)
+        );
+    }
+    let addon: toml_edit::DocumentMut = fs::read_to_string(
+        root.join("verification/vendor/projects/esp32s31/verification-addon.toml"),
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    let suites = addon["suites"].as_array_of_tables().unwrap();
+    let gate = |id| {
+        suites
+            .iter()
+            .find(|s| s["id"].as_str() == Some(id))
+            .unwrap()["gate"]
+            .as_str()
+            .unwrap()
+    };
+    assert_eq!(gate("libpp-tx-retry"), "informational");
+    assert_eq!(gate("ordinary-tx-ownership"), "completion");
+    assert_eq!(gate("tx-protection-control"), "completion");
+}
+
+#[test]
 fn maintenance_continuity_keeps_rf_and_performance_claims_separate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

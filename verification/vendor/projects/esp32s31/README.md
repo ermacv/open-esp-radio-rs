@@ -93,6 +93,13 @@ fallback; rerun the limited `project analyze` command above.
 
 ## Ordinary TX ownership edges
 
+`libpp-tx-retry` is informational research into vendor retry/rate policy and
+ACK-timeout handling. Matching software retry counters, rate choices or Embassy
+dispatch is not a completion requirement. Production retry policy is tested
+against its own contract; hardware completion decoding, Retry-bit publication
+and DMA ownership remain hardware obligations. Reviewed ABI projections do not
+supply qualification-eligible production traces.
+
 `ordinary-tx-ownership` is a completion gate for three finite queue operations:
 the `hal_mac_txq_enable` publication prefix before `GetAccess`, selector-two
 completion acknowledgement, and the complete queue-disable leaf. It exercises

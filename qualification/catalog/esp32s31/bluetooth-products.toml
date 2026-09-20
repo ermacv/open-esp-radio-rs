@@ -41,7 +41,7 @@ gaps = [
   { axis = "implementation", id = "peripheral-first-advertising-rejection-and-terminal-event-disposition-incomplete" },
   { axis = "host", id = "peripheral-virtual-time-delayed-irq-control-maintenance-collision-coverage-incomplete" },
   { axis = "hil", id = "peripheral-qualified-phy-execution-restoration-and-observer-free-timing-bounds-missing" },
-  { axis = "vendor", id = "peripheral-scheduler-packet-and-powered-release-production-traces-missing" },
+  { axis = "vendor", id = "peripheral-hardware-scheduler-packet-list-irq-and-rf-stop-traces-missing" },
   { axis = "hil", id = "peripheral-abrupt-rf-loss-stimulus-not-established-by-soft-rfkill" },
   { axis = "async", id = "peripheral-active-maintenance-blocking-poll-and-terminal-lifecycle-coverage-incomplete" },
 ]
@@ -87,7 +87,7 @@ security = ["plaintext-acl"]
 composition = "standalone-peripheral-acl"
 level = "composed-product"
 activation-boundary = "Cold radio acquisition through one HCI/Controller epoch to physical quiescence and cold-owner return"
-limitations = "One connection and one legacy advertising role. Wider multi-role IRQ/list, DTM, Central, extended PHY, EATT and concurrent-radio capabilities remain independent. Their broad declarations are not treated as prerequisites for this narrower product; all required single-peripheral obligations are stated here. Source coverage alone is not readiness"
+limitations = "One connection and one legacy advertising role. Vendor proof covers hardware scheduler descriptors/triggers, packet-list publication and completion, IRQ acknowledgement and RF stop before powered release. LL scheduling/retry policy, HCI credits and Rust lifecycle composition use their own host and HIL contracts. Wider multi-role IRQ/list, DTM, Central, extended PHY, EATT and concurrent-radio capabilities remain independent; all required single-peripheral obligations are stated here. Source coverage alone is not readiness"
 
 [[capabilities]]
 id = "peripheral-link-security"
@@ -110,7 +110,7 @@ hil-requirements = [
 gaps = [
   { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
   { axis = "host", id = "encrypted-peripheral-key-counter-backpressure-and-retransmission-boundary-tests-missing" },
-  { axis = "vendor", id = "encrypted-peripheral-production-contract-evidence-missing" },
+  { axis = "vendor", id = "peripheral-encrypted-packet-sram-length-completion-and-retirement-traces-missing" },
   { axis = "hil", id = "encrypted-peripheral-missing-key-mic-failure-and-counter-evidence-incomplete" },
   { axis = "async", id = "encrypted-peripheral-cancellation-and-key-retirement-lifecycle-incomplete" },
 ]
@@ -140,7 +140,7 @@ security = ["encrypted-acl"]
 composition = "standalone-encrypted-peripheral"
 level = "composed-product"
 activation-boundary = "Key admission for the live peripheral epoch through encrypted traffic, errors and complete key retirement"
-limitations = "One peripheral connection. No Central role, PHY update or data-length extension is required to qualify this scope. Pairing, bonding and ATT access control belong to secure-peripheral-gatt"
+limitations = "One peripheral connection. Vendor proof covers hardware-consumed packet SRAM and length fields for ciphertext/MIC, packet completion and physical retirement before buffer reuse. AES-CCM, authentication, key/nonce/counter ownership, LL encryption procedures and HCI error/cancellation handling are software contracts covered by host tests and HIL; this composition does not publish keys to a Controller crypto engine. No Central role, PHY update or data-length extension is required. Pairing, bonding and ATT access control belong to secure-peripheral-gatt"
 
 [[capabilities]]
 id = "secure-peripheral-gatt"

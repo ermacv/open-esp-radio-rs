@@ -86,6 +86,17 @@ source-review obligation.
 
 ## Vendor verification path
 
+Vendor comparison proves selected hardware contracts: register effects,
+hardware-consumed SRAM, IRQ/DMA state and physical transition preconditions.
+Protocol decisions, retry/rate policy, futures, Rust resource ownership and
+runtime reconstruction use their own contracts, host tests and HIL. Research
+into vendor software belongs in development knowledge links; an informational
+comparison does not make software equivalence a qualification requirement.
+Mixed capabilities retain vendor gaps only for their hardware operations and
+state that boundary in their scope limitations. WPA2 depends separately on
+hardware key publication, crypto activation and retirement; its handshake and
+replay/deadline policy do not require vendor equivalence.
+
 A vendor comparison is qualification-eligible only when all of these hold:
 
 1. the vendor side is a concrete replay;
@@ -108,6 +119,13 @@ Content-addressed history preserves earlier outcomes, including failures. Qualif
 checks its command and project identity, validates proof class/status/hash
 shape and re-hashes every referenced production source. A partial suite run
 cannot replace this index.
+
+An absent index means no vendor evidence is available: affected capabilities
+remain unqualified while status and HIL planning still work. An unreadable,
+malformed or inconsistent existing index remains an error. Source IDs are those
+selected by the verification project's suites, including `libpp`, `coex` and
+`phy-current`. A root needs a selected disposition; an evidence reference must
+also name the suite that selects that exact source and symbol.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 

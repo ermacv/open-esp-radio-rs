@@ -163,6 +163,109 @@ fn engineering_commands_require_explicit_inputs_and_limit_focus_to_views() {
 }
 
 #[test]
+fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardware() {
+    for hardware in [false, true] {
+        let root = StaticProgramRoot::new(if hardware {
+            "missing-vendor-hardware"
+        } else {
+            "missing-vendor-owned"
+        });
+        root.write_program("\"base\"", "\"base\"");
+        let catalog = root.path.join("catalog/source.toml");
+        let mut document = fs::read_to_string(&catalog).unwrap().replace(
+            "hil-not-applicable = \"source-only-contract\"",
+            "hil-requirements = [{ scenario = \"static\", minimum-repetitions = 1 }]",
+        );
+        if hardware {
+            fs::write(root.path.join("disposition.toml"),
+                "[[functions]]\nsource = \"libpp\"\nsymbol = \"hardware_publish\"\nrust-component = \"driver::publish\"\neffect-contract = \"exact-effects-v2\"\n").unwrap();
+            fs::write(root.path.join("verification-addon.toml"),
+                "evidence-index = \"vendor.json\"\n[[suites]]\nid = \"hardware\"\ndispositions = [\"disposition.toml\"]\n[[suites.vendor]]\nsource = \"libpp\"\nsymbols = [\"hardware_publish\"]\n").unwrap();
+            document = document.replace(
+                "vendor-not-applicable = \"source-only-contract\"",
+                "vendor-roots = [{ source = \"libpp\", symbol = \"hardware_publish\" }]\nvendor-evidence = [{ suite = \"hardware\", source = \"libpp\", symbol = \"hardware_publish\" }]",
+            );
+        }
+        fs::write(&catalog, document).unwrap();
+        for args in [
+            vec!["init", "-q"],
+            vec!["add", "."],
+            vec![
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&root.path)
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        for command in ["status", "plan"] {
+            let report = format!("output/{command}.json");
+            execute(
+                parse_arguments(
+                    [
+                        command,
+                        "--manifest",
+                        "program.toml",
+                        "--root",
+                        root.path.to_str().unwrap(),
+                        "--json-report",
+                        &report,
+                    ]
+                    .map(str::to_owned),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+        let status: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.path.join("output/status.json")).unwrap())
+                .unwrap();
+        let plan: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.path.join("output/plan.json")).unwrap()).unwrap();
+        assert_eq!(
+            status["entries"][0]["evidence"]["vendor"],
+            if hardware { "mapped" } else { "not-applicable" }
+        );
+        assert_eq!(plan["obligations"].as_array().unwrap().len(), 1);
+        assert_eq!(plan["obligations"][0]["action"], "run");
+        assert!(!root.path.join("vendor.json").exists());
+        fs::write(root.path.join("vendor.json"), "{broken").unwrap();
+        assert!(
+            execute(
+                parse_arguments(
+                    [
+                        "plan",
+                        "--manifest",
+                        "program.toml",
+                        "--root",
+                        root.path.to_str().unwrap(),
+                    ]
+                    .map(str::to_owned)
+                )
+                .unwrap()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn status_reads_catalog_without_git_or_evidence_and_writes_the_same_map() {
     let root = StaticProgramRoot::new("engineering-map");
     // Invalid evidence must not be loaded in declarations-only mode.

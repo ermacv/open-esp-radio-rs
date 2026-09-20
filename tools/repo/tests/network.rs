@@ -181,7 +181,11 @@ fn disabled_optional_declaration_still_violates_leaf_boundary() {
     let data = f.metadata();
     let graph = Graph::from_value(data.clone()).unwrap();
     assert_eq!(graph.reachable(&graph.root(&f.manifest).unwrap()).len(), 1);
-    for boundary in [Boundary::Neutral, Boundary::Compat, Boundary::Owned] {
+    for boundary in [
+        Boundary::Neutral,
+        Boundary::ReleasedEmbassy,
+        Boundary::Owned,
+    ] {
         assert!(
             audit(&f, data.clone(), boundary)
                 .unwrap_err()
@@ -299,7 +303,7 @@ fn released_driver_requires_registry_source_and_version() {
         .unwrap()["dependencies"][0];
     declaration["name"] = json!("embassy-net-driver");
     declaration["source"] = json!(registry);
-    audit(&f, data.clone(), Boundary::Compat).unwrap();
+    audit(&f, data.clone(), Boundary::ReleasedEmbassy).unwrap();
     for (source, version) in [
         ("git+https://example.invalid/driver#fork", "0.2.0"),
         (registry, "0.3.0"),
@@ -313,7 +317,7 @@ fn released_driver_requires_registry_source_and_version() {
             .unwrap();
         p["source"] = json!(source);
         p["version"] = json!(version);
-        assert!(audit(&f, changed, Boundary::Compat).is_err());
+        assert!(audit(&f, changed, Boundary::ReleasedEmbassy).is_err());
     }
 }
 #[test]

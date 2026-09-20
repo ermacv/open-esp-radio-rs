@@ -42,12 +42,12 @@ fn product() -> Fixture {
 api = { package = "embassy-net", path = "../stack" }
 device = { package = "embassy-net-driver", path = "../helper" }
 platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
-compat = { package = "oer-embassy-net-upstream", path = "../compat", optional = true }
+released-embassy = { package = "oer-embassy-net-upstream", path = "../released-embassy", optional = true }
 bridge = { package = "oer-esp32s31-wifi-embassy-upstream", path = "../bridge", optional = true }
 owned = { package = "oer-embassy-net", path = "../owned", optional = true }
 [features]
 default = ["embassy-network"]
-embassy-network = ["dep:compat", "dep:bridge"]
+embassy-network = ["dep:released-embassy", "dep:bridge"]
 owned-network = ["dep:owned"]
 "#,
     );
@@ -58,25 +58,25 @@ owned-network = ["dep:owned"]
     );
     fixture.package("stack", "embassy-net", "");
     fixture.package("crates/hardware/test-radio", "esp-hal", "");
-    fixture.package("compat", "oer-embassy-net-upstream", "");
+    fixture.package("released-embassy", "oer-embassy-net-upstream", "");
     fixture.package("bridge", "oer-esp32s31-wifi-embassy-upstream", "");
     fixture.package("owned", "oer-embassy-net", "");
     fixture
 }
 
 #[test]
-fn compat_product_accepts_platform_forks_but_not_network_source_substitution() {
+fn released_embassy_product_accepts_platform_forks_but_not_network_source_substitution() {
     let fixture = product();
     let mut metadata = fixture.metadata();
     source(&mut metadata, "embassy-net", REGISTRY);
     source(&mut metadata, "embassy-net-driver", REGISTRY);
     source(&mut metadata, "esp-hal", PLATFORM);
-    audit(&fixture, metadata.clone(), Boundary::CompatProduct).unwrap();
+    audit(&fixture, metadata.clone(), Boundary::ReleasedEmbassyProduct).unwrap();
     for name in ["embassy-net", "embassy-net-driver"] {
         for replacement in [EMBASSY, "registry+https://example.invalid/private-index"] {
             let mut changed = metadata.clone();
             source(&mut changed, name, replacement);
-            let error = audit(&fixture, changed, Boundary::CompatProduct)
+            let error = audit(&fixture, changed, Boundary::ReleasedEmbassyProduct)
                 .unwrap_err()
                 .to_string();
             assert!(error.contains(name), "{error}");

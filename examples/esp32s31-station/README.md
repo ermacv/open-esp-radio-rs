@@ -32,12 +32,12 @@ cargo xtask build firmware station --network owned-xarxa
 
 The first two commands select the same `upstream-network` driver contract;
 only the second replaces the Xarxa stack source. `upstream-smoltcp` selects
-released Embassy + smoltcp through `compat-network`; `owned-xarxa` selects the
+released Embassy + smoltcp through `embassy-network`; `owned-xarxa` selects the
 broader maintained forks through `owned-network`. Network Cargo features are
 mutually exclusive. For a direct
 type check from this example directory, use `cargo check --release
 --no-default-features --features upstream-network` for original Xarxa or
-`--features compat-network` in its place for smoltcp. Direct `cargo check` does
+`--features embassy-network` in its place for smoltcp. Direct `cargo check` does
 not automatically apply the patched-Xarxa source override.
 
 ## Application behavior

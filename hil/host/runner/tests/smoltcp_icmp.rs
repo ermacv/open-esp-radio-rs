@@ -1,6 +1,6 @@
 //! Exercise the released stack's opt-in echo responder through the real adapter.
-use embassy_net_compat::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
-use oer_embassy_net_compat::{FrameStorage, LinkState, NoopRawMutex, Resources};
+use embassy_net_released::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
+use oer_embassy_net_upstream::{FrameStorage, LinkState, NoopRawMutex, Resources};
 use std::{
     future::Future,
     task::{Context, Waker},
@@ -34,7 +34,7 @@ fn released_stack_answers_icmp_echo_after_neighbor_resolution() {
         gateway: None,
         dns_servers: Default::default(),
     });
-    let (_, mut runner) = embassy_net_compat::new(device, config, &mut stack_resources, 1);
+    let (_, mut runner) = embassy_net_released::new(device, config, &mut stack_resources, 1);
     let mut network = std::pin::pin!(runner.run());
     let mut cx = Context::from_waker(Waker::noop());
     assert!(network.as_mut().poll(&mut cx).is_pending());

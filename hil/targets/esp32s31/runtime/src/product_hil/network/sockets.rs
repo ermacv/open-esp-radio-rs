@@ -9,13 +9,13 @@ pub use embassy_net::wire::{IpEndpoint, Ipv4Address};
 pub use embassy_net::{IpEndpoint, Ipv4Address};
 pub use embassy_net::{Stack, udp::UdpSocket};
 
-#[cfg(feature = "compat-network")]
+#[cfg(feature = "embassy-network")]
 mod smoltcp;
-#[cfg(feature = "compat-network")]
+#[cfg(feature = "embassy-network")]
 pub use smoltcp::*;
-#[cfg(not(feature = "compat-network"))]
+#[cfg(not(feature = "embassy-network"))]
 mod xarxa;
-#[cfg(not(feature = "compat-network"))]
+#[cfg(not(feature = "embassy-network"))]
 pub use xarxa::*;
 
 pub fn new_tcp<'a>(stack: Stack<'a>, rx: &'a mut [u8], tx: &'a mut [u8]) -> TcpSocket<'a> {

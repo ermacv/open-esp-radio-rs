@@ -37,7 +37,7 @@ bridge = { package = "oer-esp32s31-wifi-xarxa-upstream", path = "../bridge" }
 default = ["upstream-network"]
 upstream-network = []
 owned-network = []
-compat-network = []
+embassy-network = []
 "#,
     );
     for (path, name) in [

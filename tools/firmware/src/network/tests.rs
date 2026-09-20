@@ -139,14 +139,14 @@ fn example_selection_is_explicit_and_rejects_conflicting_contracts() {
             .unwrap(),
             integration
         );
-        for other in ["upstream-network", "owned-network", "compat-network"] {
+        for other in ["upstream-network", "owned-network", "embassy-network"] {
             if other != integration.feature() {
                 assert!(Integration::for_example(Some(integration), &[other.into()]).is_err());
             }
         }
     }
     assert_eq!(
-        Integration::for_example(None, &["compat-network".into()]).unwrap(),
+        Integration::for_example(None, &["embassy-network".into()]).unwrap(),
         Integration::UpstreamSmoltcp
     );
     assert_eq!(
@@ -154,7 +154,8 @@ fn example_selection_is_explicit_and_rejects_conflicting_contracts() {
         Integration::OwnedXarxa
     );
     assert!(
-        Integration::for_example(None, &["owned-network".into(), "compat-network".into()]).is_err()
+        Integration::for_example(None, &["owned-network".into(), "embassy-network".into()])
+            .is_err()
     );
 }
 

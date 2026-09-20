@@ -10,7 +10,7 @@ Bluetooth execution lives in the [radio runtime domain](../../runtime/README.md)
 | `ieee80211/src/{connected_tasks,station_network,stack_boundary}.rs` | Task shutdown, association-scoped network ownership and explicit polling boundary |
 | `esp32s31/ieee802154/src/` | Acknowledged IRQ token queue and cancellation-safe operation/DMA owners |
 | `esp32s31/coex/src/` | Request/reply mailbox and the sole task-side coexistence owner |
-| `esp32s31/ieee80211-compat/src/` | Compatibility network endpoint bound to chip radio execution |
+| `esp32s31/ieee80211-embassy/src/` | Released Embassy network endpoint bound to chip radio execution |
 
 An adapter can retain state required by its external contract. IEEE 802.15.4
 queues already-acknowledged events, whereas Wi-Fi can coalesce notifications

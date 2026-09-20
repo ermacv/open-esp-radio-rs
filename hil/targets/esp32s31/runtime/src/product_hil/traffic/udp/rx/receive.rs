@@ -89,7 +89,7 @@ pub(super) async fn run(
     let mut late_datagrams = 0_u64;
     let mut maximum_deadline_lateness = 0_u64;
     let mut task_poll_end = None;
-    #[cfg(any(feature = "upstream-network", feature = "compat-network"))]
+    #[cfg(any(feature = "upstream-network", feature = "embassy-network"))]
     let interface = match session.config.network_interface {
         open_esp_radio_hil_protocol::WifiNetworkInterface::Station => {
             oer_esp32s31_embassy_wifi::NetworkInterface::Station
@@ -100,8 +100,8 @@ pub(super) async fn run(
     };
     #[cfg(feature = "upstream-network")]
     let pool_drops_start = oer_esp32s31_embassy_wifi::rx_pool_drops(interface);
-    #[cfg(feature = "compat-network")]
-    let resources_start = oer_esp32s31_embassy_wifi::compat_resources(interface);
+    #[cfg(feature = "embassy-network")]
+    let resources_start = oer_esp32s31_embassy_wifi::embassy_resources(interface);
     loop {
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
@@ -212,13 +212,13 @@ pub(super) async fn run(
             flow.evidence.rx_maximum_silence_micros = Some(silence.maximum_silence_micros);
         }
     }
-    #[cfg(feature = "compat-network")]
+    #[cfg(feature = "embassy-network")]
     runtime_log_reliably(format_args!(
         "ORX_RESOURCES session={} interface={:?} start={:?} end={:?}",
         session.session_id,
         interface,
         resources_start,
-        oer_esp32s31_embassy_wifi::compat_resources(interface),
+        oer_esp32s31_embassy_wifi::embassy_resources(interface),
     ))
     .await;
     #[cfg(feature = "upstream-network")]

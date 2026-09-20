@@ -33,7 +33,7 @@ mod progress_adapter;
 #[cfg(all(feature = "task-poll-telemetry", feature = "owned-network"))]
 #[path = "network/progress/owned.rs"]
 mod progress_adapter;
-#[cfg(all(feature = "task-poll-telemetry", feature = "compat-network"))]
+#[cfg(all(feature = "task-poll-telemetry", feature = "embassy-network"))]
 #[path = "network/progress/smoltcp.rs"]
 mod progress_adapter;
 

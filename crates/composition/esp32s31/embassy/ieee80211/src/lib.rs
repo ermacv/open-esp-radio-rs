@@ -45,22 +45,22 @@ pub use oer_esp32s31_wifi_embassy::roles::access_point::network_tx::{
 };
 
 #[cfg(any(
-    all(feature = "owned-network", feature = "compat-network"),
+    all(feature = "owned-network", feature = "embassy-network"),
     all(feature = "upstream-network", feature = "owned-network"),
-    all(feature = "upstream-network", feature = "compat-network")
+    all(feature = "upstream-network", feature = "embassy-network")
 ))]
 #[cfg(target_arch = "riscv32")]
 compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or compat-network"
+    "select exactly one network integration: upstream-network, owned-network or embassy-network"
 );
 #[cfg(not(any(
     feature = "owned-network",
-    feature = "compat-network",
+    feature = "embassy-network",
     feature = "upstream-network"
 )))]
 #[cfg(target_arch = "riscv32")]
 compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or compat-network"
+    "select exactly one network integration: upstream-network, owned-network or embassy-network"
 );
 
 #[cfg(feature = "diagnostics")]
@@ -219,11 +219,11 @@ pub use oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 #[cfg(not(feature = "upstream-network"))]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::WifiStackResources;
-#[cfg(all(feature = "compat-network", target_arch = "riscv32"))]
-pub use radio_resources::compat_resources;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
+#[cfg(all(feature = "embassy-network", target_arch = "riscv32"))]
+pub use radio_resources::embassy_resources;
 #[cfg(feature = "upstream-network")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::rx_pool_drops;

@@ -42,12 +42,12 @@ fn product() -> Fixture {
 api = { package = "embassy-net", path = "../stack" }
 device = { package = "embassy-net-driver", path = "../helper" }
 platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
-compat = { package = "oer-embassy-net-compat", path = "../compat", optional = true }
-bridge = { package = "oer-esp32s31-wifi-embassy-compat", path = "../bridge", optional = true }
+compat = { package = "oer-embassy-net-upstream", path = "../compat", optional = true }
+bridge = { package = "oer-esp32s31-wifi-embassy-upstream", path = "../bridge", optional = true }
 owned = { package = "oer-embassy-net", path = "../owned", optional = true }
 [features]
-default = ["compat-network"]
-compat-network = ["dep:compat", "dep:bridge"]
+default = ["embassy-network"]
+embassy-network = ["dep:compat", "dep:bridge"]
 owned-network = ["dep:owned"]
 "#,
     );
@@ -58,8 +58,8 @@ owned-network = ["dep:owned"]
     );
     fixture.package("stack", "embassy-net", "");
     fixture.package("crates/hardware/test-radio", "esp-hal", "");
-    fixture.package("compat", "oer-embassy-net-compat", "");
-    fixture.package("bridge", "oer-esp32s31-wifi-embassy-compat", "");
+    fixture.package("compat", "oer-embassy-net-upstream", "");
+    fixture.package("bridge", "oer-esp32s31-wifi-embassy-upstream", "");
     fixture.package("owned", "oer-embassy-net", "");
     fixture
 }
@@ -88,7 +88,7 @@ fn compat_product_accepts_platform_forks_but_not_network_source_substitution() {
 fn owned_product_requires_one_pinned_embassy_contract_but_allows_platform_forks() {
     let fixture = product();
     let manifest = std::fs::read_to_string(&fixture.manifest).unwrap().replace(
-        "default = [\"compat-network\"]",
+        "default = [\"embassy-network\"]",
         "default = [\"owned-network\"]",
     );
     std::fs::write(&fixture.manifest, manifest).unwrap();

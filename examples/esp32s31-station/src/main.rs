@@ -3,28 +3,28 @@
 #![recursion_limit = "256"]
 
 #[cfg(any(
-    all(feature = "owned-network", feature = "compat-network"),
+    all(feature = "owned-network", feature = "embassy-network"),
     all(feature = "upstream-network", feature = "owned-network"),
-    all(feature = "upstream-network", feature = "compat-network")
+    all(feature = "upstream-network", feature = "embassy-network")
 ))]
 compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or compat-network"
+    "select exactly one network integration: upstream-network, owned-network or embassy-network"
 );
 #[cfg(not(any(
     feature = "owned-network",
-    feature = "compat-network",
+    feature = "embassy-network",
     feature = "upstream-network"
 )))]
 compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or compat-network"
+    "select exactly one network integration: upstream-network, owned-network or embassy-network"
 );
 
 use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
 
-#[cfg(feature = "compat-network")]
-use embassy_net_compat as embassy_net;
+#[cfg(feature = "embassy-network")]
+use embassy_net_released as embassy_net;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
 #[cfg(feature = "upstream-network")]

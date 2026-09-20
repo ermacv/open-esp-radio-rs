@@ -52,7 +52,7 @@ From the repository root:
 
 ```console
 cargo xtask build firmware monitor
-cargo xtask build firmware station --no-default-features --features compat-network
+cargo xtask build firmware station --no-default-features --features embassy-network
 cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/ttyACM0
 ```
 

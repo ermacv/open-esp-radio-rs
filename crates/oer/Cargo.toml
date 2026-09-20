@@ -22,7 +22,7 @@ esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
 embassy-esp32s31-bluetooth = ["esp32s31-bluetooth", "dep:bluetooth-composition"]
 upstream-xarxa = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/upstream-network"]
 owned-xarxa = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/owned-network"]
-embassy-smoltcp = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/compat-network"]
+embassy-smoltcp = ["esp32s31-wifi", "radio/wifi-embassy", "dep:wifi-composition", "wifi-composition/embassy-network"]
 
 [package.metadata.open-radio]
 scope = "production"

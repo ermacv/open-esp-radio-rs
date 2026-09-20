@@ -2,7 +2,7 @@ use core::task::{Context, Waker};
 
 use embassy_net_driver::{Checksum, ChecksumCapabilities, Driver, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_embassy_net_compat::{
+use oer_embassy_net_upstream::{
     ETHERNET_HEADER_LEN, FrameLengthError, FrameStorage, LinkState, Resources, RxEnqueueError,
 };
 

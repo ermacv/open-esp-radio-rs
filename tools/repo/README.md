@@ -95,8 +95,8 @@ Within `source-only`, documentation checks only static links and catalogs.
 Standalone `check docs --full` performs its API, doctest and MCU consumer checks
 itself; no saved PASS report is reused.
 
-Network dependency checks distinguish released compatibility, original upstream,
-maintained owned and research contracts. Compatibility products
+Network dependency checks distinguish released Embassy, original upstream,
+maintained owned and research contracts. Released Embassy products
 use the official crates.io Embassy network APIs and exclude the owned adapter
 and Xarxa. Owned products use fully revision-pinned network forks, with the
 Embassy stack and driver resolving to the same source. These source rules do

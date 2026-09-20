@@ -199,7 +199,7 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
     }
 }
 
-/// Payload-only backing for one direction of a compatibility endpoint.
+/// Payload-only backing for one direction of a upstream endpoint.
 ///
 /// The storage is intentionally separate from [`Resources`]. A board may put
 /// these bytes in general memory while keeping queue indexes, wakers and link
@@ -357,9 +357,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
     ) {
         assert!(
             FRAME_CAPACITY >= ETHERNET_HEADER_LEN,
-            "compatibility frame capacity must hold an Ethernet header"
+            "upstream frame capacity must hold an Ethernet header"
         );
-        assert!(QUEUE_DEPTH != 0, "compatibility queues must not be empty");
+        assert!(QUEUE_DEPTH != 0, "upstream queues must not be empty");
         for frame in &mut rx_storage.frames {
             assert!(
                 self.rx_free.try_send(frame).is_ok(),
@@ -503,7 +503,7 @@ impl<M: RawMutex> RadioLinkController<'_, M> {
     }
 }
 
-/// Copyable RX-only compatibility capability for the physical datapath.
+/// Copyable RX-only upstream capability for the physical datapath.
 pub struct RadioRxPublisher<
     'resources,
     M: RawMutex,

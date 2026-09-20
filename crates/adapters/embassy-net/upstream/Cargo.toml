@@ -1,5 +1,5 @@
 [package]
-name = "oer-embassy-net-compat"
+name = "oer-embassy-net-upstream"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

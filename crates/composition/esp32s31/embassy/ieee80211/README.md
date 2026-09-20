@@ -101,7 +101,7 @@ replacing the default:
 | --- | --- |
 | `owned-network` (default) | Maintained Embassy/Xarxa contract with explicit packet pools |
 | `upstream-network` | Original Xarxa driver contract; the application supplies its stack |
-| `compat-network` | Released Embassy/smoltcp token contract |
+| `embassy-network` | Released Embassy/smoltcp token contract |
 
 Both `--network upstream-xarxa` and `--network patched-xarxa` in repository
 builders select `upstream-network`. Their difference is the application graph's
@@ -116,7 +116,7 @@ HIL support is listed separately in the implementation guide: a library feature
 does not establish that every application role has been qualified.
 
 Applications that construct their own stack can consume `WifiDevice`
-through `into_upstream()`, `into_compat()` or `into_owned()`, according to the
+through `into_upstream()`, `into_embassy()` or `into_owned()`, according to the
 selected contract. The owned transfer returns its matching packet allocator
 alongside the unique device. This permits application-owned stack composition
 and observation without exposing hardware authority or cloning an endpoint.

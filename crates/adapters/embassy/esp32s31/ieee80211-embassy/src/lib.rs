@@ -9,7 +9,7 @@
 //! adapter storage. The radio chooses a logical interface before the bridge
 //! reserves final DMA-visible SRAM and performs one additional copy.
 //!
-//! Standalone RX publication drops a new frame when compatibility storage is
+//! Standalone RX publication drops a new frame when upstream storage is
 //! full. It cannot await RX space while holding the radio owner: upstream RX
 //! needs a reply TX token whose return depends on that owner's TX progress.
 //! Existing queued frames retain their ownership and order.
@@ -17,7 +17,7 @@
 use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_embassy_net_compat::{
+use oer_embassy_net_upstream::{
     RadioLinkController, RadioRunner, RadioRxPublisher, RadioTxConsumer, RadioTxFrame,
 };
 #[cfg(feature = "tx-phase-telemetry")]
@@ -33,7 +33,7 @@ use oer_esp32s31_wifi_embassy::datapath::{
 use oer_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
 /// Complete frame ownership received from an unchanged Embassy driver.
-pub struct CompatibilityTxFrame<
+pub struct EmbassyTxFrame<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
@@ -44,7 +44,7 @@ pub struct CompatibilityTxFrame<
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize>
-    CompatibilityTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
+    EmbassyTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
 {
     pub const fn interface(&self) -> NetworkInterfaceId {
         self.interface
@@ -56,7 +56,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize>
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize> SoftwareTxFrame
-    for CompatibilityTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
+    for EmbassyTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
 {
     fn interface(&self) -> NetworkInterfaceId {
         self.interface
@@ -67,8 +67,8 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize>
     }
 }
 
-/// RX-only compatibility publisher narrowed to the radio contract.
-pub struct CompatibilityRxPublisher<
+/// RX-only upstream publisher narrowed to the radio contract.
+pub struct EmbassyRxPublisher<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
@@ -78,7 +78,7 @@ pub struct CompatibilityRxPublisher<
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Clone
-    for CompatibilityRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+    for EmbassyRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn clone(&self) -> Self {
         *self
@@ -86,12 +86,12 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Clone
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Copy
-    for CompatibilityRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+    for EmbassyRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> DatapathNetworkRx
-    for CompatibilityRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+    for EmbassyRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn backpressure(&self) -> RxBackpressure {
         // Upstream receive() needs a TX token even for an RX-only packet.
@@ -146,7 +146,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> DatapathNetworkRxSet
-    for CompatibilityRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+    for EmbassyRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn primary_mut(&mut self) -> &mut dyn DatapathNetworkRx {
         self
@@ -166,31 +166,31 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
 }
 
 /// Link authority tagged with exactly one logical interface.
-pub struct CompatibilityLinkController<'resources, M: RawMutex> {
+pub struct EmbassyLinkController<'resources, M: RawMutex> {
     interface: NetworkInterfaceId,
     inner: RadioLinkController<'resources, M>,
 }
 
-impl<M: RawMutex> Clone for CompatibilityLinkController<'_, M> {
+impl<M: RawMutex> Clone for EmbassyLinkController<'_, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<M: RawMutex> Copy for CompatibilityLinkController<'_, M> {}
+impl<M: RawMutex> Copy for EmbassyLinkController<'_, M> {}
 
-impl<M: RawMutex> DatapathNetworkLink for CompatibilityLinkController<'_, M> {
+impl<M: RawMutex> DatapathNetworkLink for EmbassyLinkController<'_, M> {
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         assert_eq!(
             interface, self.interface,
-            "compatibility link controller cannot change another interface"
+            "upstream link controller cannot change another interface"
         );
         self.inner.set_link_state(state);
     }
 }
 
 /// Radio-side source plus fixed physical SRAM allocator for one interface.
-pub struct CompatibilityTxConsumer<
+pub struct EmbassyTxConsumer<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
@@ -219,7 +219,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 > Clone
-    for CompatibilityTxConsumer<
+    for EmbassyTxConsumer<
         '_,
         M,
         FRAME_CAPACITY,
@@ -242,7 +242,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 > Copy
-    for CompatibilityTxConsumer<
+    for EmbassyTxConsumer<
         '_,
         M,
         FRAME_CAPACITY,
@@ -263,7 +263,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 > SelectedBurstMaterializer
-    for CompatibilityTxConsumer<
+    for EmbassyTxConsumer<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -273,7 +273,7 @@ impl<
         PHYSICAL_QUEUE_DEPTH,
     >
 {
-    type SoftwareFrame = CompatibilityTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
+    type SoftwareFrame = EmbassyTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
     type PhysicalFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
 
@@ -286,7 +286,7 @@ impl<
     }
 
     fn try_take(&self) -> Option<Self::SoftwareFrame> {
-        self.source.try_receive().map(|frame| CompatibilityTxFrame {
+        self.source.try_receive().map(|frame| EmbassyTxFrame {
             interface: self.interface,
             frame,
         })
@@ -322,7 +322,7 @@ impl<
 }
 
 /// One unchanged Embassy endpoint composed with the shared physical TX pool.
-pub struct CompatibilityDatapathNetwork<
+pub struct EmbassyDatapathNetwork<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
@@ -346,7 +346,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 >
-    CompatibilityDatapathNetwork<
+    EmbassyDatapathNetwork<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -378,7 +378,7 @@ impl<
     fn assert_interface(&self, interface: NetworkInterfaceId) {
         assert_eq!(
             interface, self.interface,
-            "single compatibility network cannot access another interface"
+            "single upstream network cannot access another interface"
         );
     }
 }
@@ -392,7 +392,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 > DatapathNetwork
-    for CompatibilityDatapathNetwork<
+    for EmbassyDatapathNetwork<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -402,13 +402,13 @@ impl<
         PHYSICAL_QUEUE_DEPTH,
     >
 {
-    type LinkController = CompatibilityLinkController<'resources, M>;
-    type RxPublisher = CompatibilityRxPublisher<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
-    type TxFrame = CompatibilityTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
+    type LinkController = EmbassyLinkController<'resources, M>;
+    type RxPublisher = EmbassyRxPublisher<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
+    type TxFrame = EmbassyTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
     type TxConsumer<'network>
-        = CompatibilityTxConsumer<
+        = EmbassyTxConsumer<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -421,7 +421,7 @@ impl<
         Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController {
-        CompatibilityLinkController {
+        EmbassyLinkController {
             interface: self.interface,
             inner: self.network.link_controller(),
         }
@@ -429,7 +429,7 @@ impl<
 
     fn rx_publisher(&self, interface: NetworkInterfaceId) -> Self::RxPublisher {
         self.assert_interface(interface);
-        CompatibilityRxPublisher {
+        EmbassyRxPublisher {
             inner: self.network.rx_publisher(),
         }
     }
@@ -447,12 +447,12 @@ impl<
         self.assert_interface(interface);
         self.network
             .try_receive_tx()
-            .map(|frame| CompatibilityTxFrame { interface, frame })
+            .map(|frame| EmbassyTxFrame { interface, frame })
     }
 
     async fn receive_tx(&self, interface: NetworkInterfaceId) -> Self::TxFrame {
         self.assert_interface(interface);
-        CompatibilityTxFrame {
+        EmbassyTxFrame {
             interface,
             frame: self.network.receive_tx().await,
         }
@@ -460,7 +460,7 @@ impl<
 
     fn tx_consumer(&self, interface: NetworkInterfaceId) -> Self::TxConsumer<'_> {
         self.assert_interface(interface);
-        CompatibilityTxConsumer {
+        EmbassyTxConsumer {
             interface,
             source: self.network.tx_consumer(),
             physical: self.physical.for_interface(interface),
@@ -496,7 +496,7 @@ impl<
     const NETWORK_QUEUE_DEPTH: usize,
     const PHYSICAL_QUEUE_DEPTH: usize,
 > oer_wifi_embassy::station_network::StationNetworkLink
-    for CompatibilityDatapathNetwork<
+    for EmbassyDatapathNetwork<
         '_,
         M,
         FRAME_CAPACITY,
@@ -511,8 +511,8 @@ impl<
     }
 }
 
-// The dual-VIF bridge follows after the single endpoint so compatibility
+// The dual-VIF bridge follows after the single endpoint so upstream
 // integration can reuse exactly the same endpoint capabilities.
 mod dual;
 
-pub use dual::{CompatibilityLinkControllers, DualCompatibilityDatapathNetwork};
+pub use dual::{DualEmbassyDatapathNetwork, EmbassyLinkControllers};

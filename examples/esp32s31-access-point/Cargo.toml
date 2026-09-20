@@ -11,10 +11,10 @@ default = ["upstream-network"]
 owned-network = ["dep:embassy-net-owned", "oer-esp32s31-embassy-wifi/owned-network"]
 upstream-network = ["dep:embassy-net-upstream", "oer-esp32s31-embassy-wifi/upstream-network"]
 
-compat-network = ["dep:embassy-net-compat", "oer-esp32s31-embassy-wifi/compat-network"]
+embassy-network = ["dep:embassy-net-released", "oer-esp32s31-embassy-wifi/embassy-network"]
 
 [dependencies]
-embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"], optional = true }
+embassy-net-released = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"], optional = true }
 embassy-net-upstream = { package = "embassy-net", git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", default-features = false, features = ["medium-ethernet", "ipv4", "udp", "tcp-listener", "icmp-ping-reply"], optional = true }
 oer-wifi-embassy = { path = "../../crates/adapters/embassy/ieee80211" }
 edge-dhcp = { version = "0.8.0", default-features = false }
@@ -70,5 +70,5 @@ scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"
-supported-feature-profiles = ["owned-network", "compat-network"]
+supported-feature-profiles = ["owned-network", "embassy-network"]
 host-tests = true

@@ -11,7 +11,7 @@ ownership and radio execution; component READMEs describe their own APIs.
 | --- | --- | --- |
 | **Upstream Xarxa + original Embassy** | An unmodified, reproducible reference for the Xarxa contract; applications can use the original APIs and measurements expose their actual limitations | `--network upstream-xarxa` in HIL and station/AP example builds |
 | **Patched Xarxa + original Embassy** | Source-compatible UDP wake and ARP response backpressure corrections, with the same driver and application contract as the reference | `--network patched-xarxa` in HIL and station/AP example builds |
-| **Upstream Embassy + smoltcp** | Compatibility with released network crates and their token-based driver API; an independent stack contract for comparison | `--network upstream-smoltcp` in HIL and station/AP example builds; `compat-network` in the product |
+| **Upstream Embassy + smoltcp** | Embassy with released network crates and their token-based driver API; an independent stack contract for comparison | `--network upstream-smoltcp` in HIL and station/AP example builds; `embassy-network` in the product |
 | **Owned Xarxa/Embassy** | Explicit RX/TX packet pools and packet-owner handoff through a maintained, broader patchset | `--network owned-xarxa` in HIL and station/AP example builds; `owned-network` remains the product library default |
 | **Research engine** | Bounded synchronous protocol work and deferred packet construction | A library with host tests; no selectable native HIL or example composition |
 
@@ -39,13 +39,13 @@ radio-facing adapters and the underlying IEEE 802.11 driver.
 | --- | --- | --- |
 | Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `oer-xarxa-upstream` |
 | Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [backpressure patch](https://github.com/ermacv/xarxa/tree/bbf4a670f5c673ba11fbb6b1a4c3a1dbac0cc7a7) | Same `oer-xarxa-upstream` |
-| Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-compat` |
+| Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-upstream` |
 | Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net` |
 
 The original and owned Git revisions are reviewed pins, not tracking branches
 or a promise of compatibility with every later upstream revision. Dependency
 aliases such as `embassy-net-upstream`, `embassy-net-owned` and
-`embassy-net-compat` in application manifests all name the package `embassy-net`;
+`embassy-net-released` in application manifests all name the package `embassy-net`;
 the alias helps Rust source distinguish contracts and is not a separate
 published crate. Optional inactive forks can remain in `Cargo.lock`. The
 selected normal/build dependency graph determines what a firmware uses.
@@ -54,7 +54,7 @@ The product crate
 [`oer-esp32s31-embassy-wifi`](../crates/composition/esp32s31/embassy/ieee80211/README.md)
 selects adapters and static resources. Its chip-specific bridges are
 `oer-esp32s31-wifi-xarxa-upstream` and
-`oer-esp32s31-wifi-embassy-compat`; the shared radio runner is
+`oer-esp32s31-wifi-embassy-upstream`; the shared radio runner is
 `oer-esp32s31-wifi-embassy`. The [network source map](../crates/network/README.md)
 and [driver map](../crates/README.md) locate these packages. Applications own
 sockets and IP policy; adapter crates do not acquire independent PHY/DMA owners.
@@ -155,7 +155,7 @@ complete-frame staging and different stack/socket storage. It therefore can
 have different copying costs, buffer budgets and backpressure behavior while
 using the same physical radio implementation. Shared radio source does not
 imply identical adapter costs or identical compiled binaries. The
-[compatibility boundary](wifi-egress.md#compatibility-and-rx) describes these
+[Embassy boundary](wifi-egress.md#embassy-and-rx) describes these
 ownership differences.
 
 ## Selecting an implemented composition
@@ -179,7 +179,7 @@ in HIL `image build/flash`, `run`, `run-all`, and example builds.
 | --- | --- | --- |
 | `upstream-xarxa` | `upstream-network` | None |
 | `patched-xarxa` | `upstream-network` | Pinned minimal Xarxa patch |
-| `upstream-smoltcp` | `compat-network` | None |
+| `upstream-smoltcp` | `embassy-network` | None |
 | `owned-xarxa` | `owned-network` | Maintained sources declared in manifests |
 
 The product **library** retains its existing `owned-network` Cargo default;
@@ -237,7 +237,7 @@ describes allocation failures and ownership.
 
 The Embassy/smoltcp `receive()` contract requires a free TX slot to return
 an RX/reply-token pair. With no TX slots, the stack cannot drain RX. The
-standalone compatibility radio sink therefore attempts each RX publication
+standalone Embassy radio sink therefore attempts each RX publication
 once and drops the new frame if its bounded storage is full. It never awaits
 network capacity while holding the radio owner needed to materialize TX and
 return software slots. Queued frames retain their owners and order; ordinary
@@ -273,7 +273,7 @@ TX boundary. Interleaved destinations require peer/TID selection before scarce
 SRAM admission so that one peer's frames can form an A-MPDU. The current owned
 adapter classifies complete packets into Ethernet-destination queues over one
 shared owner pool. The AP selects a destination before removing aggregate
-members, leaving other destinations at the source. FIFO-only compatibility
+members, leaving other destinations at the source. FIFO-only Embassy
 sources retain bounded radio-side regrouping. Owned still does not ask Xarxa
 to construct a packet for a selected peer: pool capacity and the packets the
 stack publishes limit its choices. Inside a selected destination, the owned

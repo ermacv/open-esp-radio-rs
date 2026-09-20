@@ -33,7 +33,7 @@ bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth/dtm-diagnostics", "o
 bluetooth-gatt = ["bluetooth-radio", "dep:bluetooth-example", "dep:trouble-host"]
 bluetooth-secure-gatt = ["bluetooth-gatt", "bluetooth-example/secure-gatt-application", "dep:embassy-sync"]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network"]
-compat-network = ["dep:embassy-net-compat", "oer-esp32s31-embassy-wifi/compat-network"]
+embassy-network = ["dep:embassy-net-released", "oer-esp32s31-embassy-wifi/embassy-network"]
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embassy-wifi/owned-network"]
 open-radio-hil = [
     "dep:oer-wifi-softmac",
@@ -152,7 +152,7 @@ xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true
 embassy-futures = { workspace = true, optional = true }
 embassy-net-upstream = { workspace = true, optional = true }
-embassy-net-compat = { workspace = true, optional = true }
+embassy-net-released = { workspace = true, optional = true }
 embassy-net-owned = { workspace = true, optional = true }
 embassy-sync = { workspace = true, optional = true }
 embassy-time.workspace = true

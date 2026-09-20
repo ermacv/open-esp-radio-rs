@@ -1259,7 +1259,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-embassy-net-compat"
+name = "oer-embassy-net-upstream"
 version = "0.1.0"
 dependencies = [
  "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1303,7 +1303,7 @@ dependencies = [
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "esp-hal",
  "oer-embassy-net",
- "oer-embassy-net-compat",
+ "oer-embassy-net-upstream",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
  "oer-esp32s31-soc",
@@ -1311,7 +1311,7 @@ dependencies = [
  "oer-esp32s31-wifi-ap",
  "oer-esp32s31-wifi-dma",
  "oer-esp32s31-wifi-embassy",
- "oer-esp32s31-wifi-embassy-compat",
+ "oer-esp32s31-wifi-embassy-upstream",
  "oer-esp32s31-wifi-esp-hal",
  "oer-esp32s31-wifi-mac",
  "oer-esp32s31-wifi-sta",
@@ -1448,12 +1448,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-embassy-compat"
+name = "oer-esp32s31-wifi-embassy-upstream"
 version = "0.1.0"
 dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-embassy-net-compat",
+ "oer-embassy-net-upstream",
  "oer-esp32s31-wifi-embassy",
  "oer-network",
  "oer-wifi-embassy",

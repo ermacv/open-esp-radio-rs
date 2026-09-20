@@ -16,7 +16,7 @@ async fn echo(stack: Stack<'static>) -> ! {
     let mut udp = UdpSocket::new(stack).expect("one UDP socket fits");
     #[cfg(feature = "owned-network")]
     let mut udp = UdpSocket::new(stack);
-    #[cfg(feature = "compat-network")]
+    #[cfg(feature = "embassy-network")]
     let mut udp = {
         use crate::embassy_net::udp::PacketMetadata;
         static RX_META: StaticCell<[PacketMetadata; 4]> = StaticCell::new();

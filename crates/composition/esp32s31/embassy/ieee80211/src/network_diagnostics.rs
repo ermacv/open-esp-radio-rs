@@ -11,7 +11,7 @@ pub enum NetworkInterface {
     test,
     all(
         target_arch = "riscv32",
-        any(feature = "upstream-network", feature = "compat-network")
+        any(feature = "upstream-network", feature = "embassy-network")
     )
 ))]
 pub(crate) struct Monitors<T> {
@@ -25,7 +25,7 @@ pub(crate) struct Monitors<T> {
     test,
     all(
         target_arch = "riscv32",
-        any(feature = "upstream-network", feature = "compat-network")
+        any(feature = "upstream-network", feature = "embassy-network")
     )
 ))]
 impl<T> Monitors<T> {

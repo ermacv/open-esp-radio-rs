@@ -71,8 +71,8 @@ oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
 oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
 xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "0d41d8e80cb617d355cf6981b6ff76635c44cadc", default-features = false, features = ["std", "alloc", "medium-ethernet", "ipv4", "udp"] }
 critical-section = { version = "1.2.0", features = ["std"] }
-embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }
-oer-embassy-net-compat = { path = "../../../crates/adapters/embassy-net/compat" }
+embassy-net-released = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }
+oer-embassy-net-upstream = { path = "../../../crates/adapters/embassy-net/upstream" }
 # Match the target's UDP receive capacity for burst-retention tests.
 xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", default-features = false, features = ["udp-rx-queue-count-16"] }
 embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", features = ["dhcpv4", "medium-ethernet", "tcp-listener", "udp"] }

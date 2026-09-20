@@ -18,7 +18,7 @@ fn full_rx_and_tx_return_radio_control_and_recover_without_losing_queued_frames(
     let interface = NetworkInterfaceId::new(0);
     let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 1], rx_storage, tx_storage);
     let monitor = radio.resource_monitor();
-    let network = CompatibilityDatapathNetwork::new(interface, radio, physical());
+    let network = EmbassyDatapathNetwork::new(interface, radio, physical());
     network.set_link_state(interface, LinkState::Up);
     let mut publisher = network.rx_publisher(interface);
     let mut sink = EmbassyNetConnectedRxSink::new(publisher, Observer);

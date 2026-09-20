@@ -13,7 +13,7 @@ oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", features = ["dhcpv4", "medium-ethernet", "udp"], optional = true }
-embassy-net-compat = { package = "embassy-net", version = "0.9.1", features = ["dhcpv4", "medium-ethernet", "udp"], optional = true }
+embassy-net-released = { package = "embassy-net", version = "0.9.1", features = ["dhcpv4", "medium-ethernet", "udp"], optional = true }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["auto", "esp32s31", "log-04"] }
@@ -35,9 +35,9 @@ owned-network = [
     "dep:embassy-net-owned",
     "oer-esp32s31-embassy-wifi/owned-network",
 ]
-compat-network = [
-    "dep:embassy-net-compat",
-    "oer-esp32s31-embassy-wifi/compat-network",
+embassy-network = [
+    "dep:embassy-net-released",
+    "oer-esp32s31-embassy-wifi/embassy-network",
 ]
 
 [profile.release]
@@ -72,4 +72,4 @@ scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"
-supported-feature-profiles = ["compat-network", "owned-network"]
+supported-feature-profiles = ["embassy-network", "owned-network"]

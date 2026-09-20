@@ -1,15 +1,15 @@
 //! One production network scheduler for one permanent logical Wi-Fi device.
 
-#[cfg(feature = "compat-network")]
-use embassy_net_compat as embassy_net;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
+#[cfg(feature = "embassy-network")]
+use embassy_net_released as embassy_net;
 
 use crate::{WifiDevice, WifiStackResources};
 
 #[cfg(feature = "owned-network")]
 type NetworkRunner<'resources> = embassy_net::Runner<'resources>;
-#[cfg(feature = "compat-network")]
+#[cfg(feature = "embassy-network")]
 type NetworkRunner<'resources> =
     embassy_net::Runner<'resources, crate::radio_resources::WifiNetworkDevice>;
 
@@ -49,7 +49,7 @@ impl<'resources> WifiNetworkRunner<'resources> {
         #[cfg(feature = "owned-network")]
         inner.set_poll_budget(embassy_net::PollBudget::new(32, 32));
 
-        #[cfg(feature = "compat-network")]
+        #[cfg(feature = "embassy-network")]
         let (stack, inner) = embassy_net::new(device.inner, config, resources, random_seed);
 
         (stack, Self { inner })

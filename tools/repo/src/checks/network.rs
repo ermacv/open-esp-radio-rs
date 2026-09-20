@@ -6,8 +6,8 @@ use std::{collections::BTreeSet, path::Path};
 
 const NETWORK: &str = "oer-network";
 const OWNED: &str = "oer-embassy-net";
-const COMPAT: &str = "oer-embassy-net-compat";
-const BRIDGE: &str = "oer-esp32s31-wifi-embassy-compat";
+const COMPAT: &str = "oer-embassy-net-upstream";
+const BRIDGE: &str = "oer-esp32s31-wifi-embassy-upstream";
 const UPSTREAM: &str = "oer-xarxa-upstream";
 const UPSTREAM_BRIDGE: &str = "oer-esp32s31-wifi-xarxa-upstream";
 const XARXA_SOURCE: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
@@ -355,12 +355,12 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
     if boundary.product() {
         let expected = match boundary {
             Boundary::OwnedProduct => "owned-network",
-            Boundary::CompatProduct => "compat-network",
+            Boundary::CompatProduct => "embassy-network",
             Boundary::UpstreamProduct | Boundary::UpstreamApplication => "upstream-network",
             _ => unreachable!(),
         };
         if !has(expected)
-            || ["owned-network", "compat-network", "upstream-network"]
+            || ["owned-network", "embassy-network", "upstream-network"]
                 .into_iter()
                 .any(|feature| feature != expected && has(feature))
         {
@@ -389,7 +389,7 @@ pub fn profiles() -> [Profile; 22] {
         Profile {
             boundary: CompatProduct,
             manifest: "examples/esp32s31-access-point/Cargo.toml",
-            features: &["--no-default-features", "--features", "compat-network"],
+            features: &["--no-default-features", "--features", "embassy-network"],
         },
         Profile {
             boundary: OwnedProduct,
@@ -402,7 +402,7 @@ pub fn profiles() -> [Profile; 22] {
             features: &[
                 "--no-default-features",
                 "--features",
-                "open-radio-hil,compat-network,code-psram,profile-psram-data,psram-task-stack",
+                "open-radio-hil,embassy-network,code-psram,profile-psram-data,psram-task-stack",
             ],
         },
         Profile {
@@ -455,7 +455,7 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: Compat,
-            manifest: "crates/adapters/embassy-net/compat/Cargo.toml",
+            manifest: "crates/adapters/embassy-net/upstream/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -485,7 +485,7 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: CompatBridge,
-            manifest: "crates/adapters/embassy/esp32s31/ieee80211-compat/Cargo.toml",
+            manifest: "crates/adapters/embassy/esp32s31/ieee80211-upstream/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -496,7 +496,7 @@ pub fn profiles() -> [Profile; 22] {
         Profile {
             boundary: CompatProduct,
             manifest: product,
-            features: &["--no-default-features", "--features", "compat-network"],
+            features: &["--no-default-features", "--features", "embassy-network"],
         },
         Profile {
             boundary: OwnedProduct,
@@ -506,7 +506,7 @@ pub fn profiles() -> [Profile; 22] {
         Profile {
             boundary: CompatProduct,
             manifest: "examples/esp32s31-station/Cargo.toml",
-            features: &["--no-default-features", "--features", "compat-network"],
+            features: &["--no-default-features", "--features", "embassy-network"],
         },
     ]
 }

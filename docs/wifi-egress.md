@@ -14,7 +14,7 @@ availability, see [Network implementation choices](network-implementations.md).
 | Component | Owns | Does not own |
 | --- | --- | --- |
 | `crates/network/interface` | Logical interfaces, link state and frame/admission errors | Queues, allocator, executor or hardware |
-| `crates/adapters/embassy-net/compat` | Released `embassy-net-driver` tokens and bounded complete-frame staging | Radio peer/BA state or final SRAM slots |
+| `crates/adapters/embassy-net/upstream` | Released `embassy-net-driver` tokens and bounded complete-frame staging | Radio peer/BA state or final SRAM slots |
 | `crates/adapters/embassy-net/owned` | Owned `PacketBuf` handoff and stack wake registration | Radio scheduling or DMA descriptors |
 | `crates/adapters/xarxa/upstream` | Original Xarxa driver API, bounded packet-owner queues and link epochs | Packet-pool implementation, IP policy or physical radio state |
 | `crates/protocols/ieee80211/datapath` | Software/physical ownership traits and selected-burst contracts | Concrete allocator, stack or executor |
@@ -22,7 +22,7 @@ availability, see [Network implementation choices](network-implementations.md).
 | `experiments/network-engine` | Synchronous bounded protocol engine and selected-work construction | Production network integration or hardware qualification |
 
 The ESP32-S31 product selects exactly one of `upstream-network`, `owned-network`
-and `compat-network` at compile time. All compose the same physical radio runner
+and `embassy-network` at compile time. All compose the same physical radio runner
 and the product's finite SRAM TX horizon. The research engine is a separate
 library, not a selectable product feature.
 
@@ -35,7 +35,7 @@ DHCP and sockets. Stack APIs do not expose radio peer slots or airtime grants.
 
 | Integration | Stack-facing contract | Dependency guarantee |
 | --- | --- | --- |
-| `compat-network` | Released `embassy-net-driver` 0.2.0 RX/TX tokens; `embassy-net` 0.9.1 uses smoltcp | The selected production network graph uses unmodified registry packages |
+| `embassy-network` | Released `embassy-net-driver` 0.2.0 RX/TX tokens; `embassy-net` 0.9.1 uses smoltcp | The selected production network graph uses unmodified registry packages |
 | `upstream-network` | Original `xarxa-driver::Driver` and global `PacketBuf` pool; the application supplies its stack | Original pinned `embassy-rs/xarxa` by default; the explicit `patched-xarxa` composition replaces only the stack while preserving this driver API |
 | `owned-network` (default) | Unique Xarxa `PacketBuf` owners, explicit packet allocators and bounded stack polling | Pinned Embassy/Xarxa Git sources with a maintained patchset |
 | Research library | Bounded synchronous IPv4 work and physical batch emission | No Embassy or Xarxa dependency |
@@ -52,7 +52,7 @@ The [product manifest](../crates/composition/esp32s31/embassy/ieee80211/Cargo.to
 and its lockfile define the exact selected versions and revisions. Its
 lockfile includes the optional network alternatives; an inactive dependency
 can still participate in Cargo resolution. The released-network guarantee
-concerns the reachable production graph for `compat-network`, not the absence
+concerns the reachable production graph for `embassy-network`, not the absence
 of fork entries in a shared lockfile. The ESP32-S31 hardware dependencies on
 the pinned `esp-hal` and `esp-pacs` forks remain in all product profiles.
 
@@ -133,7 +133,7 @@ capabilities continue to request software checksums.
 Released Embassy and Git Embassy documentation describe different interfaces.
 Use the [released driver reference](https://docs.embassy.dev/embassy-net-driver/0.2.0/default/trait.Driver.html)
 and [released UDP reference](https://docs.embassy.dev/embassy-net/0.9.1/default/udp/struct.UdpSocket.html)
-for compat. The owned adapter must match the sources pinned by its manifest,
+for released Embassy. The owned adapter must match the sources pinned by its manifest,
 rather than a moving upstream `main` API.
 
 ## Owned TX path
@@ -177,7 +177,7 @@ The owned AP pulls matching aggregate members through `DestinationTxQueues`.
 The outer runner does not push unrelated packets into a selected standby.
 Waiting for more members observes the selected destination and count; other
 queues cannot satisfy or wake that wait. Failed materialization retains source
-owners. Power-save and rollback storage remain in the radio; compatibility
+owners. Power-save and rollback storage remain in the radio; released Embassy
 sources retain their bounded regrouping arena.
 
 For destination-aware sources, active retention, awake unicast PS backlog and
@@ -190,7 +190,7 @@ transport-flow count do not create extra destination turns. One bounded source
 scan is sufficient; unselected packet owners stay in place. Initial TX and
 standby preparation use this same selection boundary. An already selected burst
 continues within its existing limits; matching refill cannot claim newer packets
-ahead of an awake PS prefix. FIFO compatibility sources merge visible retained
+ahead of an awake PS prefix. FIFO Embassy sources merge visible retained
 and awake PS heads; their opaque producer FIFO still requires bounded regrouping.
 
 Stale retained association generations release their packet owners before
@@ -243,7 +243,7 @@ moves between them. The common credit budget bounds their combined occupancy,
 so a valid production owned transfer cannot exhaust a second, smaller arena.
 There is no per-peer reservation. Custom compositions must keep endpoint
 admission within the radio retention capacity to obtain the same guarantee.
-Compatibility adapters retain their existing admission contracts.
+Embassy adapters retain their existing admission contracts.
 
 For sources without that shared admission guarantee, an exhausted retention
 arena drops the newly claimed owner. This is an
@@ -385,7 +385,7 @@ capacity; failure preserves the frontier and reports `SelectionStorageFull`.
 An already selected head or built standby keeps its reservation. This mode also
 supports ordinary TX without a standby arena. An opaque FIFO source reports
 `DestinationQueuesRequired` at selection before claiming its next frame; the RR
-accounting and compatibility paths continue to support FIFO.
+accounting and Embassy paths continue to support FIFO.
 
 This is an explicit model-driven mode, disabled by default in board compositions.
 It does not supply per-head physical cost estimates, cap ordinary/A-MSDU/retry
@@ -606,9 +606,9 @@ binding remains executor-specific. Event priority also remains role-specific:
 AP checks timeout/collision before completion; STA can prefer an observed
 completion. A shared service signature does not make those policies identical.
 
-## Compatibility and RX
+## Embassy and RX
 
-A released `TxToken` is issued before its destination is known. Compatibility
+A released `TxToken` is issued before its destination is known. Embassy
 therefore owns bounded complete-frame staging, classifies the finished frame
 and copies selected work into final SRAM. Payload arenas are separate from
 hot channel metadata; channels transfer unique mutable leases. Consumption,

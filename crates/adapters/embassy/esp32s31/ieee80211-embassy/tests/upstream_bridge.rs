@@ -1,16 +1,14 @@
 use core::task::{Context, Waker};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_embassy_net_compat::{
+use oer_embassy_net_upstream::{
     Driver as _, ETHERNET_HEADER_LEN, FrameStorage, Resources, RxToken as _, TxToken as _,
 };
 use oer_esp32s31_wifi_embassy::datapath::{
     PinnedTxPool, PinnedTxResources, SelectedBurstMaterializer,
     network::{DatapathNetwork, DatapathNetworkRx},
 };
-use oer_esp32s31_wifi_embassy_compat::{
-    CompatibilityDatapathNetwork, DualCompatibilityDatapathNetwork,
-};
+use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyDatapathNetwork};
 use oer_network::{LinkState, NetworkInterfaceId};
 
 const FRAME_CAPACITY: usize = 64;
@@ -59,7 +57,7 @@ fn unchanged_driver_reaches_the_radio_materializer_without_policy_duplication() 
     let (endpoint, rx_storage, tx_storage) = endpoint();
     let interface = NetworkInterfaceId::new(3);
     let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 3], rx_storage, tx_storage);
-    let network = CompatibilityDatapathNetwork::new(interface, radio, physical());
+    let network = EmbassyDatapathNetwork::new(interface, radio, physical());
     network.set_link_state(interface, LinkState::Up);
 
     device
@@ -88,11 +86,11 @@ fn unchanged_driver_reaches_the_radio_materializer_without_policy_duplication() 
 }
 
 #[test]
-fn compatibility_rx_parts_use_the_same_radio_publication_contract() {
+fn upstream_rx_parts_use_the_same_radio_publication_contract() {
     let (endpoint, rx_storage, tx_storage) = endpoint();
     let interface = NetworkInterfaceId::new(4);
     let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 4], rx_storage, tx_storage);
-    let network = CompatibilityDatapathNetwork::new(interface, radio, physical());
+    let network = EmbassyDatapathNetwork::new(interface, radio, physical());
     network.set_link_state(interface, LinkState::Up);
 
     network
@@ -117,7 +115,7 @@ fn compatibility_rx_parts_use_the_same_radio_publication_contract() {
 }
 
 #[test]
-fn dual_compatibility_endpoints_share_only_the_physical_horizon() {
+fn dual_upstream_endpoints_share_only_the_physical_horizon() {
     let (first_endpoint, first_rx_storage, first_tx_storage) = endpoint();
     let (second_endpoint, second_rx_storage, second_tx_storage) = endpoint();
     let first_interface = NetworkInterfaceId::new(0);
@@ -126,7 +124,7 @@ fn dual_compatibility_endpoints_share_only_the_physical_horizon() {
         first_endpoint.split([2, 0, 0, 0, 0, 1], first_rx_storage, first_tx_storage);
     let (mut second_device, second_radio) =
         second_endpoint.split([2, 0, 0, 0, 0, 2], second_rx_storage, second_tx_storage);
-    let network = DualCompatibilityDatapathNetwork::new(
+    let network = DualEmbassyDatapathNetwork::new(
         first_interface,
         first_radio,
         second_interface,
@@ -166,5 +164,5 @@ fn dual_compatibility_endpoints_share_only_the_physical_horizon() {
     assert_eq!(second.as_slice(), &[0xb2; ETHERNET_HEADER_LEN]);
 }
 
-#[path = "compatibility_bridge/rx_progress.rs"]
+#[path = "upstream_bridge/rx_progress.rs"]
 mod rx_progress;

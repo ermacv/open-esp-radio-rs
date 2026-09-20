@@ -8,7 +8,7 @@ mod upstream;
 #[cfg(feature = "upstream-network")]
 pub use upstream::*;
 
-#[cfg(feature = "compat-network")]
+#[cfg(feature = "embassy-network")]
 mod compat;
-#[cfg(feature = "compat-network")]
+#[cfg(feature = "embassy-network")]
 pub use compat::*;

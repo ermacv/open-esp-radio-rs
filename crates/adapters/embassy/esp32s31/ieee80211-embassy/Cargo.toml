@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-wifi-embassy-compat"
+name = "oer-esp32s31-wifi-embassy-upstream"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Upstream-compatible Embassy network bridge for the ESP32-S31 Wi-F
 [dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-oer-embassy-net-compat = { path = "../../../embassy-net/compat" }
+oer-embassy-net-upstream = { path = "../../../embassy-net/upstream" }
 oer-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
 oer-network = { path = "../../../../network/interface" }
 oer-wifi-embassy = { path = "../../ieee80211" }

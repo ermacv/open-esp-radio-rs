@@ -32,7 +32,7 @@ impl Integration {
     pub const fn feature(self) -> &'static str {
         match self {
             Self::UpstreamXarxa | Self::PatchedXarxa => "upstream-network",
-            Self::UpstreamSmoltcp => "compat-network",
+            Self::UpstreamSmoltcp => "embassy-network",
             Self::OwnedXarxa => "owned-network",
         }
     }
@@ -43,7 +43,7 @@ impl Integration {
         for feature in features {
             let candidate = match feature.as_str() {
                 "upstream-network" => Self::UpstreamXarxa,
-                "compat-network" => Self::UpstreamSmoltcp,
+                "embassy-network" => Self::UpstreamSmoltcp,
                 "owned-network" => Self::OwnedXarxa,
                 _ => continue,
             };

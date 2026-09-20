@@ -478,13 +478,11 @@ async fn run_session(
             calibration_traffic::configure(enabled);
             console.peripheral_reinitialize = true;
             console
-                .send_frame(
+                .send_peripheral_frame(
                     None,
                     request,
-                    peripheral_evidence(
-                        operation,
-                        PeripheralResult::CalibrationTrafficConfigured { enabled, restored },
-                    ),
+                    operation,
+                    PeripheralResult::CalibrationTrafficConfigured { enabled, restored },
                 )
                 .await;
             system = BluetoothSystem {
@@ -529,23 +527,19 @@ async fn run_session(
                 .expect("maintenance counter");
             console.peripheral_reinitialize = true;
             console
-                .send_frame(
+                .send_peripheral_frame(
                     None,
                     request,
-                    peripheral_evidence(
-                        operation,
-                        PeripheralResult::Maintained {
-                            cycles: maintenance_cycles,
-                            due_tracking_completed: outcome.is_some(),
-                            tracking_inhibited: outcome
-                                .is_some_and(|result| result.tracking_inhibited),
-                            same_hci_reset_completed: true,
-                            common_calibrated: outcome
-                                .is_some_and(|result| result.calibration.common),
-                            bluetooth_calibrated: outcome
-                                .is_some_and(|result| result.calibration.bluetooth_ieee802154),
-                        },
-                    ),
+                    operation,
+                    PeripheralResult::Maintained {
+                        cycles: maintenance_cycles,
+                        due_tracking_completed: outcome.is_some(),
+                        tracking_inhibited: outcome.is_some_and(|result| result.tracking_inhibited),
+                        same_hci_reset_completed: true,
+                        common_calibrated: outcome.is_some_and(|result| result.calibration.common),
+                        bluetooth_calibrated: outcome
+                            .is_some_and(|result| result.calibration.bluetooth_ieee802154),
+                    },
                 )
                 .await;
             system = BluetoothSystem {
@@ -578,19 +572,17 @@ async fn run_session(
         cycles = cycles.checked_add(1).expect("restart counter");
         console.peripheral_reinitialize = true;
         console
-            .send_frame(
+            .send_peripheral_frame(
                 None,
                 request,
-                peripheral_evidence(
-                    PeripheralOperation::Restart,
-                    PeripheralResult::Restarted {
-                        cycles,
-                        new_reset_completed: true,
-                        old_commands_closed,
-                        old_events_closed,
-                        old_acl_credits_closed,
-                    },
-                ),
+                PeripheralOperation::Restart,
+                PeripheralResult::Restarted {
+                    cycles,
+                    new_reset_completed: true,
+                    old_commands_closed,
+                    old_events_closed,
+                    old_acl_credits_closed,
+                },
             )
             .await;
         system = ready.system;
@@ -873,7 +865,19 @@ impl Console {
         operation: PeripheralOperation,
         result: PeripheralResult,
     ) -> impl core::future::Future<Output = ()> + 'a {
-        self.send(hci, request, peripheral_evidence(operation, result))
+        self.send_peripheral_frame(Some(hci), request, operation, result)
+    }
+
+    // Build and encode diagnostic values outside the owner-transfer poll frame.
+    #[inline(never)]
+    fn send_peripheral_frame<'a>(
+        &'a mut self,
+        hci: Option<&'a Host>,
+        request: u32,
+        operation: PeripheralOperation,
+        result: PeripheralResult,
+    ) -> impl core::future::Future<Output = ()> + 'a {
+        self.send_frame(hci, request, peripheral_evidence(operation, result))
     }
 
     #[inline(never)]
@@ -1339,6 +1343,9 @@ fn rx_diagnostics() -> open_esp_radio_hil_protocol::BluetoothDtmRxDiagnostics {
     }
 }
 
+// Snapshot formatting must not share a machine frame with owner transitions.
+// The caller retains the actual radio owners; this function only reads evidence.
+#[inline(never)]
 fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult) -> Event {
     let stack = super::cpu0_stack_usage_snapshot();
     if !stack.has_required_headroom() {
@@ -1527,6 +1534,9 @@ fn maintenance_measurements() -> Option<open_esp_radio_hil_protocol::BluetoothPh
             maximum_to_run_micros: m.maximum_to_run_micros,
             maximum_poll_micros: m.maximum_poll_micros,
             admitted_at_micros: m.admitted_at_micros,
+            quiesced_at_micros: m.quiesced_at_micros,
+            phy_started_at_micros: m.phy_started_at_micros,
+            phy_finished_at_micros: m.phy_finished_at_micros,
             execution_deadline_micros: m.execution_deadline_micros,
             restoration_deadline_micros: m.restoration_deadline_micros,
             physical_finished_at_micros: m.physical_finished_at_micros,

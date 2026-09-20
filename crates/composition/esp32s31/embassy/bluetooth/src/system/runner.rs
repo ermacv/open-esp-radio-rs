@@ -166,6 +166,26 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
     use crate::diagnostics::{BluetoothExecutionEvent as Observed, record};
     match boundary {
         ControllerCommandBoundary::IdleRestored(
+            oer_esp32s31_bluetooth_embassy::controller::ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected { cause },
+        ) => {
+            use oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError as E;
+            use crate::diagnostics::BluetoothAdvertisingStartRejection as R;
+            let reason = match cause {
+                E::Configuration(_) => R::Configuration,
+                E::GenerationExhausted => R::GenerationExhausted,
+                E::PduFit(_) => R::PduFit,
+                E::AdvertisingEventActive => R::AdvertisingEventActive,
+                E::PeripheralEventActive(_) => R::PeripheralEventActive,
+                E::MemoryPreparation(_) => R::MemoryPreparation,
+                E::TimingWindow => R::TimingWindow,
+                E::Timeline(_) => R::Timeline,
+                E::Sequence(_) => R::Sequence,
+                E::EventFields(_) => R::EventFields,
+                E::EmptyList(_) => R::EmptyList,
+            };
+            record(Observed::AdvertisingStartRejected(reason), format_args!("advertising rejected: {cause:?}"));
+        }
+        ControllerCommandBoundary::IdleRestored(
             oer_esp32s31_bluetooth_embassy::controller::ControllerIdleCompletion::PeripheralDisconnected { reason },
         ) => record(
             Observed::PeripheralDisconnected { reason: *reason },

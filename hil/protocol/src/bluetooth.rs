@@ -170,6 +170,13 @@ pub struct BluetoothPhyMaintenanceEvidence {
     pub maximum_to_run_micros: u32,
     pub maximum_poll_micros: u32,
     pub admitted_at_micros: u64,
+    /// IRQ/register/timer retirement, not an independent RF-off observation.
+    #[serde(default)]
+    pub quiesced_at_micros: Option<u64>,
+    #[serde(default)]
+    pub phy_started_at_micros: Option<u64>,
+    #[serde(default)]
+    pub phy_finished_at_micros: Option<u64>,
     pub execution_deadline_micros: Option<u64>,
     pub restoration_deadline_micros: Option<u64>,
     pub physical_finished_at_micros: Option<u64>,
@@ -181,6 +188,37 @@ pub struct BluetoothPhyMaintenanceEvidence {
     pub calibration: BluetoothPhyOperation,
     pub temperature: BluetoothPhyOperation,
     pub invalid: bool,
+}
+
+impl BluetoothPhyMaintenanceEvidence {
+    /// Five disjoint intervals of the latest guarded peripheral transaction:
+    /// admission to IRQ retirement, handoff to PHY, PHY execution, inverse
+    /// handoff, and restoration to RUN. Their sum is admission-to-RUN elapsed
+    /// time, not request latency, RF-off time, CPU time or a worst-case bound.
+    /// Missing, reordered, failed or late observations have no valid partition.
+    pub fn exclusive_intervals(&self) -> Option<[u64; 5]> {
+        if self.invalid {
+            return None;
+        }
+        let edges = [
+            self.admitted_at_micros,
+            self.quiesced_at_micros?,
+            self.phy_started_at_micros?,
+            self.phy_finished_at_micros?,
+            self.physical_finished_at_micros?,
+            self.run_at_micros?,
+        ];
+        if edges[4] >= self.execution_deadline_micros?
+            || edges[5] >= self.restoration_deadline_micros?
+        {
+            return None;
+        }
+        let mut intervals = [0; 5];
+        for (interval, pair) in intervals.iter_mut().zip(edges.windows(2)) {
+            *interval = pair[1].checked_sub(pair[0])?;
+        }
+        Some(intervals)
+    }
 }
 
 /// Dedicated plaintext traffic evidence; counts include the MTU response.
@@ -470,6 +508,39 @@ impl BluetoothDtmEvidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn maintenance_partition_is_exclusive_and_rejects_missing_or_late_edges() {
+        let valid = BluetoothPhyMaintenanceEvidence {
+            admitted_at_micros: 100,
+            quiesced_at_micros: Some(105),
+            phy_started_at_micros: Some(110),
+            phy_finished_at_micros: Some(150),
+            physical_finished_at_micros: Some(160),
+            run_at_micros: Some(180),
+            execution_deadline_micros: Some(170),
+            restoration_deadline_micros: Some(190),
+            ..Default::default()
+        };
+        let intervals = valid.exclusive_intervals().unwrap();
+        assert_eq!(intervals, [5, 5, 40, 10, 20]);
+        assert_eq!(intervals.into_iter().sum::<u64>(), 80);
+        for case in 0..10 {
+            let mut bad = valid.clone();
+            match case {
+                0 => bad.quiesced_at_micros = None,
+                1 => bad.phy_started_at_micros = None,
+                2 => bad.phy_finished_at_micros = None,
+                3 => bad.physical_finished_at_micros = None,
+                4 => bad.run_at_micros = None,
+                5 => bad.quiesced_at_micros = Some(99),
+                6 => bad.phy_finished_at_micros = Some(161),
+                7 => bad.execution_deadline_micros = Some(160),
+                8 => bad.restoration_deadline_micros = Some(180),
+                _ => bad.invalid = true,
+            }
+            assert_eq!(bad.exclusive_intervals(), None, "case {case}");
+        }
+    }
 
     #[test]
     fn peripheral_acl_probe_fills_the_legacy_fragmentation_envelope() {
@@ -571,6 +642,9 @@ mod tests {
                         maximum_to_run_micros: u32::MAX,
                         maximum_poll_micros: u32::MAX,
                         admitted_at_micros: u64::MAX,
+                        quiesced_at_micros: Some(u64::MAX),
+                        phy_started_at_micros: Some(u64::MAX),
+                        phy_finished_at_micros: Some(u64::MAX),
                         execution_deadline_micros: Some(u64::MAX),
                         restoration_deadline_micros: Some(u64::MAX),
                         physical_finished_at_micros: Some(u64::MAX),
@@ -610,6 +684,11 @@ mod tests {
             let mut encoder = crate::FrameEncoder::new();
             let mut decoder = crate::FrameDecoder::new();
             let mut observed = None;
+            let mut sizing = [0u8; 1024];
+            let bytes = postcard::to_slice(&expected.body, &mut sizing)
+                .unwrap()
+                .len();
+            assert!(bytes <= crate::MAX_POSTCARD_BYTES, "body bytes {bytes}");
             decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
                 observed = Some(frame.unwrap())
             });

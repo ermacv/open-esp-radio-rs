@@ -14,6 +14,7 @@ fn parent_timing(common: bool, wifi: bool) -> open_esp_radio_hil_protocol::PhyTi
     };
     let absent = PhyOperationTiming::default();
     PhyTimingEvidence {
+        tracking: complete,
         rfpll: complete,
         wifi_i2c: complete,
         wifi_power: complete,
@@ -132,7 +133,7 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
             )
             .is_err()
         );
-        for mutation in 0..8 {
+        for mutation in 0..9 {
             let mut changed = evidence;
             let timing = changed.timings.as_mut().unwrap();
             match mutation {
@@ -150,6 +151,7 @@ fn parent_rejects_missing_duplicated_or_unrelated_children_and_false_commit_flag
                     timing.rfpll.started = 2;
                     timing.rfpll.completed = 2;
                 }
+                8 => timing.tracking = Default::default(),
                 _ => unreachable!(),
             }
             assert!(

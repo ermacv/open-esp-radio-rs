@@ -4,6 +4,7 @@
 use super::acl;
 #[cfg(not(target_arch = "riscv32"))]
 use super::active_acl as acl;
+use crate::le::peripheral::hci_order::LegacyConnectablePeripheralFirstHciAxis as Axis;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::{
     HciChannelError, LeConnectionUpdateCompleteEvent, LeControllerCommandEndpoint,
@@ -96,6 +97,20 @@ impl PeripheralConnectionHostEvents {
             && self.encryption_change.is_none()
             && self.encryption_key_refresh.is_none()
             && matches!(self.disconnection, EventState::Complete)
+    }
+
+    /// Full software barrier after physical stop, shared by readiness and handoff.
+    pub(super) fn idle_retirement_ready(
+        &self,
+        axis: Axis,
+        acl: &acl::PeripheralConnectionAcl,
+    ) -> bool {
+        axis == Axis::CommandReady
+            && crate::le::peripheral::progress::retirement_barrier_is_ready(
+                self.ready_to_restore_idle(),
+                !acl.has_controller_packet(),
+                acl.controller_credits_settled(),
+            )
     }
 
     /// ACL data cannot precede the Host-visible connection result.
@@ -619,10 +634,12 @@ mod tests {
         ));
         assert!(events.ready_to_restore_idle());
         assert!(!acl.controller_credits_settled());
+        assert!(!events.idle_retirement_ready(Axis::CommandReady, &acl));
     }
 
     #[test]
     fn establishment_and_peer_termination_queue_two_ordered_events() {
+        let acl = acl::PeripheralConnectionAcl::new();
         let completed = LePeripheralConnection::from_request(
             request(),
             LeChannelSelectionAlgorithm::AlgorithmOne,
@@ -641,6 +658,7 @@ mod tests {
         assert!(!events.connection_result_published());
         assert!(matches!(events.disconnection, EventState::Pending(_)));
         assert!(!events.ready_to_restore_idle());
+        assert!(!events.idle_retirement_ready(Axis::CommandReady, &acl));
         let EventState::Pending(connection) = &events.connection else {
             panic!("establishment must retain Connection Complete");
         };
@@ -682,6 +700,8 @@ mod tests {
         ));
         assert!(!events.has_pending());
         assert!(events.ready_to_restore_idle());
+        assert!(events.idle_retirement_ready(Axis::CommandReady, &acl));
+        assert!(!events.idle_retirement_ready(Axis::ResponsePending, &acl));
     }
 
     #[test]

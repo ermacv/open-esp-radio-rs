@@ -22,7 +22,7 @@ pub(crate) fn run(duration: u16, minimum: u16, output: &Path, context: &Context<
         .lab
         .bluetooth_adapter
         .ok_or("missing Bluetooth adapter")?;
-    let mut owner = att::Owner::acquire(adapter, output)?;
+    let mut owner = att::Owner::acquire_calibration(adapter, output)?;
     let result = context.with_capture(output, |capture| {
         let mut samples = Vec::<Evidence>::new();
         let probe = exercise(capture, &owner, duration, minimum, output, &mut samples);
@@ -142,9 +142,11 @@ fn validate_notification(sequence: u32, bytes: &[u8]) -> Result<()> {
 }
 fn validate_live(e: &Evidence) -> Result<()> {
     let t = e.calibration_traffic.ok_or("missing traffic evidence")?;
+    if t.interval_micros != 7_500 {
+        return Err(format!("ACL calibration requires 7500 us, peer selected {} us; no slower-interval fallback is allowed", t.interval_micros).into());
+    }
     if !t.enabled
         || !t.connected
-        || t.interval_micros != 7_500
         || !t.mtu_exchanged
         || t.faults != 0
         || e.host_event_faults != 0
@@ -216,6 +218,21 @@ fn validate_calibrations(before: &Evidence, after: &Evidence, minimum: u16) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn peer_interval_mismatch_is_explicit_and_not_a_fallback() {
+        let mut evidence = super::super::peripheral_tests::evidence();
+        evidence.calibration_traffic = Some(
+            open_esp_radio_hil_protocol::BluetoothCalibrationTrafficEvidence {
+                enabled: true,
+                connected: true,
+                interval_micros: 45_000,
+                ..Default::default()
+            },
+        );
+        let error = validate_live(&evidence).unwrap_err().to_string();
+        assert!(error.contains("7500 us"));
+        assert!(error.contains("45000 us"));
+    }
     #[test]
     fn calibration_gate_requires_new_full_work_and_valid_restoration() {
         use open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence as M;

@@ -181,10 +181,17 @@ power cycling clears this RAM-only standalone profile.
 
 The reusable `security::epoch::run` owns one Host epoch and borrows the
 application's store and comparison sequence. On a stop request or failure it
-drops all application/Host producers, obtains the Controller through the fork's
-`Stack::into_controller`, and awaits HCI Reset while draining old events. Its
-result distinguishes a requested stop, application/Host failure and Reset
-failure. It is not physical retirement: the caller keeps polling hardware and
+drops application producers and, if bootstrap Reset is outstanding, keeps the
+existing Host runner alive until its response arrives. A cancelled or failed
+bootstrap Reset cannot authorize a second Reset with the same opcode. It then
+drops Host producers, obtains the Controller through the fork's
+`Stack::into_controller`, and awaits a separate HCI Reset while draining old
+events. The result preserves the primary stop cause and any secondary failure
+while draining bootstrap. `ShutdownAction` requests owner retention when Reset
+is unproven, checked cold close after an application/Host failure, or checked
+restart after an explicit successful stop request. No ordinary application
+failure requests a SoC reset or silent retry. This is not physical retirement:
+the caller keeps polling hardware and
 must complete timer, HCI, IRQ, platform and PHY release before cold restart.
 Drive consuming transitions to completion; cancellation does not free radio
 owners. The secure HIL composition exercises this sequence, reuses the same

@@ -927,6 +927,91 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn fail_next_bluetooth_gatt_bond_load(&self, boot: u64, epoch: u32) -> Result<()> {
+        if boot == 0 {
+            return Err("bond load fault requires observed boot identity".into());
+        }
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::FailNextBluetoothGattBondLoad { epoch },
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::BluetoothSecureGatt(e)
+                if e.epoch == epoch && e.bond_load_fault_armed && e.bond_load_failures == 0 =>
+            {
+                Ok(())
+            }
+            response => Err(format!("bond load fault rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn bluetooth_gatt_reset_read_gate(
+        &self,
+        boot: u64,
+        epoch: u32,
+        release: bool,
+    ) -> Result<()> {
+        use open_esp_radio_hil_protocol::BluetoothGattResetReadGate as Phase;
+        if boot == 0 {
+            return Err("Reset gate requires observed boot identity".into());
+        }
+        let expected = if release {
+            Phase::Released
+        } else {
+            Phase::Armed
+        };
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::BluetoothGattResetReadGate { epoch, release },
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.reset_read_gate == expected => {
+                Ok(())
+            }
+            response => Err(format!("Reset reader gate rejected: {response:?}").into()),
+        }
+    }
+
+    pub(crate) fn require_bluetooth_gatt_restart_rejected(
+        &self,
+        boot: u64,
+        epoch: u32,
+    ) -> Result<()> {
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::RestartBluetoothGatt { epoch },
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState) => Ok(()),
+            response => Err(format!(
+                "terminal GATT epoch accepted restart or lost identity: {response:?}"
+            )
+            .into()),
+        }
+    }
+
+    pub(crate) fn fail_bluetooth_gatt_reset_read(&self, boot: u64, epoch: u32) -> Result<()> {
+        if boot == 0 {
+            return Err("Reset read fault requires observed boot identity".into());
+        }
+        match self.exchange(boot, 0, Command::FailBluetoothGattResetRead { epoch }, Duration::from_secs(2))?.body {
+            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.reset_read_gate == open_esp_radio_hil_protocol::BluetoothGattResetReadGate::FailureRequested => Ok(()),
+            response => Err(format!("Reset read fault rejected: {response:?}").into()),
+        }
+    }
+
     pub(crate) fn confirm_bluetooth_gatt(
         &self,
         boot: u64,

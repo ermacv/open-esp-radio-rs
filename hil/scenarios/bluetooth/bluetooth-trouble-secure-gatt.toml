@@ -1,6 +1,6 @@
 schema = 4
 id = "bluetooth-trouble-secure-gatt"
-description = "Automated Numeric Comparison, denied plaintext ATT, pairing rejection, authenticated read/write/notify and RAM-bonded reconnect before and after physical Controller cold restart without SoC reset; temporary Linux bond removed on cleanup"
+description = "Automated Numeric Comparison, protected traffic and RAM-bonded reconnect across cold restart with a withheld Reset reader; injected bond-load failure requires terminal cold close without restart; temporary Linux bond removed on cleanup"
 image = "bluetooth-secure-gatt"
 isolation = "reset"
 repetitions = 3

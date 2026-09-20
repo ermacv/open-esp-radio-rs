@@ -331,6 +331,7 @@ fn validate_tracking_parent(
         .tracking
         .ok_or("missing whole PHY parent outcome")?;
     if [
+        timing.tracking,
         timing.rfpll,
         timing.wifi_i2c,
         timing.wifi_power,

@@ -666,13 +666,16 @@ where
     ) -> Option<ControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>> {
         match failure {
             LegacyConnectableAdvertisingFirstRunnerFailure::Recovered(recovered) => {
+                let cause = recovered.error();
                 self.store_transition(
                     from,
                     ControllerCommandStimulus::IdleResponse,
                     ControllerCommandState::IdleResponse {
                         pending: recovered.into_hardware_failure_response(),
                         completion:
-                            ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected,
+                            ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected {
+                                cause,
+                            },
                     },
                 );
                 None

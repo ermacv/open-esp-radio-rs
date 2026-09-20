@@ -1,5 +1,9 @@
 //! Independent Linux SMP/GATT peer with automated, boot-bound HIL comparison.
 mod comparison;
+mod read_failure;
+mod reset_gate;
+mod shutdown;
+use crate::scenario::SecureGattShutdown;
 use crate::{
     Result,
     execution::context::Context,
@@ -30,7 +34,11 @@ fn sample(capture: &SerialCapture, samples: &mut Vec<Evidence>) -> Result<Eviden
     let e = capture.bluetooth_secure_gatt()?;
     samples.push(e);
     if e.application_stopped {
-        return Err("secure application stopped".into());
+        return Err(format!(
+            "secure application stopped: shutdown={:?}, application_failure={:?}, advertising_start_rejection={:?}",
+            e.shutdown, e.application_failure, e.advertising_start_rejection
+        )
+        .into());
     }
     if !e
         .traffic
@@ -59,7 +67,11 @@ fn wait(
     }
 }
 
-pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
+pub(crate) fn run(
+    output: &Path,
+    context: &Context<'_>,
+    shutdown: SecureGattShutdown,
+) -> Result<()> {
     let adapter = context
         .lab
         .bluetooth_adapter
@@ -97,9 +109,12 @@ pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             let resumed = wait(capture,&mut samples,|e|e.bonds_resumed == 1 && e.notifications_queued == 2)?;
             if resumed.bonds_stored != 1 || resumed.comparisons != 2 || resumed.accepted != 1 || resumed.declined != 1 || resumed.traffic.writes != 2 || resumed.traffic.value != 0x62 { return Err("bonded reconnect silently repaired, downgraded or changed epoch".into()); }
             peer.disconnect()?;
-            wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
+            let idle = wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
             let boot = capture.latest_boot_id().ok_or("secure GATT boot missing")?;
-            capture.restart_bluetooth_gatt(boot, resumed.epoch)?;
+            match shutdown {
+                SecureGattShutdown::BondLoadFailure => reset_gate::restart(capture, &mut samples, boot, idle)?,
+                SecureGattShutdown::HciReadFailure => capture.restart_bluetooth_gatt(boot, idle.epoch)?,
+            }
             let restarted = wait(capture,&mut samples,|e|e.epoch == resumed.epoch + 1 && !e.restarting && e.traffic.advertising)?;
             if capture.latest_boot_id() != Some(boot) || restarted.cold_releases != 1 || !restarted.old_hci_closed || restarted.bonds_stored != 1 {
                 return Err("cold restart did not retain the application bond and retire the old HCI epoch".into());
@@ -110,9 +125,14 @@ pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             if restored.comparisons != 2 || restored.accepted != 1 || restored.declined != 1 || restored.bonds_stored != 1 {
                 return Err("cold reconnect required re-pairing or changed the retained bond".into());
             }
-            peer.disconnect()?;
-            wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
-            Ok(())
+            match shutdown {
+                SecureGattShutdown::BondLoadFailure => shutdown::bond_load_failure(capture, peer, &mut samples, boot, restored),
+                SecureGattShutdown::HciReadFailure => {
+                    peer.disconnect()?;
+                    let idle = wait(capture, &mut samples, |e| !e.traffic.connected && e.traffic.advertising)?;
+                    read_failure::run(capture, &mut samples, boot, idle)
+                }
+            }
         })();
         let cleanup = oer_process::cleanup(|| {
             let bond = peer.as_mut().map_or(Ok(()), Owner::restore);
@@ -120,12 +140,15 @@ pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             join(bond,power)
         });
         crate::evidence::run::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
-            "schema":3, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary",
+            "schema":6, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
             "confirmation":"automated-hil-number-comparison", "human_presence_verified":false,
             "samples":samples,"peer_exchanges":exchanges,"passed":probe.is_ok() && cleanup.is_ok(),
             "error":probe.as_ref().err().map(ToString::to_string), "restored":cleanup.is_ok(),
             "cleanup_error":cleanup.as_ref().err().map(ToString::to_string),
             "coordinated_controller_retirement":probe.is_ok(),
+            "bond_load_failure_cold_shutdown":probe.is_ok() && shutdown == SecureGattShutdown::BondLoadFailure,
+            "withheld_reset_reader_retention_and_resume":probe.is_ok() && shutdown == SecureGattShutdown::BondLoadFailure,
+            "hci_read_failure_retained":probe.is_ok() && shutdown == SecureGattShutdown::HciReadFailure,
         }))?;
         join(probe,cleanup)
     });

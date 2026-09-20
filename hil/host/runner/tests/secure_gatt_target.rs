@@ -1,6 +1,12 @@
 //! Test the compiled target evidence/control module, not a host reimplementation.
+#[path = "../../../targets/esp32s31/runtime/src/bluetooth_gatt/secure/reset_gate.rs"]
+mod reset_gate;
+#[path = "secure_gatt_target/reset_gate.rs"]
+mod reset_gate_tests;
 #[path = "../../../targets/esp32s31/runtime/src/bluetooth_gatt/secure/state.rs"]
 mod state;
+#[path = "../../../targets/esp32s31/runtime/src/bluetooth_gatt/secure/store.rs"]
+mod store;
 use bluetooth_example::security::gatt::Observation;
 use open_esp_radio_hil_protocol::*;
 
@@ -9,6 +15,121 @@ fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
         panic!("snapshot")
     };
     e
+}
+
+#[test]
+fn application_failure_preserves_status_without_sensitive_host_payloads() {
+    use bluetooth_example::security::gatt::RunError;
+    use trouble_host::{BleHostError, Error};
+    let state = state::State::new();
+    for (error, expected) in [
+        (
+            Error::Hci(bt_hci::param::Error::CMD_DISALLOWED),
+            BluetoothGattApplicationFailure::HciStatus(0x0c),
+        ),
+        (
+            Error::Disconnected,
+            BluetoothGattApplicationFailure::Disconnected,
+        ),
+        (Error::Busy, BluetoothGattApplicationFailure::Busy),
+        (
+            Error::CannotConstructGattValue([0xa5; 16]),
+            BluetoothGattApplicationFailure::HostOther,
+        ),
+    ] {
+        state.application_failure(&RunError::<(), ()>::Host(BleHostError::BleHost(error)));
+        assert_eq!(snapshot(&state).application_failure, Some(expected));
+        assert!(!snapshot(&state).application_stopped);
+        assert_eq!(snapshot(&state).cold_releases, 0);
+    }
+    state.restarted();
+    assert!(snapshot(&state).application_failure.is_none());
+}
+
+#[test]
+fn terminal_stop_clears_restart_intent_without_inventing_cold_release() {
+    let state = state::State::new();
+    state.command(Command::RestartBluetoothGatt { epoch: 1 });
+    assert!(snapshot(&state).restarting);
+    let shutdown = BluetoothGattShutdown {
+        cause: BluetoothGattStopCause::Application,
+        reset: BluetoothGattResetOutcome::Completed,
+    };
+    state.shutdown(shutdown);
+    state.stopped();
+    let stopped = snapshot(&state);
+    assert!(stopped.application_stopped);
+    assert!(!stopped.restarting);
+    assert_eq!((stopped.epoch, stopped.cold_releases), (1, 0));
+    assert!(!stopped.old_hci_closed);
+    assert_eq!(stopped.shutdown, Some(shutdown));
+    state.cold(true);
+    let cold = snapshot(&state);
+    assert_eq!((cold.epoch, cold.cold_releases), (1, 1));
+    assert!(cold.application_stopped && cold.old_hci_closed);
+    assert!(matches!(
+        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
+        Event::Rejected(RejectReason::InvalidState)
+    ));
+}
+
+#[test]
+fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
+    use bluetooth_example::security::bonds::{BondStore, RamBondStore, StoreError};
+    use trouble_host::{Address, BondInformation, Identity, LongTermKey, prelude::SecurityLevel};
+    fn ready<F: Future>(future: F) -> F::Output {
+        match core::pin::pin!(future).poll(&mut core::task::Context::from_waker(
+            core::task::Waker::noop(),
+        )) {
+            core::task::Poll::Ready(value) => value,
+            core::task::Poll::Pending => panic!("RAM operation blocked"),
+        }
+    }
+    let state = state::State::new();
+    let command = Command::FailNextBluetoothGattBondLoad { epoch: 1 };
+    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    state.observe(Observation::Connected);
+    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    let mut ram = RamBondStore::<1>::new();
+    let bond = BondInformation::new(
+        Identity::from(Address::random([1, 2, 3, 4, 5, 0xc6])),
+        LongTermKey::new(123),
+        SecurityLevel::EncryptedAuthenticated,
+        true,
+    );
+    let mut store = store::Store {
+        ram: &mut ram,
+        state: &state,
+    };
+    ready(store.insert(bond.clone())).unwrap();
+    state.observe(Observation::BondStored);
+    assert!(matches!(
+        state.command(Command::FailNextBluetoothGattBondLoad { epoch: 0 }),
+        Event::Rejected(_)
+    ));
+    assert!(matches!(
+        state.command(command.clone()),
+        Event::BluetoothSecureGatt(_)
+    ));
+    assert_eq!(snapshot(&state).bond_load_failures, 0);
+    assert!(snapshot(&state).shutdown.is_none());
+    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    assert!(matches!(
+        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
+        Event::Rejected(_)
+    ));
+    // Merely creating an unpolled read must not consume the injection.
+    drop(store.load(0));
+    assert!(snapshot(&state).bond_load_fault_armed);
+    assert!(matches!(
+        ready(store.load(0)),
+        Err(StoreError::Backend(store::InjectedBondLoadFailure))
+    ));
+    assert_eq!(snapshot(&state).bond_load_failures, 1);
+    assert!(!snapshot(&state).application_stopped);
+    assert_eq!(snapshot(&state).cold_releases, 0);
+    assert!(ready(store.load(0)).unwrap().as_ref() == Some(&bond));
+    assert!(matches!(state.command(command), Event::Rejected(_)));
 }
 #[test]
 fn explicit_decision_is_single_use_and_not_bond_evidence() {

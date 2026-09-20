@@ -22,6 +22,9 @@ pub struct MaintenanceMeasurements {
     pub maximum_to_run_micros: u32,
     pub maximum_poll_micros: u32,
     pub admitted_at_micros: u64,
+    pub quiesced_at_micros: Option<u64>,
+    pub phy_started_at_micros: Option<u64>,
+    pub phy_finished_at_micros: Option<u64>,
     pub execution_deadline_micros: Option<u64>,
     pub restoration_deadline_micros: Option<u64>,
     pub physical_finished_at_micros: Option<u64>,
@@ -50,6 +53,9 @@ impl MaintenanceMeasurements {
             && self.physical_finished_at_micros.is_some()
             && self.run_at_micros.is_none();
         self.admitted_at_micros = admitted;
+        self.quiesced_at_micros = None;
+        self.phy_started_at_micros = None;
+        self.phy_finished_at_micros = None;
         self.execution_deadline_micros = execution;
         self.restoration_deadline_micros = restoration;
         self.physical_finished_at_micros = None;
@@ -68,6 +74,9 @@ impl MaintenanceMeasurements {
         self.invalid |= self.execution_deadline_micros.is_some_and(|end| at >= end);
         self.physical_finished_at_micros = Some(at);
         if let Some(outcome) = outcome {
+            self.invalid |= !self
+                .phy_finished_at_micros
+                .is_some_and(|finished| finished <= at);
             Self::add(&mut self.transactions, 1, &mut self.invalid);
             Self::add(
                 &mut self.common_calibrations,
@@ -109,6 +118,27 @@ impl MaintenanceMeasurements {
             if let Some(poll) = report.poll_timing(operation) {
                 self.maximum_poll_micros = self.maximum_poll_micros.max(poll.maximum_micros);
             }
+        }
+    }
+    fn quiesced(&mut self, at: u64) {
+        self.invalid |= self.quiesced_at_micros.is_some() || at < self.admitted_at_micros;
+        self.quiesced_at_micros = Some(at);
+    }
+    fn tracking(&mut self, event: oer_esp32s31_phy::tracking::observation::Event, at: u64) {
+        use oer_esp32s31_phy::tracking::observation::Event;
+        match event {
+            Event::Started => {
+                self.invalid |= self.phy_started_at_micros.is_some()
+                    || !self.quiesced_at_micros.is_some_and(|q| q <= at);
+                self.phy_started_at_micros = Some(at);
+            }
+            Event::Completed | Event::Failed => {
+                self.invalid |= self.phy_finished_at_micros.is_some()
+                    || !self.phy_started_at_micros.is_some_and(|start| start <= at)
+                    || event == Event::Failed;
+                self.phy_finished_at_micros = Some(at);
+            }
+            _ => self.invalid = true,
         }
     }
     fn restored(&mut self, run: PeripheralMaintenanceRun) {
@@ -162,6 +192,14 @@ mod target {
             state.recorder = Default::default();
         });
     }
+    pub(crate) fn quiesced() {
+        let now = embassy_time::Instant::now().as_micros();
+        STATE.lock(|slot| {
+            if let Some(state) = slot.borrow_mut().as_mut() {
+                state.measurements.quiesced(now);
+            }
+        });
+    }
     #[inline(never)]
     pub(crate) fn physical(outcome: Option<PhyParamTrackingOutcome>) {
         let now = embassy_time::Instant::now().as_micros();
@@ -200,6 +238,9 @@ mod target {
             let now = embassy_time::Instant::now().as_micros();
             STATE.lock(|slot| {
                 if let Some(state) = slot.borrow_mut().as_mut() {
+                    if operation == Operation::Tracking {
+                        state.measurements.tracking(event, now);
+                    }
                     state.recorder.observe(operation, event, now);
                 }
             });
@@ -209,11 +250,46 @@ mod target {
 #[cfg(target_arch = "riscv32")]
 pub use target::snapshot;
 #[cfg(target_arch = "riscv32")]
-pub(crate) use target::{Observer, begin, physical, restored};
+pub(crate) use target::{Observer, begin, physical, quiesced, restored};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oer_esp32s31_phy::tracking::observation::Event;
+
+    #[test]
+    fn tracking_edges_require_quiescence_and_preserve_failure() {
+        let mut m = MaintenanceMeasurements::default();
+        m.begin(100, Some(150), Some(170));
+        m.quiesced(105);
+        m.tracking(Event::Started, 110);
+        m.tracking(Event::Completed, 130);
+        assert!(!m.invalid);
+        assert_eq!(m.phy_finished_at_micros, Some(130));
+        m.tracking(Event::Completed, 131);
+        assert!(m.invalid);
+
+        for event in [Event::Completed, Event::Failed] {
+            let mut m = MaintenanceMeasurements::default();
+            m.begin(100, None, None);
+            m.tracking(Event::Started, 110);
+            m.tracking(event, 120);
+            assert!(
+                m.invalid,
+                "missing quiescence cannot produce valid evidence"
+            );
+        }
+        let mut m = MaintenanceMeasurements::default();
+        m.begin(100, None, None);
+        m.quiesced(105);
+        m.tracking(Event::Started, 110);
+        m.tracking(Event::Failed, 120);
+        assert!(m.invalid);
+        m.begin(200, None, None);
+        assert_eq!(m.phy_started_at_micros, None);
+        assert_eq!(m.phy_finished_at_micros, None);
+        assert!(m.invalid, "subsequent work must not erase failure");
+    }
     #[test]
     fn light_tracking_retains_the_latest_rx_product_quality() {
         let quality = oer_esp32s31_phy::rx::gain_calibration::PhyRxGainDcQuality::default();

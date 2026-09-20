@@ -301,6 +301,11 @@ mod tests {
         restored.phy_maintenance = Some(
             open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
                 restored: 3,
+                quiesced_at_micros: Some(10),
+                phy_started_at_micros: Some(20),
+                phy_finished_at_micros: Some(150),
+                physical_finished_at_micros: Some(160),
+                execution_deadline_micros: Some(180),
                 restoration_deadline_micros: Some(200),
                 run_at_micros: Some(190),
                 ..Default::default()

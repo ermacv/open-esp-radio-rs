@@ -18,8 +18,11 @@ use oer_esp32s31_bluetooth::{
 use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
 use oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy;
 use oer_esp32s31_bluetooth_integration::{
-    BluetoothColdStartConfig, BluetoothHardwareRunner, BluetoothHostController, BluetoothSystem,
-    BluetoothSystemStorage, BluetoothTroubleSystem, start_esp32s31_bluetooth,
+    BluetoothColdStartConfig, BluetoothSystemStorage, start_esp32s31_bluetooth,
+};
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
+use oer_esp32s31_bluetooth_integration::{
+    BluetoothHardwareRunner, BluetoothHostController, BluetoothSystem, BluetoothTroubleSystem,
 };
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
@@ -146,6 +149,7 @@ fn poll_live<F: Future>(
 // the caller-owned resource arrays. Keep that work out of the cold-start result
 // transfer frame. The same affine Controller and hardware owners are returned.
 #[inline(never)]
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
 fn initialize_host<'a>(
     system: BluetoothSystem<4, 1, 4, 4, 258>,
     resources: &'a mut HostResources<DefaultPacketPool, 1, 3>,

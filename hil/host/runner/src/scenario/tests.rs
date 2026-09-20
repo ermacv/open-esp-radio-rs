@@ -27,6 +27,33 @@ fn missing_refresh_key_has_a_separate_finite_scenario() {
 use super::*;
 
 #[test]
+fn secure_gatt_terminal_fault_is_explicit_and_has_independent_scenarios() {
+    let catalog =
+        Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();
+    for (id, expected) in [
+        (
+            "bluetooth-trouble-secure-gatt",
+            Workload::BluetoothSecureGatt,
+        ),
+        (
+            "bluetooth-trouble-secure-gatt-hci-read-failure",
+            Workload::BluetoothSecureGattHciReadFailure,
+        ),
+    ] {
+        let scenario = catalog.get(id).unwrap();
+        assert_eq!(scenario.workload, expected);
+        assert!(scenario.validate().is_ok());
+        let requirements = crate::lab::requirements::Requirements::for_scenario(scenario);
+        assert!(requirements.bluetooth_adapter && !requirements.network());
+    }
+    assert_eq!(
+        toml::from_str::<Workload>("kind = 'bluetooth-secure-gatt'").unwrap(),
+        Workload::BluetoothSecureGatt
+    );
+    assert!(toml::from_str::<Workload>("kind = 'bluetooth-secure-gatt-unknown-fault'").is_err());
+}
+
+#[test]
 fn secure_gatt_requires_its_distinct_host_image_and_no_network() {
     let catalog =
         Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios")).unwrap();

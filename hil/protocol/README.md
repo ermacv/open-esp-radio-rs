@@ -30,6 +30,39 @@ the caller's RAM bond store and comparison history, not connections or ATT state
 Independent encrypted peer traffic without another pairing establishes key reuse;
 these lifecycle counters alone do not.
 
+`BluetoothGattResetReadGate { epoch, release }` controls a one-shot secure HIL
+reader gate on the discovered boot and current epoch. Arming (`release = false`)
+requires an advertising, disconnected application and does not send Reset.
+An explicit restart drops the old producers and submits its real final Reset;
+the wrapper suspends the sole new reader before it consumes a response.
+`reset_read_gate = ReaderHeld` is the reached checkpoint, not merely an arm ACK.
+Release is accepted only at that checkpoint during the same restart. It wakes
+the same reader; no response is fabricated, discarded or matched to a new Reset.
+The hardware runner remains polled. Cancellation does not open the gate.
+The gate does not report RF cessation or model a hung silicon operation. While
+held, the unchanged epoch and cold-release count must be observed; release must
+be followed by actual retirement/restart and independent encrypted peer traffic.
+
+`FailBluetoothGattResetRead { epoch }` selects failure instead of release at the
+same reached checkpoint. Early, stale or duplicate requests are rejected.
+`FailureRequested` acknowledges only the command; `ReadFailed` means the wrapper
+actually returned its distinct injected error without reading or discarding the
+real response. The epoch runner must report `InjectedReceiveFailure`, preserve
+its original stop cause and retain physical execution. Release/restart are then
+rejected. This tests a Host-facing I/O error, not a silicon or PHY failure; no
+RF-stop, physical-close or autonomous-recovery claim follows from retention.
+
+`FailNextBluetoothGattBondLoad { epoch }` is a one-shot secure HIL diagnostic.
+It requires a connected, bonded application on the current boot/epoch, rejects
+duplicates and excludes a concurrent restart. Arming it does not stop the Host.
+The next actual application store load returns a backend failure without
+changing the RAM record. The scenario causes that load by disconnecting its
+peer. `bond_load_failures` counts consumed injections; `shutdown` reports the
+redacted cause and Reset outcome from the completed Host epoch. Neither proves
+physical release: `cold_releases` and `old_hci_closed` remain separate checks.
+An unresolved Reset may retain physical execution. The diagnostic does not
+inject silicon failure, measure RF cessation or introduce a shutdown timeout.
+
 Secure and plaintext capabilities are mutually exclusive. Both snapshots carry
 common traffic observations, which alone never establish security. Notification
 counters mean Host queue acceptance; the independent peer must receive the value.
@@ -315,6 +348,20 @@ accounting nor a radio-drain barrier. The host retains them independently in
 `station-tx-terminal.json`; aggregate publication/completion counters retain
 their earlier per-publication meanings.
 
+`BluetoothPhyMaintenanceEvidence` carries ordered admission, IRQ/register/timer
+retirement, PHY entry/exit, physical return and guarded RUN timestamps. Its
+`exclusive_intervals()` partitions the measured admission-to-RUN span without
+counting nested operations twice. Missing/reordered edges, failed observations,
+or equality with either deadline invalidate that partition. IRQ retirement is
+not an independent RF-off measurement; admission starts after protocol-level
+window selection, so the span is not end-to-end request latency. Boot aggregates
+retain failures even when a later idle transaction becomes the latest snapshot.
+
+`PhyTimingEvidence.tracking` measures the common PHY executor as an inclusive
+parent. Its children must not be added to it. These observations include
+preemption and instrumentation overhead; they do not establish WCET, thermal
+coverage or RF quality.
+
 PHY child poll evidence distinguishes `pending`, `suspended_micros` and
 `maximum_suspension_micros` from time spent inside polls. A suspension starts
 when a child returns Pending and ends at its next poll entry. No wake timestamp
@@ -339,7 +386,7 @@ added to them. This evidence does not cover all PHY waits.
 `StationPhyTxWaits` precedes the correlated `StationPauseCompleted` when PHY
 operation timings are available. Both events use the pause request ID and the
 reliable event stream; no per-sample events are emitted. The separate detail
-keeps the 528-byte body limit, including worst-case integer encoding.
+keeps each body within `MAX_POSTCARD_BYTES`, including worst-case integer encoding.
 The runner retrieves already received detail after completion and rejects
 missing detail or sequential wait totals exceeding the TX operation interval.
 An access-only pause has zero TX wait and SAR counts. With no timing observer,
@@ -445,7 +492,8 @@ successful HCI key replies (including negative and deliberately wrong-key replie
 Encryption Change, Key Refresh Complete events and faults. It never carries
 key bytes. The public `BLUETOOTH_TEST_*` and `BLUETOOTH_REFRESH_*` constants identify fixture material,
 not a pairing or bond-storage policy. Runner and firmware must match
-[`PROTOCOL_VERSION`](src/message.rs). The body bound is 528 bytes, including the largest combined
+[`PROTOCOL_VERSION`](src/message.rs). The body bound is defined by
+[`MAX_POSTCARD_BYTES`](src/framing.rs), including the largest combined
 peripheral evidence record and worst-case integer encoding.
 
 The diagnostic Host accepts the initial identity once per connection, then the

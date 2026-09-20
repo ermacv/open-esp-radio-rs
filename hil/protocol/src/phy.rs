@@ -57,6 +57,9 @@ impl PhyPollTiming {
 /// Calibration branch flags remain the authority for completed calibration.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyTimingEvidence {
+    /// Inclusive parameter-tracking executor, containing all selected children.
+    #[serde(default)]
+    pub tracking: PhyOperationTiming,
     pub dcode_waits: PhyDcodeWaitEvidence,
     pub invalid: bool,
     pub rfpll: PhyOperationTiming,
@@ -87,6 +90,7 @@ impl PhyTimingEvidence {
             && self.rx_gain_polls.fits(self.rx_gain)
             && self.tx_dc_pwdet_polls.fits(self.tx_dc_pwdet)
             && [
+                self.tracking,
                 self.rfpll,
                 self.wifi_power,
                 self.bluetooth_ieee802154_power,

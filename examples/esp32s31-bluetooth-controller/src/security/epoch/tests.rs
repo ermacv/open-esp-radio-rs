@@ -10,6 +10,9 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_hci::*;
 use trouble_host::prelude::*;
 
+mod bootstrap;
+mod failures;
+
 fn poll<T>(future: impl Future<Output = T>) -> T {
     match pin!(future)
         .as_mut()

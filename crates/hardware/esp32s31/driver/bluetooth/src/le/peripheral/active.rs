@@ -305,6 +305,16 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
 
     /// Borrow readiness from the retained phase. `None` requires an immediate step.
     pub fn radio_wait(&self) -> Option<PeripheralConnectionActiveWait<'_>> {
+        // Once retirement obligations are settled, restore idle intake before
+        // racing a fresh Host command against a periodic clock recheck. The Host
+        // may enqueue Advertising Enable immediately after Disconnection Complete.
+        if matches!(self.order.owner(), radio::Radio::Stopped { .. })
+            && self
+                .host_events
+                .idle_retirement_ready(self.order.axis(), &self.acl)
+        {
+            return None;
+        }
         self.order.owner().wait()
     }
 }

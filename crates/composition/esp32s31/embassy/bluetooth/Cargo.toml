@@ -17,7 +17,7 @@ embassy-sync = "0.8.0"
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory" }
 static_cell = "2.1.1"
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "8d77d5c347f27a45314e297ac9376373d4f84ea3", default-features = false, features = ["gatt", "peripheral"] }
+trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", default-features = false, features = ["gatt", "peripheral"] }
 
 [dev-dependencies]
 embedded-io = "0.7.1"

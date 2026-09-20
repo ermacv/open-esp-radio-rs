@@ -32,9 +32,12 @@ pub enum Operation {
     RxGainDcPhase,
     RxGainPublishPhase,
     RxGainControlPhase,
+    /// Entire parameter executor, including critical entry/exit. All other
+    /// operation intervals are children, not additive execution time.
+    Tracking,
 }
 
-pub const OPERATION_COUNT: usize = 17;
+pub const OPERATION_COUNT: usize = 18;
 const POLLED_COUNT: usize = 3;
 
 impl Operation {

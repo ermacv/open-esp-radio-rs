@@ -865,6 +865,11 @@ mod peripheral_tests {
         current.phy_maintenance = Some(
             open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
                 restored: 3,
+                quiesced_at_micros: Some(10),
+                phy_started_at_micros: Some(20),
+                phy_finished_at_micros: Some(50),
+                physical_finished_at_micros: Some(60),
+                execution_deadline_micros: Some(90),
                 run_at_micros: Some(100),
                 restoration_deadline_micros: Some(200),
                 ..Default::default()
@@ -994,7 +999,7 @@ fn require_active_maintenance(baseline: u32, current: &BluetoothPeripheralEviden
         .ok_or("active maintenance timing missing")?;
     if m.invalid
         || m.restored != current.phy_peripheral_maintenance
-        || (m.restoration_deadline_micros.is_some() && m.run_at_micros.is_none())
+        || (m.restoration_deadline_micros.is_some() && m.exclusive_intervals().is_none())
     {
         return Err("physical maintenance did not complete its guarded RUN restoration".into());
     }

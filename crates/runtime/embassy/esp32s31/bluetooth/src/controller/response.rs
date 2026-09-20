@@ -8,7 +8,10 @@ pub enum ControllerIdleCompletion {
     ImmediateResponse,
     DtmStartRejected,
     LegacyAdvertisingStartRejected,
-    LegacyConnectableAdvertisingStartRejected,
+    #[cfg(target_arch = "riscv32")]
+    LegacyConnectableAdvertisingStartRejected {
+        cause: oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError,
+    },
     LegacyAdvertisingDisable,
     LegacyConnectableAdvertisingDisable,
     PassiveScanStartRejected,

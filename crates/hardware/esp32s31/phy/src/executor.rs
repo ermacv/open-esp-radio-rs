@@ -219,9 +219,11 @@ pub async fn run_phy_param_tracking<P: PhyParamTrackingPort>(
     port: &mut P,
 ) -> Result<crate::tracking::parameters::PhyParamTrackingOutcome, PhyParamTrackingRunError<P::Error>>
 {
+    port.observe(Operation::Tracking, Event::Started);
     for _ in 0..PARAM_TRACKING_PARENT_EDGE_LIMIT {
         match pending.action() {
             crate::tracking::parameters::PhyParamTrackingAction::Complete(outcome) => {
+                port.observe(Operation::Tracking, Event::Completed);
                 return Ok(outcome);
             }
             action => {
@@ -245,10 +247,14 @@ pub async fn run_phy_param_tracking<P: PhyParamTrackingPort>(
                         },
                     );
                 }
-                result?;
+                if let Err(error) = result {
+                    port.observe(Operation::Tracking, Event::Failed);
+                    return Err(error);
+                }
             }
         }
     }
+    port.observe(Operation::Tracking, Event::Failed);
     Err(PhyParamTrackingRunError::ParentEdgeLimit)
 }
 

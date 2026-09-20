@@ -6,7 +6,9 @@ use zeroize::Zeroize;
 
 use crate::{Envelope, EvidenceRecord, PROTOCOL_VERSION, WireBody};
 
-pub const MAX_POSTCARD_BYTES: usize = 528;
+// Covers the maximum peripheral snapshot, including full-width maintenance
+// timeline edges. The framing tests exercise maximal values, not typical runs.
+pub const MAX_POSTCARD_BYTES: usize = 560;
 pub const WIRE_MAGIC: [u8; 4] = *b"ORHL";
 pub const FRAMING_VERSION: u8 = 1;
 pub const WIRE_HEADER_BYTES: usize = 34;

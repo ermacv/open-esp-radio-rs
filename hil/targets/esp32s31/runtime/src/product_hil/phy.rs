@@ -25,6 +25,7 @@ pub(super) fn phy_timing_evidence(
         }
     };
     open_esp_radio_hil_protocol::PhyTimingEvidence {
+        tracking: timing(Operation::Tracking),
         dcode_waits: open_esp_radio_hil_protocol::PhyDcodeWaitEvidence {
             i2c: bus_wait_evidence(report.dcode_waits.i2c),
             rfpll_i2c: bus_wait_evidence(report.dcode_waits.rfpll_i2c),

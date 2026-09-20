@@ -26,6 +26,11 @@ pub enum Cause<C, S> {
 /// Reset failures keep the original Controller available for quarantine.
 #[derive(Debug)]
 pub enum ResetError<C> {
+    /// The old runner ended with its bootstrap Reset still unacknowledged.
+    /// Issuing another Reset could consume that old command's late response.
+    BootstrapUnacknowledged,
+    /// Preserve a secondary Host outcome while retaining the primary stop cause.
+    HostDuringBootstrapDrain(Result<(), BleHostError<C>>),
     Command(bt_hci::cmd::Error<C>),
     Receive(C),
 }
@@ -38,6 +43,31 @@ pub struct Exit<C: Controller, S> {
     pub reset: Result<(), ResetError<C::Error>>,
 }
 
+/// Application intent after software shutdown; never a physical-release proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShutdownAction {
+    /// Reset is unproven: retain the existing physical owners and failure.
+    Retain,
+    /// Reset completed after a failure: perform checked cold release, without restart.
+    Close,
+    /// An explicit request completed: perform checked cold release, then restart.
+    Restart,
+}
+
+impl<C: Controller, S> Exit<C, S> {
+    /// Ordinary Host/store failures do not request a SoC reset or automatic retry.
+    /// Both `Close` and `Restart` still require every hardware retirement barrier.
+    pub fn action(&self) -> ShutdownAction {
+        if self.reset.is_err() {
+            ShutdownAction::Retain
+        } else if matches!(self.cause, Cause::Requested) {
+            ShutdownAction::Restart
+        } else {
+            ShutdownAction::Close
+        }
+    }
+}
+
 /// Run one Host and secure application until explicitly stopped or failed.
 ///
 /// Hardware must be polled concurrently. Retain `store` and `comparison` outside
@@ -45,6 +75,8 @@ pub struct Exit<C: Controller, S> {
 /// Once polled, drive this consuming future to completion. Cancelling it does
 /// not release the hardware runner or prove that Reset completed. The caller
 /// chooses any deadline and must retain physical owners if it expires.
+/// A stop during bootstrap first keeps the existing runner alive until its
+/// initial Reset is acknowledged. It never reuses that response for shutdown.
 pub async fn run<C: Controller, S: BondStore>(
     stack: Stack<'_, C, DefaultPacketPool>,
     store: &mut S,
@@ -52,8 +84,9 @@ pub async fn run<C: Controller, S: BondStore>(
     stop: impl Future<Output = ()>,
     observe: impl FnMut(gatt::Observation),
 ) -> Exit<C, S::Error> {
-    let cause = {
+    let (cause, preparation) = {
         let mut runner = stack.runner();
+        let mut host = core::pin::pin!(runner.run());
         let application = async {
             match select(gatt::run(&stack, store, comparison, observe), stop).await {
                 Either::First(Err(error)) => Cause::Application(error),
@@ -61,15 +94,28 @@ pub async fn run<C: Controller, S: BondStore>(
                 Either::Second(()) => Cause::Requested,
             }
         };
-        match select(application, runner.run()).await {
-            Either::First(cause) => cause,
-            Either::Second(result) => Cause::Host(result),
+        match select(application, host.as_mut()).await {
+            Either::First(cause) => {
+                // Do not drop the in-flight bootstrap Reset: HCI identifies
+                // completions by opcode, not by a per-request sequence number.
+                let preparation = match select(stack.wait_bootstrap_reset(), host.as_mut()).await {
+                    Either::First(()) => Ok(()),
+                    Either::Second(result) => Err(ResetError::HostDuringBootstrapDrain(result)),
+                };
+                (cause, preparation)
+            }
+            Either::Second(result) => (Cause::Host(result), Ok(())),
         }
     };
     // The application, prompt, ATT objects and all Host runners are gone before
     // returning the Controller. No old producer can enqueue behind this Reset.
+    let bootstrap_pending = stack.bootstrap_reset_pending();
     let controller = stack.into_controller();
-    let reset = reset(&controller).await;
+    let reset = match preparation {
+        Err(error) => Err(error),
+        Ok(()) if bootstrap_pending => Err(ResetError::BootstrapUnacknowledged),
+        Ok(()) => reset(&controller).await,
+    };
     Exit {
         controller,
         cause,

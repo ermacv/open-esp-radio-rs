@@ -14,16 +14,30 @@ Bluetooth fixture and an initially powered-off selected Linux adapter.
 `bluetooth-secure-gatt` instead compiles the standalone `security::gatt::run`
 application with a caller-owned one-slot RAM bond store. Its framed console
 accepts observations, explicit Numeric Comparison decisions and an epoch-bound
-Controller restart request; it cannot
+Controller restart request, a one-shot Reset-reader gate and a one-shot failure
+of the next bond-store load; it cannot
 drive HCI, reply to ATT or install keys. Plaintext and secure applications share
 board/Controller construction but have separate application and evidence modules.
-For restart, `security::epoch::run` drops the application and Host runners,
-consumes the Host and waits for HCI Reset completion with an independent reader.
+For restart, `security::epoch::run` drops the application, drains any outstanding
+bootstrap Reset with the existing Host runner, then drops that runner, consumes
+the Host and waits for a separate HCI Reset completion with an independent reader.
 The hardware runner then returns idle; checked timer/HCI/IRQ/output/platform
 retirement and physical PHY close precede cold restart. Fresh Host resources are
 reborrowed while the application retains its RAM bond and comparison sequence.
-An application, Host or Reset failure reports `application_stopped` and retains
-the physical runner; it does not authorize restart or silent re-enrollment.
+An application or Host failure reports `application_stopped`. If the final Reset
+succeeds, checked cold release closes the physical Controller and retains the
+cold owners and original failure without restart. An unacknowledged bootstrap
+Reset, failed drain or failed final Reset instead retains the physical runner;
+it does not authorize release, restart or silent re-enrollment. The inherited
+hardware fault policy is unchanged. The store-fault adapter belongs only to the
+HIL application composition; the standalone RAM store and radio are unchanged.
+The HIL-only HCI wrapper delegates every operation to the original facade. When
+armed while disconnected, it suspends the sole shutdown reader before response
+consumption, leaving the real command future and hardware runner alive. The
+reached checkpoint must retain the old epoch and physical owners. Explicit
+release wakes the same reader and permits normal retirement only after the real
+Reset response is consumed. This tests pending-Reset retention, not a silicon
+stall or RF cessation. Transport-error retention is a separate scenario.
 
 Run `cargo hil run bluetooth-trouble-secure-gatt` from the repository root.
 The Linux peer exercises denied plaintext ATT, an explicit negative pairing,
@@ -33,13 +47,36 @@ needed. This test operator does not prove human presence and does not change the
 standalone application's explicit user-consent policy.
 Successful pairing is followed by read/write/notify and encrypted
 reconnect without another confirmation, followed by full Controller cold
-shutdown/restart and another encrypted reconnect. The host requires unchanged
+shutdown/restart and another encrypted reconnect. Before that cold restart,
+the scenario holds the shutdown reader for a one-second observation interval;
+it requires no cold release, epoch change, shutdown success or SoC reset, and
+rejects a duplicate restart. The host then releases the reader and requires unchanged
 SoC boot identity, a new application epoch, physical cold release and rejection
 of both commands and reads on the old HCI handle. The fresh GATT value starts at
-zero; the bond remains in application RAM. The Linux bond is temporary and
+zero; the bond remains in application RAM. Finally, while connected, the test
+arms a single backend read failure and disconnects the peer. The unchanged GATT
+application reloads its store and fails; the host requires that specific cause,
+a successful final Reset, checked physical close, rejection of restart and an
+unchanged boot/epoch throughout a one-second observation window. That window is
+not a production timeout or RF-stop bound. The Linux bond is temporary and
 removed at cleanup; SoC reset or power loss clears the DUT bond. See the
 [secure fixture contract](../../host/linux-bluetooth/README.md#secure-trouble-gatt-fixture).
 The scenario's existence and a successful build do not qualify RF behavior.
+
+`cargo hil run bluetooth-trouble-secure-gatt-hci-read-failure` runs the same
+pairing, protected traffic and RAM-bonded reconnect checks, including normal cold
+restart. It then disconnects the peer, holds a new shutdown Reset reader and
+injects a distinct read error at that reached checkpoint. The real Host epoch
+must preserve its requested-stop cause and return `Retain`; the host requires
+`InjectedReceiveFailure`, unchanged epoch/cold-release count and boot, and rejection
+of another restart throughout a one-second observation interval. The last
+`old_hci_closed` value still describes the preceding successful cold release,
+not closure of the failed epoch. No read response is discarded, and the physical
+runner and owners remain retained. Fixture/DUT cleanup is outside the production
+shutdown proof. This scenario does not establish RF-off or test a lost silicon
+interrupt. The two scenarios select distinct workload kinds; the existing
+secure-GATT workload shape remains readable in sealed runs. One successful terminal result cannot stand
+in for the other.
 
 HIL explicitly selects 5 s startup, 1 s maintenance and 1 s shutdown/retained
 cycle budgets in `runtime/src/watchdog.rs`, with caller-owned stable TIMG1 and

@@ -154,11 +154,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
         }
         let (radio, order) = match (radio, order) {
             (radio::Radio::Stopped { task, reason }, Order::CommandReady(ready))
-                if super::super::progress::retirement_barrier_is_ready(
-                    host_events.ready_to_restore_idle(),
-                    !acl.has_controller_packet(),
-                    acl.controller_credits_settled(),
-                ) =>
+                if host_events.idle_retirement_ready(Axis::CommandReady, &acl) =>
             {
                 return PeripheralConnectionActiveStep::Stopped {
                     task: crate::controller::ControllerIdleCommandTask::from_parts(task, ready),

@@ -9,32 +9,44 @@ type PlatformOwner =
     >;
 type Cold = radio::BluetoothHardwareColdReleased<Platform, 4, 1, 4, 4, 258>;
 
-pub(super) async fn cold_restart(
+pub(super) async fn finish(
     runner: Runner,
     platform: PlatformOwner,
-    old_hci: radio::BluetoothHostController<4, 4, 258>,
+    exit: super::HostExit<'_>,
     identity: oer_esp32s31_phy::PhyCalibrationIdentity,
     state: &super::State,
 ) -> radio::BluetoothSystemReady<Platform, 4, 1, 4, 4, 258> {
+    use bluetooth_example::security::epoch::ShutdownAction;
+    if exit.action() == ShutdownAction::Retain {
+        state.stopped();
+        retain((&runner, &platform, &exit)).await;
+    }
     let cold = {
         let mut close = core::pin::pin!(close(runner, platform));
         let mut result = None;
         core::future::poll_fn(|cx| super::poll_into(close.as_mut(), &mut result, cx)).await;
         result.expect("completed cold release")
     };
-    let closed = old_hci_closed(&old_hci).await;
+    let closed = old_hci_closed(&exit.controller.inner).await;
     state.cold(closed);
-    if !closed {
+    if !closed || exit.action() == ShutdownAction::Close {
         state.stopped();
-        core::hint::black_box(&cold);
-        core::future::pending::<()>().await;
+        // A successfully reset failed Host may close RF, but never erase its
+        // failure and restart as if an application had requested a fresh epoch.
+        retain((&cold, &exit)).await;
     }
     let mut restart = core::pin::pin!(restart(cold, identity));
     let mut result = None;
     core::future::poll_fn(|cx| super::poll_into(restart.as_mut(), &mut result, cx)).await;
     // Retain the old facade until the new physical epoch is fully initialized.
-    drop(old_hci);
+    drop(exit);
     result.expect("completed cold restart")
+}
+
+async fn retain<T>(owners: T) -> ! {
+    core::future::pending::<()>().await;
+    core::hint::black_box(owners);
+    unreachable!("terminal owners cannot be resumed")
 }
 
 async fn close(runner: Runner, platform: PlatformOwner) -> Cold {

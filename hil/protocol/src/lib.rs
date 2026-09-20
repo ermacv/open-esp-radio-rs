@@ -10,6 +10,8 @@ mod bluetooth_gatt;
 pub use bluetooth_gatt::BluetoothGattEvidence;
 mod bluetooth_secure_gatt;
 pub use bluetooth_secure_gatt::{
+    BluetoothAdvertisingStartRejection, BluetoothGattApplicationFailure, BluetoothGattResetOutcome,
+    BluetoothGattResetReadGate, BluetoothGattShutdown, BluetoothGattStopCause,
     BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
 };
 mod system;

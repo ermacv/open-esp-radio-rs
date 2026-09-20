@@ -34,7 +34,7 @@ embassy-sync = "0.8.0"
 embassy-futures = { version = "0.1.2", optional = true }
 embedded-io-async = { version = "0.7.0", optional = true }
 heapless = { version = "0.9", optional = true }
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "8d77d5c347f27a45314e297ac9376373d4f84ea3", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
+trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 oer-esp32s31-runtime = { optional = true, path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }

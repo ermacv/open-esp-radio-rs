@@ -2584,7 +2584,7 @@ dependencies = [
 [[package]]
 name = "trouble-host"
 version = "0.8.0"
-source = "git+https://github.com/ermacv/trouble?rev=8d77d5c347f27a45314e297ac9376373d4f84ea3#8d77d5c347f27a45314e297ac9376373d4f84ea3"
+source = "git+https://github.com/ermacv/trouble?rev=a6af435ba1539cead0afce04718ad8a089bcc4b9#a6af435ba1539cead0afce04718ad8a089bcc4b9"
 dependencies = [
  "aes",
  "bt-hci",

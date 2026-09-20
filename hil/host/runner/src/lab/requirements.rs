@@ -30,6 +30,7 @@ impl Requirements {
             Workload::BluetoothDtm { .. }
             | Workload::BluetoothGatt
             | Workload::BluetoothSecureGatt
+            | Workload::BluetoothSecureGattHciReadFailure
             | Workload::BluetoothPhyWatchdog
             | Workload::BluetoothPeripheral { .. }
             | Workload::BluetoothAclCalibration { .. }

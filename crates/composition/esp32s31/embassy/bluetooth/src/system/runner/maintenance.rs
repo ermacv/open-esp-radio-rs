@@ -143,6 +143,7 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
             Ok(registers) => registers,
             Err(error) => quarantine(self, (continuation, authority, interrupt, timer, error)),
         };
+        crate::maintenance_observation::quiesced();
         let peripheral = matches!(authority, Authority::Peripheral(_));
         let mut clock = crate::EmbassyPhyTime;
         let outcome: Option<PhyParamTrackingOutcome>;

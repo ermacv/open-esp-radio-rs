@@ -73,9 +73,17 @@ fn executor_observes_rejected_completions_and_preserves_cancelled_attempts() {
         }
         let operation = Operation::BluetoothIeee802154Power;
         let expected = if wait {
-            std::vec![(operation, Event::Started)]
+            std::vec![
+                (Operation::Tracking, Event::Started),
+                (operation, Event::Started)
+            ]
         } else {
-            std::vec![(operation, Event::Started), (operation, Event::Failed)]
+            std::vec![
+                (Operation::Tracking, Event::Started),
+                (operation, Event::Started),
+                (operation, Event::Failed),
+                (Operation::Tracking, Event::Failed)
+            ]
         };
         assert_eq!(port.events, expected);
         assert!(pending.into_owner().is_err());

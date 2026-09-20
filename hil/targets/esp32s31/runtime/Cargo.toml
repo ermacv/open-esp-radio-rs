@@ -136,7 +136,7 @@ ieee802154-ed-event-probe = [
 
 [dependencies]
 bluetooth-example = { package = "open-esp-radio-esp32s31-bluetooth-controller-example", path = "../../../../examples/esp32s31-bluetooth-controller", optional = true, default-features = false, features = ["gatt-application"] }
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "8d77d5c347f27a45314e297ac9376373d4f84ea3", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
+trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 bt-hci = { version = "=0.10.1", optional = true }
 oer-bluetooth-ll = { path = "../../../../crates/protocols/bluetooth/le/ll", optional = true }
 oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }

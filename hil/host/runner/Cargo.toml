@@ -63,6 +63,8 @@ async-io = "2.6"
 futures-lite = "2.6"
 
 [dev-dependencies]
+oer-bluetooth-hci = { path = "../../../crates/protocols/bluetooth/hci" }
+trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", default-features = false, features = ["default-packet-pool", "gatt", "peripheral", "security"] }
 bluetooth-example = { package = "open-esp-radio-esp32s31-bluetooth-controller-example", path = "../../../examples/esp32s31-bluetooth-controller", default-features = false, features = ["secure-gatt-application"] }
 embassy-futures = "0.1.2"
 oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }

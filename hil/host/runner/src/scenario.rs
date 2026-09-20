@@ -168,8 +168,9 @@ impl PhyExpectation {
 pub enum Workload {
     /// Three plaintext ATT connection cycles on one Trouble/Controller epoch.
     BluetoothGatt,
-    /// Interactive Numeric Comparison, denied plaintext ATT and bonded reconnect.
+    /// Automated Numeric Comparison, bonded reconnect and explicit terminal fault.
     BluetoothSecureGatt,
+    BluetoothSecureGattHciReadFailure,
     BluetoothPhyWatchdog,
     WifiPhyWatchdog,
     SystemWatchdog,
@@ -332,6 +333,14 @@ pub enum Workload {
     StationAccessPointReconnect {
         timeout_seconds: u16,
     },
+}
+
+/// Mutually exclusive terminal proofs; neither substitutes for the other.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecureGattShutdown {
+    BondLoadFailure,
+    HciReadFailure,
 }
 
 fn is_rx_only_udp_workload(workload: &Workload) -> bool {

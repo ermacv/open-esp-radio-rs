@@ -193,6 +193,7 @@ impl Scenario {
             Workload::BluetoothDtm { .. }
                 | Workload::BluetoothGatt
                 | Workload::BluetoothSecureGatt
+                | Workload::BluetoothSecureGattHciReadFailure
                 | Workload::BluetoothPhyWatchdog
                 | Workload::BluetoothPeripheral { .. }
                 | Workload::BluetoothAclCalibration { .. }
@@ -211,7 +212,10 @@ impl Scenario {
             return self.criteria_error("Trouble GATT requires its exclusive Host image");
         }
         if (self.image == ImageClass::BluetoothSecureGatt)
-            != matches!(self.workload, Workload::BluetoothSecureGatt)
+            != matches!(
+                self.workload,
+                Workload::BluetoothSecureGatt | Workload::BluetoothSecureGattHciReadFailure
+            )
         {
             return self
                 .criteria_error("Secure GATT requires its exclusive authenticated Host image");
@@ -575,7 +579,9 @@ impl Scenario {
                     );
                 }
             }
-            Workload::BluetoothGatt | Workload::BluetoothSecureGatt => {
+            Workload::BluetoothGatt
+            | Workload::BluetoothSecureGatt
+            | Workload::BluetoothSecureGattHciReadFailure => {
                 if self.link.is_some()
                     || self.criteria != Criteria::default()
                     || self.evidence != EvidenceConfig::default()

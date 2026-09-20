@@ -3349,6 +3349,7 @@ dependencies = [
  "libc",
  "mio",
  "object 0.39.1",
+ "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-embassy-net-compat",
  "oer-esp32s31-wifi-ap",
@@ -3367,6 +3368,7 @@ dependencies = [
  "tar",
  "tempfile",
  "toml",
+ "trouble-host",
  "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc)",
  "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
  "zbus",
@@ -4958,7 +4960,7 @@ dependencies = [
 [[package]]
 name = "trouble-host"
 version = "0.8.0"
-source = "git+https://github.com/ermacv/trouble?rev=8d77d5c347f27a45314e297ac9376373d4f84ea3#8d77d5c347f27a45314e297ac9376373d4f84ea3"
+source = "git+https://github.com/ermacv/trouble?rev=a6af435ba1539cead0afce04718ad8a089bcc4b9#a6af435ba1539cead0afce04718ad8a089bcc4b9"
 dependencies = [
  "aes",
  "bt-hci",

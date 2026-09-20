@@ -7,6 +7,22 @@
 
 use core::fmt::{self, Write};
 
+/// Preparation failed and the same physical owner was recovered; not terminal RF failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothAdvertisingStartRejection {
+    Configuration,
+    GenerationExhausted,
+    PduFit,
+    AdvertisingEventActive,
+    PeripheralEventActive,
+    MemoryPreparation,
+    TimingWindow,
+    Timeline,
+    Sequence,
+    EventFields,
+    EmptyList,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothExecutionEvent {
     ConnectableAdvertisingRun,
@@ -19,6 +35,7 @@ pub enum BluetoothExecutionEvent {
         peripheral: bool,
     },
     Retry,
+    AdvertisingStartRejected(BluetoothAdvertisingStartRejection),
     Terminal,
 }
 
@@ -31,6 +48,7 @@ pub struct BluetoothExecutionSnapshot {
     pub phy_idle_maintenance: u32,
     pub phy_peripheral_maintenance: u32,
     pub retries: u32,
+    pub last_advertising_start_rejection: Option<BluetoothAdvertisingStartRejection>,
     pub terminal: bool,
     pub saturated: bool,
     pub detail_truncated: bool,
@@ -48,6 +66,7 @@ impl BluetoothExecutionSnapshot {
             phy_idle_maintenance: 0,
             phy_peripheral_maintenance: 0,
             retries: 0,
+            last_advertising_start_rejection: None,
             terminal: false,
             saturated: false,
             detail_truncated: false,
@@ -79,6 +98,10 @@ impl BluetoothExecutionSnapshot {
                 Some(&mut self.phy_peripheral_maintenance)
             }
             BluetoothExecutionEvent::Retry => Some(&mut self.retries),
+            BluetoothExecutionEvent::AdvertisingStartRejected(cause) => {
+                self.last_advertising_start_rejection = Some(cause);
+                None
+            }
             BluetoothExecutionEvent::Terminal => {
                 self.terminal = true;
                 None
@@ -134,6 +157,26 @@ pub fn snapshot() -> BluetoothExecutionSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovered_start_rejection_survives_later_progress_without_becoming_terminal() {
+        let mut state = BluetoothExecutionSnapshot::new();
+        state.record(
+            BluetoothExecutionEvent::AdvertisingStartRejected(
+                BluetoothAdvertisingStartRejection::TimingWindow,
+            ),
+            format_args!("advertising rejected: timing"),
+        );
+        assert!(!state.terminal);
+        assert_eq!(state.retries, 0);
+        state.record(
+            BluetoothExecutionEvent::PeripheralDisconnected { reason: 0x13 },
+            format_args!("disconnect"),
+        );
+        assert_eq!(
+            state.last_advertising_start_rejection,
+            Some(BluetoothAdvertisingStartRejection::TimingWindow)
+        );
+    }
     #[test]
     fn peer_disconnect_is_reusable_progress_and_retains_its_reason() {
         let mut state = BluetoothExecutionSnapshot::new();

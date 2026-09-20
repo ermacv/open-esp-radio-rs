@@ -1534,6 +1534,7 @@ fn maximum_phy_timing_evidence_fits_existing_frame_and_round_trips() {
         3,
         Event::StationPauseCompleted(crate::StationPauseEvidence {
             timings: Some(crate::PhyTimingEvidence {
+                tracking: timing,
                 dcode_waits: crate::PhyDcodeWaitEvidence {
                     i2c: crate::PhyBusWaitEvidence {
                         bus_busy: u16::MAX,

@@ -1,8 +1,12 @@
 //! One application-owned RAM store around successive physical Controller epochs.
+#[path = "secure/reset_gate.rs"]
+mod reset_gate;
 #[path = "secure/retirement.rs"]
 mod retirement;
 #[path = "secure/state.rs"]
 mod state;
+#[path = "secure/store.rs"]
+mod store;
 use super::console;
 use bluetooth_example::security::{bonds::RamBondStore, epoch};
 use core::convert::Infallible;
@@ -15,6 +19,14 @@ use oer_esp32s31_bluetooth_integration::{BluetoothColdStartOutput, entropy::Blue
 use open_esp_radio_hil_protocol::{Command, Event, FeatureCapabilities};
 use state::State;
 
+type HostExit<'a> = epoch::Exit<
+    reset_gate::GatedController<
+        'a,
+        oer_esp32s31_bluetooth_integration::BluetoothHostController<4, 4, 258>,
+    >,
+    store::InjectedBondLoadFailure,
+>;
+
 impl console::Profile for State {
     fn features(&self) -> FeatureCapabilities {
         FeatureCapabilities {
@@ -26,6 +38,25 @@ impl console::Profile for State {
         let mut event = State::command(self, command);
         if let Event::BluetoothSecureGatt(value) = &mut event {
             value.traffic.cpu0_stack = Some(crate::cpu0_stack_usage_snapshot());
+            use oer_esp32s31_bluetooth_integration::diagnostics::{
+                self, BluetoothAdvertisingStartRejection as S,
+            };
+            use open_esp_radio_hil_protocol::BluetoothAdvertisingStartRejection as D;
+            value.advertising_start_rejection = diagnostics::snapshot()
+                .last_advertising_start_rejection
+                .map(|reason| match reason {
+                    S::Configuration => D::Configuration,
+                    S::GenerationExhausted => D::GenerationExhausted,
+                    S::PduFit => D::PduFit,
+                    S::AdvertisingEventActive => D::AdvertisingEventActive,
+                    S::PeripheralEventActive => D::PeripheralEventActive,
+                    S::MemoryPreparation => D::MemoryPreparation,
+                    S::TimingWindow => D::TimingWindow,
+                    S::Timeline => D::Timeline,
+                    S::Sequence => D::Sequence,
+                    S::EventFields => D::EventFields,
+                    S::EmptyList => D::EmptyList,
+                });
         }
         event
     }
@@ -55,7 +86,7 @@ pub(super) async fn run(
     let mut platform = output.platform;
     let mut lifecycle = core::pin::pin!(async {
         loop {
-            let (old_hci, hardware) = {
+            let (exit, hardware) = {
                 let mut live =
                     core::pin::pin!(run_host(&mut system, resources, &mut bonds, &state));
                 let mut result = None;
@@ -63,8 +94,8 @@ pub(super) async fn run(
                 result.expect("completed Host epoch")
             };
             let ready = {
-                let mut restart = core::pin::pin!(retirement::cold_restart(
-                    hardware, platform, old_hci, identity, &state
+                let mut restart = core::pin::pin!(retirement::finish(
+                    hardware, platform, exit, identity, &state
                 ));
                 let mut result = None;
                 core::future::poll_fn(|cx| poll_into(restart.as_mut(), &mut result, cx)).await;
@@ -107,38 +138,101 @@ fn poll_into<F: Future>(
 
 // Host construction and its consuming stop handoff have a separate poll frame
 // from the physical close/restart owner transfers. Storage remains caller-owned.
-async fn run_host(
+async fn run_host<'a>(
     system: &mut Option<oer_esp32s31_bluetooth_integration::BluetoothSystem<4, 1, 4, 4, 258>>,
     resources: &mut trouble_host::HostResources<trouble_host::prelude::DefaultPacketPool, 1, 3>,
     bonds: &mut RamBondStore<1>,
-    state: &State,
+    state: &'a State,
 ) -> (
-    oer_esp32s31_bluetooth_integration::BluetoothHostController<4, 4, 258>,
+    HostExit<'a>,
     oer_esp32s31_bluetooth_integration::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
 ) {
-    let composed = super::initialize_host(system.take().expect("fresh Controller"), resources);
+    let composed = initialize_host(system.take().expect("fresh Controller"), resources, state);
     let finished = Signal::<NoopRawMutex, ()>::new();
     let mut host = core::pin::pin!(async {
+        let mut store = store::Store { ram: bonds, state };
         let exit = {
             let mut epoch = core::pin::pin!(epoch::run(
                 composed.stack,
-                bonds,
+                &mut store,
                 &state.comparison,
                 state.restart.wait(),
                 |event| state.observe(event)
             ));
             core::future::poll_fn(|cx| super::poll_live(epoch.as_mut(), cx)).await
         };
-        // A failed Host or Reset never authorizes physical retirement/restart.
-        if !matches!(exit.cause, epoch::Cause::Requested) || exit.reset.is_err() {
-            state.stopped();
-            core::hint::black_box(&exit);
-            core::future::pending::<()>().await;
+        record_shutdown(state, &exit);
+        match exit.action() {
+            epoch::ShutdownAction::Retain => {
+                state.stopped();
+                core::hint::black_box(&exit);
+                core::future::pending::<()>().await;
+            }
+            epoch::ShutdownAction::Close => state.stopped(),
+            epoch::ShutdownAction::Restart => {}
         }
         finished.signal(());
-        exit.controller
+        exit
     });
     let mut hardware = core::pin::pin!(composed.hardware.run_until_idle(finished.wait()));
     let mut live = core::pin::pin!(join(host.as_mut(), hardware.as_mut()));
     core::future::poll_fn(|cx| super::poll_live(live.as_mut(), cx)).await
+}
+
+fn record_shutdown(state: &State, exit: &HostExit<'_>) {
+    if let epoch::Cause::Application(error) = &exit.cause {
+        state.application_failure(error);
+    }
+    use bluetooth_example::security::{bonds::StoreError, gatt::RunError};
+    use open_esp_radio_hil_protocol::{
+        BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
+    };
+    let cause = match &exit.cause {
+        epoch::Cause::Requested => Cause::Requested,
+        epoch::Cause::Application(RunError::Store(StoreError::Backend(
+            store::InjectedBondLoadFailure,
+        ))) => Cause::InjectedBondLoadFailure,
+        epoch::Cause::Application(_) => Cause::Application,
+        epoch::Cause::Host(_) => Cause::Host,
+    };
+    let reset = match &exit.reset {
+        Ok(()) => Reset::Completed,
+        Err(epoch::ResetError::BootstrapUnacknowledged) => Reset::BootstrapUnacknowledged,
+        Err(epoch::ResetError::HostDuringBootstrapDrain(_)) => Reset::BootstrapDrainFailed,
+        Err(epoch::ResetError::Command(_)) => Reset::CommandFailed,
+        Err(epoch::ResetError::Receive(reset_gate::ReadError::Injected)) => {
+            Reset::InjectedReceiveFailure
+        }
+        Err(epoch::ResetError::Receive(_)) => Reset::ReceiveFailed,
+    };
+    state.shutdown(BluetoothGattShutdown { cause, reset });
+}
+
+// Preserve the construction/codegen boundary while only wrapping the real HCI
+// facade. No second Controller, transport queues or hardware owner is created.
+#[inline(never)]
+fn initialize_host<'r, 's>(
+    system: oer_esp32s31_bluetooth_integration::BluetoothSystem<4, 1, 4, 4, 258>,
+    resources: &'r mut trouble_host::HostResources<trouble_host::prelude::DefaultPacketPool, 1, 3>,
+    state: &'s State,
+) -> oer_esp32s31_bluetooth_integration::BluetoothTroubleSystem<
+    'r,
+    reset_gate::GatedController<
+        's,
+        oer_esp32s31_bluetooth_integration::BluetoothHostController<4, 4, 258>,
+    >,
+    trouble_host::prelude::DefaultPacketPool,
+    oer_esp32s31_bluetooth_integration::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
+> {
+    oer_esp32s31_bluetooth_integration::BluetoothTroubleSystem {
+        stack: trouble_host::new(
+            reset_gate::GatedController {
+                inner: system.hci,
+                gate: &state.reset_gate,
+            },
+            resources,
+        )
+        .build(),
+        hardware: system.runners.hardware,
+    }
 }

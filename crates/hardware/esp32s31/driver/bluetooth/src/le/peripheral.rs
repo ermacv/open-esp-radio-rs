@@ -28,6 +28,8 @@ pub(crate) mod recovery;
 pub(crate) mod start;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod supervision;
+#[cfg(all(test, not(target_arch = "riscv32")))]
+mod temporal_tests;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod termination;
 

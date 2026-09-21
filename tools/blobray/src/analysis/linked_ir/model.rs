@@ -1072,8 +1072,20 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) pseudo: String,
 }
 
+/// A selected root retained as an explicit analysis boundary rather than a body.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedIrRootBlocker {
+    pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) member: Option<String>,
+    pub(crate) symbol: String,
+    pub(crate) address: u64,
+    pub(crate) reason: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrReport {
+    pub(crate) root_blockers: Vec<LinkedIrRootBlocker>,
     pub(crate) functions: Vec<LinkedIrFunction>,
     pub(crate) mmio_registers: Vec<LinkedMmioRegister>,
     pub(crate) mmio_functions: usize,

@@ -4,6 +4,8 @@
 //! intentionally separate because they describe one invocation rather than a
 //! reusable project artifact.
 
+pub(crate) const COVERAGE_FILE: &str = "coverage.json";
+
 mod interface_facts;
 mod interface_facts_read;
 mod json;
@@ -66,7 +68,7 @@ pub(crate) struct ArtifactSchema {
 }
 
 pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
-    version: 5,
+    version: 6,
     command: "symbols inventory",
 };
 
@@ -121,7 +123,7 @@ mod tests {
         assert_eq!(
             SYMBOL_INVENTORY,
             ArtifactSchema {
-                version: 5,
+                version: 6,
                 command: "symbols inventory",
             }
         );

@@ -53,8 +53,12 @@ pub(crate) fn analyze_project(
         planner: None,
         pipeline_inputs,
         pipeline_input_error,
+        coverage_report: None,
     };
     let mut report = super::run(&session.project, request, inputs, &mut operations);
+    report.coverage = operations.coverage_report.take().unwrap_or_else(|| {
+        crate::application::coverage::inspect(&session.project, session.run_spec.as_ref())
+    });
     report.next_steps = super::follow_up_steps(&report, &session.context());
     report
 }
@@ -78,8 +82,11 @@ pub(crate) fn plan_project(
         planner: Some(ProjectAnalysisPlanner::default()),
         pipeline_inputs,
         pipeline_input_error,
+        coverage_report: None,
     };
-    let execution = super::run(&session.project, request, inputs, &mut operations);
+    let mut execution = super::run(&session.project, request, inputs, &mut operations);
+    execution.coverage =
+        crate::application::coverage::declarations(&session.project, session.run_spec.as_ref());
     operations
         .planner
         .take()
@@ -176,6 +183,7 @@ struct ResolvedProjectAnalysisOperations<'a> {
     planner: Option<ProjectAnalysisPlanner>,
     pipeline_inputs: Option<PipelineInputObservation>,
     pipeline_input_error: Option<String>,
+    coverage_report: Option<Vec<crate::application::CoverageObligation>>,
 }
 
 fn register_catalog_input_paths(
@@ -663,7 +671,11 @@ impl ResolvedProjectAnalysisOperations<'_> {
         &self,
         profile: &crate::project_ir::ProjectIrProfile,
     ) -> Vec<std::path::PathBuf> {
-        crate::artifacts::bundle_files(&profile.output).collect()
+        crate::artifacts::bundle_files(&profile.output)
+            .chain(std::iter::once(
+                profile.output.join(crate::application::coverage::FILE),
+            ))
+            .collect()
     }
 
     fn all_linked_ir_outputs(&self) -> Vec<std::path::PathBuf> {
@@ -944,6 +956,45 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         discover_project_interfaces_operation(&self.session.project, self.run_spec()?, check)?;
         self.cache_record("interface-discovery", check, &inputs, &outputs)?;
         Ok(StageRun::Executed)
+    }
+
+    fn coverage(&mut self) -> Result<StageRun> {
+        let project = &self.session.project;
+        let run = self.session.run_spec.as_ref();
+        crate::application::coverage::require_complete(
+            &crate::application::coverage::declarations(project, run),
+        )?;
+        if let Some(planner) = self.planner.as_mut() {
+            for family in project.analysis_symbol_families.iter().filter(|family| {
+                family.disposition == crate::project::AnalysisSymbolFamilyDisposition::Required
+            }) {
+                planner.record("analysis-coverage", ProjectAnalysisPlanWorkItem {
+                    name: format!("required:{}", family.id), action: ProjectAnalysisPlanAction::Verify,
+                    signature: None, outputs: Vec::new(), cause: Some(format!("source-artifact:{}; profile={:?}; every root matching {:?} must have an outcome", family.source, family.profile, family.symbol_prefix)), awaiting_inputs: Vec::new(),
+                });
+            }
+            for profile in &project.ir_profiles {
+                crate::application::project_inputs::resolve_inputs(
+                    profile,
+                    run.ok_or_else(|| crate::Error::invalid("run-spec is not configured"))?,
+                )?;
+                planner.record("analysis-coverage", ProjectAnalysisPlanWorkItem {
+                    name: format!("coverage:{}", profile.id), action: ProjectAnalysisPlanAction::Verify,
+                    signature: None, outputs: vec![profile.output.join(crate::application::coverage::FILE)],
+                    cause: Some("verify every selected root and required family after linked-IR materialization".to_owned()), awaiting_inputs: Vec::new(),
+                });
+            }
+            return Ok(StageRun::Executed);
+        }
+        let coverage = crate::application::coverage::inspect(project, run);
+        let complete = crate::application::coverage::require_complete(&coverage);
+        self.coverage_report = Some(coverage);
+        complete?;
+        Ok(if self.check {
+            StageRun::Executed
+        } else {
+            StageRun::Current
+        })
     }
 
     fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun> {

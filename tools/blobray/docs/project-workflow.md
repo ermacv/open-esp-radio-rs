@@ -42,7 +42,7 @@ three independent workflow dimensions: generated `freshness`, `research`
 completeness, and `verification`. Phase readiness only says that configured
 artifacts are present and structurally inspectable; an `open` research state
 can therefore coexist with a ready review artifact. `doctor` is deliberately
-deep but still does not claim reproducible freshness. Its JSON schema 4 report
+deep but still does not claim reproducible freshness. Its JSON schema 5 report
 includes per-section timings so expensive symbol, register, interface or input
 validation is attributable. Use `project check` when current bytes must be
 reproduced, rather than interpreting either inspection command as a freshness
@@ -183,15 +183,34 @@ disposition = "required"
 profile = "ieee802154-controller"
 ```
 
-Status reports this family as `missing-vendor-artifact` until the exact source
-binding exists, then as `missing-profile-definition` until a linked-IR profile
-is declared, as `missing-profile-output` until it is built, and as
-`invalid-profile-output` if the generated profile is empty or unreadable. A
-profile build is offered only for the latter two states; manual configuration
-states remain explicit prerequisites rather than non-runnable commands. The
-symbol family becomes analyzed only when that profile is generated and
-non-empty. A deliberately omitted family uses `disposition = "excluded"`,
-omits `profile`, and requires a one-line `reason`.
+Required families are source declarations even before their profile exists, so
+`project inputs init` accepts their explicit primary bindings. A missing primary
+binding or profile remains a coverage obligation in `analyze --plan`, `doctor`,
+`analyze` and `check`; inventory alone cannot satisfy it.
+
+Each project IR bundle contains `coverage.json`, which records the inspected
+archive members and the outcome of every named function definition in its
+primary inputs. Root identities include the source, artifact digest, member,
+section, symbol and address. The report authenticates the ordered input bindings,
+profile configuration and IR product digests. Status reads this report without
+repeating decoding; unavailable or stale coverage remains incomplete. This
+coverage validation is distinct from the freshness of other generated reports.
+
+A required family is covered only when its prefix matches at least one primary
+function definition and every matching root has a result or explicit analysis
+blocker. A nonempty bundle is insufficient. Decode limitations, unresolved calls
+and opaque semantic body boundaries remain visible research debt; accounting for
+them does not assert semantic completeness or a successful comparison. Unknown,
+unsupported and invalid archive members are named blockers; recognized objects
+without executable sections are classified as non-code. Unrecognized bytes are
+never assumed to be non-code.
+
+`analyze` retains partial products and fails the coverage stage when required
+work is missing. `check` includes that same gate alongside reproducibility,
+verification and publication. Ordinary `status` retains its diagnostic exit
+semantics; use `--deny-incomplete` when incomplete status must return failure.
+A deliberately omitted family uses `disposition = "excluded"`, omits `profile`,
+and requires a one-line `reason`.
 Exclusion is not analyzed coverage: Blobray checks the prefix against the
 generated symbol inventory, reports every matched identity, and marks a
 zero-match declaration `stale-exclusion`. Missing inventory leaves the
@@ -642,9 +661,15 @@ ordered set of primary archives by repeating `source-artifact:ID`. Blobray
 analyzes every member in place and links uniquely named relocation targets
 across the set without synthesizing an executable or assigning runtime
 addresses. The same `source-artifact:ID=PATH` pair may occur only once, and an
-archive set cannot also use `source-companion:ID`: add every required code
-archive to the primary set explicitly. Stable function identities retain the
-logical source, archive member and symbol, so a blob update remains eligible
+archive primary cannot use address-based `source-companion:ID` resolution:
+that operation requires a linked ELF primary. Add relocatable code archives to
+the primary set explicitly. Source companions of linked inputs remain scoped to
+their owner even in a profile containing other sources or archive sets; their
+bytes participate in cache and coverage identity. Global companions require one
+primary input. Input initialization preserves binding order and permits repeated
+source artifacts, inventories and companions. Executable comparisons that accept
+only one primary input reject a repeated role explicitly. Stable function identities retain the
+logical source, artifact digest, archive member and symbol, so a blob update remains eligible
 for normal revision diff and rebase.
 
 Snapshots contain artifact

@@ -405,7 +405,7 @@ fn suite_arguments(
                     path,
                 }),
         );
-        let companion = optional_input(run_spec, &InputRole::SourceCompanion(source.clone()));
+        let companion = optional_input(run_spec, &InputRole::SourceCompanion(source.clone()))?;
         if vendor.companion_sha256.is_some() && companion.is_none() {
             return Err(crate::Error::invalid(format!(
                 "suite {} requires the pinned companion for {source}",
@@ -441,19 +441,15 @@ fn suite_arguments(
 }
 
 fn required_input(run_spec: &RunSpec, role: &InputRole, suite: &str) -> Result<std::path::PathBuf> {
-    optional_input(run_spec, role).ok_or_else(|| {
+    optional_input(run_spec, role)?.ok_or_else(|| {
         crate::Error::invalid(format!(
             "verification suite {suite:?} requires run-spec role {role}"
         ))
     })
 }
 
-fn optional_input(run_spec: &RunSpec, role: &InputRole) -> Option<std::path::PathBuf> {
-    run_spec
-        .inputs()
-        .iter()
-        .find(|input| &input.role == role)
-        .map(|input| input.path.clone())
+fn optional_input(run_spec: &RunSpec, role: &InputRole) -> Result<Option<std::path::PathBuf>> {
+    crate::application::project_inputs::single_input(run_spec, role, "project verification")
 }
 
 fn matching_inputs(run_spec: &RunSpec, role: &InputRole) -> Vec<std::path::PathBuf> {

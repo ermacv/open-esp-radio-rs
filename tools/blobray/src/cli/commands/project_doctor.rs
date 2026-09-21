@@ -16,8 +16,11 @@ use model::{DoctorReport, RunSpecReport};
 pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     let total_started = std::time::Instant::now();
     let section_started = std::time::Instant::now();
-    let ir_build =
-        super::project_ir_doctor::inspect(context.project, context.run_spec, context.target);
+    let ir_build = crate::application::project_ir_doctor::inspect(
+        context.project,
+        context.run_spec,
+        context.target,
+    );
     let ir_duration = section_started.elapsed();
     let section_started = std::time::Instant::now();
     let ir_counts = ir_build.counts();

@@ -105,6 +105,10 @@ launcher below skips Cargo entirely.
 
    The schema-4 project manifest does not duplicate artifact digests. Blobray
    hashes these live bindings to select exact applicability-bounded facts.
+   ELF32 and static archives are accepted by content. Repeat source-scoped roles
+   for ordered input sets; bindings are not sorted by filename. See the
+   [input and coverage contract](docs/project-workflow.md) for operation-specific
+   companion limits and required analysis families.
 
 3. Inspect the file map and follow its prerequisite-ordered `Next` actions.
    A fresh generic project uses these actions to create the reviewed code,

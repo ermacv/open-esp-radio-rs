@@ -85,7 +85,8 @@ mod tests {
     #[test]
     fn analysis_document_keeps_stage_states_and_counts_typed() {
         let document = ProjectAnalysisReport {
-            schema: 6,
+            coverage: Vec::new(),
+            schema: 7,
             command: "project analyze",
             mode: "check",
             status: ProjectAnalysisStatus::Failed,
@@ -152,7 +153,8 @@ mod tests {
             invocation_directory: Path::new("/tmp"),
         };
         let document = ProjectAnalysisReport {
-            schema: 6,
+            coverage: Vec::new(),
+            schema: 7,
             command: "project analyze",
             mode: "write",
             status: ProjectAnalysisStatus::Failed,

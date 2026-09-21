@@ -1094,7 +1094,7 @@ fn stage_analysis_domain(stage: &str) -> Option<&'static [u8]> {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(60);
+        return Ok(61);
     }
     match stage {
         "symbol-inventory" => Ok(2),
@@ -1105,9 +1105,9 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "mmio-discovery" => Ok(7),
         "interface-discovery" => Ok(7),
         "interface-capability-context" => Ok(1),
-        // v60 records the consumed function queries. Older stage results have
-        // no edges and cannot preserve warm facts across epoch restoration.
-        "linked-ir" => Ok(60),
+        // v61 includes authenticated member/root coverage and source-owned
+        // companions. Older stage products cannot establish these obligations.
+        "linked-ir" => Ok(61),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -1887,8 +1887,8 @@ mod tests {
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
         assert_eq!(stage_revision("mmio-discovery").unwrap(), 7);
-        assert_eq!(stage_revision("linked-ir").unwrap(), 60);
-        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 60);
+        assert_eq!(stage_revision("linked-ir").unwrap(), 61);
+        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 61);
     }
 
     #[test]

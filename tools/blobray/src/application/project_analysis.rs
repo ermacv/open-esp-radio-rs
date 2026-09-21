@@ -86,6 +86,8 @@ pub(crate) trait ProjectAnalysisOperations {
         Ok(())
     }
 
+    fn coverage(&mut self) -> Result<StageRun>;
+
     fn symbol_inventory(&mut self, check: bool) -> Result<StageRun>;
     fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
     fn discover_interfaces(&mut self, check: bool) -> Result<StageRun>;
@@ -110,6 +112,7 @@ pub struct ProjectAnalysisReport {
     pub mode: &'static str,
     pub status: ProjectAnalysisStatus,
     pub stages: Vec<super::pipeline::StageReport>,
+    pub coverage: Vec<super::CoverageObligation>,
     pub written: usize,
     pub restored: usize,
     pub verified: usize,
@@ -361,6 +364,27 @@ pub(crate) fn run(
     };
     summary.record("interface-capability-context", &capability_context);
 
+    if !project.ir_profiles.is_empty()
+        || project.analysis_symbol_families.iter().any(|family| {
+            family.disposition == crate::project::AnalysisSymbolFamilyDisposition::Required
+        })
+    {
+        let coverage = if !inputs.run_spec {
+            StageExecution::blocked(
+                "run-spec is not configured; required coverage cannot be established",
+            )
+        } else if ir.blocks_dependants() {
+            StageExecution::blocked(
+                "linked-ir did not complete; required coverage cannot be established",
+            )
+        } else {
+            execute("analysis-coverage", StageSuccess::Verified, || {
+                operations.coverage()
+            })
+        };
+        summary.record("analysis-coverage", &coverage);
+    }
+
     if summary.succeeded()
         && let Err(error) = operations.validate_pipeline_inputs()
     {
@@ -393,7 +417,8 @@ pub(crate) fn run(
         ProjectAnalysisStatus::Complete
     };
     ProjectAnalysisReport {
-        schema: 6,
+        coverage: Vec::new(),
+        schema: 7,
         command: "project analyze",
         mode: mode.label(),
         status,
@@ -543,6 +568,9 @@ mod tests {
     }
 
     impl ProjectAnalysisOperations for FakeOperations {
+        fn coverage(&mut self) -> Result<StageRun> {
+            Ok(StageRun::Executed)
+        }
         fn complete_analysis_epoch(&mut self) -> Result<()> {
             self.called("epoch-publication").map(|_| ())
         }

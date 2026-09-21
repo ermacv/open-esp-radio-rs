@@ -39,11 +39,11 @@ pub use model::{
     ArtifactDataObjectRelocation, ArtifactDataSymbolDefinition, ArtifactDirectControlFlowEvidence,
     ArtifactDirectControlFlowKind, ArtifactFunctionBoundaryCandidate, ArtifactIndexedDispatch,
     ArtifactIndexedDispatchCallee, ArtifactIndexedDispatchEntry, ArtifactInventory,
-    ArtifactObjectInventory, ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
-    ArtifactSymbolDefinitionState, ArtifactSymbolFact, ArtifactSymbolKind, ArtifactSymbolScope,
-    ArtifactSymbolTable, ArtifactSymbolVisibility, CodeSymbolSelection, DecodedInstruction,
-    ExecutableSection, MemoryRegion, RelocationKind, ReviewedCodeRange, SymbolRelocation,
-    UnsupportedInstruction, UnsupportedInstructionClass,
+    ArtifactMemberOutcome, ArtifactObjectInventory, ArtifactObjectKind, ArtifactSymbolBinding,
+    ArtifactSymbolDefinition, ArtifactSymbolDefinitionState, ArtifactSymbolFact,
+    ArtifactSymbolKind, ArtifactSymbolScope, ArtifactSymbolTable, ArtifactSymbolVisibility,
+    CodeSymbolSelection, DecodedInstruction, ExecutableSection, MemoryRegion, RelocationKind,
+    ReviewedCodeRange, SymbolRelocation, UnsupportedInstruction, UnsupportedInstructionClass,
 };
 pub use sections::load_executable_sections;
 pub use symbols::{

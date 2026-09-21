@@ -1,7 +1,5 @@
 //! Project-profile resolution for execution comparison.
 
-use std::path::PathBuf;
-
 use super::{ApplicationError, ApplicationResult, ComparisonScenario, ProjectSession, operations};
 
 pub(super) fn compare_profile(
@@ -46,40 +44,35 @@ pub(super) fn compare_profile(
             "comparison requires a project run-spec with vendor and Rust artifacts",
         )
     })?;
-    let input = |wanted: crate::run_spec::InputRole| -> Option<PathBuf> {
-        run.inputs()
-            .iter()
-            .find(|input| input.role == wanted)
-            .map(|input| input.path.clone())
-    };
+    let input = |role| super::project_inputs::single_input(run, &role, "execution comparison");
     let source: crate::source_id::SourceId = profile.vendor_source.parse().map_err(|_| {
         crate::Error::invalid(format!(
             "comparison profile {} has invalid source {:?}",
             profile.name, profile.vendor_source
         ))
     })?;
-    let vendor_artifact = input(crate::run_spec::InputRole::SourceArtifact(source.clone()))
-        .or_else(|| {
-            (profile.vendor_source == "vendor")
-                .then(|| input(crate::run_spec::InputRole::VendorArtifact))
-                .flatten()
-        })
-        .ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "run-spec has no artifact for source {}",
-                profile.vendor_source
-            ))
-        })?;
-    let vendor_companion =
-        input(crate::run_spec::InputRole::SourceCompanion(source)).or_else(|| {
-            (profile.vendor_source == "vendor")
-                .then(|| input(crate::run_spec::InputRole::VendorCompanion))
-                .flatten()
-        });
-    let rust_artifact = input(rust_artifact_role.clone()).ok_or_else(|| {
+    let vendor_artifact = input(crate::run_spec::InputRole::SourceArtifact(source.clone()))?;
+    let vendor_artifact = if vendor_artifact.is_none() && profile.vendor_source == "vendor" {
+        input(crate::run_spec::InputRole::VendorArtifact)?
+    } else {
+        vendor_artifact
+    }
+    .ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "run-spec has no artifact for source {}",
+            profile.vendor_source
+        ))
+    })?;
+    let vendor_companion = input(crate::run_spec::InputRole::SourceCompanion(source))?;
+    let vendor_companion = if vendor_companion.is_none() && profile.vendor_source == "vendor" {
+        input(crate::run_spec::InputRole::VendorCompanion)?
+    } else {
+        vendor_companion
+    };
+    let rust_artifact = input(rust_artifact_role.clone())?.ok_or_else(|| {
         crate::Error::invalid(format!("run-spec has no {rust_artifact_role} input"))
     })?;
-    let rust_companion = rust_companion_role.and_then(input);
+    let rust_companion = rust_companion_role.map(input).transpose()?.flatten();
     let table_scenarios = profile
         .scenarios
         .iter()

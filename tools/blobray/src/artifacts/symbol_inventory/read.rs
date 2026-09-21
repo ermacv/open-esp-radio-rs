@@ -136,6 +136,7 @@ pub(crate) struct StoredSymbolArtifact {
     container: String,
     objects: usize,
     skipped_members: usize,
+    members: Vec<crate::artifact::ArtifactMemberOutcome>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -560,7 +561,7 @@ mod tests {
         ));
         std::fs::write(
             &path,
-            r#"{"schema_version":5,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#,
+            r#"{"schema_version":6,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#,
         )
         .unwrap();
         let summary = inspect_symbol_inventory(&path).unwrap();
@@ -577,14 +578,14 @@ mod tests {
             inspect_symbol_inventory(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 5")
+                .contains("expected schema_version 6")
         );
         std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn stored_inventory_rejects_unknown_and_missing_fields() {
-        let input = r#"{"schema_version":5,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#;
+        let input = r#"{"schema_version":6,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#;
         let mut unknown: serde_json::Value = serde_json::from_str(input).unwrap();
         unknown["summary"]["legacy_field"] = serde_json::json!(true);
         let error = parse_symbol_inventory(&unknown.to_string()).unwrap_err();
@@ -602,7 +603,7 @@ mod tests {
     #[test]
     fn generated_inventory_cannot_promote_a_recovery_candidate_to_reviewed() {
         let input = serde_json::json!({
-            "schema_version": 5,
+            "schema_version": 6,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,

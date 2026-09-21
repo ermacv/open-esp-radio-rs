@@ -84,6 +84,7 @@ pub struct ProjectAnalysisPlanReport {
     pub read_only: bool,
     pub status: ProjectAnalysisStatus,
     pub stages: Vec<ProjectAnalysisPlanStage>,
+    pub coverage: Vec<crate::application::CoverageObligation>,
     pub current: usize,
     pub restored: usize,
     pub computed: usize,
@@ -172,7 +173,8 @@ impl ProjectAnalysisPlanner {
 
         let count = |action| stages.iter().filter(|stage| stage.action == action).count();
         ProjectAnalysisPlanReport {
-            schema: 2,
+            coverage: execution.coverage,
+            schema: 3,
             command: "project analyze --plan",
             mode: execution.mode,
             read_only: true,
@@ -258,6 +260,9 @@ pub(super) fn stage_dependencies(
     stage: &str,
 ) -> Vec<String> {
     let mut dependencies = Vec::new();
+    if stage == "analysis-coverage" && !project.ir_profiles.is_empty() {
+        dependencies.push("linked-ir".to_owned());
+    }
     let mut configured = |name: &str, include: bool| {
         if include {
             dependencies.push(name.to_owned());
@@ -434,7 +439,8 @@ mod tests {
             &project(),
             ProjectAnalysisInputs::default(),
             ProjectAnalysisReport {
-                schema: 6,
+                coverage: Vec::new(),
+                schema: 7,
                 command: "project analyze",
                 mode: "write",
                 status: ProjectAnalysisStatus::Failed,

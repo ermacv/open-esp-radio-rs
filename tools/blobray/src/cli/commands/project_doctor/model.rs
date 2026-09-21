@@ -6,9 +6,8 @@ use serde::{Serialize, Serializer, ser::SerializeMap as _};
 
 use crate::application::status::model::{EvidenceFreshness, FollowUpStep, ValidationDepth};
 
-use super::super::{
-    project_function_doctor::FunctionDoctorReport, project_ir_doctor::IrDoctorReport,
-};
+use super::super::project_function_doctor::FunctionDoctorReport;
+use crate::application::project_ir_doctor::IrDoctorReport;
 
 #[derive(Serialize)]
 pub(super) struct DoctorReport {
@@ -58,7 +57,7 @@ impl DoctorReport {
         run_spec: RunSpecReport,
     ) -> Self {
         Self {
-            schema: 4,
+            schema: 5,
             command: "project doctor",
             status: DoctorStatus::Valid,
             validation: DoctorValidation {
@@ -302,6 +301,7 @@ pub(super) struct InputReport {
     pub(super) objects: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) skipped_members: Option<usize>,
+    pub(super) members: Vec<crate::artifact::ArtifactMemberOutcome>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) symbol_facts: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]

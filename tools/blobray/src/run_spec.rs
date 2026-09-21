@@ -150,8 +150,15 @@ impl InputRole {
         }
     }
 
-    pub(crate) const fn expects_archive(&self) -> bool {
-        matches!(self, Self::VendorInventory | Self::SourceInventory(_))
+    /// Source-scoped inputs and global resolver context retain caller order.
+    pub(crate) const fn is_repeatable(&self) -> bool {
+        matches!(
+            self,
+            Self::Companion
+                | Self::SourceArtifact(_)
+                | Self::SourceInventory(_)
+                | Self::SourceCompanion(_)
+        )
     }
 }
 
@@ -227,14 +234,7 @@ impl RunSpec {
                     format!("unsupported input role {:?}", entry.role),
                 ));
             };
-            let repeatable = role == InputRole::Companion
-                || matches!(
-                    role,
-                    InputRole::SourceArtifact(_)
-                        | InputRole::SourceInventory(_)
-                        | InputRole::SourceCompanion(_)
-                );
-            if !repeatable && !unique_roles.insert(role.clone()) {
+            if !role.is_repeatable() && !unique_roles.insert(role.clone()) {
                 return Err(invalid(
                     path,
                     &input,

@@ -15,6 +15,7 @@ pub(crate) struct LinkageArtifact {
     pub(crate) container: artifact::ArtifactContainerKind,
     pub(crate) objects: usize,
     pub(crate) skipped_members: usize,
+    pub(crate) members: Vec<artifact::ArtifactMemberOutcome>,
     pub(crate) code_sections: Vec<LinkageCodeSection>,
 }
 
@@ -258,6 +259,7 @@ pub(crate) fn build_project_linkage_inventory(
             container: inventory.container,
             objects: inventory.objects.len(),
             skipped_members: inventory.skipped_members,
+            members: inventory.members.clone(),
             code_sections: inventory
                 .objects
                 .iter()

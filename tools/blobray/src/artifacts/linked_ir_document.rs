@@ -479,6 +479,16 @@ pub(crate) struct StagedLinkedIrBundle {
 }
 
 impl StagedLinkedIrBundle {
+    pub(crate) fn path(&self) -> &Path {
+        self.root.as_deref().expect("unpublished bundle stage")
+    }
+
+    pub(crate) fn attach_coverage(&mut self, bytes: &[u8]) -> Result<()> {
+        fs::write(self.path().join(super::COVERAGE_FILE), bytes)?;
+        self.bytes += bytes.len() as u64;
+        Ok(())
+    }
+
     pub(crate) const fn bytes(&self) -> u64 {
         self.bytes
     }
@@ -491,6 +501,12 @@ impl StagedLinkedIrBundle {
             if !files_equal(&root.join(name), &actual)? {
                 stale.push(actual);
             }
+        }
+        let coverage = super::COVERAGE_FILE;
+        if root.join(coverage).is_file()
+            && !files_equal(&root.join(coverage), &expected.join(coverage))?
+        {
+            stale.push(expected.join(coverage));
         }
         Ok(stale)
     }
@@ -1544,6 +1560,7 @@ pub(crate) fn render_linked_ir_fixture_with_bindings(
         data_pointer_binding: None,
     };
     let report = LinkedIrReport {
+        root_blockers: Vec::new(),
         functions,
         mmio_registers,
         mmio_functions: 0,

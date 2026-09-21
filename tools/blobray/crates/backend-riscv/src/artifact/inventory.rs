@@ -399,32 +399,56 @@ pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
             let archive = ArchiveFile::parse(data.as_slice())?;
             let mut objects = Vec::new();
             let mut skipped_members = 0usize;
-            for member in archive.members() {
+            let mut members = Vec::new();
+            for (ordinal, member) in archive.members().enumerate() {
                 let member = member?;
+                let name = String::from_utf8_lossy(member.name()).into_owned();
                 let member_data = member.data(data.as_slice())?;
-                if FileKind::parse(member_data) != Ok(FileKind::Elf32) {
+                let (status, reason) = match FileKind::parse(member_data) {
+                    Ok(FileKind::Elf32) => match inspect_object(member_data, Some(name.clone())) {
+                        Ok(object) => {
+                            let status = if object.code_sections.is_empty() {
+                                "non-code"
+                            } else {
+                                "recognized"
+                            };
+                            objects.push(object);
+                            (status, None)
+                        }
+                        Err(error) => ("invalid", Some(error.to_string())),
+                    },
+                    Ok(kind) => (
+                        "unsupported",
+                        Some(format!("unsupported member format: {kind:?}")),
+                    ),
+                    Err(error) => ("unrecognized", Some(error.to_string())),
+                };
+                if reason.is_some() {
                     skipped_members += 1;
-                    continue;
                 }
-                objects.push(inspect_object(
-                    member_data,
-                    Some(String::from_utf8_lossy(member.name()).into_owned()),
-                )?);
+                members.push(super::ArtifactMemberOutcome {
+                    ordinal,
+                    name,
+                    status: status.to_owned(),
+                    reason,
+                });
             }
             if objects.is_empty() {
-                return Err("archive has no RISC-V ELF32 members".into());
+                return Err(format!("archive has no RISC-V ELF32 members: {members:?}").into());
             }
             objects.sort_by(|left, right| left.member.cmp(&right.member));
             Ok(ArtifactInventory {
                 container: ArtifactContainerKind::Archive,
                 objects,
                 skipped_members,
+                members,
             })
         }
         FileKind::Elf32 => Ok(ArtifactInventory {
             container: ArtifactContainerKind::Elf32,
             objects: vec![inspect_object(&data, None)?],
             skipped_members: 0,
+            members: Vec::new(),
         }),
         kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
     }

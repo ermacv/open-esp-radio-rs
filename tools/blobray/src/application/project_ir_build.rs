@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::project_inputs::{ResolvedInputs, resolve_inputs};
 use serde::Serialize;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     linked_ir_export::{self, ProjectIrDocuments},
     project::ProjectSpec,
     project_ir::ProjectIrProfile,
-    run_spec::{InputRole, RunSpec},
+    run_spec::RunSpec,
 };
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -31,12 +32,6 @@ struct BuiltProfileSummary<'a> {
     registers: usize,
     field_candidates: usize,
     documents: usize,
-}
-
-struct ResolvedInputs {
-    artifacts: Vec<(String, PathBuf)>,
-    inventories: Vec<(String, PathBuf)>,
-    companions: Vec<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -153,7 +148,9 @@ fn build_project_ir_impl<'a>(
                 inputs: inputs.artifacts,
                 inventories: inputs.inventories,
                 companions: inputs.companions,
+                source_companions: inputs.source_companions,
                 profile,
+                run_spec,
                 svd,
                 target,
                 effective_code: &effective_code,
@@ -191,7 +188,7 @@ fn build_project_ir_impl<'a>(
             decode_blockers,
             registers,
             field_candidates,
-            documents: 8,
+            documents: 9,
         });
         // A profile creates millions of short-lived analysis objects. Drop its
         // staging state first, then return free allocator pages to the OS before
@@ -252,10 +249,13 @@ fn validate_inputs(profile: &ProjectIrProfile, inputs: &ResolvedInputs) -> Resul
     for (source, path) in &inputs.inventories {
         validate_input_file(profile, format!("source-inventory:{source}"), path)?;
     }
+    for (source, path) in &inputs.source_companions {
+        validate_input_file(profile, format!("source-companion:{source}"), path)?;
+    }
     for path in &inputs.companions {
         validate_input_file(profile, "companion".to_owned(), path)?;
     }
-    Ok(())
+    super::project_inputs::validate_ir_context(inputs)
 }
 
 fn validate_input_file(profile: &ProjectIrProfile, role: String, path: &Path) -> Result<()> {
@@ -309,101 +309,6 @@ fn select_profiles<'a>(
         .collect())
 }
 
-fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<ResolvedInputs> {
-    let bound = run_spec
-        .inputs()
-        .iter()
-        .filter_map(|input| {
-            let InputRole::SourceArtifact(source) = &input.role else {
-                return None;
-            };
-            Some((source.as_str(), &input.path))
-        })
-        .fold(
-            std::collections::BTreeMap::<_, Vec<_>>::new(),
-            |mut bound, (source, path)| {
-                bound.entry(source).or_default().push(path);
-                bound
-            },
-        );
-    let artifacts = if profile.sources.is_empty() {
-        run_spec
-            .inputs()
-            .iter()
-            .filter_map(|input| {
-                let InputRole::SourceArtifact(source) = &input.role else {
-                    return None;
-                };
-                Some((source.to_string(), input.path.clone()))
-            })
-            .collect::<Vec<_>>()
-    } else {
-        profile
-            .sources
-            .iter()
-            .flat_map(|source| match bound.get(source.as_str()) {
-                Some(paths) => paths
-                    .iter()
-                    .map(|path| Ok((source.clone(), (*path).clone())))
-                    .collect::<Vec<_>>(),
-                None => vec![Err(crate::Error::invalid(format!(
-                    "IR profile {:?} requests missing run-spec role source-artifact:{source}",
-                    profile.id
-                )))],
-            })
-            .collect::<Result<Vec<_>>>()?
-    };
-    if artifacts.is_empty() {
-        return Err(crate::Error::invalid(format!(
-            "IR profile {:?} has no source-artifact bindings in the run spec",
-            profile.id
-        )));
-    }
-
-    let mut companions = BTreeSet::new();
-    if artifacts.len() == 1 {
-        for input in run_spec.inputs() {
-            if input.role == InputRole::Companion
-                || matches!(
-                    &input.role,
-                    InputRole::SourceCompanion(source) if source.as_str() == artifacts[0].0
-                )
-            {
-                companions.insert(input.path.clone());
-            }
-        }
-    } else if run_spec
-        .inputs()
-        .iter()
-        .any(|input| input.role == InputRole::Companion)
-    {
-        return Err(crate::Error::invalid(format!(
-            "IR profile {:?} selects multiple sources but the run spec has a global companion",
-            profile.id
-        )));
-    }
-    Ok(ResolvedInputs {
-        artifacts,
-        inventories: run_spec
-            .inputs()
-            .iter()
-            .filter_map(|input| match &input.role {
-                InputRole::SourceInventory(source)
-                    if profile.sources.is_empty()
-                        || profile
-                            .sources
-                            .iter()
-                            .any(|candidate| candidate == source.as_str()) =>
-                {
-                    Some((source.to_string(), input.path.clone()))
-                }
-                _ => None,
-            })
-            .collect(),
-        companions: companions.into_iter().collect(),
-    })
-}
-
 /// Exact caller-owned files that can affect one linked-IR profile. This is
 /// shared with the project-analysis cache so changing one link unit cannot
 /// invalidate every unrelated profile.
@@ -412,12 +317,14 @@ pub(crate) fn profile_input_paths(
     run_spec: &RunSpec,
 ) -> Result<Vec<PathBuf>> {
     let inputs = resolve_inputs(profile, run_spec)?;
+    super::project_inputs::validate_ir_context(&inputs)?;
     let mut paths = inputs
         .artifacts
         .into_iter()
         .map(|(_, path)| path)
         .chain(inputs.inventories.into_iter().map(|(_, path)| path))
         .chain(inputs.companions)
+        .chain(inputs.source_companions.into_iter().map(|(_, path)| path))
         .collect::<Vec<_>>();
     paths.sort();
     paths.dedup();
@@ -489,8 +396,8 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(inputs.artifacts.len(), 1);
         assert_eq!(inputs.artifacts[0].0, "rom");
-        assert_eq!(inputs.companions.len(), 1);
-        assert!(inputs.companions[0].ends_with("archive.elf"));
+        assert_eq!(inputs.source_companions.len(), 1);
+        assert!(inputs.source_companions[0].1.ends_with("archive.elf"));
         assert_eq!(
             combined_inputs
                 .artifacts
@@ -499,7 +406,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["archive", "rom"]
         );
-        assert!(combined_inputs.companions.is_empty());
+        assert_eq!(combined_inputs.source_companions.len(), 2);
+        assert_eq!(combined_inputs.source_companions[0].0, "rom");
+        assert_eq!(combined_inputs.source_companions[1].0, "archive");
     }
 
     #[test]
@@ -544,6 +453,7 @@ mod tests {
             std::env::temp_dir().join(format!("blobray-missing-ir-input-{}", std::process::id()));
         let selected = profile("wifi-lifecycle");
         let inputs = ResolvedInputs {
+            source_companions: Vec::new(),
             artifacts: vec![("libpp".to_owned(), missing.clone())],
             inventories: Default::default(),
             companions: Vec::new(),
@@ -618,11 +528,11 @@ mod tests {
 
         assert_eq!(
             inputs
-                .companions
+                .source_companions
                 .iter()
-                .map(|path| path.file_name().unwrap().to_str().unwrap())
+                .map(|(_, path)| path.file_name().unwrap().to_str().unwrap())
                 .collect::<Vec<_>>(),
-            ["libphy.a", "rom.elf"]
+            ["rom.elf", "libphy.a"]
         );
     }
 }

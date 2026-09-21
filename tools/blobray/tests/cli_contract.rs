@@ -599,7 +599,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
     let report = &document;
-    assert_eq!(report["schema"], 4);
+    assert_eq!(report["schema"], 5);
     assert_eq!(report["command"], "project doctor");
     assert_eq!(report["status"], "valid-with-warnings");
     assert_eq!(report["validation"]["depth"], "deep");
@@ -1726,7 +1726,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 6);
+    assert_eq!(document["schema"], 7);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
@@ -1799,13 +1799,13 @@ fn project_analysis_plan_is_deterministic_and_read_only_when_blocked() {
     assert_eq!(first.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&first.stdout).expect("analysis plan stdout must be valid JSON");
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
     assert_eq!(document["command"], "project analyze --plan");
     assert_eq!(document["mode"], "write");
     assert_eq!(document["read_only"], true);
     assert_eq!(document["status"], "failed");
     let stages = document["stages"].as_array().unwrap();
-    assert_eq!(stages.len(), 15);
+    assert_eq!(stages.len(), 16);
     assert_eq!(stages[0]["order"], 1);
     assert_eq!(stages[0]["name"], "symbol-inventory");
     assert_eq!(stages[0]["action"], "blocked");
@@ -2179,7 +2179,7 @@ fn project_analysis_plan_distinguishes_current_and_restorable_outputs_without_re
         String::from_utf8_lossy(&restored.stderr)
     );
     let restored: serde_json::Value = serde_json::from_slice(&restored.stdout).unwrap();
-    assert_eq!(restored["schema"], 6);
+    assert_eq!(restored["schema"], 7);
     assert_eq!(restored["written"], 0);
     assert_eq!(restored["restored"], 1);
     assert_eq!(restored["up-to-date"], 0);
@@ -2243,7 +2243,7 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     assert_eq!(json.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 6);
+    assert_eq!(document["schema"], 7);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["status"], "nothing-configured");
     assert_eq!(document["not-configured"], 15);
@@ -2263,7 +2263,7 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
 }
 
 #[test]
-fn project_inputs_validate_elf_and_archive_roles_before_writing() {
+fn project_inputs_accept_archives_and_analyze_the_saved_run_spec() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-project-inputs-contract-{}",
         std::process::id()
@@ -2306,8 +2306,23 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["bindings"][0]["container"], "elf32");
     assert_eq!(report["bindings"][1]["container"], "archive");
+    assert_success(&run_project_command(
+        &manifest,
+        &["advanced", "ir", "build"],
+    ));
+    let elf_index: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(directory.join("generated/fixture.ir/function-index.json")).unwrap(),
+    )
+    .unwrap();
+    let elf_symbols = elf_index["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["symbol"].as_str().unwrap().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(elf_symbols.contains("fixture_entry"));
 
-    let invalid = blobray()
+    let initialized = blobray()
         .current_dir(repository_root())
         .args(["project", "inputs", "init", "--force", "--project"])
         .arg(&manifest)
@@ -2315,10 +2330,36 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
         .arg(format!("source-artifact:fixture={}", archive.display()))
         .args(["--format", "json", "--color", "never"])
         .output()
-        .expect("reject archive bound as a linked artifact");
-    assert!(!invalid.status.success());
-    assert!(invalid.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&invalid.stderr).contains("requires elf32"));
+        .expect("bind archive as an explicit primary artifact");
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let analyzed = run_project_command(&manifest, &["advanced", "ir", "build"]);
+    assert!(
+        analyzed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&analyzed.stderr)
+    );
+    let index: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(directory.join("generated/fixture.ir/function-index.json")).unwrap(),
+    )
+    .unwrap();
+    let records = index["records"].as_array().unwrap();
+    assert_eq!(
+        elf_symbols,
+        records
+            .iter()
+            .map(|record| record["symbol"].as_str().unwrap().to_owned())
+            .collect()
+    );
+    assert!(!records.is_empty());
+    assert!(
+        records
+            .iter()
+            .all(|record| record["source"] == "fixture" && record["member"] == "vendor.o")
+    );
 
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -2466,7 +2507,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
-        assert_eq!(document["schema"], 6);
+        assert_eq!(document["schema"], 7);
         assert_eq!(document["command"], "project analyze");
         assert_eq!(document["status"], "ok");
         let measured_total = document["stages"]
@@ -2628,7 +2669,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
-    assert_eq!(document["schema_version"], 5);
+    assert_eq!(document["schema_version"], 6);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
     assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);
@@ -3141,4 +3182,370 @@ fn revision_snapshot_creates_a_durable_immutable_state() {
         "ready"
     );
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+fn coverage_project(directory: &Path, profile: &str) -> PathBuf {
+    let manifest = directory.join("vendor-project.toml");
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    std::fs::write(&manifest, format!(
+        "schema = 4\nid = \"coverage-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[[analysis.public-symbol-families]]\nid = \"required-api\"\nprotocols = [\"wifi\"]\nsource = \"fixture\"\nsymbol-prefix = \"fixture_\"\ndisposition = \"required\"\nprofile = \"fixture\"\n{profile}", target.display().to_string()
+    )).unwrap();
+    manifest
+}
+
+const COVERAGE_PROFILE: &str = "\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n";
+
+fn bind_coverage_inputs(manifest: &Path, bindings: &[(&str, &Path)]) -> Output {
+    let mut command = blobray();
+    command
+        .args(["project", "inputs", "init", "--force", "--project"])
+        .arg(manifest);
+    for (role, path) in bindings {
+        command
+            .arg("--bind")
+            .arg(format!("{role}={}", path.display()));
+    }
+    command
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .unwrap()
+}
+
+fn assert_success(output: &Output) {
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn named_archive(path: &Path, name: &str) {
+    assert_eq!(name.len(), "fixture_entry".len());
+    write_rv32_archive_fixture(path);
+    let mut bytes = std::fs::read(path).unwrap();
+    let offset = bytes
+        .windows(13)
+        .position(|value| value == b"fixture_entry")
+        .unwrap();
+    bytes[offset..offset + 13].copy_from_slice(name.as_bytes());
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn ordered_archives_and_scoped_companions_survive_cold_and_warm_analysis() {
+    let directory = tempfile::tempdir().unwrap();
+    let profile = COVERAGE_PROFILE.replace(
+        "sources = [\"fixture\"]",
+        "sources = [\"fixture\", \"context\"]",
+    );
+    let manifest = coverage_project(directory.path(), &profile);
+    let first = directory.path().join("z-first.a");
+    let second = directory.path().join("a-second.a");
+    let companion = directory.path().join("context.o");
+    let context = directory.path().join("context.elf");
+    write_rv32_e2e_fixture(&context);
+    named_archive(&first, "fixture_entry");
+    named_archive(&second, "fixture_other");
+    write_rv32_symbol_fixture(&companion);
+    let initialized = bind_coverage_inputs(
+        &manifest,
+        &[
+            ("source-artifact:fixture", &first),
+            ("source-artifact:fixture", &second),
+            ("source-artifact:context", &context),
+            ("source-companion:context", &companion),
+            ("source-inventory:fixture", &first),
+            ("source-inventory:fixture", &second),
+        ],
+    );
+    assert_success(&initialized);
+    let saved = std::fs::read_to_string(directory.path().join("local.toml")).unwrap();
+    assert!(saved.find("z-first.a").unwrap() < saved.find("a-second.a").unwrap());
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    let bundle = directory.path().join("generated/fixture.ir");
+    let cold = snapshot_tree(&bundle);
+    let coverage: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("coverage.json")).unwrap()).unwrap();
+    let roots = coverage["roots"].as_array().unwrap();
+    assert!(roots.iter().any(|root| root["symbol"] == "fixture_entry"));
+    assert!(roots.iter().any(|root| root["symbol"] == "fixture_other"));
+    assert!(
+        roots
+            .iter()
+            .all(|root| root["outcome"] == "analyzed" || root["outcome"] == "blocked")
+    );
+    assert_eq!(coverage["inputs"][0]["path"], first.display().to_string());
+    assert_eq!(coverage["inputs"][1]["path"], second.display().to_string());
+    assert!(
+        coverage["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|input| input["role"] == "source-companion:context")
+    );
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    assert_eq!(
+        cold,
+        snapshot_tree(&bundle),
+        "warm cache changed results or blockers"
+    );
+    assert_success(&run_project_command(
+        &manifest,
+        &["project", "analyze", "--check"],
+    ));
+    let mut bytes = std::fs::read(&companion).unwrap();
+    bytes.extend_from_slice(b"companion identity changed");
+    std::fs::write(&companion, bytes).unwrap();
+    let stale = run_project_command(&manifest, &["project", "status", "--deny-incomplete"]);
+    assert!(!stale.status.success());
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    assert_ne!(
+        cold,
+        snapshot_tree(&bundle),
+        "companion change did not invalidate evidence"
+    );
+    assert_success(&run_project_command(
+        &manifest,
+        &["project", "analyze", "--check"],
+    ));
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[
+            ("source-artifact:fixture", &second),
+            ("source-artifact:fixture", &first),
+            ("source-artifact:context", &context),
+            ("source-companion:context", &companion),
+        ],
+    ));
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    let reordered: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("coverage.json")).unwrap()).unwrap();
+    assert_eq!(reordered["inputs"][0]["path"], second.display().to_string());
+}
+
+#[test]
+fn required_sources_profiles_and_every_matching_root_are_gate_obligations() {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), "");
+    let first = directory.path().join("first.a");
+    let second = directory.path().join("second.a");
+    named_archive(&first, "fixture_entry");
+    named_archive(&second, "fixture_other");
+    // A required declaration is known even before its profile exists.
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[
+            ("source-artifact:fixture", &first),
+            ("source-artifact:fixture", &second),
+        ],
+    ));
+    for args in [
+        vec!["project", "analyze", "--plan"],
+        vec!["project", "analyze"],
+        vec!["project", "doctor"],
+        vec!["project", "check"],
+    ] {
+        let output = run_project_command(&manifest, &args);
+        assert!(!output.status.success(), "missing profile passed {args:?}");
+        if args == ["project", "check"] {
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+                .expect("check retains coverage diagnostics when other stages cannot run");
+            assert!(
+                report["stages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|stage| stage["name"] == "analysis"
+                        && stage["issues"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|issue| issue["reason"]
+                                .as_str()
+                                .unwrap()
+                                .contains("required IR profile")))
+            );
+        }
+    }
+    coverage_project(directory.path(), COVERAGE_PROFILE);
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    // Removing one required function cannot be hidden by a nonempty bundle.
+    let index_path = directory
+        .path()
+        .join("generated/fixture.ir/function-index.json");
+    let mut index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+    index["records"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|record| record["symbol"] != "fixture_other");
+    assert!(!index["records"].as_array().unwrap().is_empty());
+    std::fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    let partial = run_project_command(&manifest, &["project", "status", "--deny-incomplete"]);
+    assert!(!partial.status.success());
+    assert!(String::from_utf8_lossy(&partial.stdout).contains("product"));
+    assert!(
+        !run_project_command(&manifest, &["project", "analyze", "--check"])
+            .status
+            .success()
+    );
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    coverage_project(directory.path(), COVERAGE_PROFILE);
+    let contents = std::fs::read_to_string(&manifest).unwrap().replace(
+        "symbol-prefix = \"fixture_\"",
+        "symbol-prefix = \"absent_\"",
+    );
+    std::fs::write(&manifest, contents).unwrap();
+    let empty = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(!empty.status.success());
+    assert!(String::from_utf8_lossy(&empty.stdout).contains("matched zero"));
+    // Inventory is readable but cannot silently become a primary source.
+    let local = directory.path().join("local.toml");
+    let contents = std::fs::read_to_string(&local)
+        .unwrap()
+        .replace("source-artifact:", "source-inventory:");
+    std::fs::write(local, contents).unwrap();
+    for args in [
+        vec!["project", "analyze"],
+        vec!["project", "analyze", "--plan"],
+        vec!["project", "doctor"],
+        vec!["project", "check"],
+    ] {
+        assert!(
+            !run_project_command(&manifest, &args).status.success(),
+            "inventory-only source passed {args:?}"
+        );
+    }
+}
+
+#[test]
+fn unsupported_archive_members_are_named_and_cannot_pass_coverage() {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), COVERAGE_PROFILE);
+    let archive = directory.path().join("mixed.a");
+    write_rv32_archive_fixture(&archive);
+    let mut bytes = std::fs::read(&archive).unwrap();
+    let payload = b"not an object!";
+    writeln!(
+        bytes,
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+        "unknown.bc/",
+        0,
+        0,
+        0,
+        "100644",
+        payload.len()
+    )
+    .unwrap();
+    bytes.extend_from_slice(payload);
+    if !payload.len().is_multiple_of(2) {
+        bytes.push(b'\n');
+    }
+    std::fs::write(&archive, bytes).unwrap();
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[("source-artifact:fixture", &archive)],
+    ));
+    let analyzed = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(!analyzed.status.success());
+    assert!(String::from_utf8_lossy(&analyzed.stdout).contains("unknown.bc"));
+    let doctor = run_project_command(&manifest, &["project", "doctor"]);
+    assert!(!doctor.status.success());
+    assert!(String::from_utf8_lossy(&doctor.stdout).contains("unknown.bc"));
+    let inventory: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(directory.path().join("generated/symbols.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        inventory["artifacts"][0]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|member| member["name"] == "unknown.bc" && member["status"] == "unrecognized")
+    );
+}
+
+#[test]
+fn input_binding_rejects_wrong_architecture_and_corruption_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), COVERAGE_PROFILE);
+    let path = directory.path().join("invalid.o");
+    write_rv32_symbol_fixture(&path);
+    let mut bytes = std::fs::read(&path).unwrap();
+    // ELF e_machine = EM_386, while retaining a parseable ELF32 object.
+    bytes[18..20].copy_from_slice(&3_u16.to_le_bytes());
+    std::fs::write(&path, &bytes).unwrap();
+    assert!(
+        !bind_coverage_inputs(&manifest, &[("source-artifact:fixture", &path)])
+            .status
+            .success()
+    );
+    assert!(!directory.path().join("local.toml").exists());
+    std::fs::write(&path, b"\x7fELF\x01\x01\x01").unwrap();
+    assert!(
+        !bind_coverage_inputs(&manifest, &[("source-artifact:fixture", &path)])
+            .status
+            .success()
+    );
+    assert!(!directory.path().join("local.toml").exists());
+}
+
+#[test]
+fn damaged_archive_object_has_a_named_diagnostic_despite_readable_neighbors() {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), COVERAGE_PROFILE);
+    let archive = directory.path().join("damaged.a");
+    write_rv32_archive_fixture(&archive);
+    let mut bytes = std::fs::read(&archive).unwrap();
+    let mut damaged = vec![0_u8; 64];
+    damaged[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
+    writeln!(
+        bytes,
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+        "broken.o/",
+        0,
+        0,
+        0,
+        "100644",
+        damaged.len()
+    )
+    .unwrap();
+    bytes.extend_from_slice(&damaged);
+    std::fs::write(&archive, bytes).unwrap();
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[("source-artifact:fixture", &archive)],
+    ));
+    let doctor = run_project_command(&manifest, &["project", "doctor"]);
+    assert!(!doctor.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert!(
+        report["inputs"][0]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|member| member["name"] == "broken.o" && member["status"] == "invalid")
+    );
+}
+
+#[test]
+fn archive_companion_limit_belongs_to_reference_resolution_not_binding() {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), COVERAGE_PROFILE);
+    let archive = directory.path().join("primary.a");
+    let companion = directory.path().join("context.elf");
+    write_rv32_archive_fixture(&archive);
+    write_rv32_e2e_fixture(&companion);
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[
+            ("source-artifact:fixture", &archive),
+            ("source-companion:fixture", &companion),
+        ],
+    ));
+    let analysis = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(!analysis.status.success());
+    assert!(String::from_utf8_lossy(&analysis.stdout).contains("IR reference resolution"));
+    assert!(String::from_utf8_lossy(&analysis.stdout).contains("source"));
 }

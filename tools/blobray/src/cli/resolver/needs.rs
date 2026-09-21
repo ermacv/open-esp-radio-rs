@@ -115,7 +115,7 @@ impl ResolutionNeeds {
             Command::ProjectVerify(_) => Self::new(true, true, false, true, true, true, true)
                 .with_review_context()
                 .with_configured_knowledge_provider(),
-            Command::ProjectCheck(_) => Self::new(true, true, false, true, true, true, true)
+            Command::ProjectCheck(_) => Self::new(true, true, false, false, true, true, true)
                 .with_review_context()
                 .with_configured_knowledge_provider(),
             Command::ProjectPublish(_) => {

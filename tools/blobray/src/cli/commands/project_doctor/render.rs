@@ -145,6 +145,16 @@ fn human(report: &DoctorReport) {
             },
         )
     }));
+    issues.extend(report.inputs.iter().flat_map(|input| {
+        input.members.iter().filter_map(move |member| {
+            member.reason.as_ref().map(|reason| {
+                format!(
+                    "{} member #{} {:?}: {}: {reason}",
+                    input.role, member.ordinal, member.name, member.status
+                )
+            })
+        })
+    }));
     issues.sort();
     issues.dedup();
     if !issues.is_empty() {

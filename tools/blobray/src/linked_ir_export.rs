@@ -40,7 +40,9 @@ pub(crate) struct ProjectProfileRequest<'a, 'cache> {
     pub(crate) inputs: Vec<(String, PathBuf)>,
     pub(crate) inventories: Vec<(String, PathBuf)>,
     pub(crate) companions: Vec<PathBuf>,
+    pub(crate) source_companions: Vec<(String, PathBuf)>,
     pub(crate) profile: &'a ProjectIrProfile,
+    pub(crate) run_spec: &'a crate::run_spec::RunSpec,
     pub(crate) svd: &'a MmioMap,
     pub(crate) target: &'a TargetSpec,
     pub(crate) effective_code: &'a crate::analysis::EffectiveCodeCatalog,
@@ -58,7 +60,9 @@ pub(crate) fn generate_project_profile(
         inputs,
         inventories,
         companions,
+        source_companions,
         profile,
+        run_spec,
         svd,
         target,
         effective_code,
@@ -74,6 +78,11 @@ pub(crate) fn generate_project_profile(
         .map(|(source, path)| named_artifact_path(&source, path))
         .collect::<Result<Vec<_>>>()?;
     for artifact in &mut artifacts {
+        artifact.companions = source_companions
+            .iter()
+            .filter(|(source, _)| source == &artifact.source)
+            .map(|(_, path)| path.clone())
+            .collect();
         artifact.reviewed_code =
             effective_code.reviewed_ranges(&artifact.source, &artifact.path)?;
     }
@@ -105,7 +114,11 @@ pub(crate) fn generate_project_profile(
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
         &inventories,
-        &companions,
+        &companions
+            .iter()
+            .chain(source_companions.iter().map(|(_, path)| path))
+            .cloned()
+            .collect::<Vec<_>>(),
         profile.roots.symbol_prefix(),
         entry_contract,
         crate::artifacts::LinkedIrPublication {
@@ -114,7 +127,10 @@ pub(crate) fn generate_project_profile(
         },
         profile.include_reachable,
     )?;
-    let bundle = crate::artifacts::stage_linked_ir_bundle(&profile.output, &document)?;
+    let mut bundle = crate::artifacts::stage_linked_ir_bundle(&profile.output, &document)?;
+    let coverage = crate::application::coverage::build(profile, run_spec, &report)?;
+    let coverage = crate::application::coverage::seal(coverage, bundle.path())?;
+    bundle.attach_coverage(&coverage)?;
     tracing::debug!(
         profile = profile.id,
         functions = report.functions.len(),
@@ -180,9 +196,14 @@ pub(crate) fn analyze(
             .filter(|(source, _)| source == &artifact.source)
             .map(|(_, path)| path.as_path())
             .collect::<Vec<_>>();
+        let resolver_companions = companions
+            .iter()
+            .chain(&artifact.companions)
+            .cloned()
+            .collect::<Vec<_>>();
         let mut resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
             &artifact.path,
-            companions,
+            &resolver_companions,
             riscv_harness,
             entry_contract,
             &artifact.reviewed_code,

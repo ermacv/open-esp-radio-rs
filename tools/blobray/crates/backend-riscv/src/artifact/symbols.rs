@@ -180,7 +180,8 @@ pub(super) fn load_code_symbols_from_data(
                         prefix,
                         selection,
                         &mut symbols,
-                    )?;
+                    )
+                    .map_err(|error| format!("archive member {name:?}: {error}"))?;
                 }
             }
         }

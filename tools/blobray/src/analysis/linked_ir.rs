@@ -785,7 +785,24 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
         "completed direct linked-IR function analysis"
     );
     let summary_started = std::time::Instant::now();
-    let report = summarize_linked_ir_with_options(functions, jobs, compact_projected_actions);
+    let mut report = summarize_linked_ir_with_options(functions, jobs, compact_projected_actions);
+    if symbol_prefix.is_empty() {
+        report.root_blockers = resolver
+            .symbols
+            .iter()
+            .filter(|symbol| opaque_semantic_boundary(resolver, symbol))
+            .map(|symbol| model::LinkedIrRootBlocker {
+                source: source.to_owned(),
+                artifact_sha256: artifact_sha256.to_owned(),
+                member: symbol.member.clone(),
+                symbol: symbol.name.clone(),
+                address: symbol.address,
+                reason:
+                    "opaque semantic boundary: body is not analyzed by the artifact-wide profile"
+                        .to_owned(),
+            })
+            .collect();
+    }
     tracing::debug!(
         source,
         functions = report.functions.len(),
@@ -1315,6 +1332,10 @@ pub(crate) fn merge_linked_ir_with_options(
     if reports.len() == 1 {
         return reports.pop().expect("one linked-IR report is present");
     }
+    let root_blockers = reports
+        .iter_mut()
+        .flat_map(|report| std::mem::take(&mut report.root_blockers))
+        .collect();
     let mut functions = reports
         .into_iter()
         .flat_map(|report| report.functions)
@@ -1322,7 +1343,9 @@ pub(crate) fn merge_linked_ir_with_options(
     for function in &mut functions {
         function.effect_summary = LinkedEffectSummary::default();
     }
-    summarize_linked_ir_with_options(functions, jobs, compact_projected_actions)
+    let mut report = summarize_linked_ir_with_options(functions, jobs, compact_projected_actions);
+    report.root_blockers = root_blockers;
+    report
 }
 
 pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {

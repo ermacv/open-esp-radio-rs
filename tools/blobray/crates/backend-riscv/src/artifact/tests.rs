@@ -892,3 +892,45 @@ fn artifact_inventory_reports_executable_bytes_without_sized_symbol_coverage() {
         ArtifactDirectControlFlowKind::Call
     );
 }
+
+#[test]
+fn archive_inventory_distinguishes_non_code_payloads_from_unknown_members() {
+    use object::{Architecture, BinaryFormat, Endianness, write::Object};
+    use std::io::Write as _;
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let section = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
+    object.append_section_data(section, &[1, 2, 3, 4], 4);
+    let data = object.write().unwrap();
+    let mut archive = b"!<arch>\n".to_vec();
+    for (name, bytes) in [
+        ("data.o/", data.as_slice()),
+        ("unknown.bin/", b"unclassified".as_slice()),
+    ] {
+        writeln!(
+            archive,
+            "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+            name,
+            0,
+            0,
+            0,
+            "100644",
+            bytes.len()
+        )
+        .unwrap();
+        archive.extend_from_slice(bytes);
+        if !bytes.len().is_multiple_of(2) {
+            archive.push(b'\n');
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("inventory.a");
+    std::fs::write(&path, archive).unwrap();
+    let inventory = inspect_artifact(&path).unwrap();
+    assert_eq!(inventory.members[0].name, "data.o");
+    assert_eq!(inventory.members[0].status, "non-code");
+    assert!(inventory.members[0].reason.is_none());
+    assert_eq!(inventory.members[1].name, "unknown.bin");
+    assert_eq!(inventory.members[1].status, "unrecognized");
+    assert!(inventory.members[1].reason.is_some());
+    assert_eq!(inventory.skipped_members, 1);
+}

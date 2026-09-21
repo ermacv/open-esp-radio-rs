@@ -8,6 +8,7 @@ use crate::{Result, source_id::is_source_id};
 pub(crate) struct IrArtifactInput {
     pub(crate) source: String,
     pub(crate) path: PathBuf,
+    pub(crate) companions: Vec<PathBuf>,
     pub(crate) reviewed_code: Vec<crate::artifact::ReviewedCodeRange>,
 }
 
@@ -29,6 +30,7 @@ pub(crate) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtif
         source: source.to_owned(),
         path,
         reviewed_code: Vec::new(),
+        companions: Vec::new(),
     })
 }
 

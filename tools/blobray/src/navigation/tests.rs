@@ -22,7 +22,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &symbols_path,
         serde_json::to_string(&json!({
-            "schema_version": 5,
+            "schema_version": 6,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,
@@ -33,7 +33,8 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "sources": ["vendor"],
                 "container": "object",
                 "objects": 1,
-                "skipped_members": 0
+                "skipped_members": 0,
+                "members": []
             }],
             "code_sections": [],
             "symbols": [

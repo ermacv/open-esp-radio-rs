@@ -298,6 +298,31 @@ fn opaque_runtime_body_is_not_an_artifact_wide_analysis_root() {
     resolver.pointer_context.summary_hooks = Some(hooks);
 
     assert!(opaque_semantic_boundary(&resolver, &runtime));
+    resolver.symbols.push(runtime);
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        },
+        LinkedIrSourceOptions {
+            symbol_prefix: "",
+            source: "vendor",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
+            namespace_identities: true,
+            include_reachable: true,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
+    assert!(report.functions.is_empty());
+    assert_eq!(report.root_blockers.len(), 1);
+    assert_eq!(report.root_blockers[0].symbol, "memcpy");
+    assert!(
+        report.root_blockers[0]
+            .reason
+            .contains("opaque semantic boundary")
+    );
 }
 
 #[test]

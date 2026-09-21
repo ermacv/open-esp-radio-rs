@@ -30,6 +30,7 @@ pub(super) fn run(
             source: value.source.into_string(),
             path: value.path,
             reviewed_code: Vec::new(),
+            companions: Vec::new(),
         })
         .collect::<Vec<_>>();
     let effective_code = project

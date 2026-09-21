@@ -212,6 +212,7 @@ fn bounded_assignment_document(directory: &Path) -> serde_json::Value {
                 container: ArtifactContainerKind::Elf32,
                 objects: 1,
                 skipped_members: 0,
+                members: Vec::new(),
                 code_sections: Vec::new(),
             }],
             symbols: Vec::new(),

@@ -244,6 +244,7 @@ pub(super) fn summarize_linked_ir_with_options(
         .collect();
 
     LinkedIrReport {
+        root_blockers: Vec::new(),
         functions,
         mmio_registers,
         mmio_functions,

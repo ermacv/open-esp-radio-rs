@@ -33,6 +33,7 @@ struct ArtifactDocument {
     container: &'static str,
     objects: usize,
     skipped_members: usize,
+    members: Vec<crate::artifact::ArtifactMemberOutcome>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -189,6 +190,7 @@ pub(crate) fn build_symbol_inventory_document(
                     container: artifact.container.label(),
                     objects: artifact.objects,
                     skipped_members: artifact.skipped_members,
+                    members: artifact.members.clone(),
                 })
             })
             .collect::<crate::Result<Vec<_>>>()?,

@@ -399,11 +399,21 @@ pub struct ArtifactObjectInventory {
     pub symbols: Vec<ArtifactSymbolFact>,
 }
 
+/// Named accounting for archive payloads; unknown bytes never imply non-code.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ArtifactMemberOutcome {
+    pub ordinal: usize,
+    pub name: String,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactInventory {
     pub container: ArtifactContainerKind,
     pub objects: Vec<ArtifactObjectInventory>,
     pub skipped_members: usize,
+    pub members: Vec<ArtifactMemberOutcome>,
 }
 
 impl ArtifactInventory {

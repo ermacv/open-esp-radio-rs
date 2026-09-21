@@ -165,7 +165,8 @@ mod tests {
     #[test]
     fn plan_document_keeps_order_dependencies_and_actions_typed() {
         let document = ProjectAnalysisPlanReport {
-            schema: 2,
+            coverage: Vec::new(),
+            schema: 3,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,
@@ -201,7 +202,8 @@ mod tests {
     #[test]
     fn detail_rows_keep_every_profile_and_all_work_item_fields() {
         let document = ProjectAnalysisPlanReport {
-            schema: 2,
+            coverage: Vec::new(),
+            schema: 3,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,

@@ -20,6 +20,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                 container: None,
                 objects: None,
                 skipped_members: None,
+                members: Vec::new(),
                 symbol_facts: None,
                 code_definitions: None,
                 exported_definitions: None,
@@ -49,7 +50,10 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                         fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined
                     })
                     .count();
-                let status = if symbol_facts == 0 {
+                let status = if inventory.skipped_members != 0 {
+                    report.error();
+                    "incomplete-members"
+                } else if symbol_facts == 0 {
                     report.absorb(0, 1);
                     "readable-no-symbols"
                 } else {
@@ -62,6 +66,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     container: Some(inventory.container.label()),
                     objects: Some(inventory.objects.len()),
                     skipped_members: Some(inventory.skipped_members),
+                    members: inventory.members,
                     symbol_facts: Some(symbol_facts),
                     code_definitions: Some(code_definitions),
                     exported_definitions: Some(exported_definitions),
@@ -78,6 +83,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     container: None,
                     objects: None,
                     skipped_members: None,
+                    members: Vec::new(),
                     symbol_facts: None,
                     code_definitions: None,
                     exported_definitions: None,

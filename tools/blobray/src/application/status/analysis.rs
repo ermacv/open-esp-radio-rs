@@ -20,12 +20,14 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         );
         component
     }
+    let obligations = crate::application::coverage::inspect(context.project, context.run_spec);
     Phase::collect(
         "analysis",
         vec![
             component("symbol_inventory", || symbol_inventory(context)),
             component("linked_ir", || linked_ir(context)),
-            component("radio_surfaces", || radio_surfaces(context)),
+            component("radio_surfaces", || radio_surfaces(context, &obligations)),
+            component("coverage", || coverage(&obligations)),
             component("event_replays", || event_replays(context)),
             component("mmio_facts", || mmio_facts(context)),
             component("interface_facts", || interface_facts(context)),
@@ -34,7 +36,35 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     )
 }
 
-fn radio_surfaces(context: &ProjectContext<'_>) -> Component {
+fn coverage(obligations: &[crate::application::CoverageObligation]) -> Component {
+    let issues = obligations
+        .iter()
+        .flat_map(|item| {
+            item.issues
+                .iter()
+                .map(|issue| format!("{}: {issue}", item.id))
+        })
+        .collect::<Vec<_>>();
+    let status = if obligations.is_empty() {
+        Readiness::NotConfigured
+    } else if issues.is_empty() {
+        Readiness::Ready
+    } else {
+        Readiness::Incomplete
+    };
+    Component::new("coverage", status)
+        .detail(
+            "validation",
+            "digest-bound coverage; no decoding or comparison",
+        )
+        .detail("obligations", obligations.len())
+        .detail("issues", issues)
+}
+
+fn radio_surfaces(
+    context: &ProjectContext<'_>,
+    coverage: &[crate::application::CoverageObligation],
+) -> Component {
     let mut profile_protocols = std::collections::BTreeMap::<String, BTreeSet<String>>::new();
     if let Some(review) = &context.project.review {
         for scope in &review.scopes {
@@ -147,90 +177,41 @@ fn radio_surfaces(context: &ProjectContext<'_>) -> Component {
         let source_available = available_sources.contains(&family.source);
         match family.disposition {
             crate::project::AnalysisSymbolFamilyDisposition::Required => {
-                let matched_symbols = if source_available {
-                    inventory
-                        .as_ref()
-                        .map(|inventory| {
-                            let artifact_sources = inventory
-                                .artifacts
-                                .iter()
-                                .map(|artifact| {
-                                    (
-                                        artifact.index,
-                                        artifact.sources.iter().cloned().collect::<BTreeSet<_>>(),
-                                    )
-                                })
-                                .collect::<std::collections::BTreeMap<_, _>>();
-                            let symbols = inventory
-                                .symbols
-                                .iter()
-                                .map(|symbol| (symbol.artifact, symbol.name.clone()))
-                                .collect::<Vec<_>>();
-                            matching_symbol_identities(
-                                &family.source,
-                                &family.symbol_prefix,
-                                &artifact_sources,
-                                &symbols,
-                            )
-                        })
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
-                let profile = family.profile.as_ref().and_then(|expected| {
-                    context
-                        .project
-                        .ir_profiles
-                        .iter()
-                        .find(|profile| &profile.id == expected)
-                });
-                let (status, output, error) = if !source_available {
-                    ("missing-vendor-artifact", None, None)
-                } else if inventory.is_none() {
-                    (
-                        "unverified-required-family",
-                        None,
-                        Some(inventory_error.clone().unwrap_or_else(|| {
-                            "symbol inventory is unavailable; required family matches are unverified"
-                                .to_owned()
-                        })),
-                    )
-                } else if matched_symbols.is_empty() {
-                    (
-                        "stale-required-family",
-                        None,
-                        Some(
-                            "required public symbol prefix matched zero inventory symbols"
-                                .to_owned(),
-                        ),
-                    )
-                } else if let Some(profile) = profile {
-                    if !profile.output.is_dir() {
-                        (
-                            "missing-profile",
-                            Some(profile.output.display().to_string()),
-                            None,
+                let obligation = coverage
+                    .iter()
+                    .find(|item| item.id == family.id)
+                    .expect("required declaration");
+                let matched_symbols = obligation
+                    .roots
+                    .iter()
+                    .map(|root| {
+                        format!(
+                            "{}:{}:{:?}:{}@{:#x}",
+                            root.source,
+                            root.artifact_sha256,
+                            root.member,
+                            root.symbol,
+                            root.address
                         )
-                    } else {
-                        match inspect_linked_ir(&profile.output) {
-                            Ok(summary) if summary.functions != 0 => {
-                                ("analyzed", Some(profile.output.display().to_string()), None)
-                            }
-                            Ok(_) => (
-                                "invalid-profile",
-                                Some(profile.output.display().to_string()),
-                                Some("linked-IR profile contains zero functions".to_owned()),
-                            ),
-                            Err(error) => (
-                                "invalid-profile",
-                                Some(profile.output.display().to_string()),
-                                Some(error.to_string()),
-                            ),
-                        }
-                    }
+                    })
+                    .collect();
+                let status = if obligation.complete() {
+                    "analyzed"
                 } else {
-                    ("missing-profile", None, None)
+                    "unverified-required-family"
                 };
+                let output = family
+                    .profile
+                    .as_ref()
+                    .and_then(|id| {
+                        context
+                            .project
+                            .ir_profiles
+                            .iter()
+                            .find(|profile| &profile.id == id)
+                    })
+                    .map(|profile| profile.output.display().to_string());
+                let error = (!obligation.complete()).then(|| obligation.issues.join("; "));
                 surfaces.push(AnalysisSurfaceDetail {
                     id: family.id.clone(),
                     protocols: family.protocols.clone(),

@@ -450,13 +450,13 @@ source = "libpp"
 artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
 symbols = ["hal_mac_txq_enable", "hal_mac_clr_txq_state", "hal_mac_txq_disable"]
 
-# Ordinary preparation retains CTS while clearing the software RTS request.
+# Bounded RTS request/HE byte-threshold edges; not an on-air protection claim.
 [[suites]]
 id = "tx-protection-control"
 model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 # The cold-init probe belongs to the separate private-input parent-edge test.
-rust-prefix = "open_tx_protection_clear_"
+rust-prefix = "open_tx_protection_control_"
 profiles = ["profiles/tx-protection-control.toml"]
 dispositions = ["dispositions/tx-protection-control.toml"]
 baselines = []
@@ -464,4 +464,4 @@ gate = "completion"
 [[suites.vendor]]
 source = "libpp"
 artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
-symbols = ["hal_he_set_tx_protection"]
+symbols = ["hal_he_set_tx_protection", "hal_he_disable_rts_threshold"]

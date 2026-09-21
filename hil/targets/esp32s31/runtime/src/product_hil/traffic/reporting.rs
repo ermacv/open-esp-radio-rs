@@ -206,6 +206,13 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     ))
     .await;
     yield_now().await;
+    let ordinary = aggregate.station_ordinary;
+    runtime_log_reliably(format_args!(
+        "OTXR scope=station reported={} missing={} success={} cts_recovered={} cts_retries={} ack_retries={} collisions={} terminal_cts={} hardware_timeout={}",
+        ordinary.reported, ordinary.missing, ordinary.success, ordinary.cts_recovered,
+        ordinary.cts_retries, ordinary.ack_retries, ordinary.collisions,
+        ordinary.terminal_cts, ordinary.hardware_timeout,
+    )).await;
     for (kind, work) in [
         ("ampdu", aggregate.work),
         ("ordinary", aggregate.ordinary_work),

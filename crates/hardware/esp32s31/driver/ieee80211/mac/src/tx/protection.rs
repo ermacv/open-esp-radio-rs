@@ -8,9 +8,11 @@
 //! Descriptor-bound preparation replaces both software protection requests
 //! while the queue is idle; each PPDU configuration carries its explicit mode.
 //! SOURCE\[HIL_OPEN_HT40_PROTECTION_TURNOVER_2026_09_21] observes bounded HT40
-//! aggregate turnover. Other queue/PHY combinations and missing-CTS recovery
-//! still need on-air qualification; a finite HE threshold additionally needs
-//! a PHY-specific byte conversion.
+//! aggregate turnover. SOURCE\[HIL_OPEN_HT40_MISSING_CTS_RECOVERY_2026_09_21]
+//! observes bounded ordinary HT40 recovery after one missing CTS. Retry
+//! exhaustion, aggregate recovery and other queue/PHY combinations still need
+//! on-air qualification; a finite HE threshold additionally needs a
+//! PHY-specific byte conversion.
 //! Admission therefore remains closed when negotiated policy requires protection.
 
 use crate::tx::{HeEdcaTxopLimit, HtChannelWidth, LegacyRate, TxPhyRate};

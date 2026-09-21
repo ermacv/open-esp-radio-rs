@@ -17,6 +17,68 @@ fn toml_document(path: &Path) -> toml_edit::DocumentMut {
 }
 
 #[test]
+fn tx_protection_suite_covers_request_and_threshold_transitions() {
+    let project = repository_root().join("verification/vendor/projects/esp32s31");
+    let profiles = toml_document(&project.join("profiles/tx-protection-control.toml"));
+    let profiles = profiles["profiles"].as_array_of_tables().unwrap();
+    let configure = profiles
+        .iter()
+        .find(|profile| profile["vendor-symbol"].as_str() == Some("hal_he_set_tx_protection"))
+        .unwrap();
+    let cases = configure["cases"].as_array_of_tables().unwrap();
+    let covered = cases
+        .iter()
+        .map(|case| {
+            let args = case["arguments"].as_array().unwrap();
+            (
+                args.get(0).unwrap().as_integer().unwrap(),
+                args.get(1).unwrap().as_integer().unwrap(),
+                args.get(3).unwrap().as_integer().unwrap(),
+                args.get(4).unwrap().as_integer().unwrap(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    for queue in 0..4 {
+        for enabled in 0..=1 {
+            assert!(
+                covered
+                    .iter()
+                    .any(|&(q, rts, threshold, _)| { (q, rts, threshold) == (queue, enabled, 0) })
+            );
+            for bytes in [0, 1, u16::MAX as i64, 0x1234_5678, u32::MAX as i64] {
+                assert!(
+                    covered.contains(&(queue, enabled, 1, bytes)),
+                    "missing queue={queue}, RTS={enabled}, threshold bytes={bytes}"
+                );
+            }
+        }
+    }
+    let disable = profiles
+        .iter()
+        .find(|profile| profile["vendor-symbol"].as_str() == Some("hal_he_disable_rts_threshold"))
+        .unwrap();
+    assert!(!disable["mmio-image-cases"].as_array().unwrap().is_empty());
+
+    let addon = toml_document(&project.join("verification-addon.toml"));
+    let suite = addon["suites"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .find(|suite| suite["id"].as_str() == Some("tx-protection-control"))
+        .unwrap();
+    let prefix = suite["rust-prefix"].as_str().unwrap();
+    for profile in profiles {
+        assert!(profile["rust-symbol"].as_str().unwrap().starts_with(prefix));
+        assert_eq!(profile["compare-return"].as_bool(), Some(false));
+    }
+    assert!(
+        !"open_tx_protection_initialize_cts".starts_with(prefix),
+        "the separately scoped cold-init probe must not become an orphan in this suite"
+    );
+    assert_eq!(suite["gate"].as_str(), Some("completion"));
+}
+
+#[test]
 fn target_ownership_partitions_exactly_cover_the_register_model() {
     let repository = repository_root();
     let registers = repository.join("registers/esp32s31");

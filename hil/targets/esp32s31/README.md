@@ -139,6 +139,15 @@ flag. A zero backoff with zero unknown publications is a known selection.
 The `diagnostic-tx-architecture` image omits this observer; use a scenario with
 `diagnostic-task-poll` to collect the aggregate work receipt.
 
+`OTXR scope=station` reports ordinary-MPDU terminal outcomes in the same frozen
+window: observed/missing reports, successes, successes after CTS-timeout retries,
+CTS/ACK/collision re-publications, terminal CTS failures and hardware timeouts.
+It includes connected-STA network traffic and aggregate fallback, excluding AP,
+management and autonomous hardware responses. Retry counters omit terminal
+failures that were not re-published and do not count hidden hardware retries.
+These diagnostic counters wrap at u32 and do not qualify an on-air protection
+exchange; pair them with the exact source snapshot and independent capture.
+
 `performance` contains no driver observer or scheduler instrumentation.
 RF calibration details are retained only by the PHY `registration-diagnostics`
 feature, selected by HIL `driver-observation`. Ordinary role owners keep the

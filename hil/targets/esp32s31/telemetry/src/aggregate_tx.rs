@@ -4,7 +4,9 @@
 //! ownership. The production adapter publishes value-only events; this module
 //! selects the histogram, atomics and interval snapshot used by qualification.
 
+mod ordinary;
 mod terminal;
+pub use ordinary::StationOrdinarySnapshot;
 mod work;
 pub use work::AggregateTxWorkSnapshot;
 use work::WorkCounters;
@@ -390,6 +392,7 @@ pub struct AggregateTxCounters {
     backing_release_lifetime_max_micros: AtomicU32,
     work: WorkCounters,
     ordinary_work: WorkCounters,
+    station_ordinary: ordinary::Counters,
     exchange_micros: AtomicU32,
     exchange_lifetime_max_micros: AtomicU32,
     single_publication_exchanges: AtomicU32,
@@ -496,6 +499,7 @@ impl AggregateTxCounters {
             backing_release_lifetime_max_micros: AtomicU32::new(0),
             work: WorkCounters::new(),
             ordinary_work: WorkCounters::new(),
+            station_ordinary: ordinary::Counters::new(),
             exchange_micros: AtomicU32::new(0),
             exchange_lifetime_max_micros: AtomicU32::new(0),
             single_publication_exchanges: AtomicU32::new(0),
@@ -654,6 +658,7 @@ impl AggregateTxCounters {
                 .load(Ordering::Relaxed),
             work: self.work.snapshot(),
             ordinary_work: self.ordinary_work.snapshot(),
+            station_ordinary: self.station_ordinary.snapshot(),
             exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
             single_publication_exchanges: self.single_publication_exchanges.load(Ordering::Relaxed),
@@ -979,6 +984,13 @@ impl AggregateTxCounters {
 }
 
 impl AggregateTxObserver for AggregateTxCounters {
+    fn observe_station_ordinary(
+        &self,
+        outcome: Option<oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::OrdinaryTxOutcome>,
+    ) {
+        self.station_ordinary.record(outcome);
+    }
+
     fn observe_station_terminal(
         &self,
         status: oer_wifi_softmac::MacAmpduTxStatus<oer_esp32s31_wifi_mac::tx::TxPhyRate>,
@@ -1324,6 +1336,7 @@ pub struct AggregateTxCounterSnapshot {
     pub backing_release_lifetime_max_micros: u32,
     pub work: AggregateTxWorkSnapshot,
     pub ordinary_work: AggregateTxWorkSnapshot,
+    pub station_ordinary: StationOrdinarySnapshot,
     pub exchange_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub exchange_lifetime_max_micros: u32,
@@ -1479,6 +1492,7 @@ impl AggregateTxCounterSnapshot {
             backing_release_lifetime_max_micros: self.backing_release_lifetime_max_micros,
             work: self.work.delta_since(earlier.work),
             ordinary_work: self.ordinary_work.delta_since(earlier.ordinary_work),
+            station_ordinary: self.station_ordinary.delta_since(earlier.station_ordinary),
             exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
             single_publication_exchanges: self

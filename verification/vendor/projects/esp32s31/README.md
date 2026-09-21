@@ -140,14 +140,21 @@ The reviewed `WDEVTXQ_CONF2` argument order identifies **SW_RTS at bit 31** and
 **SW_CTS at bit 30**. The source identity and exact call argument positions live
 in `BLOB_LIBPP_TX_PROTECTION_ARGUMENTS` in the
 [register evidence](../../../../registers/esp32s31/evidence/vendor-libpp.toml).
-`hal_he_set_tx_protection` controls RTS, despite its generic name. Ordinary
-production queue preparation clears that RTS request and preserves CTS and
-minimum MPDU spacing.
+`hal_he_set_tx_protection` controls RTS, despite its generic name. Its software
+request update preserves CTS and minimum MPDU spacing. Descriptor-bound
+production preparation separately replaces both request flags with the explicit
+PPDU mode while the queue is idle, before publication.
 
-The `tx-protection-control` completion suite compares this compiled production
-edge with `hal_he_set_tx_protection(queue, 0, _, 0, _)`: four queues, six initial
-images, including independent RTS and CTS states. All observed MMIO effects are
-compared; RTS enable and HE threshold publication are outside this bounded scope.
+The `tx-protection-control` completion suite compares compiled production
+`configure_rts` and `disable_he_rts_threshold` with their complete vendor
+functions. The finite domain covers all four queues, RTS clear/set, absent
+threshold publication, zero and maximal byte thresholds, low-u16 truncation,
+and retained images with independent RTS and CTS requests. Disabling the HE
+threshold updates all four queues in logical order and retains threshold bytes.
+All observed MMIO effects are compared. The private-input transition test also
+carries each implementation's own writes through enable, disable, clear and
+republish sequences. These are register-transaction properties; the
+PHY-specific duration-to-byte conversion and on-air exchange are outside them.
 Use the same authenticated `libpp` and fresh `rust-artifact` bindings as above:
 
 ```console
@@ -167,9 +174,12 @@ executable through `blobray-run` with `BLOBRAY_BINARY`,
 `BLOBRAY_LIMIT_BACKEND=watchdog`, `OER_TX_ARCHIVE` and `OER_TX_PROBE` set to the
 built test, authenticated archive and fresh production probe respectively.
 
-CTS-to-Self transmission remains unimplemented. The generated CTS receiver
+Ordinary protection-required transmission remains closed by policy. Explicit
+descriptor-bound RTS/CTS and CTS-to-self requests exist, with bounded HT40
+air-capture provenance. That scope does not establish the generated CTS receiver
 address, NAV duration, protected-MPDU sequencing and completion/abort contract
-still need evidence; an RTS helper or a CTS reset cannot establish them.
+across the admitted rates and retry transitions; register comparisons alone
+cannot qualify them.
 The [ordinary DMA contract](../../../../crates/hardware/esp32s31/driver/ieee80211/dma/README.md)
 and qualification catalog retain that admission limit.
 

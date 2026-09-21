@@ -8,17 +8,20 @@ The diagnostic PSRAM and aggregate paths have separate admission contracts.
 ## Ordinary TX handoff and reuse
 
 The upper ordinary-TX owner checks [protection policy](../mac/src/tx/protection.rs)
-before reserving or publishing DMA. RTS/CTS and CTS-to-Self physical publication
-are unimplemented and return `PhysicalPublicationUnverified`. In particular,
+before reserving or publishing DMA. An ordinary exchange requiring RTS/CTS or
+CTS-to-Self returns `PhysicalPublicationUnverified` until its physical
+publication and completion contract is qualified. In particular,
 an HT Nonmember group exchange can stop the connected runner with
 `HardwareFailure` during AP-loss recovery. That admission failure is distinct
 from a stuck DMA transaction; it does not establish a detach or reuse failure.
 
 The reviewed queue control has separate software RTS and CTS requests. Ordinary
-PLCP preparation clears RTS and retains CTS; cold HE initialization clears CTS
-and retains RTS and spacing. Those register edges are independently compared
+descriptor-bound preparation replaces both requests with the PPDU's explicit
+mode while the queue is idle. The RTS helper preserves CTS and spacing; cold HE
+initialization clears CTS and retains RTS and spacing. The RTS request, optional
+HE byte-threshold publication, threshold disable and cold-init reset are compared
 with vendor code in the [protection investigation](../../../../../../verification/vendor/projects/esp32s31/README.md#tx-protection-control).
-Neither edge supplies a CTS frame, its NAV duration, its relation to the protected
+These register comparisons do not establish a CTS frame, its NAV duration, its relation to the protected
 MPDU, or completion ownership. The ordinary API therefore still rejects a
 protection-required exchange before DMA publication.
 

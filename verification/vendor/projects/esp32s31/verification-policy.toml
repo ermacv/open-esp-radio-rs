@@ -659,21 +659,42 @@ requirement = "ordinary-tx-acknowledge-edges"
 rationale = "Fingerprint covers the complete unrelocated function bytes in the authenticated libpp archive. The requirement restricts the comparison to complete selector-two acknowledgement for ordinary queues zero through three; it does not prove DMA quiescence, descriptor preparation, physical timing or the complete ordinary-TX root."
 
 [[surfaces]]
-id = "ordinary-tx-software-rts-clear"
-description = "Complete software RTS clear with duration-threshold publication disabled; preserves CTS and spacing."
+id = "ordinary-tx-rts-control"
+description = "Complete software RTS request and optional HE byte-threshold publication; preserves CTS and spacing."
 kind = "bounded-property"
 
 [[surfaces.requirements]]
-id = "ordinary-tx-software-rts-clear-edges"
-description = "Compiled production preserves all unrelated state for four queues and six retained images."
+id = "ordinary-tx-rts-control-edges"
+description = "Compiled production matches RTS clear/set, absent and present HE thresholds, and u16 truncation for four queues and six retained images."
 suite = "tx-protection-control"
 source = "libpp"
 symbol = "hal_he_set_tx_protection"
 claim = "reviewed-domain-equivalence"
 
 [[surfaces.effects]]
-id = "ordinary-tx-software-rts-clear-mmio"
+id = "ordinary-tx-rts-control-mmio"
 vendor = { source = "libpp", symbol = "hal_he_set_tx_protection", fingerprint = "sha256:fee41fb6c99ea30975bc4fa6dfc19087b5deeadad1362aa415ef74d8cab9432d" }
 disposition = "verified"
-requirement = "ordinary-tx-software-rts-clear-edges"
-rationale = "Fingerprint covers all 64 unrelocated function bytes in the authenticated archive. The comparison is limited to a1=0 and a3=0; a2 and a4 are immaterial in that domain. It proves the production RTS-clear edge, not RTS enable, HE threshold publication or CTS-to-Self support."
+requirement = "ordinary-tx-rts-control-edges"
+rationale = "Fingerprint covers all 64 unrelocated function bytes in the authenticated archive. The comparison covers ordinary queues, boolean a1/a3, absent or present byte thresholds, low-u16 truncation and six retained images. Argument a2 is unused. It proves register transactions only, not PHY-specific duration-to-byte conversion, NAV, CTS-to-Self or physical exchange completion."
+
+
+[[surfaces]]
+id = "ordinary-tx-he-rts-threshold-disable"
+description = "Disable the HE threshold in logical queue order while retaining threshold bytes and software requests."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-he-rts-threshold-disable-edges"
+description = "Compiled production matches all four fresh-read updates over nine distinct retained-state patterns."
+suite = "tx-protection-control"
+source = "libpp"
+symbol = "hal_he_disable_rts_threshold"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-he-rts-threshold-disable-mmio"
+vendor = { source = "libpp", symbol = "hal_he_disable_rts_threshold", fingerprint = "sha256:1cd0e787d4aafd4a2ca5083ef88207f215bcf20e9194a3520b22a9702d58ee7e" }
+disposition = "verified"
+requirement = "ordinary-tx-he-rts-threshold-disable-edges"
+rationale = "Fingerprint covers the complete 50-byte unrelocated function in the authenticated libpp archive. The property is limited to the ordered register updates; threshold disable is not queue cancellation, a DMA-release proof or a protected on-air exchange."

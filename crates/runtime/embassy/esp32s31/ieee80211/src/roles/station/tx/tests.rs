@@ -61,10 +61,19 @@ mod terminal;
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
     observations: std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>,
+    ordinary:
+        std::sync::Mutex<std::vec::Vec<Option<oer_esp32s31_wifi::ordinary_tx::OrdinaryTxOutcome>>>,
     terminal: std::sync::Mutex<std::vec::Vec<MacAmpduTxStatus<TxPhyRate>>>,
 }
 
 impl AggregateTxObserver for RecordingAggregateTxObserver {
+    fn observe_station_ordinary(
+        &self,
+        outcome: Option<oer_esp32s31_wifi::ordinary_tx::OrdinaryTxOutcome>,
+    ) {
+        self.ordinary.lock().unwrap().push(outcome);
+    }
+
     fn observe_station_terminal(&self, status: MacAmpduTxStatus<TxPhyRate>) {
         self.terminal.lock().unwrap().push(status);
     }
@@ -662,6 +671,17 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
             ethernet_length: 17,
         })
     );
+    hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(2, 0));
+    assert_eq!(
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE
+            }
+        ),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert!(observer.ordinary.lock().unwrap().is_empty());
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
         tx.service(
@@ -672,6 +692,10 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         ),
         Ok(WifiTxProgress::Complete)
     );
+    let outcome = tx.ordinary.last_outcome().unwrap();
+    assert_eq!(outcome.report().retries.cts_timeouts, 1);
+    assert!(matches!(outcome, SingleMpduTxOutcome::Success(_)));
+    assert_eq!(*observer.ordinary.lock().unwrap(), [Some(outcome)]);
 }
 
 #[test]

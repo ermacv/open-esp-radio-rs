@@ -4,6 +4,9 @@
 //! counters, histograms, storage or report formatting. Attaching an observer
 //! must not affect retry, queue, DMA ownership or scheduling decisions.
 
+pub use oer_esp32s31_wifi::ordinary_tx::{
+    OrdinaryTxOutcome, OrdinaryTxReport, OrdinaryTxRetryReport,
+};
 pub use oer_wifi_softmac::MacTxWork;
 
 /// Why a network frame used the ordinary MPDU path instead of starting an
@@ -151,6 +154,11 @@ pub enum AggregateTxObservation {
 /// owner emits no events and performs no observation-only clock reads when no
 /// observer is attached.
 pub trait AggregateTxObserver: Sync {
+    /// Terminal ordinary-MPDU outcome from the connected STA owner, including
+    /// aggregate fallback. Missing evidence remains explicit. This is not an
+    /// observation of AP, management, or autonomous hardware response traffic.
+    fn observe_station_ordinary(&self, _outcome: Option<OrdinaryTxOutcome>) {}
+
     /// Observer-owned clock. The production path performs no diagnostic clock
     /// read when no observer is attached.
     fn now_micros(&self) -> u64;

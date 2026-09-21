@@ -44,6 +44,7 @@ where
                     self.observe_ordinary_rate_control();
                     #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.observer {
+                        observer.observe_station_ordinary(self.ordinary.last_outcome());
                         observer.observe(AggregateTxObservation::OrdinaryWorkCompleted {
                             work: self.ordinary.work(),
                         });

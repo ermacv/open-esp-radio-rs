@@ -193,6 +193,7 @@ bitWidth = 1
     )
     .unwrap();
     let project = ProjectSpec {
+        loaded_model_inputs: Default::default(),
         id: project_id,
         target_spec: directory.join("target.toml"),
         ecosystem_packs: Vec::new(),

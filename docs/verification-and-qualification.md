@@ -111,7 +111,9 @@ A vendor comparison is qualification-eligible only when all of these hold:
    dirty files do not invalidate an independent result;
 9. the per-comparison identity matches the current selected project, production
    binding, profile/contracts, baseline and policy, and every hardware artifact
-   matches that suite's explicit public SHA-256 binding.
+   matches that suite's explicit public SHA-256 binding;
+10. the suite's declared target/ABI and model mechanisms match the actual loaded
+    contracts and implementation linked into the comparison host.
 
 `project verify` writes the compact
 `verification/vendor/.../evidence/vendor-evidence.json` after each completed
@@ -125,6 +127,29 @@ recomputes the comparison identity against the selected project. Missing public
 artifact bindings or legacy rows without comparison identity remain historical;
 private binaries are not required to check these declarations. A partial run
 updates only its selected suites.
+
+Before loading profiles, dispositions, baselines or executable artifacts,
+`verify inventory` and `verify source` copy their selected inputs into private
+execution storage. Loaders, comparisons and report hashes use those same
+copies. Reports retain the original diagnostic paths, but never re-read those
+paths to assign a new identity to an old verdict. Publication compares the
+executed input hashes with the current comparison inputs; an edit during
+execution therefore leaves the observation historical and blocks its current
+release eligibility. This storage covers the selected inputs, not a repository
+snapshot, and is removed when the command completes.
+
+Suites declare `model-mechanisms` from their add-on's `model-inputs` registry.
+Each mechanism selects implementation sources and loaded hardware contracts.
+The ESP32-S31 host embeds implementation hashes at build time. Register-model
+loaders retain the exact parsed manifest/fragment text; SVD, reviewed overlays
+and memory-map loaders capture their input identity while loading. Publication
+selects the suite's required subset from this complete provenance, checks the
+actual target/provider, and refuses to bind a verdict to changed inputs. A
+selected contract must still belong to the current chip/project. Report
+renderers and undeclared foreign mechanisms do not enter this identity.
+Missing model provenance leaves earlier observations historical. A changed
+shared ABI or shared interpretation source affects all suites declaring it;
+mechanism-specific changes affect its declared consumers.
 
 An absent index means no vendor evidence is available: affected capabilities
 remain unqualified while status and HIL planning still work. An unreadable,

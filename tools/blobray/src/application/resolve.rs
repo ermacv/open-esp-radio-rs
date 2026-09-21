@@ -210,7 +210,20 @@ impl ProjectSession {
         }
         let memory_map_path = project.memory_map.as_deref();
         let memory_map = if options.load_memory_map {
-            memory_map_path.map(MemoryMap::load).transpose()?
+            memory_map_path
+                .map(|path| {
+                    use sha2::{Digest, Sha256};
+                    let mut copies = crate::verification::ExecutionInputs::new()?;
+                    let mut copy = path.to_owned();
+                    copies.capture(&mut copy)?;
+                    let model = MemoryMap::load(&copy)?;
+                    project.loaded_model_inputs.insert(
+                        path.canonicalize()?,
+                        format!("{:x}", Sha256::digest(std::fs::read(&copy)?)),
+                    );
+                    Ok::<_, crate::Error>(model)
+                })
+                .transpose()?
         } else {
             None
         };
@@ -220,7 +233,10 @@ impl ProjectSession {
             project.svd_paths.clone()
         };
         let mut mmio = if options.load_register_catalog {
-            crate::register_catalog::load(&svd_paths, Some(&project))?
+            let (catalog, inputs) =
+                crate::register_catalog::load_with_inputs(&svd_paths, Some(&project))?;
+            project.loaded_model_inputs.extend(inputs);
+            catalog
         } else {
             MmioMap::load_all(&[])?
         };

@@ -408,7 +408,23 @@ fn unsealed_completed_run_still_fails_closed() {
 }
 
 pub(super) fn add_current_build(root: &Path, run: &Path) {
-    fs::write(root.join("Cargo.lock"), "version = 4\npackage = []\n").unwrap();
+    fs::create_dir_all(root.join("hil/host/runner/src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nresolver = '3'\nmembers = ['hil/host/runner']\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("hil/host/runner/Cargo.toml"),
+        "[package]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
+    )
+    .unwrap();
+    fs::write(root.join("hil/host/runner/src/main.rs"), "fn main() {}\n").unwrap();
+    fs::write(
+        root.join("Cargo.lock"),
+        "version = 4\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n",
+    )
+    .unwrap();
     let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
     fs::create_dir_all(root.join("hil/schema")).unwrap();
     fs::write(root.join("observer.rs"), b"test observer").unwrap();
@@ -420,13 +436,25 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         .keys()
         .map(|k| (k, Vec::<String>::new()))
         .collect();
+    let domains: BTreeMap<_, _> = workloads.keys().map(|k| (k, "common")).collect();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
-        serde_json::to_vec(&json!({"schema":1,"common":["observer.rs"],"workloads":workloads}))
+        serde_json::to_vec(&json!({"schema":2,"common":["observer.rs"],"workloads":workloads,"timing":registry["timing"],"workload_domains":domains,"domains":{"common":[]},"dependencies":{"common":[],"bluetooth":[],"ieee80211":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
             .unwrap(),
     )
     .unwrap();
-    let build = json!({"schema":1,"inputs":{"observer.rs":sha256_file(&root.join("observer.rs")).unwrap()}});
+    let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
+    let configuration = observer::required_configuration(root, &registry).unwrap();
+    fs::write(
+        root.join("hil/host/runner/src/main.rs"),
+        format!(
+            "fn main() {{ println!(\"{{}}\", {:?}); }}\n",
+            serde_json::to_string(&configuration).unwrap()
+        ),
+    )
+    .unwrap();
+    let resolved = observer::build_inputs::resolve_compiled(root).unwrap();
+    let build = json!({"schema":2,"inputs":{"observer.rs":sha256_file(&root.join("observer.rs")).unwrap()},"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
     manifest["runner"] = json!({"observer":{"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build}});
 
     manifest["firmware"] = json!([{

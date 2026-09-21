@@ -14,6 +14,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
+    /// Build an observer with its Cargo receipt, then forward HIL arguments.
+    #[command(disable_help_flag = true)]
+    Hil {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     /// Report the basic source workflow tools in the current environment.
     Doctor,
     Check {
@@ -103,6 +109,7 @@ fn run() -> Result<()> {
     };
     let _signals = process::install_signal_handlers()?;
     match cli.command {
+        Task::Hil { args } => oer_xtask::hil::run(&ctx, &args),
         Task::Build {
             build: Build::Hostapd,
         } => oer_xtask::hostapd::build(&ctx),

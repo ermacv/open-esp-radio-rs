@@ -68,7 +68,7 @@ pub(crate) struct ReleaseGapDocument {
 #[derive(Serialize)]
 pub(crate) struct VerificationArtifactDocument {
     pub(crate) role: String,
-    path: String,
+    pub(crate) path: String,
     pub(crate) sha256: String,
 }
 
@@ -83,7 +83,8 @@ pub(crate) struct VerificationEvidenceDocument {
 
 #[derive(Serialize)]
 pub(crate) struct VerificationCoreReport {
-    target: VerificationTargetDocument,
+    pub(crate) target: VerificationTargetDocument,
+    pub(crate) model_context: Option<serde_json::Value>,
     gate: VerificationGateDocument,
     pub(crate) passed: bool,
     pub(crate) evidence_baseline_passed: bool,
@@ -120,6 +121,7 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
         release_gaps,
     } = inputs;
     Ok(VerificationCoreReport {
+        model_context: None,
         target: VerificationTargetDocument {
             id: target.id.clone(),
             knowledge_provider: target.knowledge_provider.clone(),
@@ -242,6 +244,49 @@ mod tests {
         assert_eq!(
             Path::new(&report.artifacts[0].path),
             fs::canonicalize(manifest).unwrap()
+        );
+    }
+
+    #[test]
+    fn profile_replacement_after_loading_cannot_rebind_report_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("profile.toml");
+        let original = "schema = 5\ncase-execution = 'independent'\ntransaction-comparison = 'observables'\n[[profiles]]\nname = 'original'\nvendor-source = 'vendor'\nvendor-symbol = 'entry'\nrust-symbol = 'probe'\nclaim = 'whole-function-equivalence'\n[[profiles.cases]]\nname = 'first'\n";
+        fs::write(&path, original).unwrap();
+        let mut inputs = super::super::ExecutionInputs::new().unwrap();
+        let mut loaded = path.clone();
+        inputs.capture(&mut loaded).unwrap();
+        let profiles = crate::verification::profiles::load(&loaded).unwrap();
+        fs::write(&path, original.replace("original", "unexecuted")).unwrap();
+        assert_eq!(profiles[0].name, "original");
+        let target = TargetSpec {
+            id: "fixture".into(),
+            knowledge_provider: None,
+            architecture: crate::target::Architecture::Riscv32,
+            calling_convention: crate::target::CallingConvention::RiscvIlp32,
+            endianness: crate::target::Endianness::Little,
+            pointer_width: 32,
+            rust_target: "riscv32imac-unknown-none-elf".into(),
+        };
+        let report = verification_core_report(VerificationCoreInputs {
+            target: &target,
+            gate: VerificationGate::Completion,
+            summary: VerifySummary::default(),
+            orphan_probes: 0,
+            evidence_baseline_passed: true,
+            passed: true,
+            evidence: &EvidenceSet::new(),
+            artifacts: &[("profiles:0", loaded.as_path())],
+            release_gaps: &[],
+        })
+        .unwrap();
+        assert_eq!(
+            report.artifacts[0].sha256,
+            format!("{:x}", Sha256::digest(original))
+        );
+        assert_ne!(
+            report.artifacts[0].sha256,
+            format!("{:x}", Sha256::digest(fs::read(path).unwrap()))
         );
     }
 }

@@ -54,12 +54,15 @@ pub(super) fn execute(
     })?;
     let selected = select_suites(&workspace.suites, &arguments.suite)?;
     let complete_project_run = selected.len() == workspace.suites.len();
+    let mut execution_inputs = crate::verification::ExecutionInputs::new()?;
     let rust_artifacts = selected
         .iter()
         .map(|suite| {
+            let mut path = required_input(run_spec, &suite.rust_artifact_role, &suite.id)?;
+            execution_inputs.capture(&mut path)?;
             Ok(RustArtifactInput {
                 suite: suite.id.clone(),
-                path: required_input(run_spec, &suite.rust_artifact_role, &suite.id)?,
+                path,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -82,17 +85,49 @@ pub(super) fn execute(
         if let Some(publication) = &publication {
             publication.begin(&suite.id)?;
         }
-        let arguments = suite_arguments(suite, run_spec)
+        let mut arguments = suite_arguments(suite, run_spec)
             .map_err(|error| error.verification_suite(suite.id.clone()))?;
-        let report = super::verify_inventory::execute(
+        arguments.rust_artifact = Some(
+            rust_artifacts
+                .iter()
+                .find(|artifact| artifact.suite == suite.id)
+                .unwrap()
+                .path
+                .clone(),
+        );
+        let compiled_models = crate::providers::compiled_model_inputs()?;
+        let mut report = super::verify_inventory::execute(
             arguments,
             svd,
             target,
             target.knowledge_provider.as_deref(),
         )
         .map_err(|error| error.verification_suite(suite.id.clone()))?;
+        let root = project_manifest
+            .ancestors()
+            .filter(|p| p.join("Cargo.toml").is_file())
+            .last()
+            .map(std::path::Path::canonicalize)
+            .transpose()?;
+        let contracts = project
+            .loaded_model_inputs
+            .iter()
+            .map(|(path, hash)| {
+                // Standalone projects still retain complete loaded provenance. Only
+                // a repository-bound index can claim current qualification identity.
+                let recorded = root
+                    .as_ref()
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .unwrap_or(path);
+                (recorded.to_string_lossy().into_owned(), hash.clone())
+            })
+            .collect::<std::collections::BTreeMap<String, String>>();
+        report.verification.model_context = Some(
+            serde_json::json!({"schema":1,"mechanisms":suite.model_mechanisms,"target":report.verification.target,"implementation":compiled_models,"contracts":contracts,"authentication":project.review_context.artifacts,"provider":{"context":{"ecosystems":project.review_context.ecosystems,"chips":project.review_context.chips,"chip_revisions":project.review_context.chip_revisions,"artifact_lineages":project.review_context.artifact_lineages},"chip":project.chip_pack.as_ref().map(|p| &p.id),"base":project.chip_pack.as_ref().and_then(|p| p.knowledge_provider.as_ref()),"overlay":project.analysis_provider}}),
+        );
         passed &= report.verification.passed;
-        let completed = ProjectVerificationReport::new(
+        execution_inputs.restore_paths(&mut report);
+        let mut completed = ProjectVerificationReport::new(
             project.id.clone(),
             report.verification.passed,
             false,
@@ -110,6 +145,7 @@ pub(super) fn execute(
                 })
                 .collect::<Vec<_>>(),
         )?;
+        restore_component_paths(&execution_inputs, &mut completed);
         let path = crate::verification::policy::suite_report_path(&workspace.report, &suite.id);
         generated_file::write_or_check_json(
             &path,
@@ -147,7 +183,7 @@ pub(super) fn execute(
             write_evidence_candidate(&candidate, &protected, &evidence)?;
         }
     }
-    let report = ProjectVerificationReport::new(
+    let mut report = ProjectVerificationReport::new(
         project.id.clone(),
         passed,
         complete_project_run,
@@ -156,6 +192,7 @@ pub(super) fn execute(
         &rust_artifacts,
     )?;
 
+    restore_component_paths(&execution_inputs, &mut report);
     if complete_project_run {
         generated_file::write_or_check_json(
             &workspace.report,
@@ -173,6 +210,23 @@ pub(super) fn execute(
     }
 
     Ok(report)
+}
+
+fn restore_component_paths(
+    inputs: &crate::verification::ExecutionInputs,
+    report: &mut ProjectVerificationReport,
+) {
+    for artifact in &mut report.rust_component_index.artifacts {
+        inputs.original(&mut artifact.path);
+    }
+    for symbol in report
+        .rust_component_index
+        .components
+        .iter_mut()
+        .flat_map(|component| &mut component.compiled_symbols)
+    {
+        inputs.original(&mut symbol.artifact);
+    }
 }
 
 fn preflight_rust_artifacts(
@@ -544,6 +598,7 @@ mod tests {
         let run_path = directory.join("run.toml");
         fs::write(&run_path, "schema = 1\n[[inputs]]\nrole = \"rust-artifact\"\npath = \"production.elf\"\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = \"vendor.a\"\n").unwrap();
         let mut suite = VerificationSuiteSpec {
+            model_mechanisms: Vec::new(),
             artifact_bindings: Default::default(),
             id: "pinned".into(),
             vendor: vec![crate::project::VerificationVendorSpec {

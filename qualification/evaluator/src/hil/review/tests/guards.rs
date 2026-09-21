@@ -468,7 +468,7 @@ fn direct_snapshot_checks_executed_scheduler_but_ignores_annotations() {
             .unwrap()
             .success()
     );
-    fs::write(fixture.0.join(".git/info/exclude"), "runs/\n").unwrap();
+    fs::write(fixture.0.join(".git/info/exclude"), "runs/\ntarget/\n").unwrap();
     let mut catalog = ScenarioCatalog::default();
     catalog.definitions.insert(
         "exchange".into(),
@@ -658,7 +658,7 @@ fn current_firmware_snapshot_cannot_hide_an_old_runner_build() {
             .unwrap()
             .success()
     );
-    fs::write(fixture.0.join(".git/info/exclude"), "runs/\n").unwrap();
+    fs::write(fixture.0.join(".git/info/exclude"), "runs/\ntarget/\n").unwrap();
     for id in ["old", "new"] {
         let run = fixture.0.join("runs").join(id);
         let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
@@ -681,4 +681,161 @@ fn current_firmware_snapshot_cannot_hide_an_old_runner_build() {
             .status,
         EvidenceStatus::Missing
     );
+}
+
+#[test]
+fn compiler_review_admits_functional_evidence_but_never_timing_or_changed_flags() {
+    let fixture = setup();
+    let run = fixture.0.join("runs/old");
+    let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
+    let build = manifest["runner"]["observer"]["build"].clone();
+    let registry: Value = read_json(&fixture.0.join("hil/schema/observer-inputs.json")).unwrap();
+    let mut projected = observer::build_inputs::projection(
+        &build["resolved"],
+        &observer::build_inputs::dependencies(&registry, "").unwrap(),
+    )
+    .unwrap();
+    let required = json!({
+        "units":observer::build_inputs::take_unit_profiles(&mut projected),
+        "compiler":build["compiler"], "environment":build["environment"],
+        "profiles":{"dev":build["resolved"]["manifests"]["Cargo.toml"]["profile"]["dev"]},
+        "cargo":build["resolved"]["cargo_config"]
+    });
+    manifest["runner"]["observer"]["build"]["compiler"] = json!("older compiler");
+    manifest["runner"]["observer"]["build_sha256"] = json!(digest(
+        &serde_json::to_vec(&manifest["runner"]["observer"]["build"]).unwrap()
+    ));
+    write(&run.join("manifest.json"), &manifest);
+    crate::hil::tests::seal(&run);
+    let index = fixture.load().unwrap();
+    let mut catalog = ScenarioCatalog::default();
+    let mut review = record(&fixture, &index, &catalog);
+    save(&fixture, &review);
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "source-observer-identity-not-established"
+    );
+    review.observer_configuration.push(json!({
+        "build_sha256":manifest["runner"]["observer"]["build_sha256"],
+        "required_sha256":digest(&serde_json::to_vec(&required).unwrap()),
+        "reason":"Reviewed functional counter semantics across compiler versions"
+    }));
+    save(&fixture, &review);
+    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
+    catalog.checks.insert(
+        "exchange".into(),
+        checks::contracts(
+            &json!({"workload":{"kind":"udp","direction":"rx"},"criteria":{"minimum_rx_bps":10}}),
+        )
+        .unwrap(),
+    );
+    review.property_sha256 = property(
+        &declaration(),
+        &BTreeMap::new(),
+        &requirement(),
+        &catalog,
+        &fixture.0,
+    )
+    .unwrap()
+    .sha256;
+    save(&fixture, &review);
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "source-observer-identity-not-established"
+    );
+    let source = &index.scenarios["exchange"][0];
+    let mut profile_only = manifest["runner"]["observer"].clone();
+    profile_only["build"]["compiler"] = build["compiler"].clone();
+    profile_only["build"]["environment"]["PROFILE"] = json!("release");
+    profile_only["build"]["environment"]["OPT_LEVEL"] = json!("3");
+    profile_only["build_sha256"] =
+        json!(digest(&serde_json::to_vec(&profile_only["build"]).unwrap()));
+    assert!(!observer::compatible(&fixture.0, source, Some(&profile_only), None).unwrap());
+    let mut profile_review = review.observer_configuration[0].clone();
+    profile_review["build_sha256"] = profile_only["build_sha256"].clone();
+    assert!(
+        observer::compatible(
+            &fixture.0,
+            source,
+            Some(&profile_only),
+            Some(&profile_review)
+        )
+        .unwrap()
+    );
+    let mut proof = manifest["runner"]["observer"].clone();
+    proof["build"]["environment"]["CARGO_ENCODED_RUSTFLAGS"] = json!("--cfg=changed");
+    proof["build_sha256"] = json!(digest(&serde_json::to_vec(&proof["build"]).unwrap()));
+    review.observer_configuration[0]["build_sha256"] = proof["build_sha256"].clone();
+    assert!(
+        !observer::compatible(
+            &fixture.0,
+            source,
+            Some(&proof),
+            Some(&review.observer_configuration[0])
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn observer_dependency_manifest_detects_features_but_ignores_dev_only_inputs() {
+    let fixture = setup();
+    let index = fixture.load().unwrap();
+    let source = &index.scenarios["exchange"][0];
+    let root = &fixture.0;
+    let wire = root.join("hil/host/wire");
+    fs::create_dir_all(wire.join("src")).unwrap();
+    fs::write(wire.join("src/lib.rs"), "pub fn count() -> u32 { 1 }\n").unwrap();
+    let manifest = "[package]\nname='wire'\nversion='0.1.0'\nedition='2024'\n";
+    fs::write(wire.join("Cargo.toml"), manifest).unwrap();
+    let runner = root.join("hil/host/runner/Cargo.toml");
+    fs::write(
+        &runner,
+        format!(
+            "{}\n[dependencies]\nwire={{path='../wire'}}\n",
+            fs::read_to_string(&runner).unwrap()
+        ),
+    )
+    .unwrap();
+    let mut registry: Value = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
+    registry["dependencies"]["common"] = json!(["wire"]);
+    write(&root.join("hil/schema/observer-inputs.json"), &registry);
+    let lock = || {
+        assert!(
+            Command::new("cargo")
+                .current_dir(root)
+                .args(["generate-lockfile", "--offline"])
+                .status()
+                .unwrap()
+                .success()
+        )
+    };
+    lock();
+    let mut proof = source.subject.as_ref().unwrap().observer.clone().unwrap();
+    proof["build"]["resolved"] = observer::build_inputs::resolve_compiled(root).unwrap();
+    for path in ["hil/host/wire/Cargo.toml", "hil/host/wire/src/lib.rs"] {
+        proof["build"]["inputs"][path] = json!(sha256_file(&root.join(path)).unwrap());
+    }
+    proof["build_sha256"] = json!(digest(&serde_json::to_vec(&proof["build"]).unwrap()));
+    assert!(observer::compatible(root, source, Some(&proof), None).unwrap());
+    let unused = root.join("hil/host/unused");
+    fs::create_dir_all(unused.join("src")).unwrap();
+    fs::write(unused.join("src/lib.rs"), "pub fn unused() {}\n").unwrap();
+    fs::write(
+        unused.join("Cargo.toml"),
+        "[package]\nname='unused'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    let development = format!("{manifest}\n[dev-dependencies]\nunused={{path='../unused'}}\n");
+    fs::write(wire.join("Cargo.toml"), &development).unwrap();
+    lock();
+    assert!(observer::compatible(root, source, Some(&proof), None).unwrap());
+    let lock_before = fs::read(root.join("Cargo.lock")).unwrap();
+    fs::write(
+        wire.join("Cargo.toml"),
+        format!("{development}\n[features]\ndefault=['counter']\ncounter=[]\n"),
+    )
+    .unwrap();
+    assert!(!observer::compatible(root, source, Some(&proof), None).unwrap());
+    assert_eq!(lock_before, fs::read(root.join("Cargo.lock")).unwrap());
 }

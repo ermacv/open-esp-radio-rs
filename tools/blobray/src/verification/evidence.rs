@@ -6,7 +6,9 @@ use crate::{Result, profiles};
 
 mod baseline;
 mod identity;
+mod inputs;
 mod report;
+pub(crate) use inputs::ExecutionInputs;
 
 pub(crate) use baseline::*;
 pub(crate) use identity::*;

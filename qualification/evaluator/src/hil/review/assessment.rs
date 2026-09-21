@@ -78,9 +78,40 @@ pub(super) fn assess(
         .map(|i| (i.path.clone(), i.sha256.clone()))
         .collect();
     let observer_matches = |observation: &ScenarioEvidence, scenario: &str| {
+        let control_requirement;
+        let required = if scenario == requirement.scenario {
+            requirement
+        } else {
+            control_requirement = HilRequirement {
+                scenario: scenario.into(),
+                checks: vec![],
+                minimum_repetitions: 1,
+            };
+            &control_requirement
+        };
+        let Ok(sensitive) = observer::timing_sensitive(root, required, catalog) else {
+            return false;
+        };
         observer::matches(root, observation, None).unwrap_or(false)
+            || (!sensitive
+                && review.observer_configuration.iter().any(|configuration| {
+                    observer::compatible(root, observation, None, Some(configuration))
+                        .unwrap_or(false)
+                }))
             || review.observer_provenance.iter().any(|path| {
-                observer::reviewed(root, observation, scenario, path, &evidence).unwrap_or(false)
+                observer::reviewed(
+                    root,
+                    observation,
+                    scenario,
+                    path,
+                    &evidence,
+                    if sensitive {
+                        &[]
+                    } else {
+                        &review.observer_configuration
+                    },
+                )
+                .unwrap_or(false)
             })
     };
     if !observer_matches(source, &review.scenario) {

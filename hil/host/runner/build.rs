@@ -73,6 +73,9 @@ fn package(
         }
     }
 }
+#[path = "../../schema/observer-build.rs"]
+mod observer_build;
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let root = manifest.join("../../..").canonicalize().unwrap();
@@ -101,7 +104,21 @@ fn main() {
         environment.insert(key.to_owned(), env::var(key).unwrap_or_default());
     }
     environment.extend(env::vars().filter(|(key, _)| key.starts_with("CARGO_FEATURE_")));
-    let build = serde_json::json!({"schema":1,"inputs":inputs,"compiler":String::from_utf8(compiler.stdout).unwrap(),"environment":environment});
+    let resolved = observer_build::resolve(&root, &environment["TARGET"])
+        .expect("resolve executed observer dependencies");
+    let registry: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("hil/schema/observer-inputs.json")).unwrap())
+            .unwrap();
+    observer_build::validate_registry(&resolved, &registry)
+        .expect("every observer dependency has a scope");
+    for kind in registry["workloads"].as_object().unwrap().keys() {
+        observer_build::projection(
+            &resolved,
+            &observer_build::dependencies(&registry, kind).unwrap(),
+        )
+        .expect("validate observer dependency scope");
+    }
+    let build = serde_json::json!({"schema":2,"inputs":inputs,"compiler":String::from_utf8(compiler.stdout).unwrap(),"environment":environment,"resolved":resolved});
     fs::write(
         PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("runner-build.json"),
         serde_json::to_vec(&build).unwrap(),

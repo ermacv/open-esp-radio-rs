@@ -2,7 +2,24 @@
 
 use super::super::*;
 
-pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
+pub(super) fn run(
+    mut arguments: VerifySourceArgs,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<bool> {
+    let mut inputs = crate::verification::ExecutionInputs::new()?;
+    for path in arguments
+        .vendor_artifact
+        .iter_mut()
+        .chain(&mut arguments.vendor_inventory)
+        .chain(&mut arguments.vendor_companion)
+        .chain(&mut arguments.rust_artifact)
+        .chain(&mut arguments.rust_companion)
+        .chain(&mut arguments.profiles)
+        .chain(&mut arguments.evidence_baseline)
+    {
+        inputs.capture(path)?;
+    }
     let vendor_artifact = arguments
         .vendor_artifact
         .ok_or("missing --vendor-artifact")
@@ -96,7 +113,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         artifacts: &artifacts,
         release_gaps: &[],
     })?;
-    let report = VerificationCommandReport {
+    let mut report = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,
         command: "verify source",
         verification,
@@ -109,6 +126,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         evidence_comparison,
         report: None,
     };
+    inputs.restore_paths(&mut report);
     crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)
 }

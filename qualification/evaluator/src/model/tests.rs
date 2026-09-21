@@ -419,17 +419,19 @@ pub(super) fn comparison_fixture(
     symbol: &str,
     component: &str,
 ) -> comparison::Binding {
+    comparison::models::fixture(root);
     let project = root.join("comparison-project.toml");
     fs::write(
         &project,
-        "id = 'test'\nverification-addon = 'comparison-addon.toml'\n",
+        "id = 'test'\ntarget-spec = 'target.toml'\nchip-pack = 'chip.toml'\nverification-addon = 'comparison-addon.toml'\n",
     )
     .unwrap();
     let addon = root.join("comparison-addon.toml");
-    let mut document = fs::read_to_string(&addon).unwrap_or_default();
+    let mut document = fs::read_to_string(&addon)
+        .unwrap_or_else(|_| "model-inputs = 'model-inputs.json'\n".into());
     let marker = format!("id = '{suite}'");
     if !document.contains(&marker) {
-        document.push_str(&format!("\n[[suites]]\n{marker}\nprofiles = ['{suite}-profiles.toml']\ndispositions = ['{suite}-functions.toml']\nbaselines = ['{suite}-baselines.toml']\n[[suites.vendor]]\nsource = 'archive'\nall = true\nartifact-sha256 = '{}'\n", "cd".repeat(32)));
+        document.push_str(&format!("\n[[suites]]\n{marker}\nmodel-mechanisms = ['abi']\nprofiles = ['{suite}-profiles.toml']\ndispositions = ['{suite}-functions.toml']\nbaselines = ['{suite}-baselines.toml']\n[[suites.vendor]]\nsource = 'archive'\nall = true\nartifact-sha256 = '{}'\n", "cd".repeat(32)));
         fs::write(&addon, document).unwrap();
     }
     for (suffix, row) in [
@@ -571,5 +573,49 @@ fn public_artifact_bindings_cover_primary_companion_and_auxiliary_images() {
     .unwrap();
     artifacts.insert("auxiliary:linked-image".into(), "12".repeat(32));
     assert!(!check(&artifacts));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn suite_model_identity_tracks_used_mechanisms_and_target_without_report_or_ble_leakage() {
+    let root = std::env::temp_dir().join(format!("oer-suite-model-scope-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    comparison_fixture(&root, "wifi", "wifi", "driver::wifi");
+    comparison_fixture(&root, "ble", "ble", "driver::ble");
+    fs::write(root.join("ble-model.rs"), "BLE A").unwrap();
+    fs::write(root.join("model-inputs.json"), r#"{"schema":1,"mechanisms":{"abi":{"implementation":["model.rs"],"contracts":[]},"ble":{"implementation":["ble-model.rs"],"contracts":[]}}}"#).unwrap();
+    let addon = fs::read_to_string(root.join("comparison-addon.toml"))
+        .unwrap()
+        .replace(
+            "id = 'ble'\nmodel-mechanisms = ['abi']",
+            "id = 'ble'\nmodel-mechanisms = ['abi', 'ble']",
+        );
+    fs::write(root.join("comparison-addon.toml"), addon).unwrap();
+    let identity = |suite| {
+        comparison::current(
+            &root,
+            Path::new("comparison-project.toml"),
+            suite,
+            "archive",
+            suite,
+            &BTreeMap::new(),
+        )
+        .unwrap()
+        .sha256
+    };
+    let wifi = identity("wifi");
+    let ble = identity("ble");
+    fs::write(root.join("ble-model.rs"), "BLE B").unwrap();
+    fs::write(root.join("report.rs"), "new renderer").unwrap();
+    assert_eq!(wifi, identity("wifi"));
+    assert_ne!(ble, identity("ble"));
+    let target = fs::read_to_string(root.join("target.toml"))
+        .unwrap()
+        .replace(
+            "riscv32imac-unknown-none-elf",
+            "riscv32imafc-unknown-none-elf",
+        );
+    fs::write(root.join("target.toml"), target).unwrap();
+    assert_ne!(wifi, identity("wifi"));
     fs::remove_dir_all(root).unwrap();
 }

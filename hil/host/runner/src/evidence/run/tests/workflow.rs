@@ -68,7 +68,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(
         root,
         "hil/schema/observer-inputs.json",
-        r#"{"schema":1,"common":["hil/host/runner/src/session/reboot.rs"],"workloads":{"station-ap-loss":[],"boot-smoke":[]}}"#,
+        r#"{"schema":2,"common":["hil/host/runner/src/session/reboot.rs"],"workloads":{"station-ap-loss":[],"boot-smoke":[]},"timing":{"station-ap-loss":false,"boot-smoke":false},"workload_domains":{"station-ap-loss":"common","boot-smoke":"common"},"domains":{"common":[]},"dependencies":{"common":[],"bluetooth":[],"ieee80211":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}"#,
     );
     write(
         root,
@@ -79,7 +79,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(
         root,
         "Cargo.toml",
-        "[workspace]\nmembers = [\"wifi\",\"ble\"]\n",
+        "[workspace]\nresolver = '3'\nmembers = [\"wifi\",\"ble\",\"hil/host/runner\"]\n",
     );
     write(
         root,
@@ -92,7 +92,24 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
         "[package]\nname = \"ble\"\nversion = \"0.1.0\"\n",
     );
     let lock = "version = 4\n[[package]]\nname = \"wifi\"\nversion = \"0.1.0\"\n[[package]]\nname = \"ble\"\nversion = \"0.1.0\"\n";
-    write(root, "Cargo.lock", lock);
+    write(
+        root,
+        "hil/host/runner/Cargo.toml",
+        "[package]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
+    );
+    let configuration: Value =
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"))).unwrap();
+    write(
+        root,
+        "hil/host/runner/src/main.rs",
+        &format!(
+            "fn main() {{ println!(\"{{}}\", {:?}); }}\n",
+            serde_json::to_string(&json!({"compiler":configuration["compiler"],"environment":configuration["environment"]})).unwrap()
+        ),
+    );
+    let host_lock =
+        format!("{lock}\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n");
+    write(root, "Cargo.lock", &host_lock);
     write(root, "hil/targets/esp32s31/Cargo.lock", lock);
     write(root, ".gitignore", "target/\n");
     write(root, "wifi/src/lib.rs", "fn wifi() {}\n");
@@ -219,6 +236,31 @@ source-paths = ["phy.rs"]
     fs::create_dir_all(&directory).unwrap();
     let mut run = session(&directory);
     run.manifest.runner = runner_provenance().unwrap();
+    // The firmware and observer in this cross-process fixture are synthetic.
+    // Keep the real compiler environment, with the fixture's Cargo composition.
+    let observer = run.manifest.runner.observer.as_mut().unwrap();
+    let manifests = ["Cargo.toml", "hil/host/runner/Cargo.toml"]
+        .into_iter()
+        .map(|path| {
+            (
+                path,
+                toml::from_str::<Value>(&fs::read_to_string(root.join(path)).unwrap()).unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    observer["build"]["resolved"] = json!({"nodes":[{"depth":0,"package":{"name":"open-esp-radio-hil-runner","version":"0.1.0"},"features":[]}],"manifests":manifests,"cargo_config":{}});
+    let compilation = super::super::observer_artifacts::compile(root).unwrap();
+    super::super::observer_artifacts::apply(
+        &mut observer["build"]["resolved"],
+        &compilation.artifacts,
+    )
+    .unwrap();
+    observer["build"]["resolved"]["selected_profile"] = json!(compilation.profile);
+    observer["build_sha256"] = json!(format!(
+        "{:x}",
+        <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&observer["build"]).unwrap())
+    ));
+    drop(compilation);
     run.repository_root = root.into();
     run.target_directory = root.join("target/hil/esp32s31");
     run.bind_source_snapshot(captured.directory()).unwrap();
@@ -285,7 +327,14 @@ source-paths = ["phy.rs"]
         "name = \"ble\"\nversion = \"0.1.0\"",
         "name = \"ble\"\nversion = \"0.2.0\"",
     );
-    write(root, "Cargo.lock", &lock_b);
+    write(
+        root,
+        "Cargo.lock",
+        &host_lock.replace(
+            "name = \"ble\"\nversion = \"0.1.0\"",
+            "name = \"ble\"\nversion = \"0.2.0\"",
+        ),
+    );
     write(root, "hil/targets/esp32s31/Cargo.lock", &lock_b);
     let captured_b = snapshot(root);
     fs::write(

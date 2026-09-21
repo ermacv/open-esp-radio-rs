@@ -551,6 +551,7 @@ locator = "review"
             evidence_index: directory.join("generated/vendor-evidence.json"),
             policy: None,
             suites: vec![VerificationSuiteSpec {
+                model_mechanisms: Vec::new(),
                 artifact_bindings: Default::default(),
                 id: "radio".to_owned(),
                 vendor: vec![

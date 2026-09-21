@@ -430,6 +430,7 @@ dependencies = [
  "open-radio-vendor-knowledge-esp32s31",
  "open-radio-vendor-models-esp32s31",
  "serde_json",
+ "sha2",
  "toml_edit",
 ]
 

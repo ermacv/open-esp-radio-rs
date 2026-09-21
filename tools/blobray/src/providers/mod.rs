@@ -38,6 +38,8 @@ pub struct KnowledgeProviderDescriptor {
 /// comparison plans are data owned by the project verification add-on and are
 /// evaluated by the generic engine.
 pub struct ProviderRegistry {
+    /// Build-time identities of model implementation inputs, indexed by repository path.
+    pub model_inputs: &'static str,
     pub knowledge: &'static [KnowledgeProviderDescriptor],
 }
 
@@ -49,7 +51,10 @@ impl ProviderRegistry {
     }
 }
 
-static BUILTIN_REGISTRY: ProviderRegistry = ProviderRegistry { knowledge: &[] };
+static BUILTIN_REGISTRY: ProviderRegistry = ProviderRegistry {
+    model_inputs: "{}",
+    knowledge: &[],
+};
 
 static INSTALLED_REGISTRY: OnceLock<&'static ProviderRegistry> = OnceLock::new();
 
@@ -65,6 +70,11 @@ fn registry() -> &'static ProviderRegistry {
         .get()
         .copied()
         .unwrap_or(&BUILTIN_REGISTRY)
+}
+
+pub(crate) fn compiled_model_inputs() -> crate::Result<std::collections::BTreeMap<String, String>> {
+    serde_json::from_str(registry().model_inputs)
+        .map_err(|error| crate::Error::invalid(error.to_string()))
 }
 
 fn knowledge_descriptor(provider: &str) -> crate::Result<&'static KnowledgeProviderDescriptor> {
@@ -329,7 +339,8 @@ fn entry_contract_specs_equal(
 }
 
 pub(crate) fn compose_provider(base: &str, overlay: &str) -> crate::Result<&'static str> {
-    compose_provider_in(registry(), base, overlay).map_err(crate::Error::invalid)
+    compose_provider_in(registry(), base, overlay)
+        .map_err(|error| crate::Error::invalid(error.to_string()))
 }
 
 fn compose_provider_in(
@@ -569,6 +580,7 @@ mod tests {
             ..neutral::RISCV_HARNESS
         };
         let registry = |models, harness| ProviderRegistry {
+            model_inputs: "{}",
             knowledge: Box::leak(Box::new([KnowledgeProviderDescriptor {
                 id: "fixture-facts",
                 extends: None,
@@ -612,6 +624,7 @@ mod tests {
             }]));
             assert!(
                 ProviderRegistry {
+                    model_inputs: "{}",
                     knowledge: providers
                 }
                 .validate()
@@ -641,6 +654,7 @@ mod tests {
         }];
         assert!(
             ProviderRegistry {
+                model_inputs: "{}",
                 knowledge: PROVIDERS
             }
             .validate()
@@ -694,6 +708,7 @@ mod tests {
             },
         ];
         static REGISTRY: ProviderRegistry = ProviderRegistry {
+            model_inputs: "{}",
             knowledge: PROVIDERS,
         };
 
@@ -764,6 +779,7 @@ mod tests {
                 },
             ]));
             let result = ProviderRegistry {
+                model_inputs: "{}",
                 knowledge: providers,
             }
             .validate();
@@ -814,6 +830,7 @@ mod tests {
             },
         ];
         static REGISTRY: ProviderRegistry = ProviderRegistry {
+            model_inputs: "{}",
             knowledge: PROVIDERS,
         };
 

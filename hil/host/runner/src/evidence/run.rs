@@ -346,6 +346,10 @@ fn create_unique_directory(parent: &Path, base: &str) -> Result<PathBuf> {
     Err("cannot allocate a unique HIL run directory".into())
 }
 
+#[path = "../../../../schema/observer-artifacts.rs"]
+#[allow(dead_code)]
+mod observer_artifacts;
+
 fn runner_provenance() -> Result<RunnerProvenance> {
     // On Linux this reads the actual running inode even after a rebuild replaces
     // the pathname. The source record comes from this executable's build script.
@@ -355,8 +359,29 @@ fn runner_provenance() -> Result<RunnerProvenance> {
     // replacement. Retain the embedded build and leave this identity unknown.
     #[cfg(not(target_os = "linux"))]
     let executable_sha256: Option<String> = None;
-    let build: serde_json::Value =
+    let mut build: serde_json::Value =
         serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/runner-build.json")))?;
+    if let Some(path) = std::env::var_os("OER_OBSERVER_RECEIPT") {
+        let receipt: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+        if receipt["executable_sha256"].as_str() != executable_sha256.as_deref() {
+            return Err("observer receipt does not identify the running executable".into());
+        }
+        let mut embedded = receipt["build"].clone();
+        embedded["resolved"] = build["resolved"].clone();
+        if embedded != build {
+            return Err("observer receipt does not identify the embedded build".into());
+        }
+        observer_artifacts::apply(
+            &mut build["resolved"],
+            receipt["artifacts"]
+                .as_array()
+                .ok_or("observer artifacts missing")?,
+        )?;
+        build["resolved"]["selected_profile"] = receipt["profile"].clone();
+        if build != receipt["build"] {
+            return Err("invalid observer compilation receipt".into());
+        }
+    }
     use sha2::{Digest, Sha256};
     let build_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&build)?));
     Ok(RunnerProvenance {

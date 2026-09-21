@@ -70,6 +70,9 @@ fn run(fixture: &Fixture, id: &str, outcome: &str, time: u64, application: &[u8]
     for path in [
         "driver.rs",
         "Cargo.lock",
+        "Cargo.toml",
+        "hil/host/runner/Cargo.toml",
+        "hil/host/runner/src/main.rs",
         "ble.rs",
         "phy.rs",
         "observer.rs",
@@ -183,6 +186,7 @@ fn record(fixture: &Fixture, index: &HilEvidenceIndex, catalog: &ScenarioCatalog
         reason: "Reviewed unchanged ATT owner and contract on these two builds".into(),
         source: reference(index, "old"),
         observer_provenance: vec![],
+        observer_configuration: vec![],
         destination: reference(index, "new"),
         inputs: binding.current_inputs,
         dependency_roots: vec![],
@@ -467,7 +471,7 @@ fn identical_snapshot_is_direct_evidence_regardless_of_commit_or_dirty_state() {
                     .success()
             );
         }
-        fs::write(fixture.0.join(".git/info/exclude"), "runs/\n").unwrap();
+        fs::write(fixture.0.join(".git/info/exclude"), "runs/\ntarget/\n").unwrap();
         match change {
             "current-bytes" => fs::write(fixture.0.join("driver.rs"), "changed").unwrap(),
             "extra-current-file" => {

@@ -187,6 +187,7 @@ pub struct RegisterProjection {
 
 #[derive(Clone, Debug)]
 pub struct RegisterModel {
+    loaded_inputs: BTreeMap<std::path::PathBuf, String>,
     chip: String,
     address_space: String,
     device: Device,
@@ -268,6 +269,7 @@ impl RegisterModel {
 
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
+        let mut loaded_inputs = BTreeMap::from([(path.canonicalize()?, input.clone())]);
         let document = input
             .parse::<toml_edit::Document<String>>()
             .map_err(|error| {
@@ -322,6 +324,7 @@ impl RegisterModel {
             }
             let fragment_path = base.join(relative);
             let input = fs::read_to_string(&fragment_path)?;
+            loaded_inputs.insert(fragment_path.canonicalize()?, input.clone());
             let document = input
                 .parse::<toml_edit::Document<String>>()
                 .map_err(|error| {
@@ -365,6 +368,7 @@ impl RegisterModel {
         model_validation::validate_device(&device)
             .map_err(|error| Error::manifest("register model", path, error))?;
         let model = Self {
+            loaded_inputs,
             chip: manifest.chip,
             address_space: manifest.address_space,
             device,
@@ -375,6 +379,11 @@ impl RegisterModel {
             .register_identities()
             .map_err(|error| Error::manifest("register model", path, error))?;
         Ok(model)
+    }
+
+    /// Exact input text parsed by this model, retained for execution provenance.
+    pub fn loaded_inputs(&self) -> &BTreeMap<std::path::PathBuf, String> {
+        &self.loaded_inputs
     }
 
     pub fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
@@ -2810,6 +2819,22 @@ locator = "identity"
             span.unwrap(),
             input.find('2').unwrap()..input.find('2').unwrap() + 1
         );
+    }
+
+    #[test]
+    fn parsed_model_retains_the_input_that_was_loaded_before_replacement() {
+        let (directory, model) = fixture_model("execution-input", None);
+        let path = directory.join("radio.toml").canonicalize().unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(&path, original.replace("STATUS", "CHANGED")).unwrap();
+        assert_eq!(model.loaded_inputs()[&path], original);
+        assert_ne!(
+            RegisterModel::load(&directory.join("device.toml"))
+                .unwrap()
+                .loaded_inputs()[&path],
+            original
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

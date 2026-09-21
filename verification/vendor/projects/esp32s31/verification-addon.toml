@@ -5,9 +5,11 @@ id = "esp32s31-radio-verification-v2"
 report = "generated/reports/verification.json"
 evidence-index = "evidence/vendor-evidence.json"
 policy = "verification-policy.toml"
+model-inputs = "model-inputs.json"
 
 [[suites]]
 id = "phy"
+model-mechanisms = ["target-abi", "shared-radio-registers", "phy-registers", "phy-i2c", "phy-calibration", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_phy_trace_"
 profiles = ["profiles/compiled-equivalence.toml"]
@@ -30,6 +32,7 @@ prefix = "phy_"
 # outside the IEEE 802.15.4 inventory without enumerating a brittle symbol list.
 [[suites]]
 id = "ieee802154-btbb"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_ieee802154_btbb_trace_"
 profiles = []
@@ -42,6 +45,7 @@ prefix = "ieee802154_"
 
 [[suites]]
 id = "ieee802154-zb"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_ieee802154_zb_trace_"
 profiles = []
@@ -54,6 +58,7 @@ prefix = "zb_"
 
 [[suites]]
 id = "ieee802154-coex"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_ieee802154_coex_trace_"
 profiles = []
@@ -66,6 +71,7 @@ prefix = "esp_coex_ieee802154_"
 
 [[suites]]
 id = "libpp-interrupt"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_trace_"
 profiles = []
@@ -78,6 +84,7 @@ all = true
 
 [[suites]]
 id = "libpp-power-interrupt"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_power_irq_trace_"
 profiles = []
@@ -90,6 +97,7 @@ all = true
 
 [[suites]]
 id = "wifi-ap-tsf-stop"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_ap_tsf_trace_"
 profiles = ["profiles/wifi-ap-tsf-stop.toml"]
@@ -103,6 +111,7 @@ symbols = ["hal_disable_softap_tsf"]
 
 [[suites]]
 id = "wifi-ap-tsf-start"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_ap_tsf_start_trace_"
 profiles = ["profiles/wifi-ap-tsf-start.toml"]
@@ -116,6 +125,7 @@ symbols = ["hal_mac_tsf_reset"]
 
 [[suites]]
 id = "rom-sta-tsf-snapshot"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_rom_power_tsf_trace_"
 profiles = ["profiles/rom-sta-tsf-snapshot.toml"]
@@ -129,6 +139,7 @@ symbols = ["hal_get_sta_tsf"]
 
 [[suites]]
 id = "libpp-tx-dma"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 auxiliary-sources = ["libpp-replay"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_tx_trace_"
@@ -143,6 +154,7 @@ all = true
 
 [[suites]]
 id = "libpp-rx-dma"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 auxiliary-sources = ["libpp-replay"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_rx_trace_"
@@ -162,6 +174,7 @@ all = true
 
 [[suites]]
 id = "libpp-tx-retry"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_tx_retry_trace_"
 profiles = ["profiles/libpp-tx-retry.toml"]
@@ -180,6 +193,7 @@ symbols = ["lmacProcessAckTimeout", "lmacProcessTxError"]
 
 [[suites]]
 id = "coex-timer-control"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_trace_"
 profiles = ["profiles/coex-timer.toml"]
@@ -198,6 +212,7 @@ symbols = [
 
 [[suites]]
 id = "coex-timer-set"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_set_trace_"
 profiles = ["profiles/coex-timer-set.toml"]
@@ -210,6 +225,7 @@ symbols = ["coex_hw_timer_set"]
 
 [[suites]]
 id = "coex-core"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_core_trace_"
 profiles = [
@@ -235,6 +251,7 @@ symbols = [
 
 [[suites]]
 id = "wifi-interface-context"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_interface_trace_"
 profiles = ["profiles/wifi-interface-context.toml"]
@@ -248,6 +265,7 @@ symbols = ["hal_mac_set_addr", "hal_mac_set_bssid"]
 
 [[suites]]
 id = "wifi-sta-ap-receive"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact:wifi-registers"
 rust-prefix = "open_wifi_sta_ap_trace_"
 profiles = ["profiles/wifi-sta-ap-receive.toml"]
@@ -260,6 +278,7 @@ symbols = ["wifi_set_rx_policy"]
 
 [[suites]]
 id = "wifi-sta-beacon-filter"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_wifi_sta_trace_"
 profiles = ["profiles/wifi-sta-beacon-filter.toml"]
@@ -273,6 +292,7 @@ symbols = ["hal_disable_sta_beacon_filter"]
 
 [[suites]]
 id = "ble-interrupt-prefix"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_interrupt_trace_"
 profiles = ["profiles/ble-interrupt-prefix.toml"]
@@ -286,6 +306,7 @@ symbols = ["r_sym_ble_ywjh0f9yjTBeI7XgS5da"]
 
 [[suites]]
 id = "ble-scheduler-table-prefix"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_scheduler_trace_"
 profiles = ["profiles/ble-scheduler-table-prefix.toml"]
@@ -299,6 +320,7 @@ symbols = ["r_sym_bt_XPuqTHliEO5V9xpR7aJR"]
 
 [[suites]]
 id = "btbb-v2-init-arg-one"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_btbb_v2_init_trace_"
 profiles = ["profiles/btbb-v2-init-arg-one.toml"]
@@ -312,6 +334,7 @@ symbols = ["bt_bb_v2_init_cmplx"]
 
 [[suites]]
 id = "ble-memory-list-selector-one"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_memory_list_"
 profiles = ["profiles/ble-memory-list-selector-one.toml"]
@@ -328,6 +351,7 @@ symbols = [
 
 [[suites]]
 id = "ble-phy-register-init"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_phy_register_init_trace_"
 profiles = ["profiles/ble-phy-register-init.toml"]
@@ -341,6 +365,7 @@ symbols = ["r_sym_ble_3472b6bNiQdnWkYo6Ggv"]
 
 [[suites]]
 id = "ble-memory-list-selector-two"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_memory_list_"
 profiles = ["profiles/ble-memory-list-selector-two.toml"]
@@ -357,6 +382,7 @@ symbols = [
 
 [[suites]]
 id = "ble-memory-list-selector-three"
+model-mechanisms = ["target-abi", "shared-radio-registers", "bluetooth-registers", "phy-registers", "bluetooth-fail-stop"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_ble_memory_list_"
 profiles = ["profiles/ble-memory-list-selector-three.toml"]
@@ -373,6 +399,7 @@ symbols = [
 
 [[suites]]
 id = "phy-i2c-host-map-bluetooth"
+model-mechanisms = ["target-abi", "shared-radio-registers", "phy-registers", "phy-i2c", "bluetooth-registers"]
 rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_phy_i2c_host_trace_"
 profiles = ["profiles/phy-i2c-host-map-bluetooth.toml"]
@@ -387,6 +414,7 @@ symbols = ["phy_get_i2c_hostid_new"]
 # Current archive calibration leaves are independent of the original rev0 inventory.
 [[suites]]
 id = "phy-calibration-leaves"
+model-mechanisms = ["target-abi", "shared-radio-registers", "phy-registers", "phy-i2c", "phy-calibration"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_phy_calibration_trace_"
 profiles = ["profiles/phy-calibration-leaves.toml"]
@@ -410,6 +438,7 @@ symbols = ["phy_pbus_clear_reg"]
 # Finite SRAM ordinary-TX queue edges; not a complete DMA-root claim.
 [[suites]]
 id = "ordinary-tx-ownership"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_ordinary_tx_ownership_"
 profiles = ["profiles/ordinary-tx-ownership.toml"]
@@ -424,6 +453,7 @@ symbols = ["hal_mac_txq_enable", "hal_mac_clr_txq_state", "hal_mac_txq_disable"]
 # Ordinary preparation retains CTS while clearing the software RTS request.
 [[suites]]
 id = "tx-protection-control"
+model-mechanisms = ["target-abi", "shared-radio-registers", "wifi-registers"]
 rust-artifact-role = "rust-artifact"
 # The cold-init probe belongs to the separate private-input parent-edge test.
 rust-prefix = "open_tx_protection_clear_"

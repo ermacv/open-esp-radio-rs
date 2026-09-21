@@ -165,6 +165,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     .unwrap();
 
     let project = ProjectSpec {
+        loaded_model_inputs: Default::default(),
         id: "fixture".to_owned(),
         target_spec: PathBuf::from("target.toml"),
         ecosystem_packs: Vec::new(),

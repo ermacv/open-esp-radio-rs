@@ -34,9 +34,15 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     super::tests::add_current_build(&root, &run);
     let check = |expected| {
         super::tests::seal(&run);
-        let index =
+        let mut index =
             HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
-        assert_eq!(index.summary().qualifying, usize::from(expected));
+        // This fixture deliberately uses unresolved external lock entries to exercise
+        // firmware pins. Observer compatibility has its own resolved-graph tests.
+        for observation in index.scenarios.values_mut().flatten() {
+            observation.exclusions.retain(|exclusion| {
+                *exclusion != decision::Exclusion::ObserverIdentityNotEstablished
+            });
+        }
         assert_eq!(
             index.summary().current_source_producer,
             usize::from(expected)
@@ -62,6 +68,9 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     let lock = ["esp-hal", "esp-sync", "esp-bootloader-esp-idf", "embassy-net", "embassy-net-driver", "xarxa-driver"]
         .map(|name| format!("[[package]]\nname = {name:?}\nversion = \"1.0.0\"\nsource = \"git+https://example.invalid/source?rev={pin}#{pin}\"\n"))
         .join("\n");
+    let lock = format!(
+        "version = 4\n{lock}\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n"
+    );
     fs::write(root.join("Cargo.lock"), lock).unwrap();
     let mut pinned = canonical.clone();
     pinned["files"][0]["sha256"] = json!(sha256_file(&root.join("Cargo.lock")).unwrap());

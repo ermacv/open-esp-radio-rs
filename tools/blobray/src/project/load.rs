@@ -738,6 +738,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         }
     }
     let project = ProjectSpec {
+        loaded_model_inputs: Default::default(),
         id,
         target_spec,
         ecosystem_packs,
@@ -1112,6 +1113,7 @@ fn load_verification_addon(path: &Path) -> Result<VerificationWorkspacePaths> {
             "id",
             "report",
             "evidence-index",
+            "model-inputs",
             "policy",
             "suites",
         ],
@@ -1136,6 +1138,7 @@ fn load_verification_workspace(
             "id",
             "report",
             "evidence-index",
+            "model-inputs",
             "policy",
             "suites",
         ],
@@ -1188,6 +1191,7 @@ fn load_verification_workspace(
                     "vendor",
                     "auxiliary-sources",
                     "artifact-bindings",
+                    "model-mechanisms",
                     "rust-artifact-role",
                     "rust-companion-role",
                     "rust-prefix",
@@ -1288,6 +1292,9 @@ fn load_verification_workspace(
                 }
             };
             Ok(VerificationSuiteSpec {
+                model_mechanisms: if suite.contains_key("model-mechanisms") {
+                    table_string_array(suite, "model-mechanisms", &context, source, false)?
+                } else { Vec::new() },
                 id,
                 artifact_bindings,
                 vendor,

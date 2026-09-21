@@ -89,6 +89,9 @@ struct Document {
     /// Explicit proof for an old observation without embedded observer identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     observer_provenance: Vec<PathBuf>,
+    /// Reviewer-owned acceptance of compiler/profile changes for functional checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    observer_configuration: Vec<serde_json::Value>,
     destination: ObservationRef,
     inputs: Vec<InputBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

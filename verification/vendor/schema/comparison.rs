@@ -9,6 +9,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "model-inputs.rs"]
+pub mod models;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -19,6 +22,8 @@ pub struct Binding {
 
 pub struct Current {
     pub sha256: String,
+    #[allow(dead_code)] // Producer compares the actual loaded/compiled context.
+    pub model_context: Value,
     pub component: Option<String>,
     pub baseline_digests: Vec<String>,
     pub artifact_pins: BTreeMap<String, String>,
@@ -78,11 +83,12 @@ pub fn current(
             } else {
                 key
             };
+            let bytes = fs::read(&input_path)?;
             input_hashes.insert(
                 format!("{role}:{index}"),
-                format!("{:x}", Sha256::digest(fs::read(&input_path)?)),
+                format!("{:x}", Sha256::digest(&bytes)),
             );
-            let doc = read(&input_path)?;
+            let doc: Value = toml_edit::de::from_str(std::str::from_utf8(&bytes)?)?;
             let mut header = doc.clone();
             header
                 .as_object_mut()
@@ -182,13 +188,15 @@ pub fn current(
         && artifact_pins
             .iter()
             .all(|(role, hash)| artifacts.get(role) == Some(hash));
+    let model_context = models::current(root, &path, &project, &addon_path, &addon, suite)?;
     let identity = strip_annotations(
-        json!({"format":"oer-vendor-comparison-v1", "project":project["id"],
+        json!({"format":"oer-vendor-comparison-v2", "model_context":model_context, "project":project["id"],
         "suite":suite,"source":source,"symbol":symbol,"dispositions":dispositions,
         "profiles":profiles,"baselines":baselines,"policy":policy,"artifacts":artifacts}),
     );
     Ok(Current {
         sha256: format!("{:x}", Sha256::digest(serde_json::to_vec(&identity)?)),
+        model_context,
         component,
         baseline_digests,
         artifact_pins,

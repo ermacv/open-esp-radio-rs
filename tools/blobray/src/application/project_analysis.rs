@@ -617,6 +617,7 @@ mod tests {
 
     fn empty_project() -> ProjectSpec {
         ProjectSpec {
+            loaded_model_inputs: Default::default(),
             id: "fixture".to_owned(),
             target_spec: "target.toml".into(),
             ecosystem_packs: Vec::new(),

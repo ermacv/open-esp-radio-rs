@@ -203,18 +203,54 @@ impl VendorEvidenceIndex {
                                     "current comparison binding/baseline/artifact differs".into(),
                                 );
                             }
-                            if current.input_hashes.iter().any(|(role, hash)| {
-                                !artifact_hashes
-                                    .iter()
-                                    .any(|a| &a.role == role && &a.sha256 == hash)
-                            }) {
+                            let authenticated = suite
+                                .verification
+                                .verification
+                                .model_context
+                                .as_ref()
+                                .map(|c| &c["authentication"]);
+                            let authentication_matches = hashes.iter().all(|(role, hash)| {
+                                let Some(source) = role
+                                    .strip_prefix("source:")
+                                    .and_then(|r| r.split_once(':'))
+                                    .map(|(source, _)| source)
+                                    .or_else(|| role.strip_prefix("auxiliary:"))
+                                else {
+                                    return true;
+                                };
+                                let identities = authenticated
+                                    .and_then(serde_json::Value::as_array)
+                                    .into_iter()
+                                    .flatten()
+                                    .filter(|a| a["source"] == source)
+                                    .collect::<Vec<_>>();
+                                identities.is_empty()
+                                    || identities.iter().any(|a| a["sha256"] == *hash)
+                            });
+                            let model_matches = authentication_matches
+                                && comparison::models::matches(
+                                    &current.model_context,
+                                    suite.verification.verification.model_context.as_ref(),
+                                );
+                            if !model_matches
+                                || current.input_hashes.iter().any(|(role, hash)| {
+                                    !artifact_hashes
+                                        .iter()
+                                        .any(|a| &a.role == role && &a.sha256 == hash)
+                                })
+                            {
                                 release_blockers
                                     .push("comparison inputs changed after execution".into());
+                                // The current identity describes unexecuted inputs. Keep
+                                // the original artifacts, never attach that identity to
+                                // the historical verdict even as a non-eligible row.
+                                None
+                            } else {
+                                Some(comparison::Binding {
+                                    project_manifest: relative.into(),
+                                    sha256: current.sha256,
+                                })
                             }
-                            Some(comparison::Binding {
-                                project_manifest: relative.into(),
-                                sha256: current.sha256,
-                            })
                         }
                         Err(error) => {
                             release_blockers
@@ -398,5 +434,136 @@ mod tests {
             release_blockers: Vec::new(),
         });
         assert!(validate_shareable_index(&index, None).is_err());
+    }
+    #[test]
+    fn publication_does_not_attach_current_profile_to_an_earlier_verdict() {
+        use crate::verification::*;
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+        let project = root.join("project.toml");
+        fs::write(
+            &project,
+            "id = 'fixture'\ntarget-spec = 'target.toml'\nchip-pack = 'chip.toml'\nverification-addon = 'addon.toml'\n",
+        )
+        .unwrap();
+        fs::write(root.join("addon.toml"), "model-inputs = 'model-inputs.json'\n[[suites]]\nid = 'suite'\nmodel-mechanisms = ['abi']\nprofiles = ['profile.toml']\ndispositions = ['disposition.toml']\n[[suites.vendor]]\nsource = 'vendor'\nall = true\n").unwrap();
+        comparison::models::fixture(root);
+        let profile = root.join("profile.toml");
+        fs::write(
+            &profile,
+            "[[profiles]]\nvendor-source = 'vendor'\nvendor-symbol = 'entry'\nscope = 'A'\n",
+        )
+        .unwrap();
+        let disposition = root.join("disposition.toml");
+        fs::write(
+            &disposition,
+            "[[functions]]\nsource = 'vendor'\nsymbol = 'entry'\n",
+        )
+        .unwrap();
+        let mut inputs = ExecutionInputs::new().unwrap();
+        let mut captured_profile = profile.clone();
+        let mut captured_disposition = disposition.clone();
+        inputs.capture(&mut captured_profile).unwrap();
+        inputs.capture(&mut captured_disposition).unwrap();
+        let target = crate::TargetSpec {
+            id: "fixture".into(),
+            knowledge_provider: None,
+            architecture: crate::target::Architecture::Riscv32,
+            calling_convention: crate::target::CallingConvention::RiscvIlp32,
+            endianness: crate::target::Endianness::Little,
+            pointer_width: 32,
+            rust_target: "riscv32imac-unknown-none-elf".into(),
+        };
+        let evidence = BTreeMap::from([(
+            ("vendor".into(), "entry".into()),
+            EvidenceIdentity::plain("fixture"),
+        )]);
+        let mut verification = verification_core_report(VerificationCoreInputs {
+            target: &target,
+            gate: crate::VerificationGate::Completion,
+            summary: crate::VerifySummary::default(),
+            orphan_probes: 0,
+            evidence_baseline_passed: true,
+            passed: true,
+            evidence: &evidence,
+            artifacts: &[
+                ("profiles:0", captured_profile.as_path()),
+                ("dispositions:0", captured_disposition.as_path()),
+            ],
+            release_gaps: &[],
+        })
+        .unwrap();
+        verification.model_context = Some(
+            comparison::current(
+                root,
+                Path::new("project.toml"),
+                "suite",
+                "vendor",
+                "entry",
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .model_context,
+        );
+        let mut function =
+            FunctionVerificationReport::new("vendor", "entry", FunctionVerificationStatus::Match);
+        function.evidence_class = EvidenceClass::ProductionTrace;
+        let mut command = VerificationCommandReport {
+            schema_version: VERIFICATION_REPORT_SCHEMA,
+            command: "verify inventory",
+            verification,
+            sources: vec![SourceVerificationReport {
+                source: "vendor".into(),
+                summary: crate::VerifySummary::default(),
+                functions: vec![function],
+            }],
+            inventory: vec![],
+            protocols: None,
+            evidence_comparison: None,
+            report: None,
+        };
+        inputs.restore_paths(&mut command);
+        let report = ProjectVerificationReport {
+            schema_version: PROJECT_VERIFICATION_REPORT_SCHEMA,
+            command: "project verify",
+            project: "fixture".into(),
+            passed: true,
+            complete_project_run: false,
+            replacement_graph: ReplacementGraph::from_suites(&[]).unwrap(),
+            rust_component_index: RustComponentIndex {
+                schema_version: 1,
+                summary: Default::default(),
+                artifacts: vec![],
+                components: vec![],
+                diagnostics: vec![],
+            },
+            suites: vec![ProjectVerificationSuiteReport {
+                id: "suite".into(),
+                verification: command,
+            }],
+        };
+        let before = VendorEvidenceIndex::build(&report, &project).unwrap();
+        assert!(before.entries[0].comparison.is_some());
+        fs::write(
+            &profile,
+            fs::read_to_string(&profile)
+                .unwrap()
+                .replace("scope = 'A'", "scope = 'B'"),
+        )
+        .unwrap();
+        let after = VendorEvidenceIndex::build(&report, &project).unwrap();
+        assert!(after.entries[0].comparison.is_none());
+        assert!(!after.entries[0].release_eligible);
+        assert!(
+            after.entries[0]
+                .release_blockers
+                .iter()
+                .any(|reason| reason == "comparison inputs changed after execution")
+        );
+        assert_eq!(
+            after.entries[0].artifact_hashes,
+            before.entries[0].artifact_hashes
+        );
     }
 }

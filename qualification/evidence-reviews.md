@@ -236,11 +236,46 @@ platforms retain the embedded build but leave the executable identity unknown;
 the same explicit review requirement applies.
 
 The evaluator checks the relevant current inputs selected by
-[`observer-inputs.json`](../hil/schema/observer-inputs.json). Shared dispatch,
-transport and fixture owners are common; workload families bind their own
-observers. The full executable/build hash records origin and is not itself a
-requirement to repeat every scenario. Changes outside the selected observer
-inputs do not invalidate that observer binding.
+[`observer-inputs.json`](../hil/schema/observer-inputs.json). Shared execution
+and transport mechanisms are common; Wi-Fi and Bluetooth fixtures have separate
+scopes. The embedded build schema 2 retains Cargo's normal/build resolution view,
+local manifests, full file provenance, compiler and build environment. Applicability projects the selected direct dependency groups and
+all their transitive dependencies, including shared feature unification. The
+dependency edges come from `cargo tree`. Actual package features and unit profiles
+come from Cargo's `compiler-artifact` messages, including separate build and
+normal units. Emitted build-script cfg/env/link flags are also bound, with
+output-directory locations normalized. `cargo hil` builds through xtask, preserves a receipt under
+`target/hil/observers/`, and launches a copy identified by executable hash. The
+runner verifies this receipt against its running executable and embedded build.
+Direct Cargo builds retain source provenance but have no compilation receipt;
+they cannot establish current observer compatibility automatically. The evaluator
+builds the required current runner without hardware to obtain the same precise
+unit information. It uses
+the same package projection as firmware dependency reviews. Unrelated lockfile
+entries and dev-only dependencies do not become observer dependencies. Used
+local dependency sources, manifests and build scripts remain bound.
+
+The registry's `build.profile` selects the required host profile (`debug` maps
+to Cargo's `dev`). The evaluator obtains compiler, target, optimization, debug
+settings and active flags from the required compiled runner's embedded record;
+Cargo's artifact messages supply each dependency unit's profile. Relevant Cargo
+build/target/environment settings and the selected profile definition complete
+that configuration. Builds use an exclusively locked observer cache, separate
+from ordinary Cargo outputs, until executable identity and receipt are captured. Cargo aliases and
+unrelated profile definitions do not affect it. The full executable/build hash
+records origin; applicability compares the scoped inputs and configuration.
+
+For functional obligations an existing applicability review may contain
+`[[observer-configuration]]` tables with `build_sha256`, `required_sha256` and a
+nonempty `reason`. The first digest binds the executed observer build; the
+second binds canonical JSON containing the required `compiler`, `environment`,
+`profiles`, scoped dependency `units` and `cargo` values. This explicitly accepts compiler/profile
+compatibility for that observation. It cannot waive changed source,
+dependencies, features, target, flags or Cargo build settings. The registry assigns whole-workload timing sensitivity explicitly; named
+checks retain their individual sensitivity. This is independent of firmware
+`identical-image` policy (for example, boot placement is a functional observer
+check). Timing-sensitive obligations require matching configuration, including controls and observations
+used to resolve failures; these review tables cannot waive that requirement.
 
 A bundle without this identity remains historical. A review may supply
 `observer-provenance = ["path/to/observer-proof.json"]` at its top level. Each

@@ -1,0 +1,213 @@
+{
+  "schema": 1,
+  "mechanisms": {
+    "target-abi": {
+      "implementation": [
+        "tools/blobray/crates/contracts",
+        "tools/blobray/crates/analysis-model",
+        "tools/blobray/crates/backend-riscv",
+        "tools/blobray/crates/execution-model",
+        "tools/blobray/crates/semantics",
+        "tools/blobray/addons/c",
+        "tools/blobray/addons/esp-idf",
+        "verification/vendor/chips/esp32s31/blobray-provider/knowledge",
+        "verification/vendor/chips/esp32s31/blobray-provider/contracts",
+        "verification/vendor/chips/esp32s31/blobray-provider/models",
+        "verification/vendor/projects/esp32s31/blobray-provider/knowledge",
+        "verification/vendor/projects/esp32s31/blobray-provider/contracts",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/Cargo.toml",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/lib.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/body_identity.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/direct_semantic.rs",
+        "verification/vendor/projects/esp32s31/blobray-host/Cargo.toml",
+        "verification/vendor/projects/esp32s31/blobray-host/build.rs",
+        "verification/vendor/projects/esp32s31/blobray-host/src/main.rs",
+        "tools/blobray/src/providers/mod.rs",
+        "tools/blobray/src/target.rs"
+      ],
+      "contracts": [
+        "registers/esp32s31/upstream/platform-radio-deps.svd",
+        "registers/esp32s31/model/memory.toml",
+        "registers/esp32s31/model/reviewed.toml"
+      ]
+    },
+    "phy-i2c": {
+      "implementation": [
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/phy_i2c.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/i2c.rs"
+      ],
+      "contracts": []
+    },
+    "phy-calibration": {
+      "implementation": [
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/phy_calibration.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/rf.rs",
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/intrinsics.rs"
+      ],
+      "contracts": []
+    },
+    "bluetooth-fail-stop": {
+      "implementation": [
+        "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/fail_stop.rs"
+      ],
+      "contracts": []
+    },
+    "wifi-registers": {
+      "implementation": [
+        "tools/blobray/src/register_catalog.rs",
+        "tools/blobray/src/registers/workspace.rs",
+        "tools/blobray/crates/register-model/Cargo.toml",
+        "tools/blobray/crates/register-model/src/lib.rs",
+        "tools/blobray/crates/register-model/src/model_validation.rs",
+        "tools/blobray/crates/review-model"
+      ],
+      "contracts": [
+        "registers/esp32s31/model/peripherals/wifi-mac-internal-tx-block-ack.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-color-collision.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-power-save.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-bssid-list.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-custom-type.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-statistics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-statistics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-diagnostic-statistics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-hang-statistics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-sta-beacon-filter.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-beacon-ie-crc.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-end-state.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-runtime-results.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-bssid-policy.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-interface-address.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-filter.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-regdma-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-crypto-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-key-table.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-common.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-vector.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-beamforming-report.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-completion.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-init-prefix.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-tb-statistics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-tb-diagnostics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-buffer-status.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-mu-edca-timer.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-trigger-rx-diagnostics.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-beamforming-feedback-test.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-obss-narrow-band-ru.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tx-power-init.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-he-init-suffix.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-coex-init.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-antenna-init.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tsf-status.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-sta-tbtt-target.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-sta-tsf-load.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rtc-timer-update.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-txrx-prefix.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-txrx-callbacks.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-txrx-suffix.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-csi-control.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-last-rx-buffer.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-core-enable.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-interrupt.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-tsf-timer.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-coex-runtime.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-power-interrupt.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-cold-handshake.toml",
+        "registers/esp32s31/model/peripherals/wifi-mac-rx-dma.toml"
+      ]
+    },
+    "bluetooth-registers": {
+      "implementation": [
+        "tools/blobray/src/register_catalog.rs",
+        "tools/blobray/src/registers/workspace.rs",
+        "tools/blobray/crates/register-model/Cargo.toml",
+        "tools/blobray/crates/register-model/src/lib.rs",
+        "tools/blobray/crates/register-model/src/model_validation.rs",
+        "tools/blobray/crates/review-model"
+      ],
+      "contracts": [
+        "registers/esp32s31/model/peripherals/btmac-ble-phy-init.toml",
+        "registers/esp32s31/model/peripherals/bluetooth-controller-core.toml",
+        "registers/esp32s31/model/peripherals/bluetooth-interrupt-bank.toml",
+        "registers/esp32s31/model/peripherals/bluetooth-scheduler-interrupt-runtime.toml",
+        "registers/esp32s31/model/peripherals/bluetooth-reset-idle-status-0.toml",
+        "registers/esp32s31/model/peripherals/btdm-scheduler-table.toml",
+        "registers/esp32s31/model/peripherals/btdm-runtime-control.toml",
+        "registers/esp32s31/model/peripherals/ble-phy-init-aux.toml",
+        "registers/esp32s31/model/peripherals/ble-controller-address-slots.toml",
+        "registers/esp32s31/model/peripherals/ble-hw-positional-word-1874.toml",
+        "registers/esp32s31/model/peripherals/ble-sync-publication.toml",
+        "registers/esp32s31/model/peripherals/ble-scan-control.toml",
+        "registers/esp32s31/model/peripherals/ble-hw-accelerator.toml",
+        "registers/esp32s31/model/peripherals/ble-hw-resolving-list.toml",
+        "registers/esp32s31/model/peripherals/ble-hw-runtime-control.toml",
+        "registers/esp32s31/model/peripherals/ble-hw-cte-ring-control.toml",
+        "registers/esp32s31/model/peripherals/ble-iso-scheduler-notify.toml",
+        "registers/esp32s31/model/peripherals/bt-v3-2-baseband.toml",
+        "registers/esp32s31/model/peripherals/bt-v3-2-cte.toml",
+        "registers/esp32s31/model/peripherals/zbbb-radio-control.toml",
+        "registers/esp32s31/model/peripherals/ieee802154-mac.toml",
+        "registers/esp32s31/model/peripherals/ieee802154-interrupt-route.toml"
+      ]
+    },
+    "phy-registers": {
+      "implementation": [
+        "tools/blobray/src/register_catalog.rs",
+        "tools/blobray/src/registers/workspace.rs",
+        "tools/blobray/crates/register-model/Cargo.toml",
+        "tools/blobray/crates/register-model/src/lib.rs",
+        "tools/blobray/crates/register-model/src/model_validation.rs",
+        "tools/blobray/crates/review-model"
+      ],
+      "contracts": [
+        "registers/esp32s31/model/peripherals/phy-memory.toml",
+        "registers/esp32s31/model/peripherals/phy-frequency-channel-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-pbus.toml",
+        "registers/esp32s31/model/peripherals/i2c-ana-mst.toml",
+        "registers/esp32s31/model/peripherals/phy-i2c-command-ram.toml",
+        "registers/esp32s31/model/peripherals/phy-agc-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-baseband-config-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-iq-estimator-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-rx-dco-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-cold-deadline-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-clock-oracle.toml",
+        "registers/esp32s31/model/peripherals/phy-fecoex-recovered.toml",
+        "registers/esp32s31/model/peripherals/phy-fedata-recovered.toml",
+        "registers/esp32s31/model/peripherals/phy-fectrl-recovered.toml",
+        "registers/esp32s31/model/peripherals/phy-fedata-wifi-recovered.toml",
+        "registers/esp32s31/model/peripherals/phy-btagc-recovered.toml",
+        "registers/esp32s31/model/peripherals/phy-agc-recovered-gaps.toml",
+        "registers/esp32s31/model/peripherals/phy-nrx-recovered-gaps.toml",
+        "registers/esp32s31/model/peripherals/phy-bb-recovered-gaps.toml",
+        "registers/esp32s31/model/peripherals/phy-brx-recovered-gaps.toml"
+      ]
+    },
+    "shared-radio-registers": {
+      "implementation": [
+        "tools/blobray/src/register_catalog.rs",
+        "tools/blobray/src/registers/workspace.rs",
+        "tools/blobray/crates/register-model/Cargo.toml",
+        "tools/blobray/crates/register-model/src/lib.rs",
+        "tools/blobray/crates/register-model/src/model_validation.rs",
+        "tools/blobray/crates/review-model"
+      ],
+      "contracts": [
+        "registers/esp32s31/model/peripherals/pmu-radio.toml",
+        "registers/esp32s31/model/peripherals/hp-sys-clkrst-radio.toml",
+        "registers/esp32s31/model/peripherals/modem-syscon-radio.toml",
+        "registers/esp32s31/model/peripherals/modem-lpcon-shared-clock.toml",
+        "registers/esp32s31/model/peripherals/modem-lpcon-phy-tick.toml",
+        "registers/esp32s31/model/peripherals/lp-aon-clkrst.toml",
+        "registers/esp32s31/model/peripherals/lp-periclkrst.toml",
+        "registers/esp32s31/model/peripherals/lp-tsens.toml",
+        "registers/esp32s31/model/peripherals/shared-radio-init-control.toml",
+        "registers/esp32s31/model/peripherals/coex-hw-timer.toml",
+        "registers/esp32s31/model/peripherals/shared-baseband-reset-idle-status.toml",
+        "registers/esp32s31/model/peripherals/shared-baseband-tx-timing.toml"
+      ]
+    }
+  }
+}

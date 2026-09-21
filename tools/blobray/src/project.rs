@@ -196,6 +196,7 @@ pub(crate) struct VerificationVendorSpec {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationSuiteSpec {
+    pub(crate) model_mechanisms: Vec<String>,
     pub(crate) id: String,
     pub(crate) artifact_bindings: std::collections::BTreeMap<String, String>,
     pub(crate) vendor: Vec<VerificationVendorSpec>,
@@ -273,6 +274,8 @@ pub(crate) struct AnalysisSymbolFamilySurface {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
+    /// Identities captured by the loaders, never recaptured at publication.
+    pub(crate) loaded_model_inputs: std::collections::BTreeMap<PathBuf, String>,
     pub(crate) id: String,
     pub(crate) target_spec: PathBuf,
     pub(crate) ecosystem_packs: Vec<EcosystemPack>,

@@ -1800,6 +1800,7 @@ mod cache_domain_tests {
 
     fn project(id: &str) -> ProjectSpec {
         ProjectSpec {
+            loaded_model_inputs: Default::default(),
             id: id.to_owned(),
             target_spec: "target.toml".into(),
             ecosystem_packs: Vec::new(),

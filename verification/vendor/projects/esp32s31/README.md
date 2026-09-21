@@ -22,6 +22,17 @@ facts or requiring private artifacts. The full investigation retains exact-input
 authentication. The [revision state](revisions/README.md) describes its machine
 snapshot schema and compatibility constraints.
 
+Comparison suites in [verification-addon.toml](verification-addon.toml) declare
+`model-mechanisms` from [model-inputs.json](model-inputs.json). That registry
+separates target/ABI, shared radio geometry, Wi-Fi and Bluetooth geometry, PHY
+I2C and calibration models, and Bluetooth fail-stop summaries. Its implementation
+paths are captured by the composed host at build time; hardware contract paths
+must identify inputs actually loaded by the project. Update the declarations
+when a suite starts depending on another mechanism. Shared dispatcher and ABI
+files remain shared dependencies; source file boundaries determine the finest
+implementation scope. Rendering code and research in other mechanisms are
+outside the selected identity.
+
 ## Local inputs
 
 `local.toml` is ignored and contains machine-local paths to authenticated

@@ -50,11 +50,31 @@ fn set_string(slot: &mut Option<String>, value: String, option: &str) -> Result<
 }
 
 pub(super) fn execute(
-    arguments: VerifyInventoryArgs,
+    mut arguments: VerifyInventoryArgs,
     svd: &MmioMap,
     target: &TargetSpec,
     knowledge_provider: Option<&str>,
 ) -> Result<VerificationCommandReport> {
+    let mut inputs = crate::verification::ExecutionInputs::new()?;
+    for value in arguments
+        .source_artifact
+        .iter_mut()
+        .chain(&mut arguments.source_inventory)
+        .chain(&mut arguments.source_companion)
+        .chain(&mut arguments.auxiliary_artifact)
+    {
+        inputs.capture(&mut value.path)?;
+    }
+    for path in arguments
+        .rust_artifact
+        .iter_mut()
+        .chain(&mut arguments.rust_companion)
+        .chain(&mut arguments.profiles)
+        .chain(&mut arguments.dispositions)
+        .chain(&mut arguments.evidence_baseline)
+    {
+        inputs.capture(path)?;
+    }
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
     let mut auxiliary_artifacts = BTreeMap::<String, PathBuf>::new();
     for value in arguments.auxiliary_artifact {
@@ -373,7 +393,7 @@ pub(super) fn execute(
             symbols: symbols.len(),
         })
         .collect();
-    let report = VerificationCommandReport {
+    let mut report = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,
         command: "verify inventory",
         verification,
@@ -383,6 +403,7 @@ pub(super) fn execute(
         evidence_comparison,
         report: publication,
     };
+    inputs.restore_paths(&mut report);
     if let Some(path) = output.as_deref() {
         write_verification_json_report(path, &report)?;
     }

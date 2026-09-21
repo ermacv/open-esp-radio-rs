@@ -1,6 +1,6 @@
 [alias]
 xtask = "run -p oer-xtask --"
-hil = "run --quiet -p open-esp-radio-hil-runner --"
+hil = "run --quiet -p oer-xtask -- hil"
 memory = "run --quiet -p open-esp-radio-memory-report --"
 qualification = "run --quiet --profile qualification -p open-esp-radio-qualification-check --"
 # Keep Cargo's preparation phase visible. In particular, do not hide a

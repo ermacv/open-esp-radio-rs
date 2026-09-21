@@ -31,6 +31,7 @@ static KNOWLEDGE_PROVIDERS: &[KnowledgeProviderDescriptor] = &[
 ];
 
 static PROVIDERS: ProviderRegistry = ProviderRegistry {
+    model_inputs: include_str!(concat!(env!("OUT_DIR"), "/model-inputs.json")),
     knowledge: KNOWLEDGE_PROVIDERS,
 };
 
@@ -41,6 +42,51 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suites_declare_known_mechanisms_and_wifi_does_not_depend_on_bluetooth_fail_stop() {
+        let registry: serde_json::Value =
+            serde_json::from_str(include_str!("../../model-inputs.json")).unwrap();
+        let addon: toml_edit::Document<String> = include_str!("../../verification-addon.toml")
+            .parse()
+            .unwrap();
+        let provenance: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(PROVIDERS.model_inputs).unwrap();
+        assert!(
+            provenance
+                .contains_key("verification/vendor/projects/esp32s31/blobray-host/src/main.rs")
+        );
+        assert!(
+            !provenance.contains_key("tools/blobray/crates/register-model/src/pac_api_render.rs")
+        );
+        for suite in addon["suites"].as_array_of_tables().unwrap() {
+            let mechanisms = suite["model-mechanisms"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert!(mechanisms.contains(&"target-abi"));
+            for mechanism in &mechanisms {
+                let inputs = registry["mechanisms"][mechanism]["implementation"]
+                    .as_array()
+                    .unwrap();
+                assert!(!inputs.is_empty());
+                for path in inputs {
+                    let path = path.as_str().unwrap();
+                    assert!(
+                        provenance
+                            .keys()
+                            .any(|p| p == path || p.starts_with(&format!("{path}/"))),
+                        "compiled input missing: {path}"
+                    );
+                }
+            }
+            if suite["id"].as_str().unwrap() == "ordinary-tx-ownership" {
+                assert!(!mechanisms.contains(&"bluetooth-fail-stop"));
+            }
+        }
+    }
 
     #[test]
     fn declarative_knowledge_does_not_install_executable_provider_dependencies() {

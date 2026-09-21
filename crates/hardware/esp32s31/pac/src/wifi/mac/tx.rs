@@ -122,9 +122,22 @@ impl MacLegacyRate {
     }
 }
 
+/// Software-requested control exchange for one ordinary queue publication.
+///
+/// This owns the request flags only. The caller separately owns negotiated
+/// admission, control-frame rate/power and Duration/NAV correctness.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MacTxProtection {
+    #[default]
+    None,
+    CtsToSelf,
+    RtsCts,
+}
+
 /// Semantic inputs for one bounded legacy queue publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacLegacyTxParameters {
+    pub protection: MacTxProtection,
     pub rate: MacLegacyRate,
     pub rts_rate: MacLegacyRate,
     pub signal: u16,
@@ -154,6 +167,11 @@ pub struct MacLegacyTxProgram {
 }
 
 impl MacLegacyTxProgram {
+    /// Requested exchange retained with this descriptor-bound program.
+    pub const fn protection(self) -> MacTxProtection {
+        self.parameters.protection
+    }
+
     /// Bind one semantic legacy publication to its prepared DMA authority.
     pub fn new(dma: &dyn PreparedTxDma, parameters: MacLegacyTxParameters) -> Option<Self> {
         if parameters.signal > 0x0fff
@@ -300,6 +318,7 @@ impl MacHtRate {
 /// Semantic inputs for one bounded HT queue publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHtTxParameters {
+    pub protection: MacTxProtection,
     pub rate: MacHtRate,
     pub format: MacHtTxFormat,
     pub length: u16,
@@ -332,6 +351,11 @@ pub struct MacHtTxProgram {
 }
 
 impl MacHtTxProgram {
+    /// Requested exchange retained with this descriptor-bound program.
+    pub const fn protection(self) -> MacTxProtection {
+        self.parameters.protection
+    }
+
     /// Bind one semantic HT publication to its prepared DMA authority.
     pub fn new(dma: &dyn PreparedTxDma, parameters: MacHtTxParameters) -> Option<Self> {
         if parameters.length == 0
@@ -461,6 +485,7 @@ pub enum MacHeTxFormat {
 /// Semantic inputs for one bounded HE SU queue publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHeTxParameters {
+    pub protection: MacTxProtection,
     pub rate: MacHeRate,
     pub format: MacHeTxFormat,
     pub apep_length: u16,
@@ -491,6 +516,11 @@ pub struct MacHeTxProgram {
 }
 
 impl MacHeTxProgram {
+    /// Requested exchange retained with this descriptor-bound program.
+    pub const fn protection(self) -> MacTxProtection {
+        self.parameters.protection
+    }
+
     pub fn new(dma: &dyn PreparedTxDma, parameters: MacHeTxParameters) -> Option<Self> {
         if parameters.apep_length == 0
             || parameters.descriptor_count == 0
@@ -819,7 +849,15 @@ impl WifiRadioRegisters {
         program: MacLegacyTxProgram,
     ) -> bool {
         assert_eq!(dma.descriptor_head(), program.descriptor_head);
-        self.prepare_legacy_mac_tx(queue, program)
+        if !self.prepare_legacy_mac_tx(queue, program) {
+            return false;
+        }
+        queue::configure_protection(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            program.protection(),
+        );
+        true
     }
 
     /// Prepare one HT queue whose descriptor chain is retained by `dma`.
@@ -830,7 +868,15 @@ impl WifiRadioRegisters {
         program: MacHtTxProgram,
     ) -> bool {
         assert_eq!(dma.descriptor_head(), program.descriptor_head);
-        self.prepare_ht_mac_tx(queue, program)
+        if !self.prepare_ht_mac_tx(queue, program) {
+            return false;
+        }
+        queue::configure_protection(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            program.protection(),
+        );
+        true
     }
 
     /// Prepare one HE queue whose descriptor chain is retained by `dma`.
@@ -841,7 +887,15 @@ impl WifiRadioRegisters {
         program: MacHeTxProgram,
     ) -> bool {
         assert_eq!(dma.descriptor_head(), program.descriptor_head);
-        self.prepare_he_mac_tx(queue, program)
+        if !self.prepare_he_mac_tx(queue, program) {
+            return false;
+        }
+        queue::configure_protection(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            program.protection(),
+        );
+        true
     }
 
     /// Publish the final ENABLE|VALID edge for a hardware-owned TX chain.
@@ -921,7 +975,13 @@ impl WifiRadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
-        queue::clear_software_rts(control_bank, u32::from(queue));
+        queue::configure_rts(
+            control_bank,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+            u32::from(queue),
+            false,
+            None,
+        );
         crate::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
             vectors,
             bank,
@@ -1037,7 +1097,13 @@ impl WifiRadioRegisters {
         );
         // `mac_tx_set_plcp0` publishes the control image and immediately
         // clears software RTS through one fresh-read protection update.
-        queue::clear_software_rts(control_bank, u32::from(queue));
+        queue::configure_rts(
+            control_bank,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+            u32::from(queue),
+            false,
+            None,
+        );
         let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         crate::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
             vectors,
@@ -1194,7 +1260,13 @@ impl WifiRadioRegisters {
         // by mac_tx_set_hesig. The bounded SU profile clears software RTS,
         // then replaces the three finite channel-width minimum-MPDU lanes.
         let protection = control_bank.protection(bank);
-        queue::clear_software_rts(control_bank, u32::from(queue));
+        queue::configure_rts(
+            control_bank,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+            u32::from(queue),
+            false,
+            None,
+        );
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
                 .set(parameters.protection_spacing)

@@ -19,6 +19,16 @@ API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in
 `crates/`.
 
+`cargo hil run diagnostic-tx-protection-air` runs a twelve-second HT40
+bidirectional UDP workload at 4 Mbit/s per direction, with AP and independent
+air captures. It uses the ordinary production protection policy; the scenario
+does not force RTS or CTS. The delivery verdict is not a protection verdict.
+Inspect `independent-openwrt-air.pcap` when the configured dedicated observer
+is available, and `independent-air.pcapng` for the laptop monitor. A CTS carries
+only a receiver address: attribution to a CTS-to-self exchange also requires
+its relationship to the following target transmission. Missing frames or PHY
+timestamps limit what the capture can establish about Duration and SIFS.
+
 Standalone HT AP scenarios accept a runtime scheduling comparison:
 
 ```console

@@ -1,0 +1,31 @@
+schema = 4
+transfer = "identical-image"
+id = "diagnostic-tx-protection-air"
+description = "Bounded HT40 transmit workload with independent capture for RTS/CTS investigation; delivery alone does not qualify protection"
+repetitions = 1
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "station", "tx-protection", "ht40"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 12
+rx_rate_bps = 4000000
+tx_rate_bps = 4000000
+payload_bytes = 512
+
+[criteria]
+exact_delivery = false
+minimum_tx_bps = 100000
+minimum_rx_bps = 100000
+minimum_combined_bps = 200000
+require_no_beacon_loss = true
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_air_monitor = true

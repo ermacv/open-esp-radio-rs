@@ -1,6 +1,85 @@
 use crate::{support::*, *};
 
 #[test]
+fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
+    use oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf;
+    use oer_esp32s31_wifi_mac::tx::{HeSmpduTxConfig, HtTxConfig, MacTxProtection};
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = MockMmio::default();
+    let mut expected = [MacTxProtection::None; 4];
+    for protection in [
+        MacTxProtection::CtsToSelf,
+        MacTxProtection::RtsCts,
+        MacTxProtection::None,
+    ] {
+        for queue in [
+            LegacyTxQueue::Voice,
+            LegacyTxQueue::Video,
+            LegacyTxQueue::BestEffort,
+            LegacyTxQueue::Background,
+        ] {
+            for phy in 0..3 {
+                let cookie = slot.as_mut().reserve(512, 100).unwrap();
+                match phy {
+                    0 => {
+                        let mut config = LegacyTxConfig::management_1m(100);
+                        config.protection = protection;
+                        slot.as_mut()
+                            .submit_legacy(&mut hardware, cookie, queue, config)
+                            .unwrap();
+                    }
+                    1 => {
+                        let mut config = HtTxConfig::single_mpdu(
+                            HtRate::new(
+                                HtMcs::Mcs7,
+                                HtGuardInterval::Long800Ns,
+                                HtChannelWidth::Mhz20,
+                            ),
+                            96,
+                            0,
+                        )
+                        .unwrap();
+                        config.protection = protection;
+                        slot.as_mut()
+                            .submit_ht(&mut hardware, cookie, queue, config)
+                            .unwrap();
+                    }
+                    _ => {
+                        let mut config = HeSmpduTxConfig::new(
+                            HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf1600Ns),
+                            0,
+                            96,
+                        )
+                        .unwrap();
+                        config.protection = protection;
+                        slot.as_mut()
+                            .submit_he_smpdu(&mut hardware, cookie, queue, config)
+                            .unwrap();
+                    }
+                }
+                let index = usize::from(queue.hardware_index());
+                expected[index] = protection;
+                assert_eq!(hardware.tx_protection, expected);
+                assert_eq!(slot.state(), TxSlotState::HardwareOwned);
+                hardware.set_tx_completion(
+                    queue.hardware_index(),
+                    MacTxCompletionObservation::new_model(0, 0),
+                );
+                slot.as_mut()
+                    .acknowledge_completion(&mut hardware)
+                    .unwrap()
+                    .unwrap();
+                slot.as_mut()
+                    .detach_completed(&mut hardware, cookie)
+                    .unwrap();
+                assert_eq!(slot.state(), TxSlotState::Free);
+            }
+        }
+    }
+}
+
+#[test]
 fn completed_tx_keeps_buffer_until_detach_and_rejects_previous_generation() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = MockMmio::default();

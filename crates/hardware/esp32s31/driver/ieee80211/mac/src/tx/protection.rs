@@ -2,13 +2,16 @@
 //!
 //! ERP, HT and HE Operation elements can require protection independently of
 //! the selected data rate.  This module keeps those protocol decisions typed
-//! and host-testable.  It deliberately does not turn the queue's basic-rate,
-//! power, `SW_RTS` or `SW_CTS` fields into an RTS/CTS claim: the reviewed S31
-//! sources do not yet establish the complete generated-frame, duration/NAV,
-//! retry and queue-clear lifecycle. In the reviewed queue word, SW_RTS is
-//! bit 31 and SW_CTS is bit 30. Ordinary preparation clears RTS; cold HE
-//! initialization clears CTS. Neither reset operation proves a generated
-//! CTS-to-Self exchange, so admission remains closed.
+//! and host-testable. The recovered request fields and bounded HT40 on-air
+//! observations do not establish the complete ordinary protected-publication
+//! contract across rates, receivers, retry and queue-clear transitions.
+//! Descriptor-bound preparation replaces both software protection requests
+//! while the queue is idle; each PPDU configuration carries its explicit mode.
+//! SOURCE\[HIL_OPEN_HT40_PROTECTION_TURNOVER_2026_09_21] observes bounded HT40
+//! aggregate turnover. Other queue/PHY combinations and missing-CTS recovery
+//! still need on-air qualification; a finite HE threshold additionally needs
+//! a PHY-specific byte conversion.
+//! Admission therefore remains closed when negotiated policy requires protection.
 
 use crate::tx::{HeEdcaTxopLimit, HtChannelWidth, LegacyRate, TxPhyRate};
 

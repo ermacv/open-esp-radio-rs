@@ -489,6 +489,23 @@ impl OrdinaryMpduRetryState {
         self.rate_after_failed_attempts(retry_index)
     }
 
+    /// Every rate reachable during this exchange, including CTS failures and
+    /// collisions which do not consume the MPDU retry limit.
+    ///
+    /// Admission must inspect this entire series before consuming sequence,
+    /// packet-number or DMA ownership. Repeated rates are retained so missing
+    /// schedule entries cannot be hidden by a shorter MPDU retry budget.
+    pub fn possible_rates(
+        &self,
+    ) -> impl Iterator<Item = Result<TxPhyRate, OrdinaryRetryError>> + '_ {
+        let class_limit = match self.frame_class {
+            OrdinaryFrameClass::Short => VENDOR_SHORT_RETRY_LIMIT,
+            OrdinaryFrameClass::Long => VENDOR_LONG_RETRY_LIMIT,
+        };
+        let limit = VENDOR_SHORT_RETRY_LIMIT.max(self.mpdu_retry_limit.min(class_limit));
+        (0..limit).map(|index| self.rate_after_failed_attempts(index))
+    }
+
     /// Inspect one possible retry-series rate without advancing ownership.
     ///
     /// Admission uses this before DMA publication so a later fallback cannot

@@ -89,6 +89,7 @@ struct DetachingCompletionHardware {
     abort_requested: bool,
     detach_failed: bool,
     reject_publication: bool,
+    protection: Option<crate::tx::MacTxProtection>,
 }
 
 impl DetachingCompletionHardware {
@@ -101,6 +102,7 @@ impl DetachingCompletionHardware {
             abort_requested: false,
             detach_failed: false,
             reject_publication: false,
+            protection: None,
             completion: Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,
@@ -124,7 +126,15 @@ impl TxHardware for DetachingCompletionHardware {
 
     fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
-    fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
+    fn prepare_bound_ht_tx(
+        &mut self,
+        _: &dyn PreparedTxDma,
+        _: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        if !self.reject_publication {
+            self.protection = Some(program.protection());
+        }
         !self.reject_publication
     }
 

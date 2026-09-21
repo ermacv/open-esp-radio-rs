@@ -23,7 +23,8 @@ fn rejected_publication_costs_nothing_and_abort_keeps_submitted_work() {
         )
         .unwrap();
     let aggregate = owner.prepared_aggregate(cookie).unwrap();
-    let config = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap();
+    let mut config = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap();
+    config.protection = crate::tx::MacTxProtection::RtsCts;
     let mut hardware = DetachingCompletionHardware::successful();
     hardware.reject_publication = true;
     assert_eq!(
@@ -31,12 +32,17 @@ fn rejected_publication_costs_nothing_and_abort_keeps_submitted_work() {
         Err(HtAmpduTxError::QueueActive)
     );
     assert_eq!(owner.work(), Default::default());
+    assert_eq!(hardware.protection, None);
     assert_eq!(pool.claimed_slots(), 1);
     hardware.reject_publication = false;
     owner
         .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
         .unwrap();
     let submitted = owner.work();
+    assert_eq!(
+        hardware.protection,
+        Some(crate::tx::MacTxProtection::RtsCts)
+    );
     assert_eq!(submitted.publications, 1);
     assert_eq!(submitted.mpdus, 1);
     assert_eq!(submitted.psdu_bytes, u32::from(aggregate.bytes));

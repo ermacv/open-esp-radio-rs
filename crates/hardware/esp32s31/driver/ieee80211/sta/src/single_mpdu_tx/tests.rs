@@ -368,6 +368,46 @@ fn required_erp_protection_fails_before_sequence_dma_or_publication() {
 }
 
 #[test]
+fn late_retry_protection_fails_before_sequence_dma_or_publication() {
+    use oer_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    tx.config.exchange.initial_rate = TxPhyRate::Ht(HtRate::new(
+        HtMcs::Mcs7,
+        HtGuardInterval::Long800Ns,
+        HtChannelWidth::Mhz20,
+    ));
+    tx.policy_mut()
+        .install_protection(WifiTxProtectionPolicy::new(
+            ErpProtectionMode::CtsToSelf,
+            HtProtectionMode::None,
+            None,
+        ));
+    let sequence = tx.sequences.peek_qos(0);
+
+    assert_eq!(
+        tx.start(&mut hardware, &ethernet()),
+        Err(SingleMpduTxError::Protection(
+            TxProtectionAdmissionError::PhysicalPublicationUnverified {
+                request: TxProtectionRequest {
+                    mechanism: TxProtectionMechanism::CtsToSelf,
+                    reason: TxProtectionReason::ErpUseProtection,
+                }
+            }
+        ))
+    );
+    assert_eq!(tx.sequences.peek_qos(0), sequence);
+    assert_eq!(hardware.publications, 0);
+    assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
+    assert_eq!(tx.slot_state(), TxSlotState::Free);
+}
+
+#[test]
 fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -573,6 +613,67 @@ fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
         &bytes[TX_METADATA_SIZE + 10..TX_METADATA_SIZE + 16],
         &[2, 3, 4, 5, 6, 7]
     );
+}
+
+#[test]
+fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    tx.start(&mut hardware, &ethernet()).unwrap();
+    let sequence_after_encode = tx.sequences.peek_qos(0);
+    let wake = WifiTxWake::Interrupt {
+        events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+    };
+
+    for failure in 1..=VENDOR_SHORT_RETRY_LIMIT {
+        hardware.completion = Some(completion(2));
+        if failure == VENDOR_SHORT_RETRY_LIMIT {
+            assert_eq!(
+                tx.service(&mut hardware, wake),
+                Ok(WifiTxProgress::Complete)
+            );
+        } else {
+            assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
+            let active = tx.ordinary.active_snapshot().unwrap().unwrap();
+            assert_eq!(active.counters.short, failure);
+            assert_eq!(active.counters.mpdu, 0);
+            assert!(!active.retry_bit_set);
+            assert_eq!(active.retries.cts_timeouts, failure);
+            assert_eq!(active.publications, failure + 1);
+        }
+        assert_eq!(tx.sequences.peek_qos(0), sequence_after_encode);
+    }
+    let Some(SingleMpduTxOutcome::HardwareFailure(report)) = tx.take_last_outcome() else {
+        panic!("missing CTS must exhaust the bounded exchange");
+    };
+    assert_eq!(report.status.attempts, VENDOR_SHORT_RETRY_LIMIT);
+    assert_eq!(report.retries.cts_timeouts, VENDOR_SHORT_RETRY_LIMIT - 1);
+    assert_eq!(report.retries.ack_timeouts, 0);
+    assert_eq!(report.status.acknowledged, Some(false));
+    assert_eq!(tx.slot_state(), TxSlotState::Free);
+    assert_eq!(
+        tx.policy().contention_exponent(LegacyTxQueue::BestEffort),
+        4
+    );
+
+    assert_eq!(
+        tx.start(&mut hardware, &ethernet()),
+        Ok(WifiTxProgress::Pending)
+    );
+    hardware.completion = Some(completion(0));
+    assert_eq!(
+        tx.service(&mut hardware, wake),
+        Ok(WifiTxProgress::Complete)
+    );
+    assert!(matches!(
+        tx.take_last_outcome(),
+        Some(SingleMpduTxOutcome::Success(_))
+    ));
+    assert_eq!(tx.slot_state(), TxSlotState::Free);
 }
 
 #[test]

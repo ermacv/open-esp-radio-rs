@@ -14,11 +14,26 @@ impl WifiRadioRegisters {
         self.initialize_mac_software_cts();
     }
 
-    /// Execute the production RTS-clear edge without publishing a queue.
-    pub fn validation_clear_mac_tx_software_rts(&mut self, queue: u32) {
-        crate::wifi::mac::tx::queue::clear_software_rts(
+    /// Execute the recovered RTS control edge without publishing a queue.
+    pub fn validation_configure_mac_tx_rts(
+        &mut self,
+        queue: u32,
+        enabled: bool,
+        threshold_bytes: Option<u16>,
+    ) {
+        crate::wifi::mac::tx::queue::configure_rts(
             &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             queue,
+            enabled,
+            threshold_bytes,
+        );
+    }
+
+    /// Execute the production HE threshold disable in vendor queue order.
+    pub fn validation_disable_mac_he_rts_threshold(&mut self) {
+        crate::wifi::mac::tx::queue::disable_he_rts_threshold(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
         );
     }
 

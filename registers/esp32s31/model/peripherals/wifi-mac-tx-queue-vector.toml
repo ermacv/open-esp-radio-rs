@@ -92,10 +92,26 @@ dim = 4
 dimIncrement = 0x7C
 dimIndex = "0,1,2,3"
 name = "HE_RTS_CONTROL%s"
-description = "Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."
+description = "Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."
 addressOffset = 0x4
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "RTS_THRESHOLD_BYTES"
+description = "Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."
+bitOffset = 0
+bitWidth = 16
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
+
+[[peripherals.registers.register.fields]]
+name = "RTS_THRESHOLD_VALID"
+description = "Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."
+bitOffset = 16
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "HE_RTS_DISABLED"
@@ -861,6 +877,7 @@ completeness = "complete"
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s"
 sources = [
+    "BLOB_LIBPP_TX_PROTECTION_ARGUMENTS",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
     "PROMOTED_HE20_PEER",
 ]

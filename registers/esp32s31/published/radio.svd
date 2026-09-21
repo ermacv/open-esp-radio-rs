@@ -7578,13 +7578,13 @@
             </field>
             <field>
               <name>SOFTWARE_RTS</name>
-              <description>Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument.</description>
+              <description>Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts.</description>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>SOFTWARE_CTS</name>
-              <description>Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract.</description>
+              <description>Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -7844,11 +7844,29 @@
           <dimIncrement>0x7C</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>HE_RTS_CONTROL%s</name>
-          <description>Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.</description>
+          <description>Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
+            <field>
+              <name>RTS_THRESHOLD_BYTES</name>
+              <description>Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RTS_THRESHOLD_VALID</name>
+              <description>Set by the complete whole-word byte-threshold publication when argument a3 is nonzero.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
             <field>
               <name>HE_RTS_DISABLED</name>
               <bitOffset>17</bitOffset>

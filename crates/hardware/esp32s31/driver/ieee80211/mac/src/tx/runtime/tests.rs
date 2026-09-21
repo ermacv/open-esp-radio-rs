@@ -199,6 +199,42 @@ fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
 }
 
 #[test]
+fn cts_failures_cover_the_admitted_series_beyond_the_mpdu_retry_limit() {
+    for frame_class in [OrdinaryFrameClass::Short, OrdinaryFrameClass::Long] {
+        let queue = LegacyTxQueue::BestEffort;
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        let mut retry = OrdinaryMpduRetryState::new(
+            queue,
+            TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+            1,
+            frame_class,
+        )
+        .unwrap();
+        let admitted: std::vec::Vec<_> = retry.possible_rates().collect();
+        assert_eq!(admitted.len(), usize::from(VENDOR_SHORT_RETRY_LIMIT));
+        for (index, rate) in admitted.into_iter().enumerate() {
+            assert_eq!(retry.current_rate(), rate);
+            assert_eq!(usize::from(retry.publications()), index + 1);
+            let decision =
+                retry.observe_completion(&mut policy, TxCompletionDisposition::CtsTimeout);
+            if index + 1 == usize::from(VENDOR_SHORT_RETRY_LIMIT) {
+                assert_eq!(decision, OrdinaryRetryDecision::Complete);
+            } else {
+                assert_eq!(
+                    decision,
+                    OrdinaryRetryDecision::Retry {
+                        set_retry_bit: false
+                    }
+                );
+            }
+            assert_eq!(retry.counters().mpdu, 0);
+            assert_eq!(retry.counters().long, 0);
+        }
+        assert_eq!(policy.contention_exponent(queue), 4);
+    }
+}
+
+#[test]
 fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
     let queue = LegacyTxQueue::Voice;
     let mut policy = WifiTxRuntimePolicy::vendor_defaults();

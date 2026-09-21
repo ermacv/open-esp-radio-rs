@@ -136,9 +136,21 @@ pub fn initialize_mac_software_cts() {
 /// Production RTS-clear edge used by ordinary queue preparation.
 #[inline(always)]
 pub fn ordinary_tx_clear_software_rts(queue: u32) {
+    configure_mac_tx_rts(queue, false, None);
+}
+
+/// Recovered RTS request and optional HE byte-threshold publication, without DMA.
+#[inline(always)]
+pub fn configure_mac_tx_rts(queue: u32, enabled: bool, threshold_bytes: Option<u16>) {
     owner()
         .pac_mut()
-        .validation_clear_mac_tx_software_rts(queue);
+        .validation_configure_mac_tx_rts(queue, enabled, threshold_bytes);
+}
+
+/// Production HE threshold disable; retains software RTS and byte-threshold state.
+#[inline(always)]
+pub fn disable_mac_he_rts_threshold() {
+    owner().pac_mut().validation_disable_mac_he_rts_threshold();
 }
 
 /// Production queue publication, excluding vendor access bookkeeping.

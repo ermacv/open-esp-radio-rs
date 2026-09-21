@@ -24015,6 +24015,20 @@ register-method = "he_rts_control"
 register-index = 0
 
 [[registers.fields]]
+svd-name = "RTS_THRESHOLD_BYTES"
+method = "rts_threshold_bytes"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_VALID"
+method = "rts_threshold_valid"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "HE_RTS_DISABLED"
 method = "he_rts_disabled"
 bit-offset = 17
@@ -25051,6 +25065,20 @@ peripheral-module = "wifi_mac_tx_queue_vector"
 scope = []
 register-method = "he_rts_control"
 register-index = 1
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_BYTES"
+method = "rts_threshold_bytes"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_VALID"
+method = "rts_threshold_valid"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
 
 [[registers.fields]]
 svd-name = "HE_RTS_DISABLED"
@@ -26091,6 +26119,20 @@ register-method = "he_rts_control"
 register-index = 2
 
 [[registers.fields]]
+svd-name = "RTS_THRESHOLD_BYTES"
+method = "rts_threshold_bytes"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_VALID"
+method = "rts_threshold_valid"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "HE_RTS_DISABLED"
 method = "he_rts_disabled"
 bit-offset = 17
@@ -27127,6 +27169,20 @@ peripheral-module = "wifi_mac_tx_queue_vector"
 scope = []
 register-method = "he_rts_control"
 register-index = 3
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_BYTES"
+method = "rts_threshold_bytes"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_THRESHOLD_VALID"
+method = "rts_threshold_valid"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
 
 [[registers.fields]]
 svd-name = "HE_RTS_DISABLED"

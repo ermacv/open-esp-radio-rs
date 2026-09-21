@@ -49,13 +49,13 @@ maximum = 0x3FF
 
 [[peripherals.registers.register.fields]]
 name = "SOFTWARE_RTS"
-description = "Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."
+description = "Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts."
 bitOffset = 31
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "SOFTWARE_CTS"
-description = "Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."
+description = "Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle."
 bitOffset = 30
 bitWidth = 1
 
@@ -219,14 +219,14 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_RTS"
-sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS"]
+sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS", "HIL_OPEN_HT40_SOFTWARE_RTS_2026_09_21"]
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_CTS"
-sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS"]
+sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS", "HIL_OPEN_HT40_SOFTWARE_CTS_2026_09_21"]
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"

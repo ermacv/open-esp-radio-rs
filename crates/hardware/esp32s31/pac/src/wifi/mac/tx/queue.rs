@@ -2,11 +2,34 @@
 
 #![forbid(unsafe_code)]
 
+use super::MacTxProtection;
 use crate::{MacInterface, svd};
 
 const ORDINARY_QUEUE_COUNT: u32 = 4;
 const LAST_CONTROL_ADDRESS: u32 = 0x2010_4d70;
 const CONTROL_STRIDE: u32 = 0x10;
+
+/// Replace both software request flags while the prepared queue is idle.
+///
+/// The descriptor-bound preparation owner calls this after vector formatting,
+/// before ENABLE|VALID. A single fresh-read update preserves spacing and
+/// replaces any CTS/RTS request retained from a previous PHY or attempt.
+#[inline(always)]
+pub(crate) fn configure_protection(
+    control: &svd::WifiMacTxQueueControl,
+    queue: u32,
+    protection: MacTxProtection,
+) {
+    control
+        .protection(physical_bank(queue))
+        .modify(|_, writer| {
+            writer
+                .software_cts()
+                .bit(matches!(protection, MacTxProtection::CtsToSelf))
+                .software_rts()
+                .bit(matches!(protection, MacTxProtection::RtsCts))
+        });
+}
 
 #[inline(always)]
 const fn physical_bank(queue: u32) -> usize {
@@ -26,16 +49,51 @@ const fn control_address(queue: u32) -> u32 {
     LAST_CONTROL_ADDRESS - queue * CONTROL_STRIDE
 }
 
-/// Clear software RTS while retaining software CTS and MPDU spacing.
-///
-/// Complete `hal_he_set_tx_protection(queue, 0, _, 0, _)`. The vendor debug
-/// formatter identifies SW_RTS as bit 31 and SW_CTS as bit 30. This operation
-/// does not admit or publish a protected transmission.
 #[inline(always)]
-pub(crate) fn clear_software_rts(registers: &svd::WifiMacTxQueueControl, queue: u32) {
+fn set_software_rts(registers: &svd::WifiMacTxQueueControl, queue: u32, enabled: bool) {
     registers
         .protection(physical_bank(queue))
-        .modify(|_, writer| writer.software_rts().clear_bit());
+        .modify(|_, writer| writer.software_rts().bit(enabled));
+}
+
+/// Program the recovered RTS register edge without publishing a queue.
+///
+/// Complete `hal_he_set_tx_protection`: the software request preserves CTS
+/// and spacing. A supplied HE threshold replaces the threshold word after
+/// that RMW; `None` leaves it untouched, including its disabled state.
+/// The threshold is in bytes, converted from the HE duration threshold for
+/// the selected PHY by the vendor's `ic_get_he_rts_threshold_bytes`. It is
+/// not an RTS/CTS Duration/NAV value. The caller must own that conversion and
+/// the protected exchange before using this edge in an on-air transaction.
+#[inline(always)]
+pub(crate) fn configure_rts(
+    control: &svd::WifiMacTxQueueControl,
+    vector: &svd::WifiMacTxQueueVector,
+    queue: u32,
+    enabled: bool,
+    threshold_bytes: Option<u16>,
+) {
+    set_software_rts(control, queue, enabled);
+    if let Some(threshold_bytes) = threshold_bytes {
+        svd::zero_based_field_write::publish_mac_tx_rts_threshold(
+            vector,
+            physical_bank(queue),
+            threshold_bytes,
+            true,
+        );
+    }
+}
+
+/// Disable the HE threshold in logical queue order, retaining byte-threshold state.
+///
+/// Complete `hal_he_disable_rts_threshold`; this does not clear software RTS.
+#[inline(always)]
+pub(crate) fn disable_he_rts_threshold(vector: &svd::WifiMacTxQueueVector) {
+    for queue in 0..ORDINARY_QUEUE_COUNT {
+        vector
+            .he_rts_control(physical_bank(queue))
+            .modify(|_, writer| writer.he_rts_disabled().set_bit());
+    }
 }
 
 #[inline(always)]

@@ -14,6 +14,8 @@ extern crate alloc;
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
 
+pub use oer_esp32s31_hal::types::MacTxProtection;
+
 pub use oer_memory::{HardwareOwnedTxDma, PreparedTxDma};
 
 use oer_esp32s31_hal::types::{
@@ -2504,6 +2506,8 @@ impl TxPhyRate {
 /// dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyTxConfig {
+    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
+    pub protection: MacTxProtection,
     pub rate: LegacyRate,
     pub rts_rate: LegacyRate,
     pub signal: u16,
@@ -2546,6 +2550,8 @@ pub struct LegacyTxConfig {
 /// FCS. Power bytes are calibrated PHY gain-table indices, not dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtTxConfig {
+    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
+    pub protection: MacTxProtection,
     pub rate: HtRate,
     pub protection_spacing: HtProtectionSpacing,
     pub length: u16,
@@ -2580,6 +2586,7 @@ impl HtTxConfig {
             return None;
         }
         Some(Self {
+            protection: MacTxProtection::None,
             rate,
             protection_spacing: HtProtectionSpacing::Density0To4,
             length,
@@ -2600,6 +2607,7 @@ impl HtTxConfig {
 
     const fn pac_parameters(self) -> MacHtTxParameters {
         MacHtTxParameters {
+            protection: self.protection,
             rate: self.rate.pac_rate(),
             format: MacHtTxFormat::SingleMpdu,
             length: self.length,
@@ -2630,6 +2638,8 @@ impl HtTxConfig {
 /// publishing APEP length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeSmpduTxConfig {
+    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
+    pub protection: MacTxProtection,
     pub rate: HeRate,
     pub bss_color: u8,
     pub spatial_reuse: u8,
@@ -2670,6 +2680,7 @@ impl HeSmpduTxConfig {
             return None;
         }
         Some(Self {
+            protection: MacTxProtection::None,
             rate,
             bss_color,
             spatial_reuse: 0,
@@ -2712,6 +2723,7 @@ impl HeSmpduTxConfig {
 
     const fn pac_parameters(self) -> MacHeTxParameters {
         MacHeTxParameters {
+            protection: self.protection,
             rate: self.rate.pac_rate(),
             format: MacHeTxFormat::Smpdu,
             apep_length: self.apep_length(),
@@ -2744,6 +2756,8 @@ impl HeSmpduTxConfig {
 /// type never adds a second FCS or guesses delimiter padding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtAmpduTxConfig {
+    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
+    pub protection: MacTxProtection,
     pub rate: HtRate,
     pub protection_spacing: HtProtectionSpacing,
     pub aggregate_length: u16,
@@ -2773,6 +2787,7 @@ impl HtAmpduTxConfig {
             return None;
         }
         Some(Self {
+            protection: MacTxProtection::None,
             rate,
             protection_spacing: HtProtectionSpacing::Density0To4,
             aggregate_length,
@@ -2794,6 +2809,7 @@ impl HtAmpduTxConfig {
 
     pub(crate) const fn pac_parameters(self) -> MacHtTxParameters {
         MacHtTxParameters {
+            protection: self.protection,
             rate: self.rate.pac_rate(),
             format: MacHtTxFormat::Ampdu,
             length: self.aggregate_length,
@@ -2879,6 +2895,8 @@ impl HeTriggerBasedTxConfig {
 /// sends a matching Trigger frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeAmpduTxConfig {
+    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
+    pub protection: MacTxProtection,
     rate: HeRate,
     ampdu_density: HtAmpduDensity,
     txop_limit: HeEdcaTxopLimit,
@@ -2957,6 +2975,7 @@ impl HeAmpduTxConfig {
             return None;
         }
         Some(Self {
+            protection: MacTxProtection::None,
             rate,
             ampdu_density,
             txop_limit,
@@ -3037,6 +3056,7 @@ impl HeAmpduTxConfig {
 
     pub(crate) const fn pac_parameters(self) -> MacHeTxParameters {
         MacHeTxParameters {
+            protection: self.protection,
             rate: self.rate.pac_rate(),
             format: MacHeTxFormat::Ampdu,
             apep_length: self.aggregate_length,
@@ -3124,6 +3144,7 @@ impl LegacyTxConfig {
     /// `libcoexist.a[coexist_core.o]`.
     pub const fn management_1m(signal: u16) -> Self {
         Self {
+            protection: MacTxProtection::None,
             rate: LegacyRate::Dsss1MLong,
             rts_rate: LegacyRate::Dsss1MLong,
             signal,
@@ -3315,6 +3336,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         let program = MacLegacyTxProgram::new(
             &publication,
             MacLegacyTxParameters {
+                protection: config.protection,
                 rate: config.rate.pac_rate(),
                 rts_rate: config.rts_rate.pac_rate(),
                 signal: config.signal,

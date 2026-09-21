@@ -545,6 +545,7 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
     let program = MacHtTxProgram::new(
         &dma,
         MacHtTxParameters {
+            protection: oer_esp32s31_pac::MacTxProtection::None,
             rate: MacHtRate {
                 mcs,
                 guard_interval,

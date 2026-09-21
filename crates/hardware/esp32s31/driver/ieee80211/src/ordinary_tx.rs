@@ -486,7 +486,7 @@ where
             publication_limit,
             OrdinaryFrameClass::Short,
         )?;
-        self.require_unprotected_retry_state(&retry, publication_limit, group_receiver)
+        self.require_unprotected_retry_state(&retry, group_receiver)
     }
 
     pub fn start<H: TxHardware>(
@@ -545,11 +545,7 @@ where
                 OrdinaryFrameClass::Short
             },
         )?;
-        self.require_unprotected_retry_state(
-            &retry,
-            plan.exchange.publication_limit,
-            group_receiver,
-        )?;
+        self.require_unprotected_retry_state(&retry, group_receiver)?;
         {
             let buffer = self.slot.as_mut().buffer_mut()?;
             buffer[..4].copy_from_slice(&hardware_frame_length.to_le_bytes());
@@ -590,7 +586,6 @@ where
     fn require_unprotected_retry_state(
         &self,
         retry: &OrdinaryMpduRetryState,
-        publication_limit: u8,
         group_receiver: bool,
     ) -> Result<(), OrdinaryTxError> {
         let receiver = if group_receiver {
@@ -598,11 +593,10 @@ where
         } else {
             TxProtectionReceiver::Individual
         };
-        for failed_attempts in 0..publication_limit {
-            let rate = retry.rate_after_failed_attempts(failed_attempts)?;
+        for rate in retry.possible_rates() {
             self.policy
                 .protection()
-                .require_unprotected(rate, receiver, None)?;
+                .require_unprotected(rate?, receiver, None)?;
         }
         Ok(())
     }

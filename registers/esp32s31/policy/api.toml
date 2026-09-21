@@ -2416,6 +2416,13 @@ fields = ["DESCRIPTOR_ADDRESS_LOW", "CONTROL_21_20_UNKNOWN", "TXOP_DESCRIPTOR_CL
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[zero-based-field-writes]]
+name = "publish_mac_tx_rts_threshold"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_RTS_CONTROL%s"
+fields = ["RTS_THRESHOLD_BYTES", "RTS_THRESHOLD_VALID"]
+sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS"]
+
+[[zero-based-field-writes]]
 name = "clear_mac_tx_collision_state"
 peripheral = "WIFI_MAC_TX_COMMON"
 register = "QUEUE_STATE_CLEAR"

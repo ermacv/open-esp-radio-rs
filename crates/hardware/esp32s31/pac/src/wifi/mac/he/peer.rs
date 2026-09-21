@@ -109,11 +109,7 @@ impl WifiRadioRegisters {
         });
 
         let queues = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
-        for physical in 0..4 {
-            queues
-                .he_rts_control(physical)
-                .modify(|_, w| w.he_rts_disabled().set_bit());
-        }
+        crate::wifi::mac::tx::queue::disable_he_rts_threshold(queues);
 
         init.ersu_and_vht_control().modify(|_, w| {
             w.auto_ack_allow_ersu()

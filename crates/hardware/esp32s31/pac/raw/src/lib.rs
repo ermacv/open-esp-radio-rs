@@ -18628,13 +18628,13 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW80` writer - Third copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
         pub type MinimumMpduLengthCbw80W<'a, REG> =
             crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
-        #[doc = "Field `SOFTWARE_CTS` reader - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
+        #[doc = "Field `SOFTWARE_CTS` reader - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle."]
         pub type SoftwareCtsR = crate::BitReader;
-        #[doc = "Field `SOFTWARE_CTS` writer - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
+        #[doc = "Field `SOFTWARE_CTS` writer - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle."]
         pub type SoftwareCtsW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `SOFTWARE_RTS` reader - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+        #[doc = "Field `SOFTWARE_RTS` reader - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts."]
         pub type SoftwareRtsR = crate::BitReader;
-        #[doc = "Field `SOFTWARE_RTS` writer - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+        #[doc = "Field `SOFTWARE_RTS` writer - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts."]
         pub type SoftwareRtsW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:9 - First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
@@ -18652,12 +18652,12 @@ pub mod wifi_mac_tx_queue_control {
             pub fn minimum_mpdu_length_cbw80(&self) -> MinimumMpduLengthCbw80R {
                 MinimumMpduLengthCbw80R::new(((self.bits >> 20) & 0x03ff) as u16)
             }
-            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
+            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle."]
             #[inline(always)]
             pub fn software_cts(&self) -> SoftwareCtsR {
                 SoftwareCtsR::new(((self.bits >> 30) & 1) != 0)
             }
-            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts."]
             #[inline(always)]
             pub fn software_rts(&self) -> SoftwareRtsR {
                 SoftwareRtsR::new(((self.bits >> 31) & 1) != 0)
@@ -18685,12 +18685,12 @@ pub mod wifi_mac_tx_queue_control {
             ) -> MinimumMpduLengthCbw80W<'_, ProtectionSpec> {
                 MinimumMpduLengthCbw80W::new(self, 20)
             }
-            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. The field name alone does not establish a CTS-to-Self publication contract."]
+            #[doc = "Bit 30 - Complete dbg_read_txq_conf2 passes bit 30 as the SW_CTS format argument at sp+8. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated CTS addressed to the transmitter before unicast data, on both 20-MHz halves. This establishes the request in that profile; it does not qualify the full ordinary protected-publication lifecycle."]
             #[inline(always)]
             pub fn software_cts(&mut self) -> SoftwareCtsW<'_, ProtectionSpec> {
                 SoftwareCtsW::new(self, 30)
             }
-            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument."]
+            #[doc = "Bit 31 - Complete dbg_read_txq_conf2 passes bit 31 as the SW_RTS format argument at sp+4; hal_he_set_tx_protection updates this bit from its enable argument. Bounded HT40 MCS7 SGI diagnostics observe hardware-generated RTS to the data receiver followed by CTS, data and ACK/BlockAck, including control frames on both 20-MHz halves. Ordinary protected admission and the complete automatic NAV algorithm remain separate contracts."]
             #[inline(always)]
             pub fn software_rts(&mut self) -> SoftwareRtsW<'_, ProtectionSpec> {
                 SoftwareRtsW::new(self, 31)
@@ -19001,7 +19001,7 @@ pub mod wifi_mac_tx_queue_vector {
                 &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast()
             })
         }
-        #[doc = "0x04..0x14 - Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+        #[doc = "0x04..0x14 - Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
         #[inline(always)]
         pub const fn he_rts_control(&self, n: usize) -> &HeRtsControl {
             #[allow(clippy::no_effect)]
@@ -19015,7 +19015,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x14 - Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+        #[doc = "0x04..0x14 - Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
         #[inline(always)]
         pub fn he_rts_control_iter(&self) -> impl Iterator<Item = &HeRtsControl> {
             (0..4).map(move |n| unsafe {
@@ -19489,20 +19489,38 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_RTS_CONTROL (rw) register accessor: Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_rts_control`] module"]
+    #[doc = "HE_RTS_CONTROL (rw) register accessor: Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_rts_control`] module"]
     #[doc(alias = "HE_RTS_CONTROL")]
     pub type HeRtsControl = crate::Reg<he_rts_control::HeRtsControlSpec>;
-    #[doc = "Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
+    #[doc = "Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled."]
     pub mod he_rts_control {
         #[doc = "Register `HE_RTS_CONTROL%s` reader"]
         pub type R = crate::R<HeRtsControlSpec>;
         #[doc = "Register `HE_RTS_CONTROL%s` writer"]
         pub type W = crate::W<HeRtsControlSpec>;
+        #[doc = "Field `RTS_THRESHOLD_BYTES` reader - Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+        pub type RtsThresholdBytesR = crate::FieldReader<u16>;
+        #[doc = "Field `RTS_THRESHOLD_BYTES` writer - Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+        pub type RtsThresholdBytesW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `RTS_THRESHOLD_VALID` reader - Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."]
+        pub type RtsThresholdValidR = crate::BitReader;
+        #[doc = "Field `RTS_THRESHOLD_VALID` writer - Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."]
+        pub type RtsThresholdValidW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `HE_RTS_DISABLED` reader - "]
         pub type HeRtsDisabledR = crate::BitReader;
         #[doc = "Field `HE_RTS_DISABLED` writer - "]
         pub type HeRtsDisabledW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:15 - Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+            #[inline(always)]
+            pub fn rts_threshold_bytes(&self) -> RtsThresholdBytesR {
+                RtsThresholdBytesR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16 - Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."]
+            #[inline(always)]
+            pub fn rts_threshold_valid(&self) -> RtsThresholdValidR {
+                RtsThresholdValidR::new(((self.bits >> 16) & 1) != 0)
+            }
             #[doc = "Bit 17"]
             #[inline(always)]
             pub fn he_rts_disabled(&self) -> HeRtsDisabledR {
@@ -19510,13 +19528,23 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
+            #[doc = "Bits 0:15 - Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+            #[inline(always)]
+            pub fn rts_threshold_bytes(&mut self) -> RtsThresholdBytesW<'_, HeRtsControlSpec> {
+                RtsThresholdBytesW::new(self, 0)
+            }
+            #[doc = "Bit 16 - Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."]
+            #[inline(always)]
+            pub fn rts_threshold_valid(&mut self) -> RtsThresholdValidW<'_, HeRtsControlSpec> {
+                RtsThresholdValidW::new(self, 16)
+            }
             #[doc = "Bit 17"]
             #[inline(always)]
             pub fn he_rts_disabled(&mut self) -> HeRtsDisabledW<'_, HeRtsControlSpec> {
                 HeRtsDisabledW::new(self, 17)
             }
         }
-        #[doc = "Complete HE Operation peer programming sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete hal_he_set_tx_protection optionally replaces this word with a sixteen-bit HE byte threshold and bit 16 set, clearing the disabled flag and all upper state. With no threshold publication request it leaves this word untouched. HE Operation peer programming independently sets bit 17 in all four physical queue vectors when the encoded RTS threshold is disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_rts_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_rts_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeRtsControlSpec;
         impl crate::RegisterSpec for HeRtsControlSpec {
             type Ux = u32;
@@ -60903,6 +60931,28 @@ pub mod zero_based_field_write {
                     .bit(txop_descriptor_class_unknown_value)
                     .plcp_format()
                     .set(plcp_format_value)
+            });
+        }
+    }
+
+    /// Write `RTS_THRESHOLD_BYTES`, `RTS_THRESHOLD_VALID` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_RTS_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_rts_threshold(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        rts_threshold_bytes_value: u16,
+        rts_threshold_valid_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.he_rts_control(index).write_with_zero(|writer| {
+                writer
+                    .rts_threshold_bytes()
+                    .set(rts_threshold_bytes_value)
+                    .rts_threshold_valid()
+                    .bit(rts_threshold_valid_value)
             });
         }
     }

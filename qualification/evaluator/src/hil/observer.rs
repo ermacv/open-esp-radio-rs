@@ -323,12 +323,12 @@ pub(super) fn compatible(
     let Some(current) = current.resolved.as_ref() else {
         return Ok(false);
     };
-    if build_inputs::validate_registry(&current, &registry).is_err() {
+    if build_inputs::validate_registry(current, &registry).is_err() {
         return Ok(false);
     }
     let mut old_dependencies =
         build_inputs::projection(&proof["build"]["resolved"], &dependencies)?;
-    let mut new_dependencies = build_inputs::projection(&current, &dependencies)?;
+    let mut new_dependencies = build_inputs::projection(current, &dependencies)?;
     let old_units = build_inputs::take_unit_profiles(&mut old_dependencies);
     let new_units = build_inputs::take_unit_profiles(&mut new_dependencies);
     for projection in [&mut old_dependencies, &mut new_dependencies] {
@@ -383,7 +383,7 @@ pub(super) fn compatible(
     let mut required = current["configuration"].clone();
     required["units"] = new_units;
     required["cargo"] = current["cargo_config"].clone();
-    required["profiles"] = profile_configuration(&current);
+    required["profiles"] = profile_configuration(current);
     if actual == required {
         return Ok(true);
     }

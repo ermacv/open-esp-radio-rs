@@ -260,6 +260,13 @@ source-paths = ["phy.rs"]
         "{:x}",
         <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&observer["build"]).unwrap())
     ));
+    // Evaluation reads an explicitly prepared observer receipt; it must not
+    // compile or execute the observer as a side effect of a status query.
+    write(
+        root,
+        "target/hil/current-observer.json",
+        &serde_json::to_string(&json!({"build": observer["build"]})).unwrap(),
+    );
     drop(compilation);
     run.repository_root = root.into();
     run.target_directory = root.join("target/hil/esp32s31");
@@ -303,7 +310,7 @@ source-paths = ["phy.rs"]
     assert!(refreshed.resolve(&catalog).unwrap().0.is_empty());
     let report = map(root);
     let decision = find_decision(&report).unwrap();
-    assert_eq!(decision["status"], "satisfied");
+    assert_eq!(decision["status"], "satisfied", "{decision:#}");
     let observed = &decision["observations"][0];
     let source_hash = run.manifest.firmware[0].application_sha256.clone();
     let mut inputs = decision["property"]["current_inputs"]

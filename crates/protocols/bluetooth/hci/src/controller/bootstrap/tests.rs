@@ -352,9 +352,16 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
         4,
     )
     .unwrap();
-    let mut channel = TestChannel::new();
-    let (host, controller) = channel.split();
-    let mut bootstrap = LeControllerBootstrap::new(config);
+    // Trouble's security feature requests entropy during Runner startup;
+    // workspace feature unification can enable it for this test too.
+    // Deterministic entropy is a host-test input, never a production RNG.
+    let entropy = BootstrapTestEntropy(core::sync::atomic::AtomicUsize::new(0));
+    let mut hci = crate::LeControllerHciResources::<NoopRawMutex, 4, 1, 255>::new(config).unwrap();
+    let crate::LeControllerHciEndpoints {
+        host,
+        mut controller,
+    } = hci.split();
+    controller.install_random_source(&entropy).unwrap();
     let external = ExternalController::<_, 2>::new(host);
     let mut resources = HostResources::<TestPacketPool, 1, 1>::new();
     let stack = trouble_host::new(external, &mut resources).build();
@@ -375,7 +382,7 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
         // rejects the operational command because no filter-list owner or
         // Link Layer exists yet.
         let controller_and_probe = join(
-            drive_bootstrap_until(&controller, &mut bootstrap, &stop),
+            drive_bootstrap_until(&mut controller, &stop),
             initialized_probe,
         );
         match select(runner.run(), controller_and_probe).await {
@@ -393,9 +400,9 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
         }
     });
 
-    assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
+    assert_eq!(controller.bootstrap_phase(), BootstrapPhase::Configuring);
     assert_eq!(
-        bootstrap.host_buffers(),
+        controller.bootstrap.host_buffers(),
         Some(BootstrapHostBuffers {
             acl_data_packet_length: 255,
             total_acl_data_packets: 1,
@@ -403,26 +410,59 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
     );
 }
 
+struct BootstrapTestEntropy(core::sync::atomic::AtomicUsize);
+
+impl crate::LeRandomSource for BootstrapTestEntropy {
+    fn random_bytes(&self) -> Result<[u8; 8], crate::LeRandomUnavailable> {
+        let sequence = self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        Ok((sequence as u64).to_le_bytes())
+    }
+}
+
 async fn drive_bootstrap_until(
-    controller: &TestController<'_>,
-    bootstrap: &mut LeControllerBootstrap,
+    controller: &mut crate::LeControllerCommandEndpoint<'_, NoopRawMutex, 4, 1, 255>,
     stop: &Signal<NoopRawMutex, ()>,
 ) {
-    let mut command_buffer = [0; 80];
+    use crate::{
+        LeControllerCommandIntake, LeControllerCommandReadyClaim,
+        LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
+        LeControllerResponsePublication,
+    };
+    let LeControllerCommandReadyClaim::Ready(mut ready) =
+        controller.claim_initial_command_ready(())
+    else {
+        panic!("fresh controller owns command authority");
+    };
+    let mut command_buffer = [0; 255];
     loop {
-        let command = match select(stop.wait(), controller.receive(&mut command_buffer)).await {
+        match select(stop.wait(), controller.wait_command_available(&ready)).await {
             Either::First(()) => return,
-            Either::Second(Ok(HostToControllerFrame::Command(command))) => command,
-            Either::Second(Ok(frame)) => {
-                panic!("bootstrap received unsupported {:?} packet", frame.kind())
-            }
-            Either::Second(Err(error)) => panic!("bootstrap receive failed: {error:?}"),
+            Either::Second(result) => result.unwrap(),
+        }
+        let LeControllerCommandIntake::Command { command, .. } =
+            controller.try_receive_classified_command_with_buffer(ready, &mut command_buffer)
+        else {
+            panic!("Trouble bootstrap must submit an HCI command");
         };
-        let response = dispatch_test_packet(bootstrap, command);
-        controller
-            .publish(bt_hci::PacketKind::Event, response.as_bytes())
-            .await
-            .expect("bootstrap response enters the raw Controller endpoint");
+        let pending = match controller.route_idle_classified_command(command) {
+            LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) => pending,
+            LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) => {
+                // No radio has been started in this host-only fixture.
+                let LeControllerResetCompletion::ResponsePending(pending) =
+                    controller.complete_reset_after_quiescence(barrier)
+                else {
+                    panic!("Reset belongs to this controller");
+                };
+                pending
+            }
+            _ => panic!("bootstrap must not start a radio role"),
+        };
+        controller.wait_response_capacity(&pending).await.unwrap();
+        let LeControllerResponsePublication::Published(next) = pending.try_publish(controller)
+        else {
+            panic!("response capacity and authority belong to this controller");
+        };
+        ready = next;
     }
 }
 

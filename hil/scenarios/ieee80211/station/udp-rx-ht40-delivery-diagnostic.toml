@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-delivery-diagnostic"
 description = "Split-core HT40 host-to-station delivery-frontier diagnostic"
 repetitions = 1

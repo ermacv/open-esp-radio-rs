@@ -12,46 +12,19 @@ pub(super) struct Contract {
     unit: &'static str,
     comparison: &'static str,
     threshold: u64,
+    image_sensitive: bool,
 }
 
 impl Contract {
     pub(super) fn image_sensitive(&self) -> bool {
-        self.unit != "count"
+        self.image_sensitive
     }
 }
 
 /// Whole-scenario obligations include mandatory memory/timing assertions, even
 /// when those assertions have not yet been published as individually named checks.
 pub(super) fn whole_scenario_image_sensitive(document: &Value) -> bool {
-    let workload = document.pointer("/workload/kind").and_then(Value::as_str);
-    matches!(
-        workload,
-        Some(
-            "bluetooth-gatt"
-                | "bluetooth-secure-gatt"
-                | "bluetooth-secure-gatt-timing"
-                | "bluetooth-secure-gatt-hci-read-failure"
-                | "memory-benchmark"
-                | "timebase"
-                | "boot-smoke"
-        )
-    ) || [
-        "minimum_rx_bps",
-        "minimum_tx_bps",
-        "minimum_combined_bps",
-        "minimum_bps_per_flow",
-        "maximum_flow_skew_percent",
-        "maximum_secondary_tx_interarrival_ms",
-        "maximum_rx_silence_ms",
-        "maximum_p95_ms",
-    ]
-    .iter()
-    .any(|key| {
-        document
-            .get("criteria")
-            .and_then(|c| c.get(key))
-            .is_some_and(|v| !v.is_null())
-    })
+    document.get("transfer").and_then(Value::as_str) == Some("identical-image")
 }
 
 pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> {
@@ -86,6 +59,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
                 name.into(),
                 Contract {
                     unit: "count",
+                    image_sensitive: false,
                     comparison: "exactly",
                     threshold: 1,
                 },
@@ -113,6 +87,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
                 name.into(),
                 Contract {
                     unit: "bits-per-second",
+                    image_sensitive: true,
                     comparison: "at-least",
                     threshold,
                 },
@@ -127,6 +102,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             "udp.rx.maximum-silence".into(),
             Contract {
                 unit: "microseconds",
+                image_sensitive: true,
                 comparison: "at-most",
                 threshold: limit
                     .checked_mul(1_000)
@@ -146,6 +122,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
                 name.into(),
                 Contract {
                     unit: "count",
+                    image_sensitive: false,
                     comparison: "exactly",
                     threshold: 1,
                 },
@@ -164,6 +141,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             "wifi.maintenance.ip-exchange-resumed".into(),
             Contract {
                 unit: "count",
+                image_sensitive: false,
                 comparison: "exactly",
                 threshold: 1,
             },

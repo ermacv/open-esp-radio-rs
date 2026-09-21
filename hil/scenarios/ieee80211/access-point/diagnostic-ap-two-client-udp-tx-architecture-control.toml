@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-architecture-control"
 description = "Direct-SRAM same-image control for invasive two-client TX architecture probes"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "boot-smoke"
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
 image = "boot-smoke"

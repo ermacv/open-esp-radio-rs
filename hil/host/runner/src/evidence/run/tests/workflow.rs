@@ -65,6 +65,16 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     write_test_build_materials(root);
+    write(
+        root,
+        "hil/schema/observer-inputs.json",
+        r#"{"schema":1,"common":["hil/host/runner/src/session/reboot.rs"],"workloads":{"station-ap-loss":[],"boot-smoke":[]}}"#,
+    );
+    write(
+        root,
+        "hil/host/runner/src/session/reboot.rs",
+        include_str!("../../../session/reboot.rs"),
+    );
     write(root, "hil/targets/esp32s31/Cargo.toml", "[workspace]\n");
     write(
         root,
@@ -208,6 +218,7 @@ source-paths = ["phy.rs"]
     let directory = root.join("target/hil/esp32s31/runs/observed-a");
     fs::create_dir_all(&directory).unwrap();
     let mut run = session(&directory);
+    run.manifest.runner = runner_provenance().unwrap();
     run.repository_root = root.into();
     run.target_directory = root.join("target/hil/esp32s31");
     run.bind_source_snapshot(captured.directory()).unwrap();

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "tcp-bidirectional"
 description = "Simultaneous TCP receive and transmit"
 image = "correctness"

@@ -1,0 +1,204 @@
+{
+  "schema": 1,
+  "common": [
+    "Cargo.lock",
+    "hil/host/runner/Cargo.toml",
+    "hil/host/runner/build.rs",
+    "hil/host/runner/src/execution.rs",
+    "hil/host/runner/src/execution/",
+    "hil/host/runner/src/scenario.rs",
+    "hil/host/runner/src/scenario/",
+    "hil/host/runner/src/session.rs",
+    "hil/host/runner/src/session/",
+    "hil/host/runner/src/evidence/run.rs",
+    "hil/host/runner/src/evidence/run/",
+    "hil/host/runner/src/evidence/comparison.rs",
+    "hil/host/runner/src/lab/",
+    "hil/host/runner/src/fixture/",
+    "hil/protocol/",
+    "tools/process/",
+    "hil/schema/scenario-v4-defaults.json",
+    "hil/host/runner/src/error.rs",
+    "hil/host/runner/src/device/",
+    "hil/host/runner/src/transport/",
+    "hil/host/runner/src/evidence/measurements.rs",
+    "hil/host/runner/src/evidence/measurements/",
+    "tools/firmware/",
+    "hil/host/runner/src/main.rs",
+    "hil/host/runner/src/command.rs",
+    "hil/host/runner/src/workload/mod.rs",
+    "hil/host/runner/src/image/",
+    "tools/memory-report/"
+  ],
+  "workloads": {
+    "access-point": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "bluetooth-acl-backpressure": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-acl-calibration": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-dtm": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-encrypted-acl": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-gatt": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-maintenance-deadline": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-peripheral": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-phy-watchdog": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-secure-gatt": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-secure-gatt-hci-read-failure": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-secure-gatt-timing": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-security-failure": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "bluetooth-watchdog-reset": [
+      "hil/host/runner/src/workload/bluetooth.rs",
+      "hil/host/runner/src/workload/bluetooth/",
+      "hil/host/runner/src/workload/phy/"
+    ],
+    "boot-smoke": [
+      "hil/host/runner/src/workload/system/",
+      "tools/memory-report/"
+    ],
+    "icmp": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "ieee802154-ed-event": [
+      "hil/host/runner/src/workload/ieee802154/"
+    ],
+    "ieee802154-event-status": [
+      "hil/host/runner/src/workload/ieee802154/"
+    ],
+    "memory-benchmark": [
+      "hil/host/runner/src/workload/system/",
+      "tools/memory-report/"
+    ],
+    "monitor-capture": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "station-access-point": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "station-access-point-reconnect": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "station-ap-absence": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "station-ap-loss": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "station-reconnect": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "system-watchdog": [
+      "hil/host/runner/src/workload/system/"
+    ],
+    "tcp": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "timebase": [
+      "hil/host/runner/src/workload/system/"
+    ],
+    "udp": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "wifi-phy-watchdog": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ],
+    "wifi-role": [
+      "hil/host/runner/src/workload/ieee80211/",
+      "hil/host/runner/src/workload/traffic/",
+      "hil/host/runner/src/workload/phy/",
+      "hil/host/runner/src/evidence/rx_delivery.rs",
+      "crates/protocols/ieee80211/mac/"
+    ]
+  }
+}

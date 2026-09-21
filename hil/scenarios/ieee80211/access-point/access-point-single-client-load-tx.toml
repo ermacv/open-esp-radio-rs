@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-single-client-load-tx"
 description = "Observer-free sustained single-client AP outbound performance baseline"
 repetitions = 1

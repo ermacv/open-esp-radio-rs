@@ -27,6 +27,7 @@ fn manifest() -> RunManifest {
             workspace_sha256: String::from("00"),
         },
         runner: RunnerProvenance {
+            observer: None,
             package: String::from("runner"),
             version: String::from("1"),
             protocol_version: 1,
@@ -801,3 +802,76 @@ fn provenance_retains_actual_network_selection_even_when_cargo_features_match() 
 }
 
 mod workflow;
+
+#[test]
+fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
+    let root = temporary_directory("sealed-history");
+    let mut session = integrated_session(&root);
+    let scenario: crate::scenario::Scenario = toml::from_str(include_str!(
+        "../../../../../scenarios/system/boot-smoke.toml"
+    ))
+    .unwrap();
+    let result = ScenarioResult::from_repetitions(
+        scenario.id.clone(),
+        scenario.image,
+        1,
+        vec![RepetitionResult {
+            schema: RUN_SCHEMA,
+            repetition: 1,
+            outcome: Outcome::Passed,
+            started_unix_millis: 1,
+            duration_millis: 1,
+            artifact_directory: PathBuf::from("scenarios/boot-smoke/repetition-001"),
+            attachments: vec![],
+            measurements: vec![Measurement::observed(
+                "boot.cycles",
+                12,
+                MeasurementUnit::Count,
+            )],
+            failure: None,
+        }],
+    );
+    session.seal_scenario(&scenario, &result).unwrap();
+    let read = || {
+        crate::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
+        serde_json::from_slice::<crate::reporting::history::HistoryReport>(
+            &fs::read(root.join("history.json")).unwrap(),
+        )
+        .unwrap()
+    };
+    let history = read();
+    assert_eq!(history.counts.running, 1);
+    assert!(history.source_watermark_unix_millis > history.runs[0].started_unix_millis);
+    assert_eq!(history.scenarios[0].observations, 1);
+    assert_eq!(history.measurements[0].observations, 1);
+    let mut interrupted = session.manifest.clone();
+    interrupted.state = RunState::Interrupted;
+    interrupted.finished_unix_millis = Some(2);
+    interrupted.duration_millis = Some(1);
+    atomic_json(&session.directory.join("manifest.json"), &interrupted).unwrap();
+    assert_eq!(read().scenarios[0].observations, 1);
+    let run = session.directory.clone();
+    session.finish(vec![result]).unwrap();
+    let history = read();
+    assert_eq!(history.counts.completed, 1);
+    assert_eq!(history.scenarios[0].observations, 1);
+    assert_eq!(history.measurements[0].observations, 1);
+    fs::write(run.join("scenarios/boot-smoke/result.json"), b"{}").unwrap();
+    assert!(crate::reporting::history::rebuild_at(&root, "esp32s31").is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn runner_identity_comes_from_executable_and_embedded_build() {
+    let provenance = runner_provenance().unwrap();
+    let observer = provenance.observer.unwrap();
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        observer["executable_sha256"],
+        sha256_file(Path::new("/proc/self/exe")).unwrap()
+    );
+    let embedded: serde_json::Value =
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"))).unwrap();
+    assert_eq!(observer["build"], embedded);
+    assert!(observer["build"]["inputs"]["hil/host/runner/src/session/reboot.rs"].is_string());
+}

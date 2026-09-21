@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-psram-dma"
 description = "Two-client saturated Wi-Fi TX DMA experiment with descriptors in SRAM and scheduled packet buffers in PSRAM"
 repetitions = 1

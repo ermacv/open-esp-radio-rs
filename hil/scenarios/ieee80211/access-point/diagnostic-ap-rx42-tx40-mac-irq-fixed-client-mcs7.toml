@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx42-tx40-mac-irq-fixed-client-mcs7"
 description = "AP 42/40 collapse probe with intrusive MAC IRQ classification and fixed client MCS7"
 repetitions = 1

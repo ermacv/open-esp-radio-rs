@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx42-tx40-task-poll-fixed-client-mcs7"
 description = "AP 42/40 Mbit/s fixed-MCS7 duplex collapse with Core0/Core1 task-poll telemetry"
 repetitions = 1

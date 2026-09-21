@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-airtime-rx45-observed"
 description = "Temporary AP 45 Mbit/s uplink-only control for duplex-threshold localization"
 repetitions = 1

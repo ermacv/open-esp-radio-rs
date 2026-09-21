@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-bidirectional-ht40-45-45"
 description = "Split-core HT40 45/45 Mbit/s full-duplex characterization"
 repetitions = 3

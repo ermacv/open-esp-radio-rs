@@ -205,6 +205,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     assert_eq!(canonical_without_scope, legacy_documents);
 
     let dispositions = DispositionIndex {
+        project_manifest: PathBuf::from("comparison-project.toml"),
         entries: BTreeMap::new(),
         suite_entries: BTreeSet::new(),
         project_id: "test".to_owned(),
@@ -230,7 +231,6 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         vendor_index: &vendor_index,
         scenario_catalog: &scenario_catalog,
         hil_index: &hil_index,
-        evaluator_clean: true,
     };
     let evaluate = |documents: Vec<CapabilityDocument>| {
         documents
@@ -491,6 +491,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     .unwrap();
 
     let dispositions = DispositionIndex {
+        project_manifest: PathBuf::from("comparison-project.toml"),
         suite_entries: [("base-suite", "base_root"), ("wifi-suite", "wifi_root")]
             .into_iter()
             .map(|(suite, symbol)| (suite.into(), "archive".into(), symbol.into()))
@@ -516,6 +517,12 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         Sha256::digest(fs::read(root.path.join("Cargo.toml")).unwrap())
     );
     let vendor_entry = |suite: &str, symbol: &str| VendorEvidenceIndexEntry {
+        comparison: Some(crate::model::tests::comparison_fixture(
+            &root.path,
+            suite,
+            symbol,
+            "crate::component",
+        )),
         suite: suite.to_owned(),
         source: "archive".to_owned(),
         symbol: symbol.to_owned(),
@@ -526,7 +533,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         evidence_digest: Some("ab".repeat(32)),
         baseline_passed: true,
         artifact_hashes: vec![VendorEvidenceArtifactHash {
-            role: "trace".to_owned(),
+            role: "source:archive:artifact".to_owned(),
             sha256: "cd".repeat(32),
         }],
         source_hashes: vec![VendorEvidenceSourceHash {
@@ -610,7 +617,6 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
             vendor_index: &vendor,
             scenario_catalog: &scenarios,
             hil_index: &hil,
-            evaluator_clean: clean,
         };
         let evaluate = |documents: Vec<CapabilityDocument>| {
             documents
@@ -670,7 +676,6 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         vendor_index: &only_wifi_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
-        evaluator_clean: true,
     };
     let evaluated = inline
         .iter()
@@ -727,7 +732,6 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         vendor_index: &only_base_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
-        evaluator_clean: true,
     };
     let evaluated = inline
         .into_iter()

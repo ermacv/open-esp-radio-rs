@@ -24,6 +24,7 @@ pub(crate) fn normalize(document: &Value) -> Value {
     if let Some(object) = value.as_object_mut() {
         object.remove("description");
         object.remove("tags");
+        object.remove("transfer");
     }
     value
 }

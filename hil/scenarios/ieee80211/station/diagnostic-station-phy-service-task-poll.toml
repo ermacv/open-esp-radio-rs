@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-service-task-poll"
 description = "PHY automatic service with task residence under saturated UDP TX"
 repetitions = 1

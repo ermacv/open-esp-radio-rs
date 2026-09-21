@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "bluetooth-trouble-gatt"
 description = "Shared standalone Trouble application: discover, read/write and gracefully disconnect/reconnect three times on one Host/Controller epoch; plaintext, not secure GATT qualification"
 image = "bluetooth-gatt"

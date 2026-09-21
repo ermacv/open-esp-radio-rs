@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-bidirectional-ht40-split-soak"
 description = "Five-minute split-core HT40 full-duplex stability gate"
 image = "correctness"

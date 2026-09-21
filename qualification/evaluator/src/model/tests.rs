@@ -257,10 +257,11 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
     }
     let make_entry = |path: &str, symbol: &str| {
         json!({
+            "comparison":comparison_fixture(&root, "radio", symbol, symbol),
             "suite":"radio","source":"archive","symbol":symbol,
             "evidence_class":"production-trace","status":"match","release_eligible":true,
             "rust_component":symbol,"evidence_digest":"ab".repeat(32),"baseline_passed":true,
-            "artifact_hashes":[{"role":"vendor","sha256":"cd".repeat(32)},
+            "artifact_hashes":[{"role":"source:archive:artifact","sha256":"cd".repeat(32)},
                 {"role":"production","sha256":"ef".repeat(32)}],
             "source_hashes":[{"path":path,"sha256":format!("{:x}",Sha256::digest(b"production-input"))}],
             "release_blockers":[]
@@ -275,8 +276,14 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
     };
     write_index(&document);
     let index = VendorEvidenceIndex::load(&path, "test").unwrap();
-    assert_eq!(index.current_release_count(&root, true), 2);
-    assert_eq!(index.current_release_count(&root, false), 2);
+    assert_eq!(
+        index.current_release_count(&root, Path::new("comparison-project.toml")),
+        2
+    );
+    assert_eq!(
+        index.current_release_count(&root, Path::new("comparison-project.toml")),
+        2
+    );
     let ble = VendorEvidenceRef {
         suite: "radio".into(),
         source: "archive".into(),
@@ -309,13 +316,13 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
             !index
                 .get(&ble)
                 .unwrap()
-                .is_current_release_evidence(&root, true)
+                .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
         );
         assert!(
             index
                 .get(&wifi)
                 .unwrap()
-                .is_current_release_evidence(&root, true)
+                .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
         );
     }
     fs::write(root.join("bluetooth.rs"), b"changed-production-input").unwrap();
@@ -323,13 +330,13 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
         !index
             .get(&ble)
             .unwrap()
-            .is_current_release_evidence(&root, true)
+            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
     );
     assert!(
         index
             .get(&wifi)
             .unwrap()
-            .is_current_release_evidence(&root, true)
+            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
     );
     // This checks only the existing per-entry source binding. It does not
     // assert that this synthetic file list is a complete cross-image impact set.
@@ -345,7 +352,7 @@ fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result
         partial
             .get(&wifi)
             .unwrap()
-            .is_current_release_evidence(&root, false)
+            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
     );
     document["suite_states"]["radio"] = json!("incomplete");
     write_index(&document);
@@ -372,6 +379,7 @@ pub(crate) fn assert_reviewed_hil(
 ) {
     let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
     let dispositions = DispositionIndex {
+        project_manifest: PathBuf::from("comparison-project.toml"),
         entries: BTreeMap::new(),
         suite_entries: BTreeSet::new(),
         project_id: "test".into(),
@@ -391,7 +399,6 @@ pub(crate) fn assert_reviewed_hil(
         vendor_index: &vendor,
         scenario_catalog: catalog,
         hil_index: index,
-        evaluator_clean: false,
         declarations: &declarations,
     };
     let capability = evaluate_capability(document, &context).unwrap();
@@ -404,4 +411,165 @@ pub(crate) fn assert_reviewed_hil(
             .iter()
             .any(|r| r.starts_with("hil:old/exchange"))
     );
+}
+
+pub(super) fn comparison_fixture(
+    root: &Path,
+    suite: &str,
+    symbol: &str,
+    component: &str,
+) -> comparison::Binding {
+    let project = root.join("comparison-project.toml");
+    fs::write(
+        &project,
+        "id = 'test'\nverification-addon = 'comparison-addon.toml'\n",
+    )
+    .unwrap();
+    let addon = root.join("comparison-addon.toml");
+    let mut document = fs::read_to_string(&addon).unwrap_or_default();
+    let marker = format!("id = '{suite}'");
+    if !document.contains(&marker) {
+        document.push_str(&format!("\n[[suites]]\n{marker}\nprofiles = ['{suite}-profiles.toml']\ndispositions = ['{suite}-functions.toml']\nbaselines = ['{suite}-baselines.toml']\n[[suites.vendor]]\nsource = 'archive'\nall = true\nartifact-sha256 = '{}'\n", "cd".repeat(32)));
+        fs::write(&addon, document).unwrap();
+    }
+    for (suffix, row) in [
+        (
+            "profiles",
+            format!(
+                "[[profiles]]\nvendor-source = 'archive'\nvendor-symbol = '{symbol}'\nname = '{symbol}'\ncompare-return = true\n"
+            ),
+        ),
+        (
+            "functions",
+            format!(
+                "[[functions]]\nsource = 'archive'\nsymbol = '{symbol}'\nrust-component = '{component}'\neffect-contract = 'exact'\n"
+            ),
+        ),
+        (
+            "baselines",
+            format!(
+                "[[evidence]]\nsource = 'archive'\nsymbol = '{symbol}'\ndigest = '{}'\n",
+                "ab".repeat(32)
+            ),
+        ),
+    ] {
+        let path = root.join(format!("{suite}-{suffix}.toml"));
+        let mut text = fs::read_to_string(&path).unwrap_or_default();
+        if !text.contains(&format!("symbol = '{symbol}'")) {
+            text.push_str(&row);
+            fs::write(path, text).unwrap();
+        }
+    }
+    let artifacts = [("source:archive:artifact".into(), "cd".repeat(32))]
+        .into_iter()
+        .collect();
+    let current = comparison::current(
+        root,
+        Path::new("comparison-project.toml"),
+        suite,
+        "archive",
+        symbol,
+        &artifacts,
+    )
+    .unwrap();
+    comparison::Binding {
+        project_manifest: "comparison-project.toml".into(),
+        sha256: current.sha256,
+    }
+}
+
+#[test]
+fn comparison_inputs_invalidate_only_their_own_evidence_and_ignore_annotations() {
+    let root = std::env::temp_dir().join(format!("oer-comparison-inputs-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let first = comparison_fixture(&root, "first", "first", "driver::first");
+    let second = comparison_fixture(&root, "second", "second", "driver::second");
+    let artifacts = [("source:archive:artifact".into(), "cd".repeat(32))]
+        .into_iter()
+        .collect();
+    let current = |suite: &str| {
+        comparison::current(
+            &root,
+            Path::new("comparison-project.toml"),
+            suite,
+            "archive",
+            suite,
+            &artifacts,
+        )
+        .unwrap()
+    };
+    for (path, from, to) in [
+        (
+            "first-profiles.toml",
+            "compare-return = true",
+            "compare-return = false",
+        ),
+        (
+            "first-functions.toml",
+            "effect-contract = 'exact'",
+            "effect-contract = 'bounded'",
+        ),
+        ("first-functions.toml", "driver::first", "driver::other"),
+        ("first-baselines.toml", &"ab".repeat(32), &"ef".repeat(32)),
+        (
+            "comparison-addon.toml",
+            &format!("artifact-sha256 = '{}'", "cd".repeat(32)),
+            &format!("artifact-sha256 = '{}'", "ef".repeat(32)),
+        ),
+    ] {
+        let path = root.join(path);
+        let before = fs::read_to_string(&path).unwrap();
+        fs::write(&path, before.replacen(from, to, 1)).unwrap();
+        assert_ne!(current("first").sha256, first.sha256);
+        assert_eq!(current("second").sha256, second.sha256);
+        fs::write(path, before).unwrap();
+    }
+    let path = root.join("first-profiles.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        format!("{text}\ndescription = 'clarified text'\n# spelling fix\n"),
+    )
+    .unwrap();
+    assert_eq!(current("first").sha256, first.sha256);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn public_artifact_bindings_cover_primary_companion_and_auxiliary_images() {
+    let root = std::env::temp_dir().join(format!("oer-public-artifacts-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    comparison_fixture(&root, "radio", "entry", "driver::entry");
+    let mut artifacts = BTreeMap::from([("source:archive:artifact".into(), "cd".repeat(32))]);
+    let check = |artifacts: &BTreeMap<String, String>| {
+        comparison::current(
+            &root,
+            Path::new("comparison-project.toml"),
+            "radio",
+            "archive",
+            "entry",
+            artifacts,
+        )
+        .unwrap()
+        .public_artifacts_bound
+    };
+    assert!(check(&artifacts));
+    artifacts.insert("source:archive:companion".into(), "ef".repeat(32));
+    artifacts.insert("auxiliary:linked-image".into(), "12".repeat(32));
+    assert!(!check(&artifacts));
+    let addon = root.join("comparison-addon.toml");
+    let before = fs::read_to_string(&addon).unwrap();
+    fs::write(&addon, format!("{before}\n[suites.artifact-bindings]\n'source:archive:companion' = '{}'\n'auxiliary:linked-image' = '{}'\n", "ef".repeat(32), "12".repeat(32))).unwrap();
+    assert!(check(&artifacts));
+    artifacts.insert("auxiliary:linked-image".into(), "34".repeat(32));
+    assert!(!check(&artifacts));
+    let current = fs::read_to_string(&addon).unwrap();
+    fs::write(
+        &addon,
+        current.replace(&format!("artifact-sha256 = '{}'", "cd".repeat(32)), ""),
+    )
+    .unwrap();
+    artifacts.insert("auxiliary:linked-image".into(), "12".repeat(32));
+    assert!(!check(&artifacts));
+    fs::remove_dir_all(root).unwrap();
 }

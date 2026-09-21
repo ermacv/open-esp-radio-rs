@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx45-tx40-core0-coarse"
 description = "Temporary AP 45 Mbit/s uplink and 40 Mbit/s downlink Core0 phase diagnostic"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "tcp-rx"
 description = "Sustained TCP host-to-station receive"
 image = "correctness"

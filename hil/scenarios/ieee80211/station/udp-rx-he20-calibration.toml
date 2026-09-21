@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-he20-calibration"
 description = "HE20 UDP RX with combined PHY calibration, controlled against the same-image receive baseline"
 image = "correctness"

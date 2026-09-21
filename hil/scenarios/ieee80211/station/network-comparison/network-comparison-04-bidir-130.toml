@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "network-comparison-04-bidir-130"
 description = "Four-stack HT40 comparison: bidir-130"
 repetitions = 1

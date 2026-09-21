@@ -247,6 +247,36 @@ fn suite_arguments(
     suite: &VerificationSuiteSpec,
     run_spec: &RunSpec,
 ) -> Result<VerifyInventoryArgs> {
+    for (role, expected) in &suite.artifact_bindings {
+        let parts = role.split(':').collect::<Vec<_>>();
+        let (input_role, ordinal) = match parts.as_slice() {
+            ["source", source, "artifact"] | ["auxiliary", source] => (
+                InputRole::SourceArtifact(source.parse().map_err(crate::Error::invalid)?),
+                0,
+            ),
+            ["source", source, "companion"] => (
+                InputRole::SourceCompanion(source.parse().map_err(crate::Error::invalid)?),
+                0,
+            ),
+            ["source", source, "inventory"] => (
+                InputRole::SourceInventory(source.parse().map_err(crate::Error::invalid)?),
+                0,
+            ),
+            ["source", source, "inventory", ordinal] => (
+                InputRole::SourceInventory(source.parse().map_err(crate::Error::invalid)?),
+                ordinal.parse::<usize>()?,
+            ),
+            _ => return Err(crate::Error::invalid("invalid public artifact role")),
+        };
+        let inputs = matching_inputs(run_spec, &input_role);
+        let path = inputs.get(ordinal).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "suite {} requires public artifact {role}",
+                suite.id
+            ))
+        })?;
+        verify_digest(path, Some(expected))?;
+    }
     let mut arguments = VerifyInventoryArgs {
         rust_artifact: Some(required_input(
             run_spec,
@@ -513,7 +543,8 @@ mod tests {
         fs::write(&companion, b"reviewed ROM").unwrap();
         let run_path = directory.join("run.toml");
         fs::write(&run_path, "schema = 1\n[[inputs]]\nrole = \"rust-artifact\"\npath = \"production.elf\"\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = \"vendor.a\"\n").unwrap();
-        let suite = VerificationSuiteSpec {
+        let mut suite = VerificationSuiteSpec {
+            artifact_bindings: Default::default(),
             id: "pinned".into(),
             vendor: vec![crate::project::VerificationVendorSpec {
                 source: "vendor".parse().unwrap(),
@@ -559,6 +590,35 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("SHA-256")
+        );
+        fs::write(&vendor, b"reviewed archive").unwrap();
+        suite.vendor[0].artifact_sha256 = None;
+        suite.vendor[0].companion_sha256 = None;
+        suite.artifact_bindings.insert(
+            "source:vendor:artifact".into(),
+            crate::artifact_sha256(&vendor).unwrap(),
+        );
+        suite.artifact_bindings.insert(
+            "source:vendor:companion".into(),
+            crate::artifact_sha256(&companion).unwrap(),
+        );
+        assert!(suite_arguments(&suite, &run).is_ok());
+        fs::write(&companion, b"unselected ROM").unwrap();
+        assert!(
+            suite_arguments(&suite, &run)
+                .unwrap_err()
+                .to_string()
+                .contains("SHA-256")
+        );
+        fs::write(&companion, b"reviewed ROM").unwrap();
+        suite
+            .artifact_bindings
+            .insert("auxiliary:absent".into(), "a".repeat(64));
+        assert!(
+            suite_arguments(&suite, &run)
+                .unwrap_err()
+                .to_string()
+                .contains("requires public artifact auxiliary:absent")
         );
         fs::remove_dir_all(directory).unwrap();
     }

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-access-delivery-rx"
 description = "Access-only PHY maintenance control without PM during RX UDP delivery"
 repetitions = 3

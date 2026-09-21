@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "network-comparison-02-rx-ceiling"
 description = "Four-stack HT40 comparison: rx-ceiling"
 repetitions = 1

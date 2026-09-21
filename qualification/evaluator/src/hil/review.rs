@@ -86,6 +86,9 @@ struct Document {
     reviewer: String,
     reason: String,
     source: ObservationRef,
+    /// Explicit proof for an old observation without embedded observer identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    observer_provenance: Vec<PathBuf>,
     destination: ObservationRef,
     inputs: Vec<InputBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

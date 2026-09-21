@@ -551,6 +551,7 @@ locator = "review"
             evidence_index: directory.join("generated/vendor-evidence.json"),
             policy: None,
             suites: vec![VerificationSuiteSpec {
+                artifact_bindings: Default::default(),
                 id: "radio".to_owned(),
                 vendor: vec![
                     VerificationVendorSpec {
@@ -811,6 +812,31 @@ symbols = ["uncovered_leaf"]
                 .contains("hexadecimal")
         );
     }
+    std::fs::write(
+        &addon,
+        format!(
+            "{original}\n[suites.artifact-bindings]\n\"source:auxiliary:artifact\" = \"{digest}\"\n"
+        ),
+    )
+    .unwrap();
+    let pinned = ProjectSpec::load(&manifest).unwrap().verification.unwrap();
+    assert_eq!(
+        pinned.suites[0].artifact_bindings["source:auxiliary:artifact"],
+        digest
+    );
+    std::fs::write(
+        &addon,
+        format!(
+            "{original}\n[suites.artifact-bindings]\n\"source:auxiliary:artifact\" = \"unknown\"\n"
+        ),
+    )
+    .unwrap();
+    assert!(
+        ProjectSpec::load(&manifest)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid public verification artifact binding")
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }
 

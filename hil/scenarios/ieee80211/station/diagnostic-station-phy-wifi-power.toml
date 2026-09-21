@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-wifi-power"
 description = "Conditional Wi-Fi gain compensation within a preserved station epoch during UDP delivery"
 repetitions = 1

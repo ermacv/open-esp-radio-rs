@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-tx-calibration"
 description = "Isolated Wi-Fi TX DC and power-detector calibration within a preserved station epoch during UDP delivery"
 repetitions = 1

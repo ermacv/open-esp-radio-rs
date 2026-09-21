@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-tx-emission-736-software-diagnostic"
 description = "Fixed-rate 736-byte UDP TX software-checksum emission-cost diagnostic"
 repetitions = 2

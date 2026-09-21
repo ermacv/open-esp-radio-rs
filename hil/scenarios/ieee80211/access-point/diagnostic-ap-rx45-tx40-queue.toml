@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx45-tx40-queue"
 description = "Temporary one-cycle AP duplex queue and CCA observation"
 repetitions = 1

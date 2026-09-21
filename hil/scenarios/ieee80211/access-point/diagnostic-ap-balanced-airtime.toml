@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-balanced-airtime"
 description = "Two AP downlink streams offered 130 Mbit/s each with task-poll and optional per-peer service-budget accounting"
 repetitions = 1

@@ -8,7 +8,8 @@ No review is inferred from an unchanged commit, a later PASS, or a capability's
 implementation status.
 
 The default is `current-source-composition`: a fully matching verified snapshot
-needs no review, even when dirty or recorded under another commit. Reviews
+needs no review when the executed procedure and the host observer also match,
+even when dirty or recorded under another commit. Reviews
 justify differences between observed and current subjects. An optional `hil-reviews` list
 in a capability declaration references repository-relative TOML files. Keep
 accepted records with the capability's reviewed inputs; generated reports and
@@ -134,12 +135,22 @@ bindings hold; unrelated dirty files do not silently invalidate the observation.
 
 `identical-image` requires equal application bytes and binds the destination
 sources to the current reviewed inputs. Numeric throughput/silence checks also
-require equal application bytes, even with the functional kind. Whole scenarios
-with performance/latency criteria and existing GATT stack-headroom, memory
-benchmark, timebase and boot-placement assertions follow the same rule. Selecting
+require equal application bytes, even with the functional kind. Whole scenarios declare `transfer = "identical-image"` when their guarantee includes
+timing, memory or RF bounds. This includes the GATT headroom, memory benchmark,
+timebase, boot-placement, maintenance-deadline and watchdog scenarios. The default
+`unchanged-functional-contract` permits only a reviewed functional transfer;
+check contracts declare their own image sensitivity independently of units. Selecting
 published functional checks binds only those checks, while still requiring a
 complete original scenario PASS. Future quantitative RF measurements need their
 own explicit observation contracts.
+
+Direct evidence, both review kinds, resolving observations and controls compare
+the recorded procedure with the current catalog using the same normalization.
+Description, tags and the transfer policy are not executable parameters. For
+named UDP RX obligations, numeric rate/silence thresholds may be reassessed from
+retained measurements; stimulus, scheduler, requested extra observations and
+other execution fields remain bound. Whole-scenario acceptance retains its full
+criteria because unnamed assertions cannot be reconstructed from a generic PASS.
 
 Both kinds require coherent archived application/build provenance, matching
 build selection/features and unchanged declared external source composition.
@@ -211,3 +222,34 @@ Both remain visible alongside the original failure. A newly indexed relevant
 failure has no disposition and reopens the decision. For a fix confirmed on the
 current build, source and destination may name that same passing observation;
 the older failure is still recorded separately.
+
+## Host observer identity
+
+A firmware snapshot does not identify the process that observed its behavior.
+New run manifests include `runner.observer`: the SHA-256 of the actual running
+executable and a build record embedded in that executable. The build record
+contains the host package and local dependency source hashes, compiler identity
+and build environment; `build_sha256` hashes its canonical JSON. On Linux the
+executable digest is read through `/proc/self/exe`, so replacing the executable
+pathname while a run is active does not change its recorded subject. Other host
+platforms retain the embedded build but leave the executable identity unknown;
+the same explicit review requirement applies.
+
+The evaluator checks the relevant current inputs selected by
+[`observer-inputs.json`](../hil/schema/observer-inputs.json). Shared dispatch,
+transport and fixture owners are common; workload families bind their own
+observers. The full executable/build hash records origin and is not itself a
+requirement to repeat every scenario. Changes outside the selected observer
+inputs do not invalidate that observer binding.
+
+A bundle without this identity remains historical. A review may supply
+`observer-provenance = ["path/to/observer-proof.json"]` at its top level. Each
+proof document names one `observation_id`, its `observer` record in the format
+above, and a nonempty `supporting_evidence` array of `{ "path": "...",
+"sha256": "..." }` records. The proof and every supporting record must appear
+as hashed `kind = "evidence"` inputs in the review. The reviewer must establish
+which executable ran and how its build inputs were established from retained
+execution/build records; copying the firmware snapshot is insufficient. The
+evaluator verifies these bindings and input hashes, not a signed attestation.
+Supply separate proofs for legacy source, control and resolving observations
+when needed. A later runner build never retroactively identifies an old run.

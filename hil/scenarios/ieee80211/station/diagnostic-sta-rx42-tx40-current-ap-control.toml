@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-sta-rx42-tx40-current-ap-control"
 description = "Same diagnostic image station control for the AP 42/40 duplex failure"
 repetitions = 1

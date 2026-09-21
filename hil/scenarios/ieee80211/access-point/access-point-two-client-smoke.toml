@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-two-client-smoke"
 description = "Two simultaneous WPA2 clients across two access-point ownership epochs"
 image = "correctness"

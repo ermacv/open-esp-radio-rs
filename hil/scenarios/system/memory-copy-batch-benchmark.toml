@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "memory-copy-batch-benchmark"
 description = "CPU frame loops and single-chain blocking/async GDMA batches from SRAM/PSRAM into SRAM"
 image = "diagnostic-memory-benchmark"

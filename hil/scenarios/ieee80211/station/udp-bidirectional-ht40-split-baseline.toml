@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-bidirectional-ht40-split-baseline"
 description = "Stable CPU0-radio/CPU1-network HT40 full-duplex baseline"
 repetitions = 5

@@ -6,6 +6,7 @@ mod checks;
 mod comparison;
 mod decision;
 mod measurement;
+mod observer;
 mod procedure;
 mod provenance;
 pub(crate) mod review;
@@ -162,7 +163,16 @@ impl ScenarioCatalog {
             {
                 return Err(format!("duplicate HIL scenario id {}", document.id).into());
             }
-            documents.insert(document.id, toml_edit::de::from_str(&input)?);
+            let value: serde_json::Value = toml_edit::de::from_str(&input)?;
+            if value.get("transfer").is_some_and(|v| {
+                !matches!(
+                    v.as_str(),
+                    Some("identical-image" | "unchanged-functional-contract")
+                )
+            }) {
+                return Err("unsupported HIL transfer policy".into());
+            }
+            documents.insert(document.id, value);
         }
         Ok(())
     }
@@ -456,11 +466,6 @@ impl HilEvidenceIndex {
                 if repository.dirty && binding != provenance::Binding::Snapshot {
                     exclusions.push(decision::Exclusion::EvaluatorDirty);
                 }
-                if exclusions.is_empty()
-                    && suite.scenarios.iter().any(|s| s.outcome == Outcome::Passed)
-                {
-                    qualifying = true;
-                }
                 let mut seen = BTreeSet::new();
                 for scenario in suite.scenarios {
                     let path = if independently_sealed {
@@ -484,6 +489,7 @@ impl HilEvidenceIndex {
                         )
                         .into());
                     }
+                    let scenario_id = scenario.scenario.clone();
                     scenarios
                         .entry(scenario.scenario)
                         .or_default()
@@ -515,6 +521,15 @@ impl HilEvidenceIndex {
                                 .map(|repetition| repetition.measurements)
                                 .collect(),
                         });
+                    let observation = scenarios.get_mut(&scenario_id).unwrap().last_mut().unwrap();
+                    if !observer::matches(root, observation, None)? {
+                        observation
+                            .exclusions
+                            .push(decision::Exclusion::ObserverIdentityNotEstablished);
+                    }
+                    if observation.exclusions.is_empty() && observation.outcome == Outcome::Passed {
+                        qualifying = true;
+                    }
                 }
             }
             summary.current_source_producer += usize::from(current_producer);
@@ -572,6 +587,8 @@ struct RunManifest {
     finished_unix_millis: Option<u64>,
     duration_millis: Option<u64>,
     repository: RepositoryProvenance,
+    #[serde(default)]
+    runner: Option<serde_json::Value>,
     #[serde(default)]
     firmware: Vec<FirmwareArtifactProvenance>,
 }

@@ -245,6 +245,35 @@ an interruption cannot leave its old PASS current. Content-addressed sibling
 `complete_project_run` flag remains descriptive; per-suite completion governs
 schema-2 consumption. Legacy schema-1 indexes still require a complete run.
 
+Each new entry also records `comparison.project_manifest` and
+`comparison.sha256`. The identity covers that selected suite and function's
+production binding, effect/semantic disposition, profiles, accepted baseline,
+applicable policy surfaces and artifact identities. Canonical TOML values omit
+comments and descriptive `description`, `title`, `notes`, `reason` and `rationale`
+fields. Shared profile/disposition files are filtered to the selected function;
+changes in another suite do not invalidate the entry. The producer also checks
+that profile, disposition and baseline bytes still match the execution report
+before publishing a release-eligible entry.
+
+Hardware artifact selection must have public SHA-256 bindings. Existing
+`suites.vendor` fields `artifact-sha256` and `companion-sha256` bind selected
+vendor sources. A suite may additionally declare:
+
+```toml
+[suites.artifact-bindings]
+"auxiliary:linked-image" = "LOWERCASE_SHA256"
+"source:vendor:inventory" = "LOWERCASE_SHA256"
+```
+
+Replace placeholders with the reviewed digests of the selected inputs. This
+covers auxiliary images without publishing private file paths or binaries.
+Every recorded `source:*` artifact/companion/inventory and `auxiliary:*` image
+must match a public binding. Repeated inventories use the reported
+`source:ID:inventory:N` role. Missing or
+conflicting bindings cannot establish current release evidence. A baseline
+does not substitute for artifact selection. Legacy entries without comparison
+identity remain historical; only the selected comparison needs a new publication.
+
 ## Internal persistent query store
 
 `project cache gc` retention reports use `schema_version = 2`, with an explicit

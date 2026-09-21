@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-baseline-ceiling-delivery-rx"
 description = "HT40 RX delivery-frontier ceiling control without PHY maintenance"
 repetitions = 3

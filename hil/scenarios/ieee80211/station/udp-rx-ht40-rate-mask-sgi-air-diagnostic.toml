@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-rate-mask-sgi-air-diagnostic"
 description = "HT40 MCS7 OpenWrt fixed-SGI rate-mask perturbation with air and AP aggregation evidence"
 image = "diagnostic-rx-delivery"

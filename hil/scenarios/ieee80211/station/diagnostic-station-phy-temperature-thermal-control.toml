@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-temperature-thermal-control"
 description = "Temperature-only control after a recorded same-epoch thermal preconditioning interval"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-mixed-tx-work"
 description = "Saturated AP aggregates plus isolated sparse-peer MPDUs with separate transmission-work evidence"
 repetitions = 1

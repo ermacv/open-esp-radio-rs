@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-probe-load"
 description = "AP UDP progress under single, fixed-MAC and rotating-MAC probe request load"
 repetitions = 1

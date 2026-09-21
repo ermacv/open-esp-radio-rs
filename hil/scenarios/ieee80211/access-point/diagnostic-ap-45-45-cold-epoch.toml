@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-45-45-cold-epoch"
 description = "Temporary AP 45+45 Mbit/s cold-epoch control for role-transition leakage"
 repetitions = 2

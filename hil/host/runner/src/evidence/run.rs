@@ -19,6 +19,7 @@ use crate::{Result, image::ImageClass};
 
 mod archive;
 mod attempt;
+pub(crate) use attempt::completed_attempts;
 mod integrity;
 mod lock;
 mod snapshot;
@@ -116,7 +117,7 @@ impl RunSession {
             dirty: repository_source.dirty,
             workspace_sha256: repository_source.workspace_sha256.clone(),
         };
-        let runner = runner_provenance();
+        let runner = runner_provenance()?;
         let events = OpenOptions::new()
             .create_new(true)
             .append(true)
@@ -345,8 +346,23 @@ fn create_unique_directory(parent: &Path, base: &str) -> Result<PathBuf> {
     Err("cannot allocate a unique HIL run directory".into())
 }
 
-fn runner_provenance() -> RunnerProvenance {
-    RunnerProvenance {
+fn runner_provenance() -> Result<RunnerProvenance> {
+    // On Linux this reads the actual running inode even after a rebuild replaces
+    // the pathname. The source record comes from this executable's build script.
+    #[cfg(target_os = "linux")]
+    let executable_sha256 = Some(sha256_file(Path::new("/proc/self/exe"))?);
+    // A pathname on another host does not establish the running inode after
+    // replacement. Retain the embedded build and leave this identity unknown.
+    #[cfg(not(target_os = "linux"))]
+    let executable_sha256: Option<String> = None;
+    let build: serde_json::Value =
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/runner-build.json")))?;
+    use sha2::{Digest, Sha256};
+    let build_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&build)?));
+    Ok(RunnerProvenance {
+        observer: Some(
+            serde_json::json!({"schema":1,"executable_sha256":executable_sha256,"build_sha256":build_sha256,"build":build}),
+        ),
         package: env!("CARGO_PKG_NAME").to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         protocol_version: open_esp_radio_hil_protocol::PROTOCOL_VERSION,
@@ -359,7 +375,7 @@ fn runner_provenance() -> RunnerProvenance {
                 version: command_version(name),
             })
             .collect(),
-    }
+    })
 }
 
 fn command_version(program: &str) -> Option<String> {

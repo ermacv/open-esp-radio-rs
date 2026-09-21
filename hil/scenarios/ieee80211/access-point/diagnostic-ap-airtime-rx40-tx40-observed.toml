@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-airtime-rx40-tx40-observed"
 description = "Temporary observed AP balanced duplex ceiling sweep with driver RX disposition"
 repetitions = 1

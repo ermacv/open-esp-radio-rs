@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-single-client-ceiling-tx"
 description = "Observer-free single-client AP HT40 sustained 95 Mbit/s UDP transmit gate"
 repetitions = 3

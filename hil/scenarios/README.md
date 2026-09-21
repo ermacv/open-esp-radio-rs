@@ -82,3 +82,13 @@ The modes publish `wifi.station.recovery-retry-exhausted` or
 `wifi.station.initial-retry-exhausted` respectively. Both query the control
 interface afterwards and publish `wifi.station.control-responsive`. The host
 observes production lifecycle events; it does not implement retry policy.
+
+## Transfer policy
+
+The optional top-level `transfer` field is `unchanged-functional-contract`
+(default) or `identical-image`. A whole-scenario timing, memory or RF guarantee
+requires `identical-image`; maintenance deadlines and watchdog reset windows
+are included even when no named numeric check exists. This field governs
+review applicability and does not alter execution. Named checks have their own
+explicit transfer contract in the evaluator. Functional checks may be reviewed
+separately while a timing guarantee remains bound to the application image.

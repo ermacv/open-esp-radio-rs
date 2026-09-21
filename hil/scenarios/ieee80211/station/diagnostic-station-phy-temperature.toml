@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-temperature"
 description = "Dated PHY temperature observation within a preserved station epoch during UDP delivery"
 repetitions = 1

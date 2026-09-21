@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-temperature-delivery-rx"
 description = "Observed temperature maintenance without PM during RX UDP delivery"
 repetitions = 1

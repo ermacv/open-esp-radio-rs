@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-performance-ceiling"
 description = "Observer-free HT40 UDP host-to-station 100 Mbit/s production gate"
 repetitions = 1

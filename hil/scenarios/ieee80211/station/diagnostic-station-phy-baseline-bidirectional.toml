@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-baseline-bidirectional"
 description = "No PHY maintenance within a preserved station epoch during bidirectional UDP delivery"
 repetitions = 1

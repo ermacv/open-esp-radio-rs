@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-tx-he20"
 description = "Sustained HE20 UDP station-to-host transmission"
 image = "correctness"

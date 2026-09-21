@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-calibration-task-poll"
 description = "Combined PHY calibration with Core0 task residence under sustained RX delivery"
 repetitions = 3

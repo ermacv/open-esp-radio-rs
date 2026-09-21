@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-rfpll-thermal-observed"
 description = "Bounded one-second fresh-temperature/RFPLL observations until the first nonzero thermal correction"
 repetitions = 1

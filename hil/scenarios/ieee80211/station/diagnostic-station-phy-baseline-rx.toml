@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-baseline-rx"
 description = "RX maintenance isolation control: baseline"
 repetitions = 1

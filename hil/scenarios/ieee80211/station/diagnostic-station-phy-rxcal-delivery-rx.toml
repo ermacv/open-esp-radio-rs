@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-rxcal-delivery-rx"
 description = "Common-calibration root/poll timing without per-edge RX observation or PM during RX UDP delivery"
 repetitions = 3

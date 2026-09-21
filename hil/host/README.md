@@ -179,6 +179,13 @@ firmware class. The flash operation reads that archived copy, binding firmware
 provenance to the bytes sent to the DUT. Completed and interrupted bundles also
 carry a deterministic integrity inventory covering every retained file.
 
+The manifest records `runner.observer`, including the SHA-256 of the running
+executable and its embedded build/source identity. Firmware capture does not
+replace this identity. The qualification evaluator uses
+[`observer-inputs.json`](../schema/observer-inputs.json) to select relevant
+observer inputs; it does not require equality of the entire runner binary.
+Legacy bundles need an explicit provenance review before becoming applicable.
+
 `RunSession` also publishes `attempts/<scenario>.json` immediately after a
 scenario's complete repetition set (including cleanup) has been recorded. This
 schema-1 seal contains a completion snapshot, the result and a size/SHA-256
@@ -197,7 +204,12 @@ lifecycle. Fixture cleanup and recovery remain with their existing owners.
 ## Inspect evidence
 
 The target-level `history.json` and `history.html` are deterministic derived
-views over those bundles. Rebuild them at any time with
+views over those bundles. Independently sealed attempts contribute observations
+and measurements while a campaign is running or interrupted. When an attempts
+directory exists it supplies the completion boundaries; the final suite is not
+counted a second time. Run totals still describe enclosing invocations. Trends
+remain scenario aggregates, not a proof of comparable firmware/fixture conditions.
+Rebuild them at any time with
 `cargo hil report rebuild`; no DUT or private lab configuration is required.
 Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
@@ -209,7 +221,8 @@ scenario and repetition requirement is satisfied by a completed bundle or a
 separately sealed attempt under the default current-source-composition policy or an explicit
 [property-scoped applicability review](../../qualification/evidence-reviews.md)
 with validated build and owner bindings. A verified snapshot matching all current
-source inputs is directly applicable even when dirty. Its existence alone does
+source inputs is directly applicable even when dirty, provided the executed
+procedure and relevant host observer inputs also match. Its existence alone does
 not establish this match or a passing observation. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.
 

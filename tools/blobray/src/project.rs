@@ -197,6 +197,7 @@ pub(crate) struct VerificationVendorSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationSuiteSpec {
     pub(crate) id: String,
+    pub(crate) artifact_bindings: std::collections::BTreeMap<String, String>,
     pub(crate) vendor: Vec<VerificationVendorSpec>,
     /// Additional linked images available only to platform verification
     /// adapters; they do not enlarge the suite's source inventory.

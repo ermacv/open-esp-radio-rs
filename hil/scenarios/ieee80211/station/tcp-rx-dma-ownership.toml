@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "tcp-rx-dma-ownership"
 description = "TCP receive with physical RX DMA lease and software republish timing"
 image = "diagnostic-rx-ownership"

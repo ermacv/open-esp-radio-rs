@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-single-client-ceiling-rx-task-residence"
 description = "Production-like single-client AP HT40 UDP receive ceiling and Core0 residence diagnostic"
 repetitions = 1

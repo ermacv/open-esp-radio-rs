@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-absence-no-pm-99ms-rx"
 description = "99 ms synthetic physical absence without PM during RX UDP delivery"
 repetitions = 1

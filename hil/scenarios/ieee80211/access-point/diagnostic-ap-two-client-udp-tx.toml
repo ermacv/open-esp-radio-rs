@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx"
 description = "Two-client AP UDP TX endpoint and per-flow accounting smoke"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-rfpll"
 description = "Fresh temperature acquisition followed by measured RFPLL correction within one station epoch during UDP delivery"
 repetitions = 1

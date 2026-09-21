@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-icmp"
 description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epoch"
 repetitions = 3

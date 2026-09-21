@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "ap-network-comparison-03-bidir-balanced"
 description = "Two physical stations with ESP as AP: bidir-balanced"
 repetitions = 1

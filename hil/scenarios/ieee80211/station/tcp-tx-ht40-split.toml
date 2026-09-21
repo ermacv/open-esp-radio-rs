@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "tcp-tx-ht40-split"
 description = "Split-core HT40 sustained TCP station-to-host transmission"
 repetitions = 3

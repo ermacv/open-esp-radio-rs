@@ -150,6 +150,7 @@ pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
     let mut entries = fs::read_dir(&runs_directory)?.collect::<std::io::Result<Vec<_>>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
 
+    let mut latest_observation_millis = 0;
     let mut runs = Vec::new();
     let mut observations = Vec::new();
     let mut measurement_observations = Vec::new();
@@ -184,6 +185,14 @@ pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
             }
             let suite: SuiteResult = read_json(&suite_path)?;
             validate_suite(&suite, &manifest)?;
+            Some(suite)
+        } else {
+            None
+        };
+        let units = crate::evidence::run::completed_attempts(&run_directory, &manifest)?
+            .unwrap_or_else(|| suite.iter().cloned().collect());
+        for suite in &units {
+            latest_observation_millis = latest_observation_millis.max(suite.finished_unix_millis);
             for scenario in &suite.scenarios {
                 observations.push(ScenarioObservation {
                     started_unix_millis: suite.started_unix_millis,
@@ -203,10 +212,7 @@ pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
                     }
                 }
             }
-            Some(suite)
-        } else {
-            None
-        };
+        }
         let replayed_from_runs = manifest
             .firmware
             .iter()
@@ -263,7 +269,8 @@ pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
         .iter()
         .map(|run| run.finished_unix_millis.unwrap_or(run.started_unix_millis))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(latest_observation_millis);
     let report = HistoryReport {
         schema: RUN_SCHEMA,
         target: target.to_owned(),

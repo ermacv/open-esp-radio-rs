@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-load-rx"
 description = "Sustained two-flow AP inbound fairness baseline with exact delivery"
 repetitions = 5

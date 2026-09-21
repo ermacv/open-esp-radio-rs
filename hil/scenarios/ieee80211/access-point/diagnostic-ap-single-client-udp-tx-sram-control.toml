@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-single-client-udp-tx-sram-control"
 description = "Bounded single-client SRAM-backed Wi-Fi TX control for the direct-PSRAM DMA address proof"
 repetitions = 1

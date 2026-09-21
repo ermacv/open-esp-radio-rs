@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-tcp-bidirectional"
 description = "Two AP ownership epochs with exact simultaneous TCP delivery"
 image = "correctness"

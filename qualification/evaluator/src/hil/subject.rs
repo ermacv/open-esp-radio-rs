@@ -25,6 +25,7 @@ pub(super) struct FirmwareIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct ObservationSubject {
+    pub(super) observer: Option<serde_json::Value>,
     pub(super) repository: RepositoryProvenance,
     /// Images recorded in this completion boundary; no missing association is inferred.
     pub(super) firmware: Vec<FirmwareIdentity>,
@@ -35,12 +36,19 @@ pub(super) struct ObservationSubject {
 
 impl ObservationSubject {
     pub(super) fn load(run: &Path, manifest: &RunManifest, scenario: &str) -> Result<Self> {
-        Self::from_parts(
+        let mut subject = Self::from_parts(
             run,
             &manifest.repository,
             &manifest.firmware,
             Some(scenario),
-        )
+        )?;
+        subject.observer = manifest
+            .runner
+            .as_ref()
+            .and_then(|r| r.get("observer"))
+            .filter(|v| !v.is_null())
+            .cloned();
+        Ok(subject)
     }
     pub(super) fn from_parts(
         run: &Path,
@@ -91,6 +99,7 @@ impl ObservationSubject {
             });
         }
         Ok(Self {
+            observer: None,
             repository: repository.clone(),
             firmware,
             procedure: scenario

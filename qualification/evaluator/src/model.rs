@@ -1,3 +1,5 @@
+#[path = "../../../verification/vendor/schema/comparison.rs"]
+mod comparison;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -517,7 +519,7 @@ impl ValidatedProgram {
         let evidence_inputs = EvidenceInputs {
             verification_entries: vendor_index.entries.len(),
             verification_current_release_entries: vendor_index
-                .current_release_count(root, !repository.dirty),
+                .current_release_count(root, &document.verification.project),
             hil: hil_index.summary().clone(),
             verification_project: document.verification.project.clone(),
             vendor_evidence_index: document.verification.evidence_index.clone(),
@@ -535,7 +537,6 @@ impl ValidatedProgram {
             vendor_index: &vendor_index,
             scenario_catalog: &scenario_catalog,
             hil_index: &hil_index,
-            evaluator_clean: !repository.dirty,
             declarations: &declarations,
         };
         let mut capabilities = BTreeMap::new();
@@ -605,7 +606,6 @@ struct EvaluationContext<'a> {
     vendor_index: &'a VendorEvidenceIndex,
     scenario_catalog: &'a ScenarioCatalog,
     hil_index: &'a HilEvidenceIndex,
-    evaluator_clean: bool,
     declarations: &'a BTreeMap<String, CapabilityDocument>,
 }
 
@@ -673,7 +673,7 @@ fn evaluate_capability(
         &document,
         context.vendor_index,
         context.root,
-        context.evaluator_clean,
+        &context.dispositions.project_manifest,
     )?;
     evidence.extend(vendor_evidence);
     validate_vendor_contract(&id, &document, vendor, context.dispositions)?;
@@ -1042,7 +1042,7 @@ fn derive_vendor_proof(
     document: &CapabilityDocument,
     index: &VendorEvidenceIndex,
     root: &Path,
-    evaluator_clean: bool,
+    project_manifest: &Path,
 ) -> Result<(VendorProof, Vec<String>)> {
     if let Some(reason) = document.vendor_not_applicable.as_deref() {
         validate_reason(reason, "vendor-not-applicable", id)?;
@@ -1090,7 +1090,7 @@ fn derive_vendor_proof(
                 reference.source == *source
                     && reference.symbol == *symbol
                     && index.get(reference).is_some_and(|entry| {
-                        entry.is_current_release_evidence(root, evaluator_clean)
+                        entry.is_current_release_evidence(root, project_manifest)
                     })
             })
         });
@@ -1227,6 +1227,7 @@ struct DispositionEntry {
 
 #[derive(Debug)]
 struct DispositionIndex {
+    project_manifest: PathBuf,
     entries: BTreeMap<(String, String), DispositionEntry>,
     suite_entries: BTreeSet<(String, String, String)>,
     project_id: String,
@@ -1307,6 +1308,7 @@ impl DispositionIndex {
         Ok(Self {
             entries,
             suite_entries,
+            project_manifest: path.to_owned(),
             project_id: project.id,
             vendor_evidence_index,
         })
@@ -1444,16 +1446,18 @@ impl VendorEvidenceIndex {
         })
     }
 
-    fn current_release_count(&self, root: &Path, evaluator_clean: bool) -> usize {
+    fn current_release_count(&self, root: &Path, project_manifest: &Path) -> usize {
         self.entries
             .iter()
-            .filter(|entry| entry.is_current_release_evidence(root, evaluator_clean))
+            .filter(|entry| entry.is_current_release_evidence(root, project_manifest))
             .count()
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct VendorEvidenceIndexEntry {
+    #[serde(default)]
+    comparison: Option<comparison::Binding>,
     suite: String,
     source: String,
     symbol: String,
@@ -1470,7 +1474,7 @@ struct VendorEvidenceIndexEntry {
 }
 
 impl VendorEvidenceIndexEntry {
-    fn is_current_release_evidence(&self, root: &Path, _evaluator_clean: bool) -> bool {
+    fn is_current_release_evidence(&self, root: &Path, project_manifest: &Path) -> bool {
         let artifact_roles = self
             .artifact_hashes
             .iter()
@@ -1487,6 +1491,7 @@ impl VendorEvidenceIndexEntry {
             || !self.baseline_passed
             || self.rust_component.is_none()
             || !self.evidence_digest.as_deref().is_some_and(valid_sha256)
+            || !artifact_roles.contains(format!("source:{}:artifact", self.source).as_str())
             || self.artifact_hashes.is_empty()
             || artifact_roles.len() != self.artifact_hashes.len()
             || artifact_roles.iter().any(|role| role.is_empty())
@@ -1497,6 +1502,49 @@ impl VendorEvidenceIndexEntry {
             || self.source_hashes.is_empty()
             || source_paths.len() != self.source_hashes.len()
             || !self.release_blockers.is_empty()
+        {
+            return false;
+        }
+        let Some(binding) = &self.comparison else {
+            return false;
+        };
+        if validate_relative_path(&binding.project_manifest).is_err()
+            || root.join(&binding.project_manifest).canonicalize().ok()
+                != root.join(project_manifest).canonicalize().ok()
+        {
+            return false;
+        }
+        let hashes = self
+            .artifact_hashes
+            .iter()
+            .filter(|a| {
+                a.role.starts_with("source:")
+                    || a.role.starts_with("auxiliary:")
+                    || a.role == "rust-probes"
+            })
+            .map(|a| (a.role.clone(), a.sha256.clone()))
+            .collect();
+        let Ok(current) = comparison::current(
+            root,
+            &binding.project_manifest,
+            &self.suite,
+            &self.source,
+            &self.symbol,
+            &hashes,
+        ) else {
+            return false;
+        };
+        if !current.public_artifacts_bound
+            || current.sha256 != binding.sha256
+            || current.component != self.rust_component
+            || !self
+                .evidence_digest
+                .as_ref()
+                .is_some_and(|d| current.baseline_digests.contains(d))
+            || current
+                .artifact_pins
+                .iter()
+                .any(|(role, hash)| hashes.get(role) != Some(hash))
         {
             return false;
         }

@@ -68,10 +68,25 @@ pub(super) fn assess(
     {
         return Ok("build-binding-mismatch");
     }
-    if !procedure_matches(source, &review.scenario, &review.source.image, catalog)? {
+    if !procedure::matches(source, requirement, catalog)? {
         return Ok("source-procedure-mismatch");
     }
-    if !original_control_passed(source, requirement, index, catalog) {
+    let evidence = review
+        .inputs
+        .iter()
+        .filter(|i| i.kind == InputKind::Evidence)
+        .map(|i| (i.path.clone(), i.sha256.clone()))
+        .collect();
+    let observer_matches = |observation: &ScenarioEvidence, scenario: &str| {
+        observer::matches(root, observation, None).unwrap_or(false)
+            || review.observer_provenance.iter().any(|path| {
+                observer::reviewed(root, observation, scenario, path, &evidence).unwrap_or(false)
+            })
+    };
+    if !observer_matches(source, &review.scenario) {
+        return Ok("source-observer-identity-not-established");
+    }
+    if !original_control_passed(source, requirement, index, catalog, &observer_matches) {
         return Ok("source-control-not-passed");
     }
     let sensitive = binding.image_sensitive;
@@ -122,9 +137,17 @@ pub(super) fn assess(
             };
             if scenario != review.scenario
                 || resolved.started_unix_millis <= failure.started_unix_millis
+                || !procedure::matches(resolved, requirement, catalog)?
                 || !passed(resolved, requirement, catalog)
                 || !image_matches(resolved, &review.destination)
-                || !original_control_passed(resolved, requirement, index, catalog)
+                || !observer_matches(resolved, &review.scenario)
+                || !original_control_passed(
+                    resolved,
+                    requirement,
+                    index,
+                    catalog,
+                    &observer_matches,
+                )
             {
                 return Ok("failure-resolution-not-established");
             }
@@ -210,37 +233,12 @@ pub(super) fn failed(
         })
 }
 
-fn procedure_matches(
-    observation: &ScenarioEvidence,
-    scenario: &str,
-    image: &str,
-    catalog: &ScenarioCatalog,
-) -> Result<bool> {
-    let (Some(run), Some(procedure)) = (
-        &observation.run_directory,
-        observation
-            .subject
-            .as_ref()
-            .and_then(|s| s.procedure.as_ref()),
-    ) else {
-        return Ok(false);
-    };
-    let document: serde_json::Value = read_json(&run.join(&procedure.path))?;
-    Ok(
-        document.get("id").and_then(serde_json::Value::as_str) == Some(scenario)
-            && document.get("image").and_then(serde_json::Value::as_str) == Some(image)
-            && catalog.definitions.get(scenario).is_none_or(|current| {
-                crate::hil::procedure::normalize(current)
-                    == crate::hil::procedure::normalize(&document)
-            }),
-    )
-}
-
 fn original_control_passed(
     observation: &ScenarioEvidence,
     requirement: &HilRequirement,
     index: &HilEvidenceIndex,
     catalog: &ScenarioCatalog,
+    observer_matches: &impl Fn(&ScenarioEvidence, &str) -> bool,
 ) -> bool {
     catalog.control_for(&requirement.scenario).is_none_or(|id| {
         let control = HilRequirement {
@@ -252,6 +250,8 @@ fn original_control_passed(
             records.iter().any(|r| {
                 r.run_id == observation.run_id
                     && r.repetitions == observation.repetitions
+                    && observer_matches(r, id)
+                    && procedure::matches(r, &control, catalog).unwrap_or(false)
                     && passed(r, &control, catalog)
             })
         })

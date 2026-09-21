@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "system-watchdog"
 description = "SoC deadline completion, stuck synchronous poll, cancellation, lost completion and late restoration; reset evidence only, no RF assertion"
 image = "system-watchdog"

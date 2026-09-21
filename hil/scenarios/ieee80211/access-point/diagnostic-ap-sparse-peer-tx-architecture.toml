@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-sparse-peer-tx-architecture"
 description = "Saturated AP TX plus sparse peer with radio architecture observations"
 repetitions = 1

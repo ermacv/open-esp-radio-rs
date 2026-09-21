@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-ceiling"
 description = "HT40 UDP host-to-station ceiling and 100 Mbit/s regression check"
 repetitions = 3

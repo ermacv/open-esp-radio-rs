@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-split-baseline"
 description = "Stable split-core HT40 UDP host-to-station performance baseline"
 repetitions = 5

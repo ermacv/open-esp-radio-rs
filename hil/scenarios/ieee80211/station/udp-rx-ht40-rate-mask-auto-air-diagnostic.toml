@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-rate-mask-auto-air-diagnostic"
 description = "HT40 MCS7 automatic-rate RX air and AP aggregation control"
 image = "diagnostic-rx-delivery"

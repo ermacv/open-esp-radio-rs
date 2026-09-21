@@ -15,6 +15,8 @@ pub(super) enum Exclusion {
     DifferentCommit,
     ReplaySubjectNotBound,
     SourceBindingNotEstablished,
+    ProcedureMismatch,
+    ObserverIdentityNotEstablished,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -233,6 +235,13 @@ impl HilEvidenceIndex {
             .into_iter()
             .flatten()
         {
+            let mut exclusions = observation.exclusions.clone();
+            let procedure_matches =
+                procedure::matches(observation, requirement, catalog).unwrap_or(false);
+            if !procedure_matches {
+                exclusions.push(Exclusion::ProcedureMismatch);
+            }
+            let applicable = observation.applicable() && procedure_matches;
             let mut gaps = Vec::new();
             if observation.outcome != Outcome::Passed {
                 gaps.push(ObligationGap::ScenarioNotPassed);
@@ -270,6 +279,16 @@ impl HilEvidenceIndex {
                         controls.iter().any(|candidate| {
                             candidate.run_id == observation.run_id
                                 && candidate.applicable()
+                                && procedure::matches(
+                                    candidate,
+                                    &HilRequirement {
+                                        scenario: id.into(),
+                                        checks: Vec::new(),
+                                        minimum_repetitions: requirement.minimum_repetitions,
+                                    },
+                                    catalog,
+                                )
+                                .unwrap_or(false)
                                 && candidate.outcome == Outcome::Passed
                                 && candidate.repetitions == observation.repetitions
                         })
@@ -278,7 +297,7 @@ impl HilEvidenceIndex {
             {
                 gaps.push(ObligationGap::ControlNotSatisfied);
             }
-            if observation.applicable() {
+            if applicable {
                 if (observation.outcome == Outcome::Failed
                     || observation.repetition_outcomes.contains(&Outcome::Failed)
                     || (observation.outcome == Outcome::Passed && criteria_failed))
@@ -293,7 +312,7 @@ impl HilEvidenceIndex {
                 }
             }
             decision.observations.push(ObservationDecision {
-                applicable: observation.applicable(),
+                applicable,
                 review: observation.review.clone(),
                 resolution: observation.resolution.clone(),
                 observation_id: observation.observation_id(&requirement.scenario),
@@ -305,7 +324,7 @@ impl HilEvidenceIndex {
                 run_id: observation.run_id.clone(),
                 outcome: observation.outcome,
                 repetition_outcomes: observation.repetition_outcomes.clone(),
-                exclusions: observation.exclusions.clone(),
+                exclusions,
                 obligation_gaps: gaps,
             });
         }

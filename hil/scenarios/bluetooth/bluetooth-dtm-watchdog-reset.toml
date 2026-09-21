@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "bluetooth-dtm-watchdog-reset"
 description = "Diagnostic MWDT1 reset during active DTM TX/RX; peer checks RF silence before any new DUT HCI command"
 image = "bluetooth-watchdog-reset"

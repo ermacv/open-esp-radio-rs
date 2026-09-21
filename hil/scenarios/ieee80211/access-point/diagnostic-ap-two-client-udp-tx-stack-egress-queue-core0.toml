@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-stack-egress-queue-core0"
 description = "Two-client AP UDP TX stack-side destination queue coarse Core0 diagnostic"
 repetitions = 1

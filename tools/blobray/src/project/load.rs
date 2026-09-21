@@ -1187,6 +1187,7 @@ fn load_verification_workspace(
                     "id",
                     "vendor",
                     "auxiliary-sources",
+                    "artifact-bindings",
                     "rust-artifact-role",
                     "rust-companion-role",
                     "rust-prefix",
@@ -1207,6 +1208,17 @@ fn load_verification_workspace(
                     "id",
                     format!("duplicate project verification suite {id:?}"),
                 ));
+            }
+            let mut artifact_bindings = std::collections::BTreeMap::new();
+            if let Some(bindings) = suite.get("artifact-bindings") {
+                let bindings = bindings.as_table_like().ok_or_else(|| source.item(Some(bindings), "artifact-bindings must be a table"))?;
+                for (role, value) in bindings.iter() {
+                    if !role.starts_with("source:") || !(role.ends_with(":artifact") || role.ends_with(":companion"))
+                        || value.as_str().is_none_or(|hash| hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
+                        return Err(source.item(Some(value), "invalid public verification artifact binding"));
+                    }
+                    artifact_bindings.insert(role.to_owned(), value.as_str().unwrap().to_owned());
+                }
             }
             let vendor = parse_verification_vendor(suite, &context, source)?;
             let auxiliary_sources = suite
@@ -1277,6 +1289,7 @@ fn load_verification_workspace(
             };
             Ok(VerificationSuiteSpec {
                 id,
+                artifact_bindings,
                 vendor,
                 auxiliary_sources,
                 rust_artifact_role,

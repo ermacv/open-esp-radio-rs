@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-two-client-session-smoke"
 description = "Bound-socket readiness, bidirectional sessions and evidence across two AP epochs"
 repetitions = 1

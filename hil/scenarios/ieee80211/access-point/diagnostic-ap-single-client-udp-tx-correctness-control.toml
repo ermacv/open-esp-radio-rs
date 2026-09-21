@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-single-client-udp-tx-correctness-control"
 description = "Correctness-image control for saturated single-client AP UDP TX"
 repetitions = 1

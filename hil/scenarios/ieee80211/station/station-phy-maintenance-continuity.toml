@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "station-phy-maintenance-continuity"
 description = "HT20 connected station retains its link through combined calibration during UDP RX and then completes fresh ICMP exchange"
 repetitions = 3

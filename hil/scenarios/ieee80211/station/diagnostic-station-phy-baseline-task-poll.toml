@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-baseline-task-poll"
 description = "Core0 task-residence control without PHY maintenance under sustained RX delivery"
 repetitions = 3

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-two-client-ceiling-tx"
 description = "Observer-free two-client AP HT40 saturated UDP transmit fairness ceiling"
 repetitions = 3

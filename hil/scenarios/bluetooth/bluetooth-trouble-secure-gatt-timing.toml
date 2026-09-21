@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "bluetooth-trouble-secure-gatt-timing"
 description = "Secure lifecycle observer comparison: IRQ watermark scans only at workload boundaries; not a substitute for every-snapshot memory stress"
 image = "bluetooth-secure-gatt"

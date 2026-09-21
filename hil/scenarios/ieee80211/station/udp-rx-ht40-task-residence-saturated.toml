@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-task-residence-saturated"
 description = "Split-core HT40 saturated RX residence control for the production direct/adaptive path"
 image = "diagnostic-task-residence"

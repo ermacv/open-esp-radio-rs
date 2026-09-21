@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "timebase"
 description = "Alarm and monotonic-clock agreement before radio initialization"
 image = "correctness"

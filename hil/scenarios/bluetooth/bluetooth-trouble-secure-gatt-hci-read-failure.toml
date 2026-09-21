@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "bluetooth-trouble-secure-gatt-hci-read-failure"
 description = "Secure pairing and bonded traffic across cold restart, then an injected shutdown HCI read error must retain the old owners and failure without cold release, restart or SoC reset; cleanup removes the temporary Linux bond"
 image = "bluetooth-secure-gatt"

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-airtime-rx40-tx40-open-observed"
 description = "Temporary same-ELF open AP duplex control for CCMP-path localization"
 repetitions = 1

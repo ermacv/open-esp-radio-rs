@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-egress-burst-task-poll"
 description = "Two-client AP UDP TX pre-DMA destination-burst phase diagnostic"
 repetitions = 1

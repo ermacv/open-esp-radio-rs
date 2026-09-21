@@ -16,6 +16,9 @@ use super::{
 };
 use crate::Result;
 
+#[path = "../../../../verification/vendor/schema/comparison.rs"]
+mod comparison;
+
 pub(crate) const VENDOR_EVIDENCE_INDEX_SCHEMA: u32 = 2;
 
 #[derive(Debug, Serialize)]
@@ -30,6 +33,7 @@ pub(crate) struct VendorEvidenceIndex {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct VendorEvidenceEntry {
+    pub(crate) comparison: Option<comparison::Binding>,
     pub(crate) suite: String,
     pub(crate) source: String,
     pub(crate) symbol: String,
@@ -165,7 +169,65 @@ impl VendorEvidenceIndex {
                     })
                     .transpose()?
                     .unwrap_or_default();
+                let comparison = if let Some(root) = repository_root {
+                    let hashes = artifact_hashes
+                        .iter()
+                        .filter(|a| {
+                            a.role.starts_with("source:")
+                                || a.role.starts_with("auxiliary:")
+                                || a.role == "rust-probes"
+                        })
+                        .map(|a| (a.role.clone(), a.sha256.clone()))
+                        .collect();
+                    let relative = canonical_project_manifest.strip_prefix(root).unwrap();
+                    match comparison::current(
+                        root,
+                        relative,
+                        &suite.id,
+                        &function.source,
+                        &function.vendor_symbol,
+                        &hashes,
+                    ) {
+                        Ok(current) => {
+                            if !current.public_artifacts_bound
+                                || current.component != function.rust_component
+                                || !identity
+                                    .and_then(|i| i.identity.digest.as_ref())
+                                    .is_some_and(|d| current.baseline_digests.contains(d))
+                                || current
+                                    .artifact_pins
+                                    .iter()
+                                    .any(|(role, hash)| hashes.get(role) != Some(hash))
+                            {
+                                release_blockers.push(
+                                    "current comparison binding/baseline/artifact differs".into(),
+                                );
+                            }
+                            if current.input_hashes.iter().any(|(role, hash)| {
+                                !artifact_hashes
+                                    .iter()
+                                    .any(|a| &a.role == role && &a.sha256 == hash)
+                            }) {
+                                release_blockers
+                                    .push("comparison inputs changed after execution".into());
+                            }
+                            Some(comparison::Binding {
+                                project_manifest: relative.into(),
+                                sha256: current.sha256,
+                            })
+                        }
+                        Err(error) => {
+                            release_blockers
+                                .push(format!("comparison identity unavailable: {error}"));
+                            None
+                        }
+                    }
+                } else {
+                    release_blockers.push("comparison workspace unavailable".into());
+                    None
+                };
                 entries.push(VendorEvidenceEntry {
+                    comparison,
                     suite: suite.id.clone(),
                     source: function.source.clone(),
                     symbol: function.vendor_symbol.clone(),
@@ -315,6 +377,7 @@ mod tests {
     fn compact_index_accepts_only_digest_shaped_hashes() {
         let mut index = empty_index("esp32s31-radio");
         index.entries.push(VendorEvidenceEntry {
+            comparison: None,
             suite: "suite".to_owned(),
             source: "rom".to_owned(),
             symbol: "function".to_owned(),

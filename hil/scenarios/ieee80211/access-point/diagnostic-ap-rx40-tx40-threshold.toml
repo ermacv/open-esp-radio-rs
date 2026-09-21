@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx40-tx40-threshold"
 description = "Temporary same-ELF AP balanced duplex threshold control at 40/40 Mbit/s"
 repetitions = 1

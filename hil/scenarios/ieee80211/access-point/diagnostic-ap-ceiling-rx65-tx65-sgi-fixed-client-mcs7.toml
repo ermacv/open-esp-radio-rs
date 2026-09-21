@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-ceiling-rx65-tx65-sgi-fixed-client-mcs7"
 description = "AP 65/65 Mbit/s ceiling A/B with fixed client MCS7 and SGI"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-tx-ht40-backpressure-control"
 description = "Paced HT40 TX control for comparison with saturated task-poll diagnostics"
 image = "diagnostic-task-poll"

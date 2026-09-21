@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-baseline-high-load-delivery-rx"
 description = "High-load HT40 RX delivery control with recovery headroom and no PHY maintenance"
 repetitions = 3

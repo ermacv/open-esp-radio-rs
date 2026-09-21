@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-airtime-rx40-observed"
 description = "Temporary AP uplink-only control for terminal MAC RX error correlation"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-no-checksum-core0"
 description = "Two-client AP UDP TX software checksum-cost coarse diagnostic"
 repetitions = 1

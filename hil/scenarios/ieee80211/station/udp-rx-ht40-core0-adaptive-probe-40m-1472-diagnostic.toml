@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-core0-adaptive-probe-40m-1472-diagnostic"
 description = "Same-image HT40 RX adaptive-continuation cost at 40 Mbit/s with full-size UDP payloads"
 image = "diagnostic-core0-rx-coarse"

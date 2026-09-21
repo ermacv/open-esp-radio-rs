@@ -67,7 +67,14 @@ fn run(fixture: &Fixture, id: &str, outcome: &str, time: u64, application: &[u8]
     fs::create_dir_all(&directory).unwrap();
     let mut archive = tar::Builder::new(fs::File::create(directory.join("sources.tar")).unwrap());
     let mut files = Vec::new();
-    for path in ["driver.rs", "Cargo.lock", "ble.rs", "phy.rs"] {
+    for path in [
+        "driver.rs",
+        "Cargo.lock",
+        "ble.rs",
+        "phy.rs",
+        "observer.rs",
+        "hil/schema/observer-inputs.json",
+    ] {
         if !fixture.0.join(path).exists() {
             continue;
         }
@@ -175,6 +182,7 @@ fn record(fixture: &Fixture, index: &HilEvidenceIndex, catalog: &ScenarioCatalog
         reviewer: "test-reviewer".into(),
         reason: "Reviewed unchanged ATT owner and contract on these two builds".into(),
         source: reference(index, "old"),
+        observer_provenance: vec![],
         destination: reference(index, "new"),
         inputs: binding.current_inputs,
         dependency_roots: vec![],

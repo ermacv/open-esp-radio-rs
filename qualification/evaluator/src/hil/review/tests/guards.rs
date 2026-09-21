@@ -153,7 +153,7 @@ fn whole_gatt_memory_obligation_requires_identical_application() {
     let mut catalog = ScenarioCatalog::default();
     catalog.definitions.insert(
         "exchange".into(),
-        json!({"id":"exchange","image":"correctness","workload":{"kind":"bluetooth-secure-gatt"}}),
+        json!({"id":"exchange","image":"correctness","transfer":"identical-image","workload":{"kind":"bluetooth-secure-gatt"}}),
     );
     let run = fixture.0.join("runs/old");
     write(
@@ -453,5 +453,232 @@ fn procedure_binding_normalizes_defaults_and_annotations_but_binds_execution() {
             &InputKind::Procedure
         )
         .is_err()
+    );
+}
+
+#[test]
+fn direct_snapshot_checks_executed_scheduler_but_ignores_annotations() {
+    let fixture = setup();
+    assert!(
+        Command::new("git")
+            .arg("-C")
+            .arg(&fixture.0)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(fixture.0.join(".git/info/exclude"), "runs/\n").unwrap();
+    let mut catalog = ScenarioCatalog::default();
+    catalog.definitions.insert(
+        "exchange".into(),
+        json!({"id":"exchange","image":"correctness"}),
+    );
+    for id in ["old", "new"] {
+        let run = fixture.0.join("runs").join(id);
+        write(
+            &run.join("scenarios/exchange/scenario.json"),
+            &json!({
+                "id":"exchange", "image":"correctness", "ap_scheduler":"round-robin"
+            }),
+        );
+        crate::hil::tests::seal(&run);
+    }
+    let index = fixture.load().unwrap();
+    let decision = index.decision_for(&requirement(), &catalog);
+    assert_eq!(decision.status, EvidenceStatus::Missing);
+    let value = serde_json::to_value(decision).unwrap();
+    assert!(
+        value["observations"][0]["exclusions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("procedure-mismatch"))
+    );
+    let run = fixture.0.join("runs/new");
+    write(
+        &run.join("scenarios/exchange/scenario.json"),
+        &json!({
+            "id":"exchange", "image":"correctness", "description":"new annotation", "tags":["annotated"]
+        }),
+    );
+    crate::hil::tests::seal(&run);
+    assert_eq!(
+        fixture
+            .load()
+            .unwrap()
+            .decision_for(&requirement(), &catalog)
+            .status,
+        EvidenceStatus::Satisfied
+    );
+}
+
+#[test]
+fn resolution_requires_the_same_experiment_and_preserves_original_failure() {
+    let fixture = setup();
+    run(&fixture, "failure", "failed", 150, b"old image");
+    let mut catalog = ScenarioCatalog::default();
+    catalog.definitions.insert(
+        "exchange".into(),
+        json!({"id":"exchange","image":"correctness"}),
+    );
+    let different = fixture.0.join("runs/new");
+    write(
+        &different.join("scenarios/exchange/scenario.json"),
+        &json!({
+            "id":"exchange", "image":"correctness", "ap_scheduler":"round-robin"
+        }),
+    );
+    crate::hil::tests::seal(&different);
+    let index = fixture.load().unwrap();
+    let mut review = record(&fixture, &index, &catalog);
+    review.failures.push(FailureResolution {
+        observation: reference(&index, "failure").id.clone(),
+        disposition: Disposition::Fixed,
+        reason: "Repeat on destination image".into(),
+        resolving_observation: Some(reference(&index, "new").id),
+    });
+    save(&fixture, &review);
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "failure-resolution-not-established"
+    );
+    run(&fixture, "repeat", "passed", 300, b"new image");
+    let index = fixture.load().unwrap();
+    review.failures[0].resolving_observation = Some(reference(&index, "repeat").id);
+    save(&fixture, &review);
+    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
+    assert_eq!(
+        reference(&index, "failure").id,
+        review.failures[0].observation
+    );
+}
+
+#[test]
+fn deadline_and_watchdog_whole_results_require_identical_images() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
+    for scenario in [
+        "bluetooth-dtm-maintenance-deadline",
+        "bluetooth-phy-watchdog",
+    ] {
+        assert!(contract::image_sensitive(
+            &HilRequirement {
+                scenario: scenario.into(),
+                checks: vec![],
+                minimum_repetitions: 1,
+            },
+            &catalog
+        ));
+    }
+}
+
+#[test]
+fn stale_observer_and_legacy_unknown_observer_need_separate_proof() {
+    let fixture = setup();
+    let catalog = ScenarioCatalog::default();
+    let old = fixture.0.join("runs/old");
+    let mut manifest: Value = read_json(&old.join("manifest.json")).unwrap();
+    let captured = manifest["runner"]["observer"].take();
+    write(&old.join("manifest.json"), &manifest);
+    crate::hil::tests::seal(&old);
+    let index = fixture.load().unwrap();
+    let mut review = record(&fixture, &index, &catalog);
+    save(&fixture, &review);
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "source-observer-identity-not-established"
+    );
+    // Independent, retained build/execution record with an explicit reviewer
+    // binding to this legacy observation. The firmware snapshot is insufficient.
+    fs::write(
+        fixture.0.join("execution-record.json"),
+        serde_json::to_vec(&captured).unwrap(),
+    )
+    .unwrap();
+    let support_hash = sha256_file(&fixture.0.join("execution-record.json")).unwrap();
+    write(
+        &fixture.0.join("observer-proof.json"),
+        &json!({
+            "observation_id": review.source.id, "observer": captured,
+            "supporting_evidence":[{"path":"execution-record.json","sha256":support_hash}]
+        }),
+    );
+    for path in ["observer-proof.json", "execution-record.json"] {
+        review.inputs.push(InputBinding {
+            kind: InputKind::Evidence,
+            reason: Some(
+                "Retained execution/build provenance, reviewed against this observation".into(),
+            ),
+            path: path.into(),
+            sha256: sha256_file(&fixture.0.join(path)).unwrap(),
+        });
+    }
+    review.observer_provenance = vec!["observer-proof.json".into()];
+    save(&fixture, &review);
+    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
+    fs::write(
+        fixture.0.join("unrelated-report.rs"),
+        "changed report renderer",
+    )
+    .unwrap();
+    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
+    let supporting = fs::read(fixture.0.join("execution-record.json")).unwrap();
+    fs::write(
+        fixture.0.join("execution-record.json"),
+        b"changed provenance",
+    )
+    .unwrap();
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "source-observer-identity-not-established"
+    );
+    fs::write(fixture.0.join("execution-record.json"), supporting).unwrap();
+    fs::write(fixture.0.join("observer.rs"), "new observer assertion").unwrap();
+    assert_eq!(
+        evaluated(&fixture, &index, &catalog).1[0].status,
+        "source-observer-identity-not-established"
+    );
+    // Even a newly sealed firmware snapshot cannot change the recorded runner.
+    let current = fixture.load().unwrap();
+    assert!(current.scenarios["exchange"].iter().all(|o| {
+        o.exclusions
+            .contains(&decision::Exclusion::ObserverIdentityNotEstablished)
+    }));
+}
+
+#[test]
+fn current_firmware_snapshot_cannot_hide_an_old_runner_build() {
+    let fixture = setup();
+    assert!(
+        Command::new("git")
+            .arg("-C")
+            .arg(&fixture.0)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(fixture.0.join(".git/info/exclude"), "runs/\n").unwrap();
+    for id in ["old", "new"] {
+        let run = fixture.0.join("runs").join(id);
+        let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
+        let observer = &mut manifest["runner"]["observer"];
+        observer["build"]["inputs"]["observer.rs"] = json!(digest(b"older observer assertion"));
+        observer["build_sha256"] = json!(digest(&serde_json::to_vec(&observer["build"]).unwrap()));
+        write(&run.join("manifest.json"), &manifest);
+        crate::hil::tests::seal(&run);
+    }
+    let index = fixture.load().unwrap();
+    for record in &index.scenarios["exchange"] {
+        assert_eq!(
+            record.exclusions,
+            vec![decision::Exclusion::ObserverIdentityNotEstablished]
+        );
+    }
+    assert_eq!(
+        index
+            .decision_for(&requirement(), &ScenarioCatalog::default())
+            .status,
+        EvidenceStatus::Missing
     );
 }

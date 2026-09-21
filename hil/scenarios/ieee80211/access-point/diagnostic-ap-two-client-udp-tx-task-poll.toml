@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-udp-tx-task-poll"
 description = "Two-client saturated AP UDP TX executor residence characterization"
 repetitions = 1

@@ -377,6 +377,9 @@ pub(crate) struct FirmwareReplayOrigin {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct RunnerProvenance {
+    /// Identity captured by the running process and embedded at its own build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) observer: Option<serde_json::Value>,
     pub(super) package: String,
     pub(super) version: String,
     pub(super) protocol_version: u16,

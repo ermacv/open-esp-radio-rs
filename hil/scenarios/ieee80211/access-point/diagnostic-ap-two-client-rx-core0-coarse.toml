@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-two-client-rx-core0-coarse"
 description = "Two-station AP RX with coarse execution phase accounting"
 repetitions = 1

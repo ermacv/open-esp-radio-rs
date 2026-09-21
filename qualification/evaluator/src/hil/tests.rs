@@ -410,6 +410,25 @@ fn unsealed_completed_run_still_fails_closed() {
 pub(super) fn add_current_build(root: &Path, run: &Path) {
     fs::write(root.join("Cargo.lock"), "version = 4\npackage = []\n").unwrap();
     let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    fs::create_dir_all(root.join("hil/schema")).unwrap();
+    fs::write(root.join("observer.rs"), b"test observer").unwrap();
+    let registry: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../hil/schema/observer-inputs.json")).unwrap();
+    let workloads: BTreeMap<_, _> = registry["workloads"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| (k, Vec::<String>::new()))
+        .collect();
+    fs::write(
+        root.join("hil/schema/observer-inputs.json"),
+        serde_json::to_vec(&json!({"schema":1,"common":["observer.rs"],"workloads":workloads}))
+            .unwrap(),
+    )
+    .unwrap();
+    let build = json!({"schema":1,"inputs":{"observer.rs":sha256_file(&root.join("observer.rs")).unwrap()}});
+    manifest["runner"] = json!({"observer":{"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build}});
+
     manifest["firmware"] = json!([{
         "build_id": "ab".repeat(32),
         "build_provenance_path": "build-provenance.json",

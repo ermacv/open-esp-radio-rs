@@ -108,7 +108,10 @@ A vendor comparison is qualification-eligible only when all of these hold:
 6. the accepted evidence baseline passes with a reproducible identity;
 7. the evidence row is explicitly release eligible and has no blockers;
 8. every named production source still matches its recorded hash; unrelated
-   dirty files do not invalidate an independent result.
+   dirty files do not invalidate an independent result;
+9. the per-comparison identity matches the current selected project, production
+   binding, profile/contracts, baseline and policy, and every hardware artifact
+   matches that suite's explicit public SHA-256 binding.
 
 `project verify` writes the compact
 `verification/vendor/.../evidence/vendor-evidence.json` after each completed
@@ -117,8 +120,11 @@ incomplete and removes its old current rows. Other suites remain available.
 Content-addressed history preserves earlier outcomes, including failures. Qualification follows the selected project's
 `verification-addon`, requires the configured index to be that exact output,
 checks its command and project identity, validates proof class/status/hash
-shape and re-hashes every referenced production source. A partial suite run
-cannot replace this index.
+shape and re-hashes every referenced production source. It independently
+recomputes the comparison identity against the selected project. Missing public
+artifact bindings or legacy rows without comparison identity remain historical;
+private binaries are not required to check these declarations. A partial run
+updates only its selected suites.
 
 An absent index means no vendor evidence is available: affected capabilities
 remain unqualified while status and HIL planning still work. An unreadable,

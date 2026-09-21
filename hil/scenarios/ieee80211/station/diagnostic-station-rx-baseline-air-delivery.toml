@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-rx-baseline-air-delivery"
 description = "RX baseline with independent air evidence before maintenance comparison"
 repetitions = 1

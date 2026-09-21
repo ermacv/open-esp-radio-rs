@@ -402,6 +402,17 @@ pub struct EvidenceConfig {
     pub independent_laptop_air_monitor: bool,
 }
 
+/// Whether review may transfer a whole-scenario observation across images.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransferPolicy {
+    /// Permit a reviewed functional transfer with unchanged relevant inputs.
+    #[default]
+    UnchangedFunctionalContract,
+    /// Require the same application bytes for this whole-scenario guarantee.
+    IdenticalImage,
+}
+
 /// Explicit, diagnostic-only mutations of a managed laboratory fixture.
 ///
 /// Link expectations never change the peer: they only validate target-side
@@ -424,6 +435,9 @@ pub struct FixtureMutationConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
+    /// Review policy for the whole scenario; execution is unaffected.
+    #[serde(default)]
+    pub transfer: TransferPolicy,
     /// A controlled experiment, not a qualification prerequisite or a promise
     /// that the control's result applies to another firmware image.
     #[serde(default, skip_serializing_if = "Option::is_none")]

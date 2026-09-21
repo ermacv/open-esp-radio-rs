@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "wifi-phy-watchdog"
 description = "Real connected PHY faults; autonomous reset, new-boot bidirectional UDP, rejected admission without reset"
 image = "diagnostic-phy-fault"

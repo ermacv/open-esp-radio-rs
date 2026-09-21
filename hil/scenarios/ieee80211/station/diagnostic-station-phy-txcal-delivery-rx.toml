@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-phy-txcal-delivery-rx"
 description = "Observed tx-calibration maintenance without PM during RX UDP delivery"
 repetitions = 3

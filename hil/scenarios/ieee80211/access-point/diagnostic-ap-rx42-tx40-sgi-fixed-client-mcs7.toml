@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-rx42-tx40-sgi-fixed-client-mcs7"
 description = "AP 42/40 Mbit/s fixed-MCS7/SGI client A/B with Core0 RX telemetry"
 repetitions = 1

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "tcp-bidirectional-ht40-split"
 description = "Split-core HT40 simultaneous TCP receive and transmit"
 repetitions = 3

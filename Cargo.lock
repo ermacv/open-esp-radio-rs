@@ -3370,6 +3370,7 @@ dependencies = [
  "tar",
  "tempfile",
  "toml",
+ "toml_edit",
  "trouble-host",
  "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc)",
  "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",

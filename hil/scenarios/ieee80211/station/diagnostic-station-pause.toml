@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-station-pause"
 description = "Same-connection MAC/RX/IRQ pause after measured UDP delivery, followed by continued traffic"
 repetitions = 1

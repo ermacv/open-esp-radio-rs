@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "udp-rx-ht40-core0-async-probe512-diagnostic"
 description = "Same-image HT40 RX asynchronous dispatch with 512-us masked continuation diagnostic"
 image = "diagnostic-core0-rx-coarse"

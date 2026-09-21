@@ -45,6 +45,13 @@ pub(super) fn read(root: &Path, path: &Path) -> Result<Document> {
     {
         return Err("invalid HIL applicability review identity, rationale or inputs".into());
     }
+    if document
+        .observer_provenance
+        .iter()
+        .any(|p| !safe_relative(p))
+    {
+        return Err("observer provenance must be a contained path".into());
+    }
     if document.source.build_record.is_some() {
         return Err("review source must be an actual observation".into());
     }

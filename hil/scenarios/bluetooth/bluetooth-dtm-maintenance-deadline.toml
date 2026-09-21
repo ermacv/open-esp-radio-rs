@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "bluetooth-dtm-maintenance-deadline"
 description = "Active DTM TX/RX reaches autonomous PHY hard expiry, produces a new software-reset boot and RF silence without Host Test End or Reset"
 image = "bluetooth-phy-maintenance"

@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "diagnostic-ap-ceiling-rx65-tx65-sgi-correctness"
 description = "AP 65/65 Mbit/s SGI ceiling with driver observation but no per-phase cycle accounting"
 repetitions = 1

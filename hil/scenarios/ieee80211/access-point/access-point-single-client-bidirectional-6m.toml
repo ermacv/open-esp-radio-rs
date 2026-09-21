@@ -1,4 +1,5 @@
 schema = 4
+transfer = "identical-image"
 id = "access-point-single-client-bidirectional-6m"
 description = "Single-client AP 6+6 Mbit/s bidirectional baseline"
 repetitions = 1

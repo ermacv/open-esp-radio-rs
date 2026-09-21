@@ -161,6 +161,7 @@ bitWidth = 1
         non_operational_functions: Vec::new(),
         review_output: None,
         review_ir_reports: Vec::new(),
+        observations: Vec::new(),
         svd_output: svd.then(|| directory.join("generated/device.svd")),
         pac_raw: pac.then(|| PacRawOutputSpec {
             output: directory.join("generated/pac-raw/src/lib.rs"),
@@ -193,6 +194,7 @@ bitWidth = 1
     )
     .unwrap();
     let project = ProjectSpec {
+        manifest: std::path::PathBuf::from("project.toml"),
         loaded_model_inputs: Default::default(),
         id: project_id,
         target_spec: directory.join("target.toml"),

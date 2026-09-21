@@ -833,6 +833,7 @@ pub(super) fn explore_direct_calls(
                         arguments: Vec::new(),
                         argument_exact: Vec::new(),
                         argument_result_provenance: Vec::new(),
+            argument_bit_sources: Vec::new(),
                         argument_bindings: Vec::new(),
                         typed_arguments: Vec::new(),
                         guard_paths: Some(vec![current_guard_path(&evidence.guards)]),

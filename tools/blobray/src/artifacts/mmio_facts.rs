@@ -1,4 +1,4 @@
-//! Stored schema-v5 projection of artifact-wide MMIO evidence.
+//! Stored schema-v6 projection of artifact-wide MMIO evidence.
 
 use serde::Serialize;
 
@@ -90,11 +90,13 @@ pub(crate) struct MmioFactsDocument {
     artifacts: Vec<ArtifactDocument>,
     registers: Vec<RegisterDocument>,
     diagnostics: Vec<DiagnosticDocument>,
+    observations: Vec<serde_json::Value>,
 }
 
 pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<MmioFactsDocument> {
     Ok(MmioFactsDocument {
         schema_version: MMIO_FACTS.version,
+        observations: report.observations.clone(),
         command: MMIO_FACTS.command,
         analysis_mode: "best-effort",
         access_count_mode: "maximum-per-path",
@@ -240,6 +242,7 @@ mod tests {
     #[test]
     fn rendered_report_has_the_canonical_identity() {
         let report = MmioDiscoveryReport {
+            observations: Vec::new(),
             code_symbol_selection: crate::artifact::CodeSymbolSelection::All,
             symbol_prefix: String::new(),
             artifacts: Vec::new(),
@@ -249,7 +252,7 @@ mod tests {
         };
         let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
-        assert_eq!(parsed["schema_version"], 5);
+        assert_eq!(parsed["schema_version"], 6);
         assert_eq!(parsed["command"], "mmio discover");
         assert_eq!(parsed["code_selection"]["symbols"], "all");
         assert_eq!(parsed["code_selection"]["symbol_prefix"], "");
@@ -258,6 +261,7 @@ mod tests {
     #[test]
     fn stored_mmio_facts_reject_unknown_and_missing_fields() {
         let report = MmioDiscoveryReport {
+            observations: Vec::new(),
             code_symbol_selection: crate::artifact::CodeSymbolSelection::All,
             symbol_prefix: String::new(),
             artifacts: Vec::new(),

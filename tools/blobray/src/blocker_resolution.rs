@@ -832,6 +832,7 @@ mod tests {
 
     fn project_spec() -> ProjectSpec {
         ProjectSpec {
+            manifest: std::path::PathBuf::from("project.toml"),
             loaded_model_inputs: Default::default(),
             id: "fixture".to_owned(),
             target_spec: "target.toml".into(),

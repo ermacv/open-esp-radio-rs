@@ -17,7 +17,9 @@ use svd_rs::{
     RegisterCluster, RegisterInfo, RegisterProperties, ValidateLevel,
 };
 
+mod geometry;
 mod model_validation;
+pub use geometry::{FieldGeometry, PeripheralRegion, RegisterGeometry, svd_geometry, svd_regions};
 mod pac_api;
 mod pac_api_render;
 mod pac_api_svd;
@@ -108,8 +110,10 @@ impl Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SvdExportSummary {
+    /// Knowledge retained by the rich model but not representable in CMSIS-SVD.
+    pub projection_omissions: Vec<String>,
     pub peripherals: usize,
     pub registers: usize,
     pub fields: usize,
@@ -403,6 +407,11 @@ impl RegisterModel {
         Ok((
             output,
             SvdExportSummary {
+                projection_omissions: vec![
+                    "SVD does not encode explicit unknown/conflicted property states; omitted side effects do not prove ordinary hardware semantics".to_owned(),
+                    "Observations, candidate fields, bit dataflow, source coverage and address gaps remain in the register inventory".to_owned(),
+                    format!("{} review annotations and {} effective assertions retain provenance/applicability in the rich model, outside SVD", self.review.len(), self.reviewed_register_facts.len()),
+                ],
                 peripherals: self.device.peripherals.len(),
                 registers: identities.len(),
                 fields,

@@ -115,6 +115,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) non_operational_functions: Vec<String>,
     pub(crate) review_output: Option<PathBuf>,
     pub(crate) review_ir_reports: Vec<PathBuf>,
+    pub(crate) observations: Vec<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,
     pub(crate) pac_raw: Option<PacRawOutputSpec>,
     pub(crate) bindings: Option<PacBindingsOutputSpec>,
@@ -275,6 +276,7 @@ pub(crate) struct AnalysisSymbolFamilySurface {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
+    pub(crate) manifest: PathBuf,
     /// Identities captured by the loaders, never recaptured at publication.
     pub(crate) loaded_model_inputs: std::collections::BTreeMap<PathBuf, String>,
     pub(crate) id: String,

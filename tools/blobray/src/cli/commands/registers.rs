@@ -4,6 +4,7 @@ use super::super::*;
 use crate::{cli::resolver::RegisterWorkspaceCommand, project::ProjectSpec, registers::*};
 
 mod publication;
+mod query;
 mod report;
 
 use publication::{export_svd, generate_bindings, generate_pac_api, generate_pac_raw_source};
@@ -14,12 +15,23 @@ pub(super) fn run(
     project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
 ) -> Result<bool> {
+    if matches!(
+        command,
+        RegisterWorkspaceCommand::List(_)
+            | RegisterWorkspaceCommand::Coverage(_)
+            | RegisterWorkspaceCommand::Evidence(_)
+    ) {
+        return query::run(command, project);
+    }
     let paths = project
         .registers
         .as_ref()
         .ok_or("project has no [registers] table; configure facts and model paths first")
         .map_err(crate::Error::invalid)?;
     match command {
+        RegisterWorkspaceCommand::List(_)
+        | RegisterWorkspaceCommand::Coverage(_)
+        | RegisterWorkspaceCommand::Evidence(_) => unreachable!("query dispatched above"),
         RegisterWorkspaceCommand::InitModel(arguments) => {
             init_model(arguments, project, memory_map, paths)
         }

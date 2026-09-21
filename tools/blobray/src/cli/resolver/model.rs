@@ -144,6 +144,9 @@ pub(in crate::cli) enum CodeWorkspaceCommand {
 }
 
 pub(in crate::cli) enum RegisterWorkspaceCommand {
+    List(RegisterQueryArgs),
+    Coverage(RegisterQueryArgs),
+    Evidence(RegisterEvidenceArgs),
     InitModel(RegisterModelArgs),
     ImportSvd(RegisterImportArgs),
     Validate(ValidationArgs),

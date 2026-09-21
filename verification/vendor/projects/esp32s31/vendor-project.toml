@@ -229,8 +229,8 @@ entry-contract = "none"
 output = "generated/findings/btdm-task-lifecycle.ir"
 
 # Focused IEEE 802.15.4 discovery surfaces over the authenticated BTBB and
-# coexistence artifacts. Keep the public esp_ieee802154_ controller family out
-# of executable analysis until its matching linked ESP-IDF image exists. The
+# coexistence artifacts. The public esp_ieee802154_ controller profile requires
+# its matching caller-bound artifact; absent inputs remain coverage errors. The
 # existing artifact-wide profiles remain the function/register inventory
 # authority; these focused profiles only bound human-sized review scopes.
 [[analysis.public-symbol-families]]
@@ -256,6 +256,14 @@ source = "ieee802154"
 symbol-prefix = "esp_ieee802154_"
 disposition = "required"
 profile = "ieee802154-controller"
+
+[[analysis.ir]]
+id = "ieee802154-controller"
+sources = ["ieee802154"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-controller.ir"
 
 [[analysis.ir]]
 id = "ieee802154-btbb"

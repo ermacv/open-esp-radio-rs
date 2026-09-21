@@ -6,8 +6,9 @@ mod trace;
 mod value;
 
 pub use indexed_mmio::{
-    IndexedMmioDomain, IndexedMmioGuard, IndexedMmioRegister, collect_evaluable_input_bits,
-    evaluate_for_input, indexed_mmio_domain,
+    ConditionalMmioDomain, IndexedMmioDomain, IndexedMmioGuard, IndexedMmioRegister,
+    collect_evaluable_input_bits, conditional_mmio_domains, evaluate_for_input,
+    indexed_mmio_domain,
 };
 pub use reference::*;
 pub use trace::*;

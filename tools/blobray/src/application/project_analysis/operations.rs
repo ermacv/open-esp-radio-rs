@@ -1851,6 +1851,7 @@ mod cache_domain_tests {
 
     fn project(id: &str) -> ProjectSpec {
         ProjectSpec {
+            manifest: std::path::PathBuf::from("project.toml"),
             loaded_model_inputs: Default::default(),
             id: id.to_owned(),
             target_spec: "target.toml".into(),
@@ -2057,6 +2058,7 @@ mod cache_domain_tests {
             non_operational_functions: Vec::new(),
             review_output: None,
             review_ir_reports: Vec::new(),
+            observations: Vec::new(),
             svd_output: None,
             pac_raw: None,
             bindings: None,

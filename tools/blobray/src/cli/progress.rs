@@ -11,6 +11,9 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
 
 fn command_message(command: &Command) -> Option<&'static str> {
     let message = match command {
+        Command::RegisterList(_) | Command::RegisterCoverage(_) | Command::RegisterEvidence(_) => {
+            "Register inventory"
+        }
         Command::GenerateCompletions(_)
         | Command::GenerateManpage(_)
         | Command::ProjectInit(_)

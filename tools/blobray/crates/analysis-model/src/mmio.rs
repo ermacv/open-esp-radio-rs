@@ -117,15 +117,25 @@ impl RegisterCatalog {
         self.registers
             .sort_by_key(|register| (register.address, register.name.clone()));
         self.registers.dedup();
-        reject_register_collisions(&self.registers)?;
         Ok(())
     }
 
     pub fn register(&self, address: u32) -> Option<&Register> {
-        self.registers
-            .binary_search_by_key(&address, |register| register.address)
-            .ok()
-            .map(|index| &self.registers[index])
+        let first = self
+            .registers
+            .partition_point(|register| register.address < address);
+        let register = self
+            .registers
+            .get(first)
+            .filter(|register| register.address == address)?;
+        if self
+            .registers
+            .get(first + 1)
+            .is_some_and(|next| next.address == address)
+        {
+            return None;
+        }
+        Some(register)
     }
 }
 
@@ -217,14 +227,22 @@ impl MmioMap {
     }
 
     pub fn register(&self, address: u32) -> Option<&Register> {
-        self.registers
-            .binary_search_by_key(&address, |register| register.address)
-            .ok()
-            .map(|index| {
-                let register = &self.registers[index];
-                crate::model_admission::register(&register.name);
-                register
-            })
+        let first = self
+            .registers
+            .partition_point(|register| register.address < address);
+        let register = self
+            .registers
+            .get(first)
+            .filter(|register| register.address == address)?;
+        if self
+            .registers
+            .get(first + 1)
+            .is_some_and(|next| next.address == address)
+        {
+            return None;
+        }
+        crate::model_admission::register(&register.name);
+        Some(register)
     }
 
     pub fn classify_access(
@@ -398,6 +416,28 @@ mod tests {
         assert_eq!(map.registers[0].address, 0x2010_0010);
         assert_eq!(map.registers[0].name, "RADIO.CONTROL");
         assert!(map.regions.is_empty());
+    }
+
+    #[test]
+    fn conflicting_names_remain_visible_without_arbitrary_decoder_label() {
+        let mut catalog = RegisterCatalog {
+            registers: vec![Register {
+                address: 4096,
+                name: "FIRST".to_owned(),
+            }],
+        };
+        catalog
+            .merge(RegisterCatalog {
+                registers: vec![Register {
+                    address: 4096,
+                    name: "SECOND".to_owned(),
+                }],
+            })
+            .unwrap();
+        assert_eq!(catalog.registers.len(), 2);
+        assert!(catalog.register(4096).is_none());
+        catalog.merge(catalog.clone()).unwrap();
+        assert_eq!(catalog.registers.len(), 2);
     }
 
     fn physical_map(readable: bool, writable: bool) -> MmioMap {

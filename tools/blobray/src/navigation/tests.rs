@@ -166,6 +166,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     .unwrap();
 
     let project = ProjectSpec {
+        manifest: std::path::PathBuf::from("project.toml"),
         loaded_model_inputs: Default::default(),
         id: "fixture".to_owned(),
         target_spec: PathBuf::from("target.toml"),

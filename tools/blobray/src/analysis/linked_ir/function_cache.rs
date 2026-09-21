@@ -683,6 +683,7 @@ struct PortableCall {
     arguments: Vec<String>,
     argument_exact: Vec<bool>,
     argument_result_provenance: Vec<PortableCallArgumentResultProvenance>,
+    argument_bit_sources: Vec<open_radio_vendor_contracts::register_inventory::ArgumentBitSource>,
     argument_bindings: Vec<PortableArgumentBinding>,
     typed_arguments: Vec<PortableCallArgument>,
     guard_paths: Option<Vec<Vec<u32>>>,
@@ -779,6 +780,23 @@ impl PortableCall {
                     })
                 })
                 .collect::<Option<Vec<_>>>()?,
+            argument_bit_sources: call
+                .argument_bit_sources
+                .iter()
+                .cloned()
+                .map(|mut source| {
+                    source.expression = hide_namespace(&source.expression, namespace);
+                    source.producer = source
+                        .producer
+                        .map(|value| hide_namespace(&value, namespace));
+                    source.producer_path = source
+                        .producer_path
+                        .into_iter()
+                        .map(|value| hide_namespace(&value, namespace))
+                        .collect();
+                    source
+                })
+                .collect(),
             argument_bindings: call
                 .argument_bindings
                 .iter()
@@ -874,6 +892,23 @@ impl PortableCall {
                     })
                 })
                 .collect::<Option<Vec<_>>>()?,
+            argument_bit_sources: self
+                .argument_bit_sources
+                .iter()
+                .cloned()
+                .map(|mut source| {
+                    source.expression = show_namespace(&source.expression, namespace);
+                    source.producer = source
+                        .producer
+                        .map(|value| show_namespace(&value, namespace));
+                    source.producer_path = source
+                        .producer_path
+                        .into_iter()
+                        .map(|value| show_namespace(&value, namespace))
+                        .collect();
+                    source
+                })
+                .collect(),
             argument_bindings: self
                 .argument_bindings
                 .iter()
@@ -1629,6 +1664,7 @@ mod tests {
                     argument_shapes: 1,
                     arguments: vec!["first::callee(arg0)".to_owned()],
                     argument_exact: vec![true],
+                    argument_bit_sources: Vec::new(),
                     argument_result_provenance: vec![LinkedCallArgumentResultProvenance {
                         position: 0,
                         producer: LinkedCallResultProvenance {
@@ -1669,6 +1705,7 @@ mod tests {
                     arguments: Vec::new(),
                     argument_exact: Vec::new(),
                     argument_result_provenance: Vec::new(),
+                    argument_bit_sources: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
                     guard_paths: Some(vec![LinkedCallGuardPath { guards: Vec::new() }]),

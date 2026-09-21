@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct StoredMmioRegister {
     pub(crate) address: u32,
     pub(crate) width: u8,
+    pub(crate) access_width_candidates: Vec<u8>,
     pub(crate) names: Vec<String>,
     read_shapes: usize,
     write_shapes: usize,

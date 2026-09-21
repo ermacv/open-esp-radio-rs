@@ -44,29 +44,7 @@ pub(in crate::analysis::linked_ir) fn candidate_bit_ranges(
     mask: u32,
     width: u8,
 ) -> Vec<(u8, u8, u32)> {
-    let mask = mask & width_mask(width);
-    let mut output = Vec::new();
-    let mut bit = 0_u8;
-    while bit < width {
-        if mask & (1_u32 << bit) == 0 {
-            bit += 1;
-            continue;
-        }
-        let first = bit;
-        while bit + 1 < width && mask & (1_u32 << (bit + 1)) != 0 {
-            bit += 1;
-        }
-        let last = bit;
-        let range_width = last - first + 1;
-        let range_mask = if range_width == 32 {
-            u32::MAX
-        } else {
-            ((1_u32 << range_width) - 1) << first
-        };
-        output.push((first, last, range_mask));
-        bit += 1;
-    }
-    output
+    open_radio_vendor_contracts::register_inventory::bit_slices(mask, width)
 }
 
 pub(in crate::analysis::linked_ir) fn record_access_field_mask(
@@ -79,7 +57,7 @@ pub(in crate::analysis::linked_ir) fn record_access_field_mask(
 ) {
     let full_mask = width_mask(width);
     let mask = mask & full_mask;
-    if mask == 0 || mask == full_mask {
+    if mask == 0 {
         return;
     }
     for range in candidate_bit_ranges(mask, width) {
@@ -110,7 +88,7 @@ pub(in crate::analysis::linked_ir) fn record_predicate_field_mask(
 ) {
     let full_mask = width_mask(width);
     let mask = mask & full_mask;
-    if mask == 0 || mask == full_mask {
+    if mask == 0 {
         return;
     }
     for range in candidate_bit_ranges(mask, width) {
@@ -169,7 +147,7 @@ pub(in crate::analysis::linked_ir) fn record_semantic_field_link(
 ) {
     let full_mask = width_mask(evidence.width);
     let mask = evidence.mask & full_mask;
-    if mask == 0 || mask == full_mask {
+    if mask == 0 {
         return;
     }
     for range in candidate_bit_ranges(mask, evidence.width) {

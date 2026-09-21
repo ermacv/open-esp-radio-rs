@@ -1,414 +1,502 @@
-//! Register-workspace projection for the read-only workspace snapshot.
-
-use std::collections::BTreeSet;
+//! Frontend projections of the shared, source-preserving register inventory.
 
 use super::{ProjectSession, push_error};
-use crate::{
-    application::model::{
-        DiagnosticRecord, RegisterAccessSiteSummary, RegisterDetailSummary, RegisterFieldSummary,
-        RegisterNameSource, RegisterPredicateSummary, RegisterReviewState, RegisterSummary,
-        RegisterWorkspaceReport, RegisterWritePatternSummary,
-    },
-    registers::{
-        RegisterFacts, RegisterPublicationOwnership, RegisterReviewIr,
-        classify_register_publication, load_effective_register_model, physical_register_identity,
-        register_identity_maps,
-    },
-};
+use crate::application::{model::*, register_inventory};
+use std::collections::BTreeSet;
 
 pub(super) fn collect(
     resolved: &ProjectSession,
     diagnostics: &mut Vec<DiagnosticRecord>,
 ) -> RegisterWorkspaceReport {
-    let configured = resolved.project.registers.is_some();
-    let model = resolved
-        .project
-        .registers
-        .as_ref()
-        .map(|paths| paths.model.clone());
-    let summary = resolved.project.registers.as_ref().and_then(|paths| {
-        if !paths.model.is_file() {
-            return None;
+    let summary = match resolved
+        .register_workspace()
+        .and_then(|workspace| workspace.map(|workspace| workspace.summary()).transpose())
+    {
+        Ok(summary) => summary,
+        Err(error) => {
+            push_error(diagnostics, "registers", error, None);
+            None
         }
-        match resolved.register_workspace().and_then(|workspace| {
-            workspace.map_or_else(|| Ok(None), |workspace| workspace.summary().map(Some))
-        }) {
-            Ok(summary) => summary,
-            Err(error) => {
-                push_error(diagnostics, "registers", error, Some(paths.model.clone()));
-                None
-            }
-        }
-    });
-    RegisterWorkspaceReport {
-        configured,
-        model,
-        ranges: summary.map_or(0, |summary| summary.ranges),
-        observed: summary.map_or(0, |summary| summary.observed),
-        reviewed: summary.map_or(0, |summary| summary.reviewed),
-        ignored: summary.map_or(0, |summary| summary.ignored),
-        non_operational: summary.map_or(0, |summary| summary.non_operational),
-        manual: summary.map_or(0, |summary| summary.manual),
-        unreviewed: summary.map_or(0, |summary| summary.unreviewed),
-        fields: summary.map_or(0, |summary| summary.fields),
-        registers: resolved
-            .mmio
+    };
+    let registers = match register_inventory::load(&resolved.project, &resolved.mmio) {
+        Ok(inventory) => inventory
             .registers
-            .iter()
-            .map(|register| RegisterSummary {
-                address: register.address,
-                name: register.name.clone(),
+            .values()
+            .filter_map(|register| {
+                u32::try_from(register.subject.address)
+                    .ok()
+                    .map(|address| RegisterSummary {
+                        address,
+                        name: register.label(),
+                    })
             })
             .collect(),
+        Err(error) => {
+            push_error(diagnostics, "register-inventory", error, None);
+            Vec::new()
+        }
+    };
+    RegisterWorkspaceReport {
+        configured: resolved.project.registers.is_some(),
+        model: resolved
+            .project
+            .registers
+            .as_ref()
+            .map(|paths| paths.model.clone()),
+        ranges: summary.map_or(0, |s| s.ranges),
+        observed: summary.map_or(0, |s| s.observed),
+        reviewed: summary.map_or(0, |s| s.reviewed),
+        ignored: summary.map_or(0, |s| s.ignored),
+        non_operational: summary.map_or(0, |s| s.non_operational),
+        manual: summary.map_or(0, |s| s.manual),
+        unreviewed: summary.map_or(0, |s| s.unreviewed),
+        fields: summary.map_or(0, |s| s.fields),
+        registers,
     }
+}
+
+fn number(value: &serde_json::Value) -> u64 {
+    value
+        .as_u64()
+        .or_else(|| {
+            value.as_str().and_then(|s| {
+                s.strip_prefix("0x")
+                    .map_or_else(|| s.parse().ok(), |s| u64::from_str_radix(s, 16).ok())
+            })
+        })
+        .unwrap_or(0)
+}
+fn strings(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.as_str().map(str::to_owned))
+        .collect()
 }
 
 pub(crate) fn detail(
     project: &crate::ProjectSpec,
-    catalog_map: &crate::MmioMap,
+    catalog: &crate::MmioMap,
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    let catalog = catalog_map.register(address);
-    let Some(paths) = project.registers.as_ref() else {
-        return Ok(catalog.map(|register| catalog_only_detail(address, register.name.clone())));
-    };
+    detail_from_inventory(
+        project,
+        register_inventory::load(project, catalog)?,
+        address,
+    )
+}
 
-    let facts = paths
-        .facts
-        .is_file()
-        .then(|| RegisterFacts::load(&paths.facts))
-        .transpose()?;
-    let model = paths
-        .model
-        .is_file()
-        .then(|| load_effective_register_model(paths))
-        .transpose()?;
-    let identity_maps = model
-        .as_ref()
-        .map(register_identity_maps)
-        .transpose()?
-        .unwrap_or_default();
-    let identities = &identity_maps.identities;
-    let reviewed_identities = &identity_maps.reviewed;
-    let review_annotations = &identity_maps.annotations;
-    let ir_paths = paths
-        .review_ir_reports
-        .iter()
-        .filter(|path| path.is_dir())
+pub(crate) fn detail_from_inventory(
+    project: &crate::ProjectSpec,
+    inventory: register_inventory::RegisterInventory,
+    address: u32,
+) -> crate::Result<Option<RegisterDetailSummary>> {
+    let subjects = inventory
+        .at_address(u64::from(address))
+        .into_iter()
         .cloned()
         .collect::<Vec<_>>();
-    let ir = RegisterReviewIr::load_all(&ir_paths)?;
-
-    let width = facts
-        .as_ref()
-        .into_iter()
-        .flat_map(|facts| &facts.registers)
-        .find(|fact| fact.address == address)
-        .map(|fact| fact.width)
-        .or_else(|| {
-            identities
-                .keys()
-                .find(|(candidate, _)| *candidate == u64::from(address))
-                .and_then(|(_, width)| u8::try_from(*width).ok())
-        })
-        .or_else(|| {
-            ir.registers
-                .keys()
-                .find(|(candidate, _)| *candidate == address)
-                .map(|(_, width)| *width)
-        });
-    let fact = facts.as_ref().and_then(|facts| {
-        facts
-            .registers
-            .iter()
-            .find(|fact| fact.address == address && width.is_none_or(|width| fact.width == width))
-    });
-    let identity = width
-        .and_then(|width| {
-            physical_register_identity(identities, u64::from(address), u32::from(width))
-        })
-        .or_else(|| {
-            identities
-                .iter()
-                .find(|((candidate, _), _)| *candidate == u64::from(address))
-        })
-        .map(|(_, identity)| identity);
-    let reviewed_identity = width
-        .and_then(|width| {
-            physical_register_identity(reviewed_identities, u64::from(address), u32::from(width))
-        })
-        .or_else(|| {
-            reviewed_identities
-                .iter()
-                .find(|((candidate, _), _)| *candidate == u64::from(address))
-        })
-        .map(|(_, identity)| identity);
-    let ir_register = width
-        .and_then(|width| ir.register(address, width))
-        .or_else(|| {
-            ir.registers
-                .iter()
-                .find(|((candidate, _), _)| *candidate == address)
-                .map(|(_, register)| register)
-        });
-
-    if catalog.is_none() && fact.is_none() && identity.is_none() && ir_register.is_none() {
+    if subjects.is_empty() {
         return Ok(None);
     }
-
-    let (name, name_source) = if let Some(identity) = identity {
-        (identity.clone(), RegisterNameSource::Model)
-    } else if let Some(register) = catalog {
-        (register.name.clone(), RegisterNameSource::Catalog)
-    } else if let Some(fact) = fact {
-        (fact.catalog_name.clone(), RegisterNameSource::Discovery)
+    let width = if subjects.len() == 1 {
+        subjects[0]
+            .width()
+            .and_then(|width| u8::try_from(width).ok())
     } else {
-        (format!("MMIO_{address:08X}"), RegisterNameSource::Address)
+        None
     };
-    let annotation = width
-        .and_then(|width| {
-            physical_register_identity(reviewed_identities, u64::from(address), u32::from(width))
-        })
-        .and_then(|(key, _)| review_annotations.get(key));
-    let publication_ownership = fact
-        .zip(facts.as_ref())
-        .map(|(fact, facts)| {
-            classify_register_publication(facts, &paths.owned_ranges, fact.address, fact.width)
-        })
-        .transpose()?;
-    let outside_publication_scope = matches!(
-        publication_ownership,
-        Some(RegisterPublicationOwnership::External(_))
-    );
-    let non_operational_only = fact.is_some_and(|fact| {
-        let configured = paths
-            .non_operational_functions
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        crate::registers::fact_is_non_operational(fact, &configured)
-    });
-    let range = facts.as_ref().and_then(|facts| {
-        facts
-            .ranges
-            .iter()
-            .find(|range| range.contains(address))
-            .map(|range| range.name.clone())
-    });
-    let publication_scopes = if project.review.is_some() {
-        crate::review_scopes::load_for_project(project)?
-            .scopes
-            .into_iter()
-            .filter(|scope| {
-                scope.publication
-                    && scope.mmio.iter().any(|mmio| {
-                        mmio.address == address && width.is_none_or(|width| mmio.width == width)
-                    })
-            })
-            .map(|scope| scope.id)
-            .collect()
+    let physical_address = if subjects.len() == 1 {
+        u32::try_from(subjects[0].subject.address).unwrap_or(address)
     } else {
-        Vec::new()
+        address
     };
-    let review_status = match (
-        outside_publication_scope,
-        reviewed_identity.is_some(),
-        non_operational_only,
-        fact.is_some(),
-    ) {
-        (true, _, _, _) => RegisterReviewState::Ignored,
-        (false, true, _, true) => RegisterReviewState::Reviewed,
-        (false, true, _, false) => RegisterReviewState::Manual,
-        (false, false, true, true) => RegisterReviewState::NonOperational,
-        (false, false, _, _) => RegisterReviewState::Unreviewed,
+    let names = subjects
+        .iter()
+        .flat_map(|subject| subject.names.values().into_iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let name = if names.is_empty() {
+        format!("UNKNOWN@{address:#010x}")
+    } else {
+        names.into_iter().collect::<Vec<_>>().join(" | ")
     };
+    let ids = subjects
+        .iter()
+        .flat_map(|subject| subject.evidence.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let evidence = ids
+        .iter()
+        .filter_map(|id| inventory.evidence.get(id).cloned())
+        .collect::<Vec<_>>();
 
-    let mut access_functions = BTreeSet::new();
-    if let Some(fact) = fact {
-        access_functions.extend(fact.read_functions.iter().cloned());
-        access_functions.extend(fact.write_functions.iter().cloned());
+    let mut read_functions = BTreeSet::new();
+    let mut write_functions = BTreeSet::new();
+    let mut read_sites = Vec::new();
+    let mut write_sites = Vec::new();
+    let mut write_patterns = Vec::new();
+    for item in &evidence {
+        if item.kind == "function-use" {
+            let function = item.payload["identity"].as_str().unwrap_or("unknown");
+            for effect in item.payload["instruction_effects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                if effect["kind"].as_str() != Some("mmio") {
+                    continue;
+                }
+                let address = number(&effect["address"]);
+                if !subjects.iter().any(|subject| {
+                    subject.subject.address == address
+                        || subject.width().is_some_and(|width| {
+                            subject.subject.address < address
+                                && address
+                                    < subject
+                                        .subject
+                                        .address
+                                        .saturating_add(u64::from(width).div_ceil(8))
+                        })
+                }) {
+                    continue;
+                }
+                let (functions, sites) = match effect["access"].as_str() {
+                    Some("read") => (&mut read_functions, &mut read_sites),
+                    Some("write") => (&mut write_functions, &mut write_sites),
+                    _ => continue,
+                };
+                functions.insert(function.to_owned());
+                sites.push(RegisterAccessSiteSummary {
+                    evidence: BTreeSet::from([item.id.clone()]),
+                    source_identity: item.identity.to_string(),
+                    address: address as u32,
+                    width: number(&effect["width"]) as u8,
+                    function: function.to_owned(),
+                    pc: number(&effect["site"]) as u32,
+                });
+            }
+            continue;
+        }
+        if item.kind == "instruction-access" {
+            let payload = &item.payload;
+            let function = payload["function"].as_str().unwrap_or("unknown");
+            let (functions, sites) = match payload["access"].as_str() {
+                Some("Read") => (&mut read_functions, &mut read_sites),
+                Some("Write") => (&mut write_functions, &mut write_sites),
+                _ => continue,
+            };
+            functions.insert(function.to_owned());
+            sites.push(RegisterAccessSiteSummary {
+                evidence: BTreeSet::from([item.id.clone()]),
+                source_identity: item.identity.to_string(),
+                address: number(&payload["address"]) as u32,
+                width: number(&payload["width"]) as u8,
+                function: function.to_owned(),
+                pc: number(&payload["site"]) as u32,
+            });
+            continue;
+        }
+        if item.kind != "discovery-access" {
+            continue;
+        }
+        let fact = &item.payload;
+
+        read_functions.extend(strings(&fact["read_functions"]));
+        write_functions.extend(strings(&fact["write_functions"]));
+        for (key, sites) in [
+            ("read_sites", &mut read_sites),
+            ("write_sites", &mut write_sites),
+        ] {
+            for site in fact[key].as_array().into_iter().flatten() {
+                sites.push(RegisterAccessSiteSummary {
+                    evidence: BTreeSet::from([item.id.clone()]),
+                    source_identity: item.identity.to_string(),
+                    address: number(&fact["address"]) as u32,
+                    width: number(&fact["width"]) as u8,
+                    function: site["function"].as_str().unwrap_or("unknown").to_owned(),
+                    pc: number(&site["pc"]) as u32,
+                });
+            }
+        }
+        for pattern in fact["write_patterns"].as_array().into_iter().flatten() {
+            write_patterns.push(RegisterWritePatternSummary {
+                occurrences: number(&pattern["occurrences"]) as usize,
+                modified_mask: number(&pattern["modified_mask"]) as u32,
+                preserved_mask: number(&pattern["preserved_mask"]) as u32,
+                inverted_mask: number(&pattern["inverted_mask"]) as u32,
+                forced_zero_mask: number(&pattern["forced_zero_mask"]) as u32,
+                forced_one_mask: number(&pattern["forced_one_mask"]) as u32,
+                read_derived_mask: number(&pattern["read_derived_mask"]) as u32,
+                dynamic_mask: number(&pattern["dynamic_mask"]) as u32,
+                functions: strings(&pattern["functions"]),
+            });
+        }
     }
-    let mut related_functions = BTreeSet::new();
-    if let Some(register) = ir_register {
-        related_functions.extend(register.functions.iter().cloned());
+    fn deduplicate(sites: Vec<RegisterAccessSiteSummary>) -> Vec<RegisterAccessSiteSummary> {
+        let mut unique = std::collections::BTreeMap::<_, RegisterAccessSiteSummary>::new();
+        for site in sites {
+            let key = (
+                site.source_identity.clone(),
+                site.address,
+                site.width,
+                site.function.clone(),
+                site.pc,
+            );
+            if let Some(existing) = unique.get_mut(&key) {
+                existing.evidence.extend(site.evidence);
+            } else {
+                unique.insert(key, site);
+            }
+        }
+        unique.into_values().collect()
     }
-    related_functions.retain(|function| !access_functions.contains(function));
-    let functions = access_functions
-        .union(&related_functions)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let configured_non_operational = paths
-        .non_operational_functions
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let non_operational_functions = access_functions
-        .intersection(&configured_non_operational)
-        .cloned()
-        .collect::<Vec<_>>();
-    let operational_functions = access_functions
-        .difference(&configured_non_operational)
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut fields = ir_register
-        .into_iter()
-        .flat_map(|register| register.fields.values())
-        .map(|field| RegisterFieldSummary {
-            least_significant_bit: field.least_significant_bit,
-            most_significant_bit: field.most_significant_bit,
-            mask: field.mask,
-            write_shapes: field.write_shapes,
-            predicate_shapes: field.predicate_shapes,
-            poll_shapes: field.poll_shapes,
-            functions: field.functions.iter().cloned().collect(),
-            predicate_functions: field.predicate_functions.iter().cloned().collect(),
-            semantic_operations: field.semantic_operations.iter().cloned().collect(),
-            semantic_roots: field.semantic_roots.iter().cloned().collect(),
-            predicates: field
-                .predicate_evidence
-                .iter()
-                .map(|predicate| RegisterPredicateSummary {
-                    kind: predicate.kind.clone(),
-                    function: predicate.function.clone(),
-                    producer_path: predicate.producer_path.clone(),
-                    condition: predicate.condition.clone(),
-                    effective_operation: predicate.effective_operation.clone(),
-                    register_comparison_value: predicate.register_comparison_value,
-                    transitive: predicate.producer_path.len() > 1,
-                })
-                .collect(),
-        })
-        .collect::<Vec<_>>();
-    if fields.is_empty()
-        && let Some(fact) = fact
-    {
-        fields.extend(
-            fact.candidate_masks
-                .iter()
-                .filter(|mask| **mask != 0)
-                .map(|mask| RegisterFieldSummary {
-                    least_significant_bit: mask.trailing_zeros() as u8,
-                    most_significant_bit: (31 - mask.leading_zeros()) as u8,
-                    mask: *mask,
-                    write_shapes: 0,
-                    predicate_shapes: 0,
-                    poll_shapes: 0,
-                    functions: fact.write_functions.iter().cloned().collect(),
-                    predicate_functions: Vec::new(),
-                    semantic_operations: Vec::new(),
-                    semantic_roots: Vec::new(),
-                    predicates: Vec::new(),
-                }),
-        );
-    }
-    let semantic_operations = fields
-        .iter()
-        .flat_map(|field| field.semantic_operations.iter().cloned())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let write_patterns = fact
-        .into_iter()
-        .flat_map(|fact| &fact.write_patterns)
-        .map(|pattern| RegisterWritePatternSummary {
-            occurrences: pattern.occurrences,
-            modified_mask: pattern.modified_mask,
-            preserved_mask: pattern.preserved_mask,
-            inverted_mask: pattern.inverted_mask,
-            forced_zero_mask: pattern.forced_zero_mask,
-            forced_one_mask: pattern.forced_one_mask,
-            read_derived_mask: pattern.read_derived_mask,
-            dynamic_mask: pattern.dynamic_mask,
-            functions: pattern.functions.iter().cloned().collect(),
-        })
-        .collect::<Vec<_>>();
+    let read_sites = deduplicate(read_sites);
+    let write_sites = deduplicate(write_sites);
+    let reads = read_sites.len();
+    let writes = write_sites.len();
     let read_modify_writes = write_patterns
         .iter()
-        .filter(|pattern| pattern.read_derived_mask != 0 || pattern.preserved_mask != 0)
+        .filter(|pattern| {
+            pattern.preserved_mask | pattern.inverted_mask | pattern.read_derived_mask != 0
+        })
         .map(|pattern| pattern.occurrences)
         .sum();
+    let functions = subjects
+        .iter()
+        .flat_map(|subject| subject.functions.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let accessed = read_functions
+        .union(&write_functions)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let configured = project
+        .registers
+        .as_ref()
+        .map(|paths| {
+            paths
+                .non_operational_functions
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let fields: Vec<_> = subjects
+        .iter()
+        .flat_map(|subject| subject.fields.values())
+        .filter_map(|field| {
+            let linked = field
+                .evidence
+                .iter()
+                .filter_map(|id| inventory.evidence.get(id))
+                .filter(|record| record.kind == "linked-register")
+                .flat_map(|record| {
+                    record.payload["field_candidates"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                })
+                .filter(|candidate| number(&candidate["mask"]) as u32 == field.mask.unwrap_or(0))
+                .collect::<Vec<_>>();
+            let union = |key: &str| {
+                linked
+                    .iter()
+                    .flat_map(|candidate| strings(&candidate[key]))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            };
+            Some(RegisterFieldSummary {
+                mask: field.mask?,
+                names: field.names.values().into_iter().cloned().collect(),
+                kind: field.kind.clone(),
+                evidence: field.evidence.iter().cloned().collect(),
+                least_significant_bit: field.offset as u8,
+                most_significant_bit: (field.offset + field.width - 1) as u8,
+                write_shapes: linked
+                    .iter()
+                    .map(|candidate| number(&candidate["write_shapes"]) as usize)
+                    .max()
+                    .unwrap_or(0),
+                predicate_shapes: linked
+                    .iter()
+                    .map(|candidate| number(&candidate["predicate_shapes"]) as usize)
+                    .max()
+                    .unwrap_or(0),
+                poll_shapes: linked
+                    .iter()
+                    .map(|candidate| number(&candidate["poll_shapes"]) as usize)
+                    .max()
+                    .unwrap_or(0),
+                functions: union("functions"),
+                predicate_functions: union("predicate_functions"),
+                semantic_operations: union("semantic_operations"),
+                semantic_roots: union("semantic_roots"),
+                predicates: linked
+                    .iter()
+                    .flat_map(|candidate| {
+                        candidate["predicate_evidence"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                    })
+                    .map(|predicate| RegisterPredicateSummary {
+                        kind: predicate["kind"].as_str().unwrap_or("unknown").to_owned(),
+                        function: predicate["function"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_owned(),
+                        producer_path: strings(&predicate["producer_path"]),
+                        condition: predicate["condition"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_owned(),
+                        effective_operation: predicate["effective_operation"]
+                            .as_str()
+                            .map(str::to_owned),
+                        register_comparison_value: predicate["register_comparison_value"]
+                            .as_u64()
+                            .map(|n| n as u32),
+                        transitive: strings(&predicate["producer_path"]).len() > 1,
+                    })
+                    .collect(),
+            })
+        })
+        .collect();
+    let mut review_sources = Vec::new();
+    let mut review_classification = None;
+    let mut reviewed = false;
+    if let Some(paths) = &project.registers
+        && let Ok(model) = crate::registers::load_effective_register_model(paths)
+    {
+        let maps = crate::registers::register_identity_maps(&model)?;
+        if let Some(width) = width {
+            let key = (u64::from(physical_address), u32::from(width));
+            reviewed = maps.reviewed.contains_key(&key);
+            if let Some(annotation) = maps.annotations.get(&key) {
+                review_sources = annotation.sources.clone();
+                review_classification = Some(format!(
+                    "provenance={:?}, accuracy={:?}, completeness={:?}",
+                    annotation.provenance, annotation.accuracy, annotation.completeness
+                ));
+            }
+        }
+    }
 
+    let mut ownership_unknown = false;
+    let mut external = false;
+    if let Some(paths) = &project.registers {
+        if let Some(width) = width {
+            match crate::registers::RegisterFacts::load(&paths.facts).and_then(|facts| {
+                crate::registers::classify_register_publication(
+                    &facts,
+                    &paths.owned_ranges,
+                    physical_address,
+                    width,
+                )
+                .map(|ownership| !ownership.is_owned())
+            }) {
+                Ok(is_external) => external = is_external,
+                Err(_) => ownership_unknown = true,
+            }
+        } else {
+            ownership_unknown = true;
+        }
+    }
+    let non_operational = !accessed.is_empty() && accessed.is_subset(&configured);
+    let review_status = if reviewed {
+        if accessed.is_empty() {
+            RegisterReviewState::Manual
+        } else {
+            RegisterReviewState::Reviewed
+        }
+    } else if external {
+        RegisterReviewState::Ignored
+    } else if non_operational {
+        RegisterReviewState::NonOperational
+    } else {
+        RegisterReviewState::Unreviewed
+    };
+    let range = inventory
+        .regions
+        .iter()
+        .find(|region| {
+            region.start <= u64::from(address) && u64::from(address) < region.end_exclusive
+        })
+        .map(|region| region.name.clone());
+    let mut coverage_gaps = inventory.gaps.into_iter().collect::<Vec<_>>();
+    let mut publication_scopes = Vec::new();
+    if project.review.is_some() {
+        match crate::review_scopes::load_for_project(project) {
+            Ok(report) => {
+                publication_scopes = report
+                    .scopes
+                    .into_iter()
+                    .filter(|scope| {
+                        scope.publication
+                            && scope.mmio.iter().any(|item| {
+                                item.address == address || item.address == physical_address
+                            })
+                    })
+                    .map(|scope| scope.id)
+                    .collect()
+            }
+            Err(error) => coverage_gaps.push(
+                open_radio_vendor_contracts::register_inventory::CoverageGap {
+                    source: "review-scopes".to_owned(),
+                    scope: "publication-status".to_owned(),
+                    reason: error.to_string(),
+                },
+            ),
+        }
+    }
     Ok(Some(RegisterDetailSummary {
-        address,
+        address: physical_address,
         width,
         range,
         name,
-        name_source,
+        name_source: if evidence.iter().any(|item| item.kind == "model-geometry") {
+            RegisterNameSource::Model
+        } else {
+            RegisterNameSource::Address
+        },
         review_status,
-        publication_debt: !publication_scopes.is_empty()
-            && reviewed_identity.is_none()
-            && !non_operational_only
-            && !outside_publication_scope,
+        publication_debt: if ownership_unknown
+            || coverage_gaps
+                .iter()
+                .any(|gap| gap.scope == "publication-status")
+        {
+            None
+        } else {
+            Some(!publication_scopes.is_empty() && !reviewed && !non_operational && !external)
+        },
         publication_scopes,
-        review_classification: annotation.and_then(|item| {
-            Some(format!(
-                "provenance={:?}, accuracy={:?}, completeness={:?}",
-                item.provenance?, item.accuracy?, item.completeness?
-            ))
-        }),
-        review_sources: annotation.map_or_else(Vec::new, |item| item.sources.clone()),
-        reads: fact.map_or(0, |fact| fact.reads),
-        writes: fact.map_or(0, |fact| fact.writes),
+        review_classification,
+        review_sources,
+        access_count_mode:
+            "distinct-static-sites; write-pattern occurrences are per-source maximum-per-path"
+                .to_owned(),
+        reads,
+        writes,
         read_modify_writes,
-        read_functions: fact.map_or_else(Vec::new, |fact| {
-            fact.read_functions.iter().cloned().collect()
-        }),
-        write_functions: fact.map_or_else(Vec::new, |fact| {
-            fact.write_functions.iter().cloned().collect()
-        }),
-        operational_functions,
-        non_operational_functions,
-        related_functions: related_functions.into_iter().collect(),
-        read_sites: fact.map_or_else(Vec::new, |fact| {
-            fact.read_sites
-                .iter()
-                .map(|site| RegisterAccessSiteSummary {
-                    function: site.function.clone(),
-                    pc: site.pc,
-                })
-                .collect()
-        }),
-        write_sites: fact.map_or_else(Vec::new, |fact| {
-            fact.write_sites
-                .iter()
-                .map(|site| RegisterAccessSiteSummary {
-                    function: site.function.clone(),
-                    pc: site.pc,
-                })
-                .collect()
-        }),
+        read_functions: read_functions.into_iter().collect(),
+        write_functions: write_functions.into_iter().collect(),
+        operational_functions: accessed.difference(&configured).cloned().collect(),
+        non_operational_functions: accessed.intersection(&configured).cloned().collect(),
+        related_functions: functions.difference(&accessed).cloned().collect(),
         functions: functions.into_iter().collect(),
+        read_sites,
+        write_sites,
         write_patterns,
+        semantic_operations: fields
+            .iter()
+            .flat_map(|field| field.semantic_operations.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
         fields,
-        semantic_operations,
+        subjects,
+        evidence,
+        sources: inventory.sources,
+        coverage_gaps,
     }))
-}
-
-fn catalog_only_detail(address: u32, name: String) -> RegisterDetailSummary {
-    RegisterDetailSummary {
-        address,
-        width: None,
-        range: None,
-        name,
-        name_source: RegisterNameSource::Catalog,
-        review_status: RegisterReviewState::Unreviewed,
-        publication_scopes: Vec::new(),
-        publication_debt: false,
-        review_classification: None,
-        review_sources: Vec::new(),
-        reads: 0,
-        writes: 0,
-        read_modify_writes: 0,
-        read_functions: Vec::new(),
-        write_functions: Vec::new(),
-        operational_functions: Vec::new(),
-        non_operational_functions: Vec::new(),
-        related_functions: Vec::new(),
-        read_sites: Vec::new(),
-        write_sites: Vec::new(),
-        functions: Vec::new(),
-        write_patterns: Vec::new(),
-        fields: Vec::new(),
-        semantic_operations: Vec::new(),
-    }
 }

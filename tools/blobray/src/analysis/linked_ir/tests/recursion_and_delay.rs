@@ -24,6 +24,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: vec![LinkedArgumentBinding {
             position: 0,
             caller_argument: 0,

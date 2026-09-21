@@ -84,10 +84,10 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
     }
     lines.push(field(
         "Publication",
-        if detail.publication_debt {
-            "blocking"
-        } else {
-            "not blocking"
+        match detail.publication_debt {
+            Some(true) => "blocking",
+            Some(false) => "not blocking",
+            None => "unknown",
         },
     ));
     if !detail.publication_scopes.is_empty() {
@@ -149,13 +149,47 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
     if !detail.semantic_operations.is_empty() {
         lines.push(field("Semantics", detail.semantic_operations.join(", ")));
     }
+    for subject in &detail.subjects {
+        lines.push(Line::from(format!(
+            "{} semantics={:?}",
+            subject.id, subject.semantics
+        )));
+        lines.push(Line::from(format!("Coverage: {:?}", subject.coverage)));
+        for field in subject.fields.values().filter(|field| field.mask.is_none()) {
+            lines.push(Line::from(format!(
+                "{} bits {}..{} names={:?} semantics={:?} evidence={:?}",
+                field.kind,
+                field.offset,
+                u64::from(field.offset) + u64::from(field.width),
+                field.names,
+                field.semantics,
+                field.evidence
+            )));
+        }
+    }
+    for gap in &detail.coverage_gaps {
+        lines.push(Line::from(format!(
+            "INCOMPLETE {}: {}",
+            gap.scope, gap.reason
+        )));
+    }
     if !detail.fields.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Field candidates",
+            "Declared fields, hypotheses and unknown spans",
             Style::new().add_modifier(Modifier::BOLD),
         )));
         for candidate in &detail.fields {
+            lines.push(Line::from(format!(
+                "{} name={} evidence={}",
+                candidate.kind,
+                if candidate.names.is_empty() {
+                    "unknown".to_owned()
+                } else {
+                    candidate.names.join(" | ")
+                },
+                candidate.evidence.join(", ")
+            )));
             lines.push(Line::from(format!(
                 "bits {}..{} mask={:#010x} writes={} predicates={} polls={}",
                 candidate.most_significant_bit,

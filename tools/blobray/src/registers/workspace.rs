@@ -630,8 +630,9 @@ baseAddress = 0x1000
         std::fs::write(
             &facts,
             r#"{
-  "schema_version": 5,
+  "schema_version": 6,
   "command": "mmio discover",
+                "observations": [],
   "analysis_mode": "best-effort",
   "access_count_mode": "maximum-per-path",
   "completeness_claim": false,
@@ -697,6 +698,7 @@ locator = "region-and-name"
             non_operational_functions: Vec::new(),
             review_output: None,
             review_ir_reports: Vec::new(),
+            observations: Vec::new(),
             svd_output: None,
             pac_raw: None,
             bindings: None,

@@ -267,6 +267,7 @@ fn write_ir(path: &std::path::Path) {
         argument_exact: vec![true; arguments.len()],
         arguments,
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: Some(vec![crate::LinkedCallGuardPath { guards }]),

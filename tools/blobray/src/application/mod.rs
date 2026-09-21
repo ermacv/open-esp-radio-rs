@@ -11,6 +11,11 @@ pub(crate) mod event_replay;
 pub(crate) mod generated_file;
 mod model;
 mod operations;
+pub(crate) mod register_inventory;
+pub use register_inventory::{
+    AddressCoverage, BitCoverage, InventoryField, InventoryQuery, InventoryRegister,
+    InventorySource, RegisterEvidence, RegisterInventory, RegisterQuestion,
+};
 pub(crate) mod pipeline;
 pub(crate) mod project_analysis;
 pub(crate) mod project_check;
@@ -89,6 +94,13 @@ impl BlobrayApplication {
     }
 
     /// Load heavyweight discovery, review and linked-IR evidence for one MMIO address.
+    pub fn register_inventory(&self) -> ApplicationResult<RegisterInventory> {
+        Ok(register_inventory::load(
+            &self.resolved.project,
+            &self.resolved.mmio,
+        )?)
+    }
+
     pub fn register_detail(
         &self,
         address: u32,
@@ -163,12 +175,12 @@ impl BlobrayApplication {
     }
 }
 
-pub(crate) fn register_detail_for_project(
+pub(crate) fn register_detail_from_inventory(
     project: &crate::ProjectSpec,
-    catalog: &crate::MmioMap,
+    inventory: RegisterInventory,
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    snapshot::registers::detail(project, catalog, address)
+    snapshot::registers::detail_from_inventory(project, inventory, address)
 }
 
 /// Inspect the project-owned persistent cache without creating or repairing it.

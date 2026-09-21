@@ -131,6 +131,11 @@ impl ResolutionNeeds {
             | Command::InterfaceInitPack(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
+            Command::RegisterList(_)
+            | Command::RegisterCoverage(_)
+            | Command::RegisterEvidence(_) => {
+                Self::new(true, false, false, false, false, false, false)
+            }
             Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)
             | Command::RegisterGeneratePacRaw(_)
@@ -179,7 +184,7 @@ impl ResolutionNeeds {
             Command::InspectFlow(_) => Self::new(true, false, false, false, false, false, false),
             Command::InspectObject(_) => Self::new(true, false, false, false, false, false, false),
             Command::InspectRegister(_) => {
-                Self::new(true, false, false, false, true, false, true).with_review_context()
+                Self::new(true, false, false, false, false, false, false)
             }
             Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
             Command::GenerateReference(_)

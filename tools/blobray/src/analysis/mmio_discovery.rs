@@ -4,6 +4,9 @@
 //! when later control flow is unsupported. Findings are therefore analysis
 //! evidence, not a completeness claim.
 
+mod contexts;
+mod coverage;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -157,6 +160,7 @@ pub(crate) struct MmioDiscoveryReport {
     pub(crate) artifacts: Vec<ArtifactDiscoverySummary>,
     pub(crate) registers: Vec<RegisterFinding>,
     pub(crate) diagnostics: Vec<FunctionDiagnostic>,
+    pub(crate) observations: Vec<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -168,6 +172,9 @@ struct RegisterAccumulator {
     write_functions: BTreeSet<DiscoveryFunction>,
     read_sites: BTreeSet<DiscoveryAccessSite>,
     write_sites: BTreeSet<DiscoveryAccessSite>,
+    read_site_counts: BTreeMap<DiscoveryAccessSite, usize>,
+    write_site_counts: BTreeMap<DiscoveryAccessSite, usize>,
+    pattern_site_counts: BTreeMap<(WriteBitPattern, DiscoveryAccessSite), usize>,
     write_patterns: BTreeMap<WriteBitPattern, (usize, BTreeSet<DiscoveryFunction>)>,
 }
 
@@ -177,6 +184,8 @@ struct FunctionExploration {
     /// explored path. Summing paths would duplicate their common prefix.
     events: Vec<(LocatedObservableEvent, usize)>,
     diagnostics: BTreeSet<(&'static str, String)>,
+    observations: BTreeMap<String, serde_json::Value>,
+    calls: BTreeMap<String, contexts::CallContext>,
     explored_states: usize,
     terminal_paths: usize,
     branch_sites: BTreeSet<u32>,
@@ -290,9 +299,15 @@ fn record_event(
     if entry.name.is_empty() {
         entry.name = name;
     }
+    let site = DiscoveryAccessSite {
+        function: function.clone(),
+        site: located.site,
+    };
     match access {
         MemoryAccess::Read => {
-            entry.read_count += occurrences;
+            let previous = entry.read_site_counts.entry(site.clone()).or_default();
+            entry.read_count += occurrences.saturating_sub(*previous);
+            *previous = (*previous).max(occurrences);
             entry.read_functions.insert(function.clone());
             entry.read_sites.insert(DiscoveryAccessSite {
                 function: function.clone(),
@@ -300,15 +315,23 @@ fn record_event(
             });
         }
         MemoryAccess::Write => {
-            entry.write_count += occurrences;
+            let previous = entry.write_site_counts.entry(site.clone()).or_default();
+            entry.write_count += occurrences.saturating_sub(*previous);
+            *previous = (*previous).max(occurrences);
             entry.write_functions.insert(function.clone());
             entry.write_sites.insert(DiscoveryAccessSite {
                 function: function.clone(),
                 site: located.site,
             });
             let pattern = classify_write_bits(value.as_ref(), *address, *width);
+            let previous = entry
+                .pattern_site_counts
+                .entry((pattern.clone(), site))
+                .or_default();
+            let additional = occurrences.saturating_sub(*previous);
+            *previous = (*previous).max(occurrences);
             let (pattern_occurrences, functions) = entry.write_patterns.entry(pattern).or_default();
-            *pattern_occurrences += occurrences;
+            *pattern_occurrences += additional;
             functions.insert(function.clone());
         }
     }
@@ -373,6 +396,16 @@ fn explore_symbol(
     relocated_calls: &direct::StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
 ) -> FunctionExploration {
+    explore_symbol_with_arguments(symbol, map, relocated_calls, pointer_context, None)
+}
+
+fn explore_symbol_with_arguments(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    map: &MmioMap,
+    relocated_calls: &direct::StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    arguments: Option<&crate::Rv32CallArguments>,
+) -> FunctionExploration {
     let mut result = FunctionExploration::default();
     let program = match direct::StructuralProgram::decode(symbol) {
         Ok(program) => program,
@@ -387,7 +420,7 @@ fn explore_symbol(
         map,
         relocated_calls,
         pointer_context,
-        None,
+        arguments,
         direct::StructuralTraceBudget {
             max_instruction_steps: MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE,
             max_events: MAX_DISCOVERY_EVENTS_PER_TRACE,
@@ -409,6 +442,140 @@ fn explore_symbol(
                         "function exceeds the discovery limit of {MAX_DISCOVERY_EVENTS_PER_FUNCTION} distinct observable events"
                     ),
                 ));
+            }
+            for located in &trace.located_events {
+                let ObservableEvent::Memory {
+                    access,
+                    width,
+                    address,
+                    value,
+                    ..
+                } = &located.event
+                else {
+                    continue;
+                };
+                let pattern = classify_write_bits(value.as_ref(), *address, *width);
+                let observation = serde_json::json!({"kind":"instruction-mmio","site":located.site,"access":format!("{access:?}"),"width":width,"address":address,"value":value.as_ref().map(SymbolicValue::canonical),"value_provenance":format!("{value:?}"),"modified_mask":pattern.modified_mask(*width),"preserved_mask":pattern.preserved_mask,"inverted_mask":pattern.inverted_mask,"read_derived_mask":pattern.read_derived_mask,"dynamic_mask":pattern.dynamic_mask});
+                if result.observations.len() < MAX_DISCOVERY_EVENTS_PER_FUNCTION {
+                    result
+                        .observations
+                        .insert(observation.to_string(), observation);
+                } else {
+                    result.diagnostics.insert((
+                        "reference-observation-budget",
+                        format!("unretained static access at {:#x}", located.site),
+                    ));
+                }
+            }
+            for event in &trace.reference_events {
+                if let Some(context) = contexts::CallContext::from_event(event) {
+                    let key = context.key();
+                    if result.calls.len() < MAX_DISCOVERY_EVENTS_PER_FUNCTION
+                        || result.calls.contains_key(&key)
+                    {
+                        result.calls.insert(key, context);
+                    } else {
+                        result.diagnostics.insert((
+                            "call-context-budget",
+                            format!("unretained call context {key}"),
+                        ));
+                    }
+                }
+            }
+            for located in &trace.located_reference_events {
+                // The reusable trace keeps ABI-pointer memory abstract even
+                // when an argument has a concrete value. Context discovery can
+                // separately classify that proven address against MMIO ranges.
+                if arguments.is_some()
+                    && let crate::DraftReferenceEvent::Memory {
+                        access,
+                        width,
+                        address,
+                        value,
+                        ..
+                    } = &located.event
+                    && let Some(resolved) = address
+                        .substitute(arguments.expect("contextual arguments"), &[], &[], &[])
+                        .ok()
+                        .and_then(|value| crate::evaluate_for_input(&value, u8::MAX, 0))
+                    && map.regions.iter().any(|region| {
+                        resolved >= region.start
+                            && u64::from(resolved) + u64::from(*width).div_ceil(8)
+                                <= u64::from(region.end)
+                    })
+                {
+                    let pattern = classify_write_bits(value.as_ref(), resolved, *width);
+                    let contextual = LocatedObservableEvent {
+                        site: located.site,
+                        event: ObservableEvent::Memory {
+                            access: *access,
+                            width: *width,
+                            address: resolved,
+                            register: "UNMAPPED".to_owned(),
+                            value: value.clone(),
+                        },
+                    };
+                    if merge_path_events(&mut result.events, &[contextual]) {
+                        result.diagnostics.insert((
+                            "reference-observation-budget",
+                            format!("unretained contextual aggregate at {:#x}", located.site),
+                        ));
+                    }
+                    let observation = serde_json::json!({"kind":"instruction-mmio","site":located.site,"access":format!("{access:?}"),"width":width,"address":resolved,"address_resolution":"specialized call argument within selected MMIO range","address_expression":address.canonical(),"address_provenance":format!("{address:?}"),"value":value.as_ref().map(SymbolicValue::canonical),"value_provenance":format!("{value:?}"),"modified_mask":pattern.modified_mask(*width),"preserved_mask":pattern.preserved_mask,"inverted_mask":pattern.inverted_mask,"read_derived_mask":pattern.read_derived_mask,"dynamic_mask":pattern.dynamic_mask});
+                    if result.observations.len() < MAX_DISCOVERY_EVENTS_PER_FUNCTION {
+                        result
+                            .observations
+                            .insert(observation.to_string(), observation);
+                    } else {
+                        result.diagnostics.insert((
+                            "reference-observation-budget",
+                            format!("unretained contextual access at {:#x}", located.site),
+                        ));
+                    }
+                }
+                use crate::DraftReferenceEvent;
+                let observation = match &located.event {
+                    DraftReferenceEvent::IndexedMmio {
+                        access,
+                        width,
+                        address,
+                        registers,
+                        guard,
+                        value,
+                    } => serde_json::json!({
+                        "kind":"indexed-mmio", "site":located.site, "access":format!("{access:?}"), "width":width,
+                        "address_expression":address.canonical(), "address_provenance":format!("{address:?}"), "conditional_domains":crate::conditional_mmio_domains(address, map),
+                        "addresses":registers.iter().map(|r| r.address).collect::<Vec<_>>(),
+                        "guard":guard.as_ref().map(|g| serde_json::json!({"selector":g.selector.canonical(), "maximum":g.maximum})),
+                        "value":value.as_ref().map(|v| v.canonical()), "value_provenance":format!("{value:?}"),
+                    }),
+                    DraftReferenceEvent::Memory {
+                        access,
+                        width,
+                        address,
+                        region,
+                        value,
+                        ..
+                    } => serde_json::json!({
+                        "kind":"memory-classification-candidate", "site":located.site, "access":format!("{access:?}"), "width":width,
+                        "address_expression":address.canonical(), "address_provenance":format!("{address:?}"), "conditional_domains":crate::conditional_mmio_domains(address, map), "region":region,
+                        "value":value.as_ref().map(|v| v.canonical()), "value_provenance":format!("{value:?}"),
+                    }),
+                    _ => continue,
+                };
+                if result.observations.len() < MAX_DISCOVERY_EVENTS_PER_FUNCTION {
+                    result
+                        .observations
+                        .insert(observation.to_string(), observation);
+                } else {
+                    result.diagnostics.insert((
+                        "reference-observation-budget",
+                        format!(
+                            "unretained instruction-local evidence at {:#x}",
+                            located.site
+                        ),
+                    ));
+                }
             }
             collect_trace_diagnostics(&trace, &mut result.diagnostics);
             if let Some(branch) = trace.unresolved_branch {
@@ -535,6 +702,7 @@ pub(crate) fn discover_mmio(
     let pointer_context = StructuralPointerContext::default();
     let mut accumulators = BTreeMap::<(u32, u8), RegisterAccumulator>::new();
     let mut diagnostics = Vec::new();
+    let mut observations = Vec::new();
     let mut artifact_summaries = Vec::new();
 
     for (source, path) in artifacts {
@@ -553,6 +721,7 @@ pub(crate) fn discover_mmio(
                 0,
             ),
         };
+        observations.extend(coverage::observations(source, path, &symbols));
         let jobs = options.worker_count(symbols.len());
         let progress = artifact_progress_span(source, path, symbols.len());
         progress.pb_set_message(&format!(
@@ -573,6 +742,7 @@ pub(crate) fn discover_mmio(
         let mut explored_states = 0usize;
         let mut terminal_paths = 0usize;
         let mut branch_sites = 0usize;
+        let mut contexts = contexts::Explorer::default();
         explore_symbols(
             source,
             &symbols,
@@ -581,10 +751,15 @@ pub(crate) fn discover_mmio(
             &pointer_context,
             jobs,
             |function, exploration| {
+                contexts.enqueue(&function, &exploration.calls, &mut observations);
                 let mut found = false;
                 for (event, occurrences) in &exploration.events {
                     found |=
                         record_event(&mut accumulators, ranges, &function, event, *occurrences);
+                }
+                for mut observation in exploration.observations.into_values() {
+                    observation["function"] = serde_json::Value::String(function.canonical());
+                    observations.push(observation);
                 }
                 functions_with_mmio += usize::from(found);
                 functions_with_diagnostics += usize::from(!exploration.diagnostics.is_empty());
@@ -602,6 +777,29 @@ pub(crate) fn discover_mmio(
                 progress.pb_set_message(&format!("{source}: completed {}", function.canonical()));
             },
         );
+        let context_symbols = if symbol_prefix.is_empty()
+            && code_symbol_selection == artifact::CodeSymbolSelection::All
+        {
+            None
+        } else {
+            Some(match effective_code {
+                Some(catalog) => {
+                    catalog
+                        .load_symbols(source, path, "", artifact::CodeSymbolSelection::All)?
+                        .symbols
+                }
+                None => artifact::load_code_symbols(path, "", artifact::CodeSymbolSelection::All)?,
+            })
+        };
+        contexts.run(
+            source,
+            context_symbols.as_deref().unwrap_or(&symbols),
+            &map,
+            &mut observations,
+            |function, event, occurrences| {
+                record_event(&mut accumulators, ranges, function, event, occurrences);
+            },
+        )?;
         progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", symbols.len()));
         artifact_summaries.push(ArtifactDiscoverySummary {
             source: source.clone(),
@@ -647,6 +845,9 @@ pub(crate) fn discover_mmio(
         ))
     });
 
+    observations.sort_by_cached_key(serde_json::Value::to_string);
+    observations.dedup();
+
     Ok(MmioDiscoveryReport {
         code_symbol_selection,
         symbol_prefix: symbol_prefix.to_owned(),
@@ -654,6 +855,7 @@ pub(crate) fn discover_mmio(
         artifacts: artifact_summaries,
         registers,
         diagnostics,
+        observations,
     })
 }
 
@@ -703,6 +905,38 @@ mod tests {
 
         merge_path_events(&mut merged, &[event.clone(), event.clone()]);
         assert_eq!(merged, [(event, 2)]);
+    }
+
+    #[test]
+    fn repeated_context_does_not_add_another_static_site_or_path_count() {
+        let function = DiscoveryFunction {
+            source: "fixture".to_owned(),
+            member: None,
+            symbol: "accessor".to_owned(),
+        };
+        let event = LocatedObservableEvent {
+            site: 0x1000,
+            event: ObservableEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 32,
+                address: 0x4000,
+                register: "UNMAPPED".to_owned(),
+                value: Some(SymbolicValue::Constant(1)),
+            },
+        };
+        let ranges = [DiscoveryRange {
+            name: "dev".to_owned(),
+            start: 0x4000,
+            end: 0x4100,
+        }];
+        let mut registers = BTreeMap::new();
+        for occurrences in [1, 1, 3, 2] {
+            record_event(&mut registers, &ranges, &function, &event, occurrences);
+        }
+        let register = &registers[&(0x4000, 32)];
+        assert_eq!(register.write_count, 3);
+        assert_eq!(register.write_sites.len(), 1);
+        assert_eq!(register.write_patterns.values().next().unwrap().0, 3);
     }
 
     #[test]

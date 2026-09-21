@@ -1,13 +1,11 @@
 //! Focused project-aware investigation of one MMIO register.
 
-use std::collections::BTreeMap;
-
 use serde::Serialize;
 
 use super::super::*;
 use crate::registers::{
     RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
-    load_effective_register_model, render_sparse_review_draft, reviewed_register_identities,
+    load_effective_register_model, render_sparse_review_draft,
 };
 
 #[derive(Serialize)]
@@ -42,9 +40,9 @@ struct RegisterReviewDraft {
 #[derive(Serialize)]
 struct RegisterNeighbor {
     address: u32,
-    width: u8,
+    subject: String,
+    width: Option<u32>,
     name: String,
-    reviewed: bool,
 }
 
 #[derive(Serialize)]
@@ -62,24 +60,65 @@ pub(super) fn run(
     arguments: InspectRegisterArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    let address = parse_address(&arguments.address)?;
-    let detail = crate::application::register_detail_for_project(
-        &session.project,
-        &session.mmio,
-        address,
-    )?
-    .ok_or_else(|| {
+    let mut inventory =
+        crate::application::register_inventory::load(&session.project, &session.mmio)?;
+    let address = if let Some(subject) = inventory.registers.get(&arguments.address) {
+        u32::try_from(subject.subject.address).map_err(|_| {
+            crate::Error::invalid(
+                "inspect address exceeds the current 32-bit frontend; use registers list --subject",
+            )
+        })?
+    } else {
+        parse_address(&arguments.address)?
+    };
+    let neighbors = neighbors(&inventory, address);
+    if inventory.registers.contains_key(&arguments.address) {
+        inventory.registers.retain(|id, _| id == &arguments.address);
+    }
+    let mut detail =
+        crate::application::register_detail_from_inventory(&session.project, inventory, address)?
+            .ok_or_else(|| {
             crate::Error::invalid(format!(
-                "MMIO address {address:#010x} is absent from discovery facts, the reviewed model and loaded SVD catalogs"
+                "register {address:#010x} is absent from all configured inventory sources"
             ))
         })?;
+    fn optional<T>(
+        result: Result<Option<T>>,
+        scope: &str,
+        detail: &mut crate::RegisterDetailSummary,
+    ) -> Option<T> {
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                detail.coverage_gaps.push(
+                    open_radio_vendor_contracts::register_inventory::CoverageGap {
+                        source: scope.to_owned(),
+                        scope: scope.to_owned(),
+                        reason: error.to_string(),
+                    },
+                );
+                None
+            }
+        }
+    }
+    let recording = optional(
+        recording_guide(&session.project, &detail),
+        "recording-guide",
+        &mut detail,
+    );
+    let reviewed_assertions = optional(
+        reviewed_assertions(session, &detail),
+        "reviewed-assertions",
+        &mut detail,
+    );
+    let review_draft = optional(review_draft(session, &detail), "review-draft", &mut detail);
     let report = RegisterInvestigationReport {
-        neighbors: neighbors(&session.project, &detail)?,
-        recording: recording_guide(&session.project, &detail)?,
-        reviewed_assertions: reviewed_assertions(session, &detail)?,
-        review_draft: review_draft(session, &detail)?,
+        neighbors,
+        recording,
+        reviewed_assertions,
+        review_draft,
         conclusion: conclusion(&detail),
-        schema_version: 7,
+        schema_version: 8,
         command: "inspect register",
         register: detail,
     };
@@ -139,6 +178,9 @@ fn review_draft(
     let Some(width) = detail.width else {
         return Ok(None);
     };
+    if !paths.facts.is_file() {
+        return Ok(None);
+    }
     let facts = RegisterFacts::load(&paths.facts)?;
     let Some(fact) = facts
         .registers
@@ -245,66 +287,20 @@ fn parse_address(value: &str) -> Result<u32> {
         .map_err(|_| crate::Error::invalid(format!("invalid MMIO address {value:?}")))
 }
 
-fn neighbors(
-    project: &ProjectSpec,
-    selected: &crate::RegisterDetailSummary,
-) -> Result<Vec<RegisterNeighbor>> {
-    let Some(paths) = project.registers.as_ref() else {
-        return Ok(Vec::new());
-    };
-    let model = paths
-        .model
-        .is_file()
-        .then(|| crate::registers::load_effective_register_model(paths))
-        .transpose()?;
-    let identities = model
-        .as_ref()
-        .map(crate::registers::RegisterModel::register_identities)
-        .transpose()?
-        .unwrap_or_default();
-    let reviewed_identities = model
-        .as_ref()
-        .map(reviewed_register_identities)
-        .transpose()?
-        .unwrap_or_default();
-    let facts = paths
-        .facts
-        .is_file()
-        .then(|| crate::registers::RegisterFacts::load(&paths.facts))
-        .transpose()?;
-    let mut rows = BTreeMap::<(u32, u8), String>::new();
-    if let Some(facts) = facts {
-        for fact in facts.registers {
-            if fact.address.abs_diff(selected.address) <= 0x10 {
-                rows.insert((fact.address, fact.width), fact.catalog_name);
-            }
-        }
-    }
-    for ((address, width), identity) in &identities {
-        let Ok(address) = u32::try_from(*address) else {
-            continue;
-        };
-        let Ok(width) = u8::try_from(*width) else {
-            continue;
-        };
-        if address.abs_diff(selected.address) <= 0x10 {
-            rows.insert((address, width), identity.clone());
-        }
-    }
-    Ok(rows
-        .into_iter()
-        .map(|((address, width), name)| RegisterNeighbor {
-            address,
-            width,
-            name,
-            reviewed: crate::registers::physical_register_identity(
-                &reviewed_identities,
-                u64::from(address),
-                u32::from(width),
-            )
-            .is_some(),
+fn neighbors(inventory: &crate::RegisterInventory, address: u32) -> Vec<RegisterNeighbor> {
+    inventory
+        .registers
+        .values()
+        .filter(|register| register.subject.address.abs_diff(u64::from(address)) <= 0x10)
+        .filter_map(|register| {
+            Some(RegisterNeighbor {
+                address: u32::try_from(register.subject.address).ok()?,
+                subject: register.id.clone(),
+                width: register.width(),
+                name: register.label(),
+            })
         })
-        .collect())
+        .collect()
 }
 
 fn conclusion(detail: &crate::RegisterDetailSummary) -> String {
@@ -318,7 +314,7 @@ fn conclusion(detail: &crate::RegisterDetailSummary) -> String {
         crate::RegisterReviewState::Ignored => {
             "The address lies outside the project-owned publication ranges. It remains visible as external MMIO evidence.".to_owned()
         }
-        crate::RegisterReviewState::Unreviewed if detail.writes == 0 => {
+        crate::RegisterReviewState::Unreviewed if detail.writes == 0 && detail.reads > 0 => {
             "Only read evidence is known. The hardware meaning and fields are not proven; do not assign a semantic SVD name from address adjacency alone.".to_owned()
         }
         crate::RegisterReviewState::Unreviewed => {
@@ -347,10 +343,10 @@ fn render_human(report: &RegisterInvestigationReport) {
     outputln!("Review:       {}", detail.review_status.label());
     outputln!(
         "Publication:  {}{}",
-        if detail.publication_debt {
-            "BLOCKED"
-        } else {
-            "not blocking"
+        match detail.publication_debt {
+            Some(true) => "BLOCKED",
+            Some(false) => "not blocking",
+            None => "unknown",
         },
         if detail.publication_scopes.is_empty() {
             String::new()
@@ -363,6 +359,46 @@ fn render_human(report: &RegisterInvestigationReport) {
         detail.reads,
         detail.writes,
         detail.read_modify_writes
+    );
+    for subject in &detail.subjects {
+        outputln!("Subject: {}", subject.id);
+        outputln!(
+            "  physical-width={:?} access-widths={:?} semantics={:?}",
+            subject.width(),
+            subject.access_widths,
+            subject.semantics
+        );
+        outputln!(
+            "  coverage: {}",
+            serde_json::to_string(&subject.coverage).expect("coverage serializes")
+        );
+        for field in subject.fields.values() {
+            outputln!(
+                "  bits {}..{} {} names={:?} semantics={:?} evidence={:?}",
+                field.offset,
+                field.offset + field.width - 1,
+                field.kind,
+                field.names,
+                field.semantics,
+                field.evidence
+            );
+        }
+    }
+    for pattern in &detail.write_patterns {
+        outputln!(
+            "Write pattern: modified={:#010x} preserved={:#010x} inverted={:#010x} dynamic={:#010x}",
+            pattern.modified_mask,
+            pattern.preserved_mask,
+            pattern.inverted_mask,
+            pattern.dynamic_mask
+        );
+    }
+    for gap in &detail.coverage_gaps {
+        outputln!("INCOMPLETE {}: {}", gap.scope, gap.reason);
+    }
+    outputln!(
+        "Evidence: {} records; use registers evidence <ID> or JSON for full payloads",
+        detail.evidence.len()
     );
     outputln!("\n{}", crate::cli::output::heading("Conclusion"));
     outputln!("{}", report.conclusion);
@@ -500,17 +536,14 @@ fn render_human(report: &RegisterInvestigationReport) {
         outputln!(
             "{}",
             crate::cli::table::render(
-                ["Address", "Width", "Identity", "Review"],
+                ["Address", "Width", "Identity", "Subject"],
                 report.neighbors.iter().map(|neighbor| [
                     format!("{:#010x}", neighbor.address),
-                    neighbor.width.to_string(),
+                    neighbor
+                        .width
+                        .map_or_else(|| "unknown".to_owned(), |width| width.to_string()),
                     neighbor.name.clone(),
-                    if neighbor.reviewed {
-                        "reviewed"
-                    } else {
-                        "observed"
-                    }
-                    .to_owned(),
+                    neighbor.subject.clone(),
                 ]),
             )
         );

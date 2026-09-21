@@ -144,7 +144,7 @@ facts. Unlike ordinary generated output, they and their state must survive a
 vendor update; commit them or place them in equivalent durable,
 access-controlled storage. Snapshot names are immutable.
 
-Linked-IR schema 68 records the primary artifacts, symbol inventories and
+Linked-IR schema 69 records the primary artifacts, symbol inventories and
 companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence. Function records retain artifact-bound occurrence and
@@ -156,7 +156,17 @@ state and capture a fresh baseline from the live typed vendor bindings.
 
 ## Generated outputs
 
-- symbol, MMIO, and interface observations;
+- symbol and interface observations; MMIO schema 6 preserves instruction-local
+  value provenance and unresolved/indexed address observations as well as
+  aggregate discovery statistics;
+- register inventory schema 1 joins declarations, observations and hypotheses
+  with source digests and evidence IDs. Physical subjects include chip,
+  address space, route, bank and address; load/store width is independent.
+  Queries retain unknown and conflicting properties, full input records,
+  conditional address domains and explicit coverage gaps;
+- replay evidence schema 4 includes ordered MMIO observations per concrete
+  phase. Their PC is explicitly unknown when the execution event does not
+  carry one. Replay coverage applies to the recorded scenario only;
 - interface capability context (`schema_version = 2`, command `interfaces
   capability-context`): a compact, deterministically sorted projection of
   unresolved interface observations and existing capability links for
@@ -171,7 +181,8 @@ state and capture a fresh baseline from the live typed vendor bindings.
 - canonical derived linked-IR bundles and indexes, including structural loop
   regions, explicitly non-proving counted-loop candidates, and raw-bit
   floating value-flow nodes whose operation and rounding mode remain explicit.
-  Schema 68 also records typed guarded-return frontiers and full call-result
+  Schema 69 records width-alternative bindings, full-word field hypotheses,
+  call-argument bit provenance, typed guarded-return frontiers and full call-result
   producer identities. `structurally_complete` means only that every terminal
   was enumerated within bounded traversal; it does not assert expression
   exactness, path feasibility, event delivery, or mutable-object lifetime;
@@ -190,7 +201,9 @@ state and capture a fresh baseline from the live typed vendor bindings.
   reviewed-record IDs. `@live` is a read-only operand for validating and
   comparing current analyzed bindings before publishing a new immutable
   snapshot;
-- research-next reports (`schema_version = 18`) contain one deterministic,
+- research-next reports (`schema_version = 19`) retain source diagnostics and
+  independent register-property questions even when discovery or review scopes
+  are unavailable. They contain one deterministic,
   SHA-256-identified full inventory of findings, actions and prerequisites.
   Actions refer to the single typed finding catalog by ID and prerequisites
   carry no rank; the bounded `selection.steps` list contains only ordered typed

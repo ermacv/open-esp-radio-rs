@@ -342,6 +342,9 @@ pub struct RegisterPredicateSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterFieldSummary {
+    pub names: Vec<String>,
+    pub kind: String,
+    pub evidence: Vec<String>,
     pub least_significant_bit: u8,
     pub most_significant_bit: u8,
     pub mask: u32,
@@ -357,12 +360,20 @@ pub struct RegisterFieldSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterAccessSiteSummary {
+    pub evidence: std::collections::BTreeSet<String>,
+    pub source_identity: String,
+    pub address: u32,
+    pub width: u8,
     pub function: String,
     pub pc: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterDetailSummary {
+    pub subjects: Vec<super::register_inventory::InventoryRegister>,
+    pub evidence: Vec<super::register_inventory::RegisterEvidence>,
+    pub sources: Vec<super::register_inventory::InventorySource>,
+    pub coverage_gaps: Vec<open_radio_vendor_contracts::register_inventory::CoverageGap>,
     pub address: u32,
     pub width: Option<u8>,
     pub range: Option<String>,
@@ -370,9 +381,10 @@ pub struct RegisterDetailSummary {
     pub name_source: RegisterNameSource,
     pub review_status: RegisterReviewState,
     pub publication_scopes: Vec<String>,
-    pub publication_debt: bool,
+    pub publication_debt: Option<bool>,
     pub review_classification: Option<String>,
     pub review_sources: Vec<String>,
+    pub access_count_mode: String,
     pub reads: usize,
     pub writes: usize,
     pub read_modify_writes: usize,

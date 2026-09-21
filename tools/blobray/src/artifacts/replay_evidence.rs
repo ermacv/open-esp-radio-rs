@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::REPLAY_EVIDENCE;
 use crate::{Result, artifact_sha256, execution, execution_model};
@@ -33,6 +33,20 @@ pub(crate) struct ReplayPhaseDocument {
     pub(crate) calls: Vec<ReplayCallDocument>,
     pub(crate) fifo_lifecycle: Vec<execution_model::FifoLifecycleEvent>,
     pub(crate) memory_observations: Vec<ReplayMemoryObservationDocument>,
+    pub(crate) register_observations: Vec<ReplayRegisterObservation>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReplayRegisterObservation {
+    pub(crate) sequence: usize,
+    pub(crate) access: String,
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) value: u32,
+    pub(crate) pc: Option<u32>,
+    pub(crate) region: String,
+    pub(crate) register: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -88,6 +102,42 @@ pub(crate) fn build_replay_evidence(
         phases: phases
             .into_iter()
             .map(|phase| ReplayPhaseDocument {
+                register_observations: phase
+                    .execution
+                    .result
+                    .events
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(sequence, event)| {
+                        let (access, width, address, value, region, register) = match event {
+                            execution::ExecutionEvent::Read {
+                                width,
+                                address,
+                                value,
+                                region,
+                                register,
+                            } => ("read", width, address, value, region, register),
+                            execution::ExecutionEvent::Write {
+                                width,
+                                address,
+                                value,
+                                region,
+                                register,
+                            } => ("write", width, address, value, region, register),
+                            _ => return None,
+                        };
+                        Some(ReplayRegisterObservation {
+                            sequence,
+                            access: access.to_owned(),
+                            width: *width,
+                            address: *address,
+                            value: *value,
+                            pc: None,
+                            region: region.clone(),
+                            register: register.clone(),
+                        })
+                    })
+                    .collect(),
                 name: phase.execution.name,
                 symbol: phase.execution.symbol,
                 completion: match phase.execution.result.completion {

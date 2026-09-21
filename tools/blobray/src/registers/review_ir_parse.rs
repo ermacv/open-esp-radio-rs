@@ -1,4 +1,4 @@
-//! Typed projection of schema-v68 linked-IR into register-review evidence.
+//! Typed projection of schema-v69 linked-IR into register-review evidence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -24,6 +24,9 @@ fn parse_registers(
     registers
         .into_iter()
         .map(|register| {
+            let raw_evidence = BTreeSet::from([serde_json::to_string(
+                &serde_json::json!({"source":path,"register":register}),
+            )?]);
             if !matches!(register.width, 8 | 16 | 32) {
                 return Err(crate::Error::invalid(format!(
                     "unsupported register width {} at {:#010x}",
@@ -113,6 +116,7 @@ fn parse_registers(
                 }
             }
             Ok(ReviewIrRegister {
+                raw_evidence,
                 address: register.address,
                 width: register.width,
                 names: register.names.into_iter().collect(),

@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v5 MMIO discovery facts.
+//! Typed consumer projection for schema-v6 MMIO discovery facts.
 
 #![allow(
     dead_code,
@@ -22,6 +22,7 @@ pub(crate) struct StoredMmioFacts {
     pub(crate) artifacts: Vec<StoredMmioArtifact>,
     pub(crate) registers: Vec<StoredRegisterFact>,
     diagnostics: Vec<StoredMmioDiagnostic>,
+    pub(crate) observations: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

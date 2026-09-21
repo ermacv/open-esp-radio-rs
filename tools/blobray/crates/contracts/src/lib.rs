@@ -12,6 +12,7 @@ use std::cmp::Ordering;
 mod fact;
 mod identity;
 mod model_provider;
+pub mod register_inventory;
 
 pub use model_provider::{ExecutionModelKind, ExecutionModelProviderSpec};
 

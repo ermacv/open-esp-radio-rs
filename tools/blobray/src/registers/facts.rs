@@ -284,8 +284,9 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
-  "schema_version": 5,
+  "schema_version": 6,
   "command": "mmio discover",
+                "observations": [],
   "analysis_mode": "best-effort",
   "access_count_mode": "maximum-per-path",
   "completeness_claim": false,

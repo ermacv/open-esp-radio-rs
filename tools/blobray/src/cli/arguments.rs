@@ -1068,3 +1068,35 @@ mod tests {
         assert!("enabled;max-steps=one".parse::<CaseArgs>().is_err());
     }
 }
+
+/// Read-only queries over every register evidence source.
+#[derive(Clone, Debug, Args)]
+pub(crate) struct RegisterQueryArgs {
+    #[arg(long)]
+    pub(crate) function: Option<String>,
+    #[arg(long)]
+    pub(crate) source: Option<String>,
+    #[arg(long)]
+    pub(crate) text: Option<String>,
+    #[arg(long)]
+    pub(crate) subject: Option<String>,
+    #[arg(long)]
+    pub(crate) start: Option<String>,
+    #[arg(long)]
+    pub(crate) end_exclusive: Option<String>,
+    #[arg(long)]
+    pub(crate) mask: Option<String>,
+    #[arg(long)]
+    pub(crate) conflicted: bool,
+    #[arg(long)]
+    pub(crate) unknown: bool,
+    #[arg(long, default_value_t = 0)]
+    pub(crate) offset: usize,
+    #[arg(long, default_value_t = 100)]
+    pub(crate) limit: usize,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct RegisterEvidenceArgs {
+    pub(crate) id: String,
+}

@@ -307,23 +307,6 @@ pub fn evaluate_for_input(value: &SymbolicValue, input_index: u8, input: u32) ->
     }
 }
 
-fn register_family(name: &str) -> String {
-    let mut output = String::with_capacity(name.len());
-    let mut in_digits = false;
-    for character in name.chars() {
-        if character.is_ascii_digit() {
-            if !in_digits {
-                output.push('%');
-                in_digits = true;
-            }
-        } else {
-            in_digits = false;
-            output.push(character);
-        }
-    }
-    output
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IndexedMmioRegister {
     pub address: u32,
@@ -344,7 +327,7 @@ pub struct IndexedMmioDomain {
 
 pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<IndexedMmioDomain> {
     const MAX_EXHAUSTIVE_INPUT_BITS: usize = 8;
-    const MAX_GUARDED_REGISTERS: u32 = 32;
+    const MAX_GUARDED_REGISTERS: u32 = 4096;
 
     let mut input_index = None;
     let mut input_bits = BTreeSet::new();
@@ -356,7 +339,7 @@ pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<Ind
     if input_bits.len() <= MAX_EXHAUSTIVE_INPUT_BITS {
         let input_bits = input_bits.into_iter().collect::<Vec<_>>();
         let mut registers = BTreeMap::<u32, String>::new();
-        let mut family = None;
+
         for combination in 0..(1_u32 << input_bits.len()) {
             let input =
                 input_bits
@@ -366,16 +349,14 @@ pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<Ind
                         value | (((combination >> source) & 1) << destination)
                     });
             let address = evaluate_for_input(address, input_index, input)?;
-            let register = svd.register(address)?;
-            let register_family = register_family(&register.name);
-            if family
-                .as_ref()
-                .is_some_and(|family| family != &register_family)
-            {
+            if !svd.contains_mmio(address) && svd.register(address).is_none() {
                 return None;
             }
-            family = Some(register_family);
-            registers.insert(register.address, register.name.clone());
+            let name = svd.register(address).map_or_else(
+                || format!("UNKNOWN@{address:#010x}"),
+                |register| register.name.clone(),
+            );
+            registers.insert(address, name);
         }
         if registers.len() >= 2 {
             return Some(IndexedMmioDomain {
@@ -393,29 +374,25 @@ pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<Ind
         return None;
     }
     let mut registers = Vec::new();
-    let mut family = None;
+
     for selector in 0..=MAX_GUARDED_REGISTERS {
         let candidate_address = evaluate_for_input(address, input_index, selector)?;
-        let Some(register) = svd.register(candidate_address) else {
-            break;
-        };
-        let register_family = register_family(&register.name);
-        if family
-            .as_ref()
-            .is_some_and(|family| family != &register_family)
-        {
+        if !svd.contains_mmio(candidate_address) && svd.register(candidate_address).is_none() {
             break;
         }
-        family = Some(register_family);
+        let name = svd.register(candidate_address).map_or_else(
+            || format!("UNKNOWN@{candidate_address:#010x}"),
+            |register| register.name.clone(),
+        );
         if registers
             .iter()
-            .any(|candidate: &IndexedMmioRegister| candidate.address == register.address)
+            .any(|candidate: &IndexedMmioRegister| candidate.address == candidate_address)
         {
             return None;
         }
         registers.push(IndexedMmioRegister {
-            address: register.address,
-            name: register.name.clone(),
+            address: candidate_address,
+            name,
         });
     }
     if !(2..=MAX_GUARDED_REGISTERS as usize).contains(&registers.len()) {
@@ -428,4 +405,109 @@ pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<Ind
         }),
         registers,
     })
+}
+
+/// Compressed intersection of an affine address expression with a declared
+/// MMIO region. Selector bounds are conditional on region membership; they
+/// are not a claim that every execution satisfies that condition.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct ConditionalMmioDomain {
+    pub region: String,
+    pub input: u8,
+    pub first_selector: u32,
+    pub last_selector: u32,
+    pub first_address: u32,
+    pub last_address: u32,
+    pub stride: u32,
+    pub conditional_on_region: bool,
+}
+
+pub fn conditional_mmio_domains(
+    address: &SymbolicValue,
+    map: &MmioMap,
+) -> Vec<ConditionalMmioDomain> {
+    let Some(affine) = affine_input(address) else {
+        return Vec::new();
+    };
+    let Some(input) = affine.index else {
+        return Vec::new();
+    };
+    if affine.scale == 0 {
+        return Vec::new();
+    }
+    // This projection covers the non-wrapping segment. The original
+    // expression remains evidence for modular wrap and other regions.
+    map.regions
+        .iter()
+        .filter_map(|region| {
+            let lower = u64::from(region.start).saturating_sub(u64::from(affine.offset));
+            let upper = u64::from(region.end)
+                .checked_sub(1)?
+                .checked_sub(u64::from(affine.offset))?;
+            let scale = u64::from(affine.scale);
+            let first = lower.div_ceil(scale);
+            let last = upper / scale;
+            if first > last {
+                return None;
+            }
+            Some(ConditionalMmioDomain {
+                region: region.name.clone(),
+                input,
+                first_selector: first as u32,
+                last_selector: last as u32,
+                first_address: (u64::from(affine.offset) + first * scale) as u32,
+                last_address: (u64::from(affine.offset) + last * scale) as u32,
+                stride: affine.scale,
+                conditional_on_region: true,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod inventory_tests {
+    use super::*;
+    use crate::MmioRegion;
+    #[test]
+    fn unknown_indexed_banks_do_not_require_names_and_large_domains_stay_compressed() {
+        let map = MmioMap {
+            registers: Vec::new(),
+            regions: vec![MmioRegion {
+                name: "bank".into(),
+                start: 0x1000,
+                end: 0x101000,
+                readable: true,
+                writable: true,
+            }],
+        };
+        let expression = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            SymbolicValue::Constant(0x1000),
+            SymbolicValue::expression(
+                ExpressionOperation::Multiply,
+                SymbolicValue::input(0),
+                SymbolicValue::Constant(4),
+            ),
+        );
+        let spans = conditional_mmio_domains(&expression, &map);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].last_selector, 262143);
+        assert_eq!(spans[0].stride, 4);
+        let bounded = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            SymbolicValue::Constant(0x1000),
+            SymbolicValue::expression(
+                ExpressionOperation::Multiply,
+                SymbolicValue::expression(
+                    ExpressionOperation::BitAnd,
+                    SymbolicValue::input(0),
+                    SymbolicValue::Constant(63),
+                ),
+                SymbolicValue::Constant(4),
+            ),
+        );
+        let domain = indexed_mmio_domain(&bounded, &map).unwrap();
+        assert_eq!(domain.registers.len(), 64);
+        assert!(domain.guard.is_none());
+    }
 }

@@ -489,6 +489,7 @@ locator = "review"
             non_operational_functions: vec!["archive:register_dump".to_owned()],
             review_output: Some(directory.join("generated/register-review.md")),
             review_ir_reports: vec![directory.join("generated/vendor.ir")],
+            observations: Vec::new(),
             svd_output: Some(directory.join("generated/device.svd")),
             pac_raw: Some(PacRawOutputSpec {
                 output: directory.join("generated/pac-raw/src/lib.rs"),

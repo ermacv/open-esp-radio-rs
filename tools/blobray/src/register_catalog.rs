@@ -17,10 +17,25 @@ pub(crate) fn load_with_inputs(
     let mut catalog = MmioMap::load_all(&[])?;
     for path in paths {
         let bytes = std::fs::read(path)?;
-        catalog.merge(MmioMap::parse(
-            std::str::from_utf8(&bytes)
-                .map_err(|error| crate::Error::invalid(error.to_string()))?,
-        )?)?;
+        let xml = std::str::from_utf8(&bytes)
+            .map_err(|error| crate::Error::invalid(error.to_string()))?;
+        let registers = open_esp_radio_register_model::svd_geometry(xml)?
+            .into_iter()
+            .map(|geometry| {
+                Ok(Register {
+                    address: u32::try_from(geometry.address).map_err(|_| {
+                        crate::Error::invalid(
+                            "SVD address exceeds the current 32-bit analysis backend",
+                        )
+                    })?,
+                    name: geometry.name,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        catalog.merge(MmioMap {
+            registers,
+            regions: Vec::new(),
+        })?;
         inputs.insert(
             path.canonicalize()?,
             format!("{:x}", Sha256::digest(&bytes)),

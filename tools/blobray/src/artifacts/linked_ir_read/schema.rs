@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v68.
+//! Complete owned DTO for linked-IR schema v69.
 
 #![allow(
     dead_code,
@@ -902,6 +902,7 @@ pub(crate) struct StoredCall {
     pub(crate) arguments: Vec<String>,
     argument_exact: Vec<bool>,
     argument_result_provenance: Vec<StoredCallArgumentResultProvenance>,
+    argument_bit_sources: Vec<open_radio_vendor_contracts::register_inventory::ArgumentBitSource>,
     argument_bindings: Vec<StoredArgumentBinding>,
     typed_arguments: Vec<StoredCallArgument>,
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
@@ -1407,6 +1408,7 @@ mod call_provenance_tests {
             arguments: Vec::new(),
             argument_exact: Vec::new(),
             argument_result_provenance: Vec::new(),
+            argument_bit_sources: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -1433,6 +1435,7 @@ mod call_provenance_tests {
             argument_shapes: 146,
             arguments: vec!["varies-across-146-shapes".to_owned()],
             argument_exact: vec![false],
+            argument_bit_sources: Vec::new(),
             argument_result_provenance: vec![StoredCallArgumentResultProvenance {
                 position: 0,
                 producer,

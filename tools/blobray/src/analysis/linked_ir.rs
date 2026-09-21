@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v25\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v26\0";
 
 mod model;
 
@@ -195,6 +195,7 @@ fn add_lossless_relocation_calls(
                 arguments: Vec::new(),
                 argument_exact: Vec::new(),
                 argument_result_provenance: Vec::new(),
+                argument_bit_sources: Vec::new(),
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
                 guard_paths: None,
@@ -223,6 +224,7 @@ fn add_lossless_relocation_calls(
             arguments: Vec::new(),
             argument_exact: Vec::new(),
             argument_result_provenance: Vec::new(),
+            argument_bit_sources: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -305,6 +307,7 @@ fn add_projected_origin_calls(
                 arguments: Vec::new(),
                 argument_exact: Vec::new(),
                 argument_result_provenance: Vec::new(),
+            argument_bit_sources: Vec::new(),
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
                 guard_paths: None,
@@ -379,6 +382,7 @@ fn indexed_dispatch_calls(
                     arguments: vec![format!("selector={}", entry.selector)],
                     argument_exact: vec![true],
                     argument_result_provenance: Vec::new(),
+            argument_bit_sources: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
                     guard_paths: None,

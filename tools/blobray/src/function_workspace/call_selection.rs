@@ -249,7 +249,7 @@ mod tests {
                 "direct": direct, "tail": false, "result_modeled": false,
                 "semantic_operation": "event.publish", "project_candidates": [],
                 "argument_shapes": 1, "arguments": [], "argument_exact": [],
-                "argument_result_provenance": [], "argument_bindings": [], "typed_arguments": []
+                "argument_result_provenance": [], "argument_bit_sources": [], "argument_bindings": [], "typed_arguments": []
             }))
             .unwrap()
         };

@@ -458,6 +458,26 @@ impl LinkedIrReader {
             .collect()
     }
 
+    /// Exact producer labels only; all ambiguous matches remain available.
+    pub(crate) fn discovery_function_labels(&self) -> BTreeMap<String, BTreeSet<String>> {
+        let mut labels = BTreeMap::<String, BTreeSet<String>>::new();
+        for record in &self.index {
+            let label = record.member.as_deref().map_or_else(
+                || format!("{}:{}", record.source, record.symbol),
+                |member| format!("{}:{}:{}", record.source, member, record.symbol),
+            );
+            labels
+                .entry(label)
+                .or_default()
+                .insert(record.identity.clone());
+            labels
+                .entry(record.identity.clone())
+                .or_default()
+                .insert(record.identity.clone());
+        }
+        labels
+    }
+
     pub(crate) fn outgoing_edges(&self, identity: &str) -> Result<Vec<StoredGraphEdge>> {
         let graph = self.graph()?;
         Ok(graph
@@ -467,6 +487,27 @@ impl LinkedIrReader {
             .flatten()
             .map(|index| graph.edges[*index].clone())
             .collect())
+    }
+
+    pub(crate) fn incoming_edges(&self, identity: &str) -> Result<Vec<StoredGraphEdge>> {
+        let graph = self.graph()?;
+        Ok(graph
+            .incoming
+            .get(identity)
+            .into_iter()
+            .flatten()
+            .map(|index| graph.edges[*index].clone())
+            .collect())
+    }
+
+    pub(crate) fn visit_data_objects(
+        &self,
+        mut visit: impl FnMut(StoredDataObject) -> Result<()>,
+    ) -> Result<()> {
+        for record in &self.data_object_index {
+            visit(self.read_data_object(record)?)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn mmio_function_identities(

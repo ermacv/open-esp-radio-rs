@@ -458,6 +458,12 @@ leaf_commands!(InterfaceCommand {
 });
 
 leaf_commands!(RegisterCommand {
+    /// List all physical subjects, including unnamed and opaque observations.
+    List(RegisterQueryArgs) => Command::RegisterList, RegisterQuery,
+    /// Inspect declared regions, address holes and analysis coverage gaps.
+    Coverage(RegisterQueryArgs) => Command::RegisterCoverage, RegisterQuery,
+    /// Show one complete register evidence record and its source identities.
+    Evidence(RegisterEvidenceArgs) => Command::RegisterEvidence, RegisterEvidence,
     /// Create an empty reviewed register model for a memory region.
     InitModel(RegisterModelArgs) => Command::RegisterInitModel, RegisterModel,
     /// Import an existing SVD into the reviewed register model.
@@ -617,6 +623,9 @@ pub(crate) enum Command {
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
     InterfaceValidate(ValidationArgs),
+    RegisterList(RegisterQueryArgs),
+    RegisterCoverage(RegisterQueryArgs),
+    RegisterEvidence(RegisterEvidenceArgs),
     RegisterInitModel(RegisterModelArgs),
     RegisterImportSvd(RegisterImportArgs),
     RegisterValidate(ValidationArgs),

@@ -73,6 +73,77 @@ least one source, a complete provenance/accuracy/completeness classification,
 and non-`hint` provenance. Incomplete entries and hints remain navigation
 metadata; they never make generated geometry publishable.
 
+## Register inventory queries
+
+The source-preserving inventory includes base model and SVD declarations,
+selected reviewed geometry, raw reviewed claims, discovery, linked IR and
+configured traces/hints. `names`, geometry and semantics have independent
+unknown/known/conflicted states. An opaque access span records an observed
+extent without asserting internal field boundaries. Register identity does
+not depend on its name or on an access width.
+
+```console
+cargo blobray registers list --unknown --limit 100 --project path/to/vendor-project.toml
+cargo blobray registers list --function dump --project path/to/vendor-project.toml
+cargo blobray registers list --text 'status=' --project path/to/vendor-project.toml
+cargo blobray registers coverage --project path/to/vendor-project.toml
+cargo blobray registers evidence evidence:SHA256 --project path/to/vendor-project.toml
+```
+
+List and coverage accept `--subject`, `--source`, `--function`, `--text`,
+`--start`, `--end-exclusive`, `--mask`, `--unknown`, `--conflicted`, `--offset`
+and `--limit`. JSON reports include total and next offset. Address-domain
+IDs open through the evidence command. Missing or failed sources remain in
+`coverage_gaps`; absence of generated discovery does not hide model fields.
+The TUI uses the same inventory for its register list and detail views.
+Research keeps name, geometry, semantics, field semantics, coverage and
+conflict questions separate from publication identity debt.
+
+The inventory retains complete declarations (including descriptions, enums,
+reset/access properties and side effects) and source documents. Bit masks
+are projections of software use, not proof of hardware field boundaries.
+Contiguous slices of each mask coexist with overlapping alternatives and
+full-word opaque spans. Register coverage separates transported, consumed,
+modified, preserved, described, undescribed and unobserved bits. A whole-word
+read does not establish semantic coverage. Numeric masks project the low
+32 bits; half-open `unobserved_intervals` and `undescribed_intervals` and
+unknown field spans cover the entire declared physical width.
+Declared address blocks and memory-map regions have separate geometry and
+observation gaps. Conditional indexed domains do not claim that a caller
+satisfies their bounds. Bounded contextual discovery specializes exact linked
+callee addresses with caller arguments, including local accessor bodies.
+Every contextual access retains its caller path and arguments. Ambiguous or
+unavailable targets, depth and context limits produce `call-context-frontier`
+evidence with a retry scope; observations are never completeness claims. Alias regions remain visible; uncovered addresses
+and bits mean unobserved in the current scope, never reserved hardware.
+
+`[registers].observations = ["capture.json", "hints.json"]` accepts replay
+schema 4 and external observation schema 1. External documents contain
+`schema_version`, an `artifact` identity, `applicability`, `observations`, and
+`gaps`. Each observation requires a producer-stable `id`, a `subject`
+(`chip`, `address_space`, `route`, nullable `bank`, `address`), `kind` and
+complete producer `payload`. Kinds are `trace-read`, `trace-write`, `hint`
+and `declaration`; optional properties are `physical_width`, `access_width`,
+`name`, `semantics`, `function`, and `mask`. Trace records require access
+width; sequence, timestamp, device/revision, PC and scenario belong in the
+preserved payload. Missing function/PC remain unknown. A hint is not hardware
+proof, and these records do not authorize publication.
+
+Queries cache immutable evidence and derived views in the existing project
+SQLite/CAS store. Cache keys hash every source, model fragment and linked
+bundle member, including missing-input state. Source documents and reviewed
+packs remain authoritative. Stale replay inputs retain their observations
+and expose their freshness failure; they cannot certify current execution.
+MMIO schema 6, linked IR schema 69, replay schema 4 and inspect schema 8 are
+breaking formats: regenerate older generated outputs. Reviewed schema-2
+packs and model schema-3 inputs retain their original evidence and applicability;
+query import does not rewrite them or guess meaning from placeholder names.
+
+SVD export report schema 2 lists the projection omissions: explicit knowledge
+states, observation coverage, candidate fields and machine provenance remain
+in the rich inventory and reviewed inputs. Publishing approved geometry does
+not turn unknown hardware behavior into an assertion of ordinary writes.
+
 ## Normal workflow
 
 ```console
@@ -84,7 +155,7 @@ cargo blobray project publish --project path/to/vendor-project.toml
 ```
 
 `research next` ranks blockers by transitive benefit and co-blocking structure.
-`inspect register` schema 7 prints the stable sparse-fact subject, configured
+`inspect register` schema 8 prints the stable sparse-fact subject, configured
 review pack and supported assertion kinds. It also lists every selected
 reviewed assertion for the exact physical subject, including its pack, ID,
 kind, value and evidence; that list has `completion_claim = false`. For an owned, unreviewed discovery

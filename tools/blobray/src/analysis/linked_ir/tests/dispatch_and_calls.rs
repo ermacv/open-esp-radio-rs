@@ -378,6 +378,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         arguments: vec!["const:0x0000000a".to_owned()],
         argument_exact: vec![true],
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -440,6 +441,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -1281,6 +1283,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         arguments: vec!["arg0".to_owned(), second_argument.to_owned()],
         argument_exact: vec![true, true],
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: vec![
             LinkedArgumentBinding {
                 position: 0,
@@ -1367,6 +1370,7 @@ fn call_compaction_never_merges_conflicting_instruction_provenance() {
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
         argument_result_provenance: Vec::new(),
+        argument_bit_sources: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,

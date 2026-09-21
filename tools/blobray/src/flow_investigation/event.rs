@@ -2565,7 +2565,7 @@ mod tests {
         std::fs::write(&manifest, "schema = 2\n# changed\n").unwrap();
         std::fs::write(&artifact, b"linked-image").unwrap();
         let document = serde_json::json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "command": "execute replay",
             "manifest": {
                 "path": std::fs::canonicalize(&manifest).unwrap(),
@@ -2592,7 +2592,7 @@ mod tests {
                         "depth_after": 1,
                         "woke_receiver": true,
                     }],
-                    "memory_observations": [{
+                    "register_observations": [], "memory_observations": [{
                         "id": "pending-count",
                         "symbol": "pending_count",
                         "address": 12288,
@@ -2623,7 +2623,7 @@ mod tests {
                         "depth_before": 1,
                         "depth_after": 0,
                     }],
-                    "memory_observations": [{
+                    "register_observations": [], "memory_observations": [{
                         "id": "pending-count",
                         "symbol": "pending_count",
                         "address": 12288,

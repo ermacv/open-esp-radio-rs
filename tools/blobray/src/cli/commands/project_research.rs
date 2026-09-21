@@ -90,6 +90,9 @@ fn render(report: &research::ResearchNextReport) {
             |budget| format!("{}/{} cost units", report.selection.consumed_budget, budget)
         )
     );
+    for diagnostic in &report.source_diagnostics {
+        outputln!("\n{}: {diagnostic}", output::warning("INCOMPLETE SOURCES"));
+    }
     if let Some(diagnostic) = &report.verification_diagnostic {
         outputln!(
             "\n{}: verification impact was omitted: {}",

@@ -400,6 +400,25 @@ pub(super) fn link_guard_result_mmio_sources(functions: &mut [LinkedIrFunction])
     for source in functions
         .iter_mut()
         .flat_map(|function| &mut function.calls)
+        .flat_map(|call| &mut call.argument_bit_sources)
+    {
+        if source.address.is_some() {
+            continue;
+        }
+        let Some(target) = source.producer.as_deref() else {
+            continue;
+        };
+        if let Some(projected) = project_return_bit_to_mmio(target, source.source_bit, &producers) {
+            source.address = Some(projected.address);
+            source.register_bit = Some(projected.register_bit);
+            source.inverted ^= projected.inverted;
+            source.producer_path = projected.producer_path;
+            source.kind = "producer-return-mmio".to_owned();
+        }
+    }
+    for source in functions
+        .iter_mut()
+        .flat_map(|function| &mut function.calls)
         .filter_map(|call| call.guard_paths.as_mut())
         .flatten()
         .flat_map(|path| &mut path.guards)

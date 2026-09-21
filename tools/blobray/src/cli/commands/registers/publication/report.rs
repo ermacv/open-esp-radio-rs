@@ -14,6 +14,7 @@ struct SvdPublicationDocument<'a> {
     peripherals: usize,
     registers: usize,
     fields: usize,
+    projection_omissions: &'a [String],
     path: &'a Path,
 }
 
@@ -68,8 +69,9 @@ pub(super) fn emit_pac_api(status: &'static str, path: &Path) {
 
 pub(super) fn emit_svd(status: &'static str, summary: &SvdExportSummary, path: &Path) {
     let report = SvdPublicationDocument {
-        schema: 1,
+        schema: 2,
         command: "registers export-svd",
+        projection_omissions: &summary.projection_omissions,
         status,
         peripherals: summary.peripherals,
         registers: summary.registers,
@@ -84,6 +86,9 @@ pub(super) fn emit_svd(status: &'static str, summary: &SvdExportSummary, path: &
             report.registers,
             report.fields
         );
+        for omission in report.projection_omissions {
+            outputln!("  Outside SVD: {omission}");
+        }
     });
 }
 

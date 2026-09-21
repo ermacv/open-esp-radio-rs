@@ -290,6 +290,7 @@ description = "manually reviewed register identity"
             non_operational_functions: Vec::new(),
             review_output: None,
             review_ir_reports: Vec::new(),
+            observations: Vec::new(),
             svd_output: None,
             pac_raw: None,
             bindings: None,

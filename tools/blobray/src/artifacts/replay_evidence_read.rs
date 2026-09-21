@@ -1,4 +1,4 @@
-//! Strict consumer for schema-v3 concrete replay evidence.
+//! Strict consumer for schema-v4 concrete replay evidence.
 
 #![allow(
     dead_code,
@@ -40,6 +40,7 @@ pub(crate) struct StoredReplayPhase {
     pub(crate) calls: Vec<StoredReplayCall>,
     pub(crate) fifo_lifecycle: Vec<StoredFifoLifecycleEvent>,
     pub(crate) memory_observations: Vec<StoredReplayMemoryObservation>,
+    pub(crate) register_observations: Vec<super::replay_evidence::ReplayRegisterObservation>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -145,12 +146,30 @@ impl StoredReplayEvidence {
 }
 
 pub(crate) fn parse_replay_evidence(input: &str) -> Result<StoredReplayEvidence> {
+    let document = parse_replay_observations(input)?;
+    document.validate_freshness()?;
+    Ok(document)
+}
+
+/// Historical observations remain readable even after their input files change.
+/// Consumers making execution claims must additionally validate freshness.
+pub(crate) fn parse_replay_observations(input: &str) -> Result<StoredReplayEvidence> {
     super::expect_identity(input, super::REPLAY_EVIDENCE)?;
     let document: StoredReplayEvidence = serde_json::from_str(input)?;
+    for observation in document
+        .phases
+        .iter()
+        .flat_map(|phase| &phase.register_observations)
+    {
+        if !matches!(observation.width, 8 | 16 | 32)
+            || !matches!(observation.access.as_str(), "read" | "write")
+        {
+            return Err(crate::Error::invalid("invalid replay register observation"));
+        }
+    }
     if document.phases.is_empty() {
         return Err(crate::Error::invalid("replay evidence has no phases"));
     }
-    document.validate_freshness()?;
     Ok(document)
 }
 

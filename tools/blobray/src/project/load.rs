@@ -231,6 +231,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 table,
                 &[
                     "facts",
+                    "observations",
                     "model",
                     "owned-ranges",
                     "ownership-policy",
@@ -353,6 +354,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 non_operational_functions,
                 review_output,
                 review_ir_reports,
+                observations: if table.contains_key("observations") { table_path_array(table, "observations", "project registers", base, source, true)? } else { Vec::new() },
                 svd_output,
                 pac_raw,
                 bindings,
@@ -738,6 +740,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         }
     }
     let project = ProjectSpec {
+        manifest: path.to_owned(),
         loaded_model_inputs: Default::default(),
         id,
         target_spec,

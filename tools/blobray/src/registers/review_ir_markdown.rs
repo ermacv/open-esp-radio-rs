@@ -5,6 +5,9 @@ use std::fmt::Write as _;
 use super::review_ir::ReviewIrRegister;
 
 pub(super) fn write_ir_evidence(output: &mut String, register: &ReviewIrRegister) {
+    for evidence in &register.raw_evidence {
+        writeln!(output, "\n<details><summary>Complete linked register evidence</summary>\n\n```json\n{evidence}\n```\n</details>\n").expect("writing to String cannot fail");
+    }
     writeln!(
         output,
         "Linked-IR names: {}. Users: {}.",
@@ -131,6 +134,7 @@ mod tests {
             ..ReviewFieldEvidence::default()
         };
         let register = ReviewIrRegister {
+            raw_evidence: Default::default(),
             address: 0x1010,
             width: 32,
             functions: ["rom:dispatch".to_owned()].into(),

@@ -107,19 +107,12 @@ fn collect_semantic_field_links(
     }
 }
 
-fn unique_mmio_widths(
+fn mmio_widths(
     index: &BTreeMap<(u32, u8), MmioRegisterAccumulator>,
-) -> BTreeMap<u32, Option<u8>> {
-    let mut widths = BTreeMap::new();
+) -> BTreeMap<u32, BTreeSet<u8>> {
+    let mut widths = BTreeMap::<u32, BTreeSet<u8>>::new();
     for &(address, width) in index.keys() {
-        widths
-            .entry(address)
-            .and_modify(|known| {
-                if *known != Some(width) {
-                    *known = None;
-                }
-            })
-            .or_insert(Some(width));
+        widths.entry(address).or_default().insert(width);
     }
     widths
 }
@@ -204,44 +197,66 @@ pub(super) fn build_mmio_registers(functions: &[LinkedIrFunction]) -> Vec<Linked
             entry.functions.insert(function.identity.clone());
         }
     }
-    let unique_widths = unique_mmio_widths(&mmio_index);
+    // A register value passed as an argument is a use even without a guard.
+    // Preserve each width alternative; the argument does not prove load width.
+    for function in functions {
+        for call in &function.calls {
+            for source in &call.argument_bit_sources {
+                let (Some(address), Some(bit)) = (source.address, source.register_bit) else {
+                    continue;
+                };
+                for ((candidate, width), entry) in &mut mmio_index {
+                    if *candidate != address || bit >= *width {
+                        continue;
+                    }
+                    entry.functions.insert(function.identity.clone());
+                    let field = entry
+                        .field_candidates
+                        .entry((bit, bit, 1_u32 << bit))
+                        .or_default();
+                    field.functions.insert(function.identity.clone());
+                    field.functions.extend(source.producer_path.iter().cloned());
+                }
+            }
+        }
+    }
+    let widths = mmio_widths(&mmio_index);
     for function in functions {
         for predicate in &function.direct_mmio_predicates {
             for source in &predicate.sources {
-                let Some(width) = unique_widths.get(&source.address).copied().flatten() else {
-                    continue;
-                };
-                let entry = mmio_index
-                    .get_mut(&(source.address, width))
-                    .expect("unique MMIO width comes from the register index");
-                let predicate_mask = source.register_bits & width_mask(width);
-                entry.predicate_shapes += 1;
-                entry.predicate_masks.insert(predicate_mask);
-                entry.whole_register_predicate_shapes +=
-                    usize::from(predicate_mask == width_mask(width));
-                entry.functions.insert(function.identity.clone());
-                record_predicate_field_mask(
-                    entry,
-                    predicate_mask,
-                    width,
-                    &function.identity,
-                    &[LinkedMmioFieldPredicateEvidence {
-                        kind: "direct-mmio",
-                        function: function.identity.clone(),
-                        producer: None,
-                        producer_path: vec![function.identity.clone()],
-                        site: Some(predicate.site),
-                        path: None,
-                        condition: predicate.condition.clone(),
-                        operation: predicate.operation,
-                        taken: None,
-                        effective_operation: None,
-                        operand: Some(source.operand),
-                        comparison_value: source.comparison_value,
-                        register_comparison_value: source.register_comparison_value,
-                        inverted: source.inverted,
-                    }],
-                );
+                for &width in widths.get(&source.address).into_iter().flatten() {
+                    let entry = mmio_index
+                        .get_mut(&(source.address, width))
+                        .expect("MMIO width comes from the register index");
+                    let predicate_mask = source.register_bits & width_mask(width);
+                    entry.predicate_shapes += 1;
+                    entry.predicate_masks.insert(predicate_mask);
+                    entry.whole_register_predicate_shapes +=
+                        usize::from(predicate_mask == width_mask(width));
+                    entry.functions.insert(function.identity.clone());
+                    record_predicate_field_mask(
+                        entry,
+                        predicate_mask,
+                        width,
+                        &function.identity,
+                        &[LinkedMmioFieldPredicateEvidence {
+                            kind: "direct-mmio",
+                            function: function.identity.clone(),
+                            producer: None,
+                            producer_path: vec![function.identity.clone()],
+                            site: Some(predicate.site),
+                            path: None,
+                            condition: predicate.condition.clone(),
+                            operation: predicate.operation,
+                            taken: None,
+                            effective_operation: None,
+                            operand: Some(source.operand),
+                            comparison_value: source.comparison_value,
+                            register_comparison_value: source.register_comparison_value,
+                            inverted: source.inverted,
+                        }],
+                    );
+                }
             }
         }
     }
@@ -313,25 +328,25 @@ pub(super) fn build_mmio_registers(functions: &[LinkedIrFunction]) -> Vec<Linked
         evidence,
     ) in predicate_evidence
     {
-        let Some(width) = unique_widths.get(&address).copied().flatten() else {
-            continue;
-        };
-        let entry = mmio_index
-            .get_mut(&(address, width))
-            .expect("unique MMIO width comes from the register index");
-        let predicate_mask = register_bits & width_mask(width);
-        entry.predicate_shapes += 1;
-        entry.predicate_masks.insert(predicate_mask);
-        entry.whole_register_predicate_shapes += usize::from(predicate_mask == width_mask(width));
-        entry.functions.insert(predicate_function.clone());
-        entry.functions.extend(producer_path);
-        record_predicate_field_mask(
-            entry,
-            predicate_mask,
-            width,
-            &predicate_function,
-            &evidence.into_iter().collect::<Vec<_>>(),
-        );
+        for &width in widths.get(&address).into_iter().flatten() {
+            let entry = mmio_index
+                .get_mut(&(address, width))
+                .expect("MMIO width comes from the register index");
+            let predicate_mask = register_bits & width_mask(width);
+            entry.predicate_shapes += 1;
+            entry.predicate_masks.insert(predicate_mask);
+            entry.whole_register_predicate_shapes +=
+                usize::from(predicate_mask == width_mask(width));
+            entry.functions.insert(predicate_function.clone());
+            entry.functions.extend(producer_path.iter().cloned());
+            record_predicate_field_mask(
+                entry,
+                predicate_mask,
+                width,
+                &predicate_function,
+                &evidence.iter().cloned().collect::<Vec<_>>(),
+            );
+        }
     }
     let mut semantic_evidence = BTreeSet::<SemanticFieldLink>::new();
     for function in functions {
@@ -395,47 +410,47 @@ pub(super) fn build_mmio_registers(functions: &[LinkedIrFunction]) -> Vec<Linked
         }
     }
     for link in semantic_evidence {
-        let Some(width) = unique_widths.get(&link.address).copied().flatten() else {
-            continue;
-        };
-        let entry = mmio_index
-            .get_mut(&(link.address, width))
-            .expect("unique MMIO width comes from the register index");
-        record_semantic_field_link(
-            entry,
-            SemanticFieldEvidence {
-                kind: link.kind,
-                mask: link.register_bits,
-                width,
-                operation: &link.operation,
-                root: &link.root,
-                action_target: &link.action_target,
-                action_origin: &link.action_origin,
-                action_site: link.action_site,
-                action_site_path: &link.action_site_path,
-                action_path: &link.action_path,
-                predicate_function: &link.predicate_function,
-                producer: link.producer.as_deref(),
-                producer_path: &link.producer_path,
-                scope_index: link.scope_index,
-                scope_alternatives: link.scope_alternatives,
-                path_index: link.path_index,
-                path_expression: &link.path_expression,
-                path_guards: link.path_guards,
-                guard_index: link.guard_index,
-                residual_path_expression: &link.residual_path_expression,
-                site: link.site,
-                condition: &link.condition,
-                taken: link.taken,
-                guard_operation: link.guard_operation,
-            },
-        );
+        for &width in widths.get(&link.address).into_iter().flatten() {
+            let entry = mmio_index
+                .get_mut(&(link.address, width))
+                .expect("MMIO width comes from the register index");
+            record_semantic_field_link(
+                entry,
+                SemanticFieldEvidence {
+                    kind: link.kind,
+                    mask: link.register_bits,
+                    width,
+                    operation: &link.operation,
+                    root: &link.root,
+                    action_target: &link.action_target,
+                    action_origin: &link.action_origin,
+                    action_site: link.action_site,
+                    action_site_path: &link.action_site_path,
+                    action_path: &link.action_path,
+                    predicate_function: &link.predicate_function,
+                    producer: link.producer.as_deref(),
+                    producer_path: &link.producer_path,
+                    scope_index: link.scope_index,
+                    scope_alternatives: link.scope_alternatives,
+                    path_index: link.path_index,
+                    path_expression: &link.path_expression,
+                    path_guards: link.path_guards,
+                    guard_index: link.guard_index,
+                    residual_path_expression: &link.residual_path_expression,
+                    site: link.site,
+                    condition: &link.condition,
+                    taken: link.taken,
+                    guard_operation: link.guard_operation,
+                },
+            );
+        }
     }
     mmio_index
         .into_iter()
         .map(|((address, width), entry)| LinkedMmioRegister {
             address,
             width,
+            access_width_candidates: widths[&address].iter().copied().collect(),
             names: entry.names.into_iter().collect(),
             read_shapes: entry.read_shapes,
             write_shapes: entry.write_shapes,

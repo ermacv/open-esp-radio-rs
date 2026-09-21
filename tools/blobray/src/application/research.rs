@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 18;
+pub(crate) const RESEARCH_SCHEMA: u32 = 19;
 const MAX_RESEARCH_EVENT_ROUTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -184,6 +184,12 @@ pub(crate) struct ResearchScoreExplanation {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum ResearchSubject {
+    RegisterProperty {
+        subject: String,
+        field: Option<String>,
+        dimension: String,
+        evidence: BTreeSet<String>,
+    },
     AnalysisRoot {
         root_id: String,
     },
@@ -531,6 +537,7 @@ pub(crate) struct ResearchNextReport {
     pub(crate) completion_claim: bool,
     pub(crate) capability_diagnostic: Option<String>,
     pub(crate) verification_diagnostic: Option<String>,
+    pub(crate) source_diagnostics: Vec<String>,
     pub(crate) reviewed_functions: Vec<ResearchReviewedFunction>,
     pub(crate) inventory: ResearchInventory,
     pub(crate) selection: ResearchSelection,
@@ -614,25 +621,57 @@ pub(crate) fn next(
             "research next budget must be non-zero",
         ));
     }
-    let document = crate::review_scopes::load_for_project(&session.project)?;
+    let mut source_diagnostics = Vec::new();
+    let document = match crate::review_scopes::load_for_project(&session.project) {
+        Ok(document) => Some(document),
+        Err(error) if options.scope.is_none() && options.protocol.is_none() => {
+            source_diagnostics.push(format!(
+                "Review scopes unavailable; scope-based ranking is incomplete: {error}"
+            ));
+            None
+        }
+        Err(error) => return Err(error),
+    };
     let selected_protocol = options
         .protocol
         .map(normalize_protocol_filter)
         .transpose()?;
-    let scopes = select_scopes(&document, options.scope, selected_protocol)?;
+    let scopes = document
+        .as_ref()
+        .map(|document| select_scopes(document, options.scope, selected_protocol))
+        .transpose()?
+        .unwrap_or_default();
     let mut analyzed_scopes = scopes
         .iter()
         .map(|scope| scope.id.clone())
         .collect::<Vec<_>>();
     analyzed_scopes.sort();
     analyzed_scopes.dedup();
-    let configured_scopes = document.scopes.iter().collect::<Vec<_>>();
+    let configured_scopes = document
+        .as_ref()
+        .into_iter()
+        .flat_map(|document| &document.scopes)
+        .collect::<Vec<_>>();
     let graph_scopes = if options.finding.is_some() {
         configured_scopes.clone()
     } else {
         scopes.clone()
     };
-    let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &graph_scopes)?;
+    let (direct_diagnostic_owners, graphs) = match load_research_graphs(session, &graph_scopes) {
+        Ok(graphs) => graphs,
+        Err(error) => {
+            source_diagnostics.push(format!(
+                "Linked reachability unavailable; no unlock claims can be made: {error}"
+            ));
+            (
+                Default::default(),
+                graph_scopes
+                    .iter()
+                    .map(|scope| (scope.id.clone(), ScopeGraph::default()))
+                    .collect(),
+            )
+        }
+    };
     let (interface_context, capability_diagnostic) = interface_research_context(session);
     let reviewed_memory_accesses =
         crate::providers::reviewed_memory_accesses(session.project.analysis_provider.as_deref())?;
@@ -652,42 +691,50 @@ pub(crate) fn next(
     if options.scope.is_none() {
         add_required_analysis_surface_findings(session, selected_protocol, &mut candidates)?;
     }
-    let exact_resolution = if let Some(paths) = session.project.registers.as_ref() {
-        // These adjacent producers share the heavyweight MMIO facts, but the
-        // workspace must be dropped before interface ranking and rendering.
-        let workspace = ProjectRegisterWorkspace::load(paths)?;
-        let knowledge = selected_review_knowledge(session)?;
-        add_registers(
-            session,
-            paths,
-            &workspace,
-            &scopes,
-            &graphs,
-            &mut candidates,
-        )?;
-        add_unknown_semantics(
-            session,
-            paths,
-            &workspace,
-            &knowledge,
-            &scopes,
-            &graphs,
-            &mut candidates,
-        )?;
-        resolve_exact_register_finding(
-            options.finding,
-            &ExactRegisterResolutionContext {
+    let exact_resolution = (|| {
+        if let Some(paths) = session.project.registers.as_ref() {
+            // These adjacent producers share the heavyweight MMIO facts, but the
+            // workspace must be dropped before interface ranking and rendering.
+            let workspace = ProjectRegisterWorkspace::load(paths)?;
+            let knowledge = selected_review_knowledge(session)?;
+            add_registers(
+                session,
                 paths,
-                workspace: &workspace,
-                knowledge: &knowledge,
-                configured_scopes: &configured_scopes,
-                selected_scopes: &scopes,
-                graphs: &graphs,
-            },
-        )?
-    } else {
-        resolve_exact_without_register_workspace(options.finding)
-    };
+                &workspace,
+                &scopes,
+                &graphs,
+                &mut candidates,
+            )?;
+            add_unknown_semantics(
+                session,
+                paths,
+                &workspace,
+                &knowledge,
+                &scopes,
+                &graphs,
+                &mut candidates,
+            )?;
+            resolve_exact_register_finding(
+                options.finding,
+                &ExactRegisterResolutionContext {
+                    paths,
+                    workspace: &workspace,
+                    knowledge: &knowledge,
+                    configured_scopes: &configured_scopes,
+                    selected_scopes: &scopes,
+                    graphs: &graphs,
+                },
+            )
+        } else {
+            Ok(resolve_exact_without_register_workspace(options.finding))
+        }
+    })()
+    .unwrap_or_else(|error: crate::Error| {
+        source_diagnostics.push(format!(
+            "Register publication research unavailable: {error}"
+        ));
+        None
+    });
     if !exact_register_or_semantic_lookup(options.finding)
         && let Some(context) = interface_context.as_ref()
     {
@@ -699,6 +746,13 @@ pub(crate) fn next(
             &mut candidates,
         )?;
     }
+    add_register_questions(
+        session,
+        &scopes,
+        options.scope.is_some() || options.protocol.is_some(),
+        &mut candidates,
+        &mut source_diagnostics,
+    )?;
     attach_candidate_co_blockers(&mut candidates);
     let finding_query = apply_finding_query(&mut candidates, options.finding, exact_resolution)?;
     let capabilities = interface_context
@@ -793,6 +847,7 @@ pub(crate) fn next(
         completion_claim: false,
         capability_diagnostic,
         verification_diagnostic,
+        source_diagnostics,
         reviewed_functions,
         inventory,
         selection: ResearchSelection {
@@ -3096,6 +3151,73 @@ fn merge(
     Ok(())
 }
 
+fn add_register_questions(
+    session: &ProjectSession,
+    scopes: &[&ReviewScopeReport],
+    scoped: bool,
+    candidates: &mut BTreeMap<String, Accumulator>,
+    diagnostics: &mut Vec<String>,
+) -> Result<()> {
+    let inventory = super::register_inventory::load(&session.project, &session.mmio)?;
+    diagnostics.extend(
+        inventory
+            .gaps
+            .iter()
+            .map(|gap| format!("{}: {} ({})", gap.scope, gap.reason, gap.source)),
+    );
+    for question in inventory.questions() {
+        let register = &inventory.registers[&question.subject];
+        if scoped
+            && !scopes.iter().any(|scope| {
+                scope
+                    .function_identities
+                    .iter()
+                    .any(|function| register.functions.contains(function))
+            })
+        {
+            continue;
+        }
+        candidates.insert(
+            question.id.clone(),
+            Accumulator {
+                id: question.id,
+                kind: format!("register-{}", question.dimension),
+                severity: "warning".to_owned(),
+                message: format!(
+                    "Investigate {} for {}{}; identity review does not close this question",
+                    question.dimension,
+                    register.label(),
+                    question
+                        .field
+                        .as_ref()
+                        .map_or_else(String::new, |field| format!(" ({field})"))
+                ),
+                subject: ResearchSubject::RegisterProperty {
+                    subject: question.subject,
+                    field: question.field,
+                    dimension: question.dimension,
+                    evidence: question.evidence,
+                },
+                reviewed_memory_access: None,
+                consumers: Vec::new(),
+                blocker_resolution_route: None,
+                evidence_sites: BTreeSet::new(),
+                evidence_channels: BTreeSet::from(["register-inventory".to_owned()]),
+                inspection: register.functions.clone(),
+                direct: register.functions.clone(),
+                guaranteed: BTreeSet::new(),
+                optimistic: BTreeSet::new(),
+                marginal: BTreeSet::new(),
+                co_blockers: BTreeSet::new(),
+                roots: BTreeSet::new(),
+                scopes: BTreeSet::new(),
+                publication_scopes: BTreeSet::new(),
+            },
+        );
+    }
+    Ok(())
+}
+
 fn add_registers(
     session: &ProjectSession,
     paths: &crate::project::RegisterWorkspacePaths,
@@ -4753,7 +4875,9 @@ fn subject_resolution_owner(subject: &ResearchSubject) -> crate::BlockerResoluti
         ResearchSubject::AnalysisRoot { .. } | ResearchSubject::EventRouteBlocker { .. } => {
             crate::BlockerResolutionOwner::Unsupported
         }
-        ResearchSubject::MmioRegister { .. } => crate::BlockerResolutionOwner::ReviewedKnowledge,
+        ResearchSubject::MmioRegister { .. } | ResearchSubject::RegisterProperty { .. } => {
+            crate::BlockerResolutionOwner::ReviewedKnowledge
+        }
         ResearchSubject::InterfaceObservation { .. } => {
             crate::BlockerResolutionOwner::InterfacePack
         }
@@ -5039,6 +5163,14 @@ fn analysis_surface_next_action_tokens(
 }
 
 fn next_action_tokens(candidate: &Accumulator) -> Vec<String> {
+    if let ResearchSubject::RegisterProperty { subject, .. } = &candidate.subject {
+        return vec![
+            "registers".to_owned(),
+            "list".to_owned(),
+            "--subject".to_owned(),
+            subject.clone(),
+        ];
+    }
     if let ResearchSubject::EventRouteBlocker { route_id, .. } = &candidate.subject {
         return vec![
             "inspect".to_owned(),
@@ -5371,6 +5503,7 @@ mod tests {
             completion_claim: false,
             capability_diagnostic: None,
             verification_diagnostic: None,
+            source_diagnostics: Vec::new(),
             reviewed_functions: Vec::new(),
             inventory,
             selection: ResearchSelection {
@@ -5938,7 +6071,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 18);
+        assert_eq!(report.schema_version, 19);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -7616,7 +7749,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_eighteen_serializes_focus_routes_query_and_executable_actions() {
+    fn schema_nineteen_serializes_focus_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -7641,7 +7774,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 18);
+        assert_eq!(value["schema_version"], 19);
         assert_eq!(value["focus"], "all");
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);

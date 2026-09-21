@@ -206,6 +206,30 @@ pub(super) fn resolve_command(
                 memory_map,
             }
         }
+        Command::RegisterList(arguments) => {
+            let (project, memory_map) = environment.into_project_registers()?;
+            ResolvedInvocation::RegisterWorkspace {
+                command: RegisterWorkspaceCommand::List(arguments),
+                project,
+                memory_map,
+            }
+        }
+        Command::RegisterCoverage(arguments) => {
+            let (project, memory_map) = environment.into_project_registers()?;
+            ResolvedInvocation::RegisterWorkspace {
+                command: RegisterWorkspaceCommand::Coverage(arguments),
+                project,
+                memory_map,
+            }
+        }
+        Command::RegisterEvidence(arguments) => {
+            let (project, memory_map) = environment.into_project_registers()?;
+            ResolvedInvocation::RegisterWorkspace {
+                command: RegisterWorkspaceCommand::Evidence(arguments),
+                project,
+                memory_map,
+            }
+        }
         Command::RegisterReview(arguments) => {
             let (project, memory_map) = environment.into_project_registers()?;
             ResolvedInvocation::RegisterWorkspace {

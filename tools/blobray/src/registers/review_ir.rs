@@ -1,4 +1,4 @@
-//! Selected schema-v68 linked-IR evidence used by the manual register report.
+//! Selected schema-v69 linked-IR evidence used by the manual register report.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -51,6 +51,7 @@ pub(crate) struct ReviewFieldEvidence {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ReviewIrRegister {
+    pub(crate) raw_evidence: BTreeSet<String>,
     pub(crate) address: u32,
     pub(crate) width: u8,
     pub(crate) names: BTreeSet<String>,
@@ -106,6 +107,7 @@ fn merge_register(target: &mut ReviewIrRegister, source: ReviewIrRegister) -> Re
         target.address = source.address;
         target.width = source.width;
     }
+    target.raw_evidence.extend(source.raw_evidence);
     target.names.extend(source.names);
     target.functions.extend(source.functions);
     for (key, source) in source.fields {
@@ -118,21 +120,11 @@ fn merge_register(target: &mut ReviewIrRegister, source: ReviewIrRegister) -> Re
                 mask: source.mask,
                 ..ReviewFieldEvidence::default()
             });
-        target.write_shapes = target
-            .write_shapes
-            .checked_add(source.write_shapes)
-            .ok_or("linked-IR write shape count overflow")
-            .map_err(crate::Error::invalid)?;
-        target.predicate_shapes = target
-            .predicate_shapes
-            .checked_add(source.predicate_shapes)
-            .ok_or("linked-IR predicate shape count overflow")
-            .map_err(crate::Error::invalid)?;
-        target.poll_shapes = target
-            .poll_shapes
-            .checked_add(source.poll_shapes)
-            .ok_or("linked-IR poll shape count overflow")
-            .map_err(crate::Error::invalid)?;
+        // These are alternative static analyses, not independent execution
+        // counters. Per-source values remain in raw_evidence.
+        target.write_shapes = target.write_shapes.max(source.write_shapes);
+        target.predicate_shapes = target.predicate_shapes.max(source.predicate_shapes);
+        target.poll_shapes = target.poll_shapes.max(source.poll_shapes);
         target.functions.extend(source.functions);
         target.access_functions.extend(source.access_functions);
         target
@@ -156,6 +148,7 @@ mod tests {
         crate::artifacts::render_linked_ir_fixture(
             Vec::new(),
             vec![crate::LinkedMmioRegister {
+                access_width_candidates: vec![32],
                 address: 4112,
                 width: 32,
                 names: vec!["RADIO.CONTROL".to_owned()],
@@ -225,8 +218,9 @@ mod tests {
         std::fs::remove_dir_all(second).unwrap();
         let register = evidence.register(0x1010, 32).unwrap();
         let field = register.fields.values().next().unwrap();
-        assert_eq!(field.write_shapes, 3);
-        assert_eq!(field.predicate_shapes, 2);
+        assert_eq!(field.write_shapes, 2);
+        assert_eq!(field.predicate_shapes, 1);
+        assert_eq!(register.raw_evidence.len(), 2);
         assert_eq!(field.semantic_operations.len(), 2);
         assert_eq!(field.predicate_evidence.len(), 1);
     }
@@ -240,13 +234,13 @@ mod tests {
         write_report(&path, &report(1, "rtos.event.send"));
         let manifest = path.join("manifest.json");
         let input = std::fs::read_to_string(&manifest).unwrap().replacen(
-            "\"schema_version\": 68",
+            "\"schema_version\": 69",
             "\"schema_version\": 32",
             1,
         );
         std::fs::write(&manifest, input).unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("expected schema_version 68"));
+        assert!(error.to_string().contains("expected schema_version 69"));
 
         std::fs::remove_dir_all(&path).unwrap();
         write_report(

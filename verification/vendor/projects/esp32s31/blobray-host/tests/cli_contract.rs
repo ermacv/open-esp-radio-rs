@@ -74,7 +74,22 @@ fn checked_register_publications_are_typed_reports() {
             String::from_utf8_lossy(&output.stderr)
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(document["schema"], 1);
+        assert_eq!(
+            document["schema"],
+            if document["command"] == "registers export-svd" {
+                2
+            } else {
+                1
+            }
+        );
+        if document["command"] == "registers export-svd" {
+            assert!(
+                !document["projection_omissions"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        }
         assert_eq!(document["status"], expected_status);
         if expected_status == "valid" {
             assert_eq!(
@@ -101,7 +116,7 @@ fn checked_register_publications_are_typed_reports() {
 
 #[test]
 #[ignore = "requires local vendor artifacts and generated Blobray findings"]
-fn inspect_register_schema_seven_exposes_typed_validation_actions() {
+fn inspect_register_schema_eight_separates_unknown_geometry_from_review() {
     let inspect = |address: &str| {
         let output = blobray()
             .args(["inspect", "register", address, "--project"])
@@ -118,74 +133,19 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
     };
 
     let owned = inspect("0x20103100");
-    assert_eq!(owned["schema_version"], 7);
+    assert_eq!(owned["schema_version"], 8);
     assert_eq!(owned["register"]["review_status"], "unreviewed");
-    assert_eq!(owned["review_draft"]["state"], "review-required");
-    assert_eq!(owned["review_draft"]["completion_claim"], false);
-    assert_eq!(
-        owned["review_draft"]["finding_id"],
-        "register-0x20103100-32"
-    );
+    assert!(owned["register"]["width"].is_null());
+    assert!(owned["review_draft"].is_null());
+    assert!(owned["recording"].is_null());
     assert!(
-        owned["review_draft"]["destination"]
-            .as_str()
-            .unwrap()
-            .ends_with("registers/esp32s31/model/reviewed.toml")
-    );
-    let raw = owned["review_draft"]["raw_toml"].as_str().unwrap();
-    assert!(raw.parse::<toml_edit::DocumentMut>().is_ok());
-    assert!(raw.contains("REVIEW_REQUIRED.register-identity"));
-    assert!(raw.contains("subject = \"register:esp32s31/cpu/0x20103100/32\""));
-    assert!(raw.contains("kind = \"register-identity\""));
-    assert!(raw.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\""));
-    assert_eq!(raw.matches("[[assertions]]").count(), 1);
-    assert!(!raw.contains("hardware-write-semantics"));
-    assert_eq!(
-        owned["recording"]["supported_register_facts"][0],
-        "register-identity"
-    );
-    assert!(
-        !owned["recording"]["supported_register_facts"]
+        owned["register"]["subjects"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|kind| kind == "register-declaration" || kind == "register-name")
+            .any(|subject| subject["physical_width"]["state"] == "unknown")
     );
-    let actions = owned["review_draft"]["validation_actions"]
-        .as_array()
-        .unwrap();
-    assert_eq!(actions.len(), 3);
-    assert_eq!(
-        &actions[0]["argv"].as_array().unwrap()[..3],
-        serde_json::json!(["blobray", "registers", "validate"])
-            .as_array()
-            .unwrap()
-    );
-    assert_eq!(actions[0]["context"], "target");
-    assert_eq!(
-        &actions[1]["argv"].as_array().unwrap()[..3],
-        serde_json::json!(["blobray", "project", "analyze"])
-            .as_array()
-            .unwrap()
-    );
-    assert_eq!(actions[1]["context"], "analysis");
-    assert!(
-        actions[2]["argv"]
-            .as_array()
-            .unwrap()
-            .windows(2)
-            .any(|pair| pair == ["--finding", "register-0x20103100-32"])
-    );
-    assert!(
-        actions.iter().all(
-            |action| action["argv"].as_array().unwrap().iter().any(|argument| {
-                argument
-                    .as_str()
-                    .is_some_and(|value| value.ends_with("vendor-project.toml"))
-            })
-        )
-    );
-    assert!(owned["review_draft"].get("validation_commands").is_none());
+    assert!(!owned["register"]["evidence"].as_array().unwrap().is_empty());
 
     for (address, expected_state) in [
         ("0x2010f4a0", "ignored"),
@@ -194,13 +154,13 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
         ("0x2010fcb0", "manual"),
     ] {
         let report = inspect(address);
-        assert_eq!(report["schema_version"], 7);
+        assert_eq!(report["schema_version"], 8);
         assert_eq!(report["register"]["review_status"], expected_state);
         assert!(report["review_draft"].is_null());
     }
 
     let event_status = inspect("0x20103064");
-    assert_eq!(event_status["schema_version"], 7);
+    assert_eq!(event_status["schema_version"], 8);
     assert_eq!(
         event_status["reviewed_assertions"]["subject"],
         "register:esp32s31/cpu/0x20103064/32"
@@ -527,7 +487,7 @@ fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
 
 #[cfg(unix)]
 #[test]
-fn checked_in_review_packs_pass_doctor_without_runtime_revision_state() {
+fn checked_in_review_packs_validate_but_doctor_rejects_missing_caller_inputs() {
     // Revision history is a separately versioned runtime protocol. Validate
     // source-owned packs without depending on ignored local bindings/findings;
     // the checked historical state's migration contract is tested below.
@@ -546,19 +506,35 @@ fn checked_in_review_packs_pass_doctor_without_runtime_revision_state() {
         .output()
         .expect("validate the checked-in ESP32-S31 project");
     assert!(
-        output.status.success(),
+        !output.status.success(),
         "stdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["schema"], 4);
+    assert_eq!(document["schema"], 5);
     assert_eq!(document["validation"]["depth"], "deep");
     assert_eq!(document["command"], "project doctor");
-    assert!(matches!(
-        document["status"].as_str(),
-        Some("valid" | "valid-with-warnings")
-    ));
+    assert_eq!(document["status"], "invalid");
+    assert_eq!(document["run_spec"]["status"], "not-configured");
+    assert_eq!(document["errors"], document["ir_build"]["errors"]);
+    assert!(document["errors"].as_u64().unwrap() > 0);
+    let profiles = document["ir_build"]["profiles"].as_array().unwrap();
+    for coverage in document["ir_build"]["coverage"].as_array().unwrap() {
+        let profile = &coverage["profile"];
+        assert!(
+            profiles.iter().any(|entry| &entry["id"] == profile),
+            "{coverage}"
+        );
+        assert_eq!(coverage["status"], "incomplete");
+        assert!(
+            coverage["issues"].as_array().unwrap().iter().all(|issue| {
+                let issue = issue.as_str().unwrap();
+                issue.contains("source-artifact:") || issue.contains("run-spec is not configured")
+            }),
+            "{coverage}"
+        );
+    }
     assert_eq!(document["project"]["id"], "esp32s31-radio-rev0");
     assert_eq!(document["target"]["id"], "esp32s31-rev0");
     let models = document["capabilities"]

@@ -18,6 +18,75 @@ pub(super) fn argument_exactness(arguments: &[SymbolicValue]) -> Vec<bool> {
     arguments.iter().map(SymbolicValue::is_resolved).collect()
 }
 
+fn argument_bit_sources(
+    arguments: &[SymbolicValue],
+    producers: &BTreeMap<(&'static str, u32), LinkedCallResultProvenance>,
+) -> Vec<open_radio_vendor_contracts::register_inventory::ArgumentBitSource> {
+    let mut output = Vec::new();
+    for (position, argument) in arguments.iter().enumerate() {
+        for (output_bit, source) in argument.bits().into_iter().enumerate() {
+            let (kind, token, source_bit, inverted, address, producer) = match source {
+                BitSource::Register {
+                    read_token,
+                    address,
+                    bit,
+                    inverted,
+                } => ("mmio-read", read_token, bit, inverted, Some(address), None),
+                BitSource::IndexedRegister {
+                    read_token,
+                    bit,
+                    inverted,
+                } => ("indexed-mmio-read", read_token, bit, inverted, None, None),
+                BitSource::CallResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => (
+                    "call-result",
+                    call_token,
+                    bit,
+                    inverted,
+                    None,
+                    producers
+                        .get(&("call-result", call_token))
+                        .map(|producer| producer.target.clone()),
+                ),
+                BitSource::ExternalResult {
+                    call_token,
+                    bit,
+                    inverted,
+                } => (
+                    "external-result",
+                    call_token,
+                    bit,
+                    inverted,
+                    None,
+                    producers
+                        .get(&("external-result", external_result_call_token(call_token)))
+                        .map(|producer| producer.target.clone()),
+                ),
+                _ => continue,
+            };
+            output.push(
+                open_radio_vendor_contracts::register_inventory::ArgumentBitSource {
+                    position,
+                    expression: argument.canonical(),
+                    kind: kind.to_owned(),
+                    token,
+                    output_bit: output_bit as u8,
+                    source_bit,
+                    inverted,
+                    address,
+                    register_bit: address.map(|_| source_bit),
+                    producer,
+                    producer_path: Vec::new(),
+                },
+            );
+        }
+    }
+    output
+}
+
 fn argument_result_provenance(
     arguments: &[SymbolicValue],
     producers: &BTreeMap<(&'static str, u32), LinkedCallResultProvenance>,
@@ -470,6 +539,12 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
                 argument.value =
                     merged_typed_argument_value(&calls, argument.position, argument_shapes);
             }
+            call.argument_bit_sources = calls
+                .iter()
+                .flat_map(|call| call.argument_bit_sources.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             call.argument_shapes = argument_shapes;
             call.arguments = arguments;
             call.argument_exact = argument_exact;
@@ -626,6 +701,7 @@ pub(super) fn collect_call_event(
                 arguments: canonical_arguments(arguments),
                 argument_exact: argument_exactness(arguments),
                 argument_result_provenance: argument_result_provenance(arguments, producers),
+                argument_bit_sources: argument_bit_sources(arguments, producers),
                 argument_bindings: affine_argument_bindings(arguments),
                 typed_arguments: reviewed_external_typed_arguments(candidates, arguments),
                 guard_paths: None,
@@ -668,6 +744,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -703,6 +780,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -737,6 +815,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -771,6 +850,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -803,6 +883,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -841,6 +922,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -876,6 +958,7 @@ pub(super) fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
             argument_result_provenance: argument_result_provenance(arguments, producers),
+            argument_bit_sources: argument_bit_sources(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -884,5 +967,29 @@ pub(super) fn collect_call_event(
     };
     if let Some(call) = call {
         calls.insert(call);
+    }
+}
+
+#[cfg(test)]
+mod register_argument_tests {
+    use super::*;
+
+    #[test]
+    fn unguarded_log_argument_keeps_read_token_and_exact_bit_mapping() {
+        let value = SymbolicValue::register_read(7, 0x1000, 32, false);
+        let value = value.shift_right(4).and(5);
+        let sources =
+            argument_bit_sources(&[SymbolicValue::Constant(0x8000), value], &BTreeMap::new());
+        assert_eq!(sources.len(), 2);
+        assert!(sources.iter().all(|source| source.position == 1
+            && source.address == Some(0x1000)
+            && source.token == 7));
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| (source.output_bit, source.register_bit))
+                .collect::<Vec<_>>(),
+            [(0, Some(4)), (2, Some(6))]
+        );
     }
 }

@@ -59,45 +59,20 @@ pub(super) fn candidate_fields(
     fact: &RegisterFact,
     ir: Option<&ReviewIrRegister>,
 ) -> Vec<(u8, u8)> {
-    let full_mask = width_mask(fact.width);
-    let masks = ir
-        .filter(|ir| !ir.fields.is_empty())
-        .map(|ir| ir.fields.values().map(|field| field.mask).collect())
-        .unwrap_or_else(|| fact.candidate_masks.clone())
-        .into_iter()
-        .filter(|mask| *mask != 0 && *mask != full_mask)
-        .collect::<Vec<_>>();
-    let mut output = Vec::new();
-    let mut bit = 0_u8;
-    while bit < fact.width {
-        let signature = mask_signature(&masks, bit);
-        if !signature.iter().any(|present| *present) {
-            bit += 1;
-            continue;
-        }
-        let start = bit;
-        while bit + 1 < fact.width && mask_signature(&masks, bit + 1) == signature {
-            bit += 1;
-        }
-        output.push((start, bit - start + 1));
-        bit += 1;
-    }
-    output
-}
-
-fn mask_signature(masks: &[u32], bit: u8) -> Vec<bool> {
-    masks
+    fact.candidate_masks
         .iter()
-        .map(|mask| mask & (1_u32 << bit) != 0)
+        .copied()
+        .chain(
+            ir.into_iter()
+                .flat_map(|ir| ir.fields.values().map(|field| field.mask)),
+        )
+        .flat_map(|mask| {
+            open_radio_vendor_contracts::register_inventory::bit_slices(mask, fact.width)
+        })
+        .map(|(lsb, msb, _)| (lsb, msb - lsb + 1))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect()
-}
-
-fn width_mask(width: u8) -> u32 {
-    if width == 32 {
-        u32::MAX
-    } else {
-        (1_u32 << width) - 1
-    }
 }
 
 pub(super) fn inferred_access(fact: &RegisterFact) -> &'static str {
@@ -105,7 +80,7 @@ pub(super) fn inferred_access(fact: &RegisterFact) -> &'static str {
         (true, true) => "read-write",
         (true, false) => "read-only",
         (false, true) => "write-only",
-        (false, false) => "read-write",
+        (false, false) => "unknown",
     }
 }
 
@@ -154,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn field_drafts_partition_partial_masks_and_ignore_whole_register_writes() {
+    fn field_drafts_keep_alternative_masks_and_whole_register_writes() {
         let mut fact = RegisterFact {
             address: 0x1010,
             width: 8,
@@ -168,15 +143,15 @@ mod tests {
             write_patterns: vec![],
             candidate_masks: vec![0x0f, 0xf0, 0xff],
         };
-        assert_eq!(candidate_fields(&fact, None), [(0, 4), (4, 4)]);
+        assert_eq!(candidate_fields(&fact, None), [(0, 4), (0, 8), (4, 4)]);
 
         fact.width = 32;
         fact.candidate_masks = vec![u32::MAX];
-        assert!(candidate_fields(&fact, None).is_empty());
+        assert_eq!(candidate_fields(&fact, None), [(0, 32)]);
     }
 
     #[test]
-    fn linked_ir_field_boundaries_take_precedence_over_write_only_masks() {
+    fn linked_ir_field_boundaries_union_with_write_only_masks() {
         let fact = RegisterFact {
             address: 0x1010,
             width: 32,
@@ -204,6 +179,6 @@ mod tests {
             )]),
             ..ReviewIrRegister::default()
         };
-        assert_eq!(candidate_fields(&fact, Some(&ir)), [(0, 2)]);
+        assert_eq!(candidate_fields(&fact, Some(&ir)), [(0, 2), (4, 4)]);
     }
 }

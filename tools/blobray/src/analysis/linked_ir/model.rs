@@ -261,6 +261,8 @@ pub(crate) struct LinkedCall {
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_exact: Vec<bool>,
     pub(crate) argument_result_provenance: Vec<LinkedCallArgumentResultProvenance>,
+    pub(crate) argument_bit_sources:
+        Vec<open_radio_vendor_contracts::register_inventory::ArgumentBitSource>,
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
     pub(crate) guard_paths: Option<Vec<LinkedCallGuardPath>>,
@@ -617,6 +619,7 @@ pub(crate) struct LinkedMmioFieldSemanticEvidence {
 pub(crate) struct LinkedMmioRegister {
     pub(crate) address: u32,
     pub(crate) width: u8,
+    pub(crate) access_width_candidates: Vec<u8>,
     pub(crate) names: Vec<String>,
     pub(crate) read_shapes: usize,
     pub(crate) write_shapes: usize,

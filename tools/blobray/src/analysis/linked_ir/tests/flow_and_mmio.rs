@@ -1104,7 +1104,7 @@ fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
 }
 
 #[test]
-fn field_candidates_separate_evidence_and_exclude_whole_register_masks() {
+fn field_candidates_separate_evidence_and_preserve_whole_register_masks() {
     let mut register = MmioRegisterAccumulator::default();
     record_access_field_mask(&mut register, 0x30, 32, "writer", "write", None);
     record_access_field_mask(&mut register, 0x30, 32, "poller", "poll", None);
@@ -1187,7 +1187,8 @@ fn field_candidates_separate_evidence_and_exclude_whole_register_masks() {
         }],
     );
 
-    assert_eq!(register.field_candidates.len(), 1);
+    assert_eq!(register.field_candidates.len(), 2);
+    assert!(register.field_candidates.contains_key(&(0, 31, u32::MAX)));
     let candidate = register
         .field_candidates
         .get(&(4, 5, 0x30))
@@ -1236,4 +1237,69 @@ fn field_candidates_separate_evidence_and_exclude_whole_register_masks() {
     assert_eq!(semantic.residual_path_expression, "(queue != 0)");
     assert_eq!(semantic.producer.as_deref(), Some("wrapper"));
     assert_eq!(semantic.producer_path, ["wrapper", "reader"]);
+}
+
+#[test]
+fn mixed_width_predicates_keep_all_bindings_and_instruction_provenance() {
+    let mut function = linked_test_function("fixture", "probe", "global", Vec::new());
+    for width in [8, 32] {
+        function.mmio_accesses.push(LinkedMmioAccess {
+            ordinal: 0,
+            address: 0x1000,
+            width,
+            register: "UNMAPPED".into(),
+            access: "read",
+            mode: "static",
+            path: "entry".into(),
+            address_expression: None,
+            guard: None,
+            predicate_mask: None,
+            predicate_expected: None,
+            value: None,
+            modified_mask: None,
+            preserved_mask: None,
+            inverted_mask: None,
+            forced_zero_mask: None,
+            forced_one_mask: None,
+            read_derived_mask: None,
+            dynamic_mask: None,
+        });
+    }
+    function
+        .direct_mmio_predicates
+        .push(LinkedDirectMmioPredicate {
+            site: 0x40,
+            condition: "value & 5 != 0".into(),
+            operation: "not-equal",
+            sources: vec![LinkedDirectMmioPredicateSource {
+                operand: "left",
+                read_token: 7,
+                address: 0x1000,
+                register: "UNMAPPED".into(),
+                value_bits: 5,
+                register_bits: 5,
+                inverted: false,
+                comparison_value: Some(0),
+                register_comparison_value: Some(0),
+            }],
+        });
+    let report = summarize_linked_ir(vec![function]);
+    assert_eq!(report.mmio_registers.len(), 2);
+    for register in &report.mmio_registers {
+        assert_eq!(register.access_width_candidates, [8, 32]);
+        assert!(register.field_candidates.iter().all(|field| {
+            field
+                .predicate_evidence
+                .iter()
+                .any(|evidence| evidence.site == Some(0x40) && evidence.operand == Some("left"))
+        }));
+        assert_eq!(
+            register
+                .field_candidates
+                .iter()
+                .map(|field| field.mask)
+                .collect::<Vec<_>>(),
+            [1, 4]
+        );
+    }
 }

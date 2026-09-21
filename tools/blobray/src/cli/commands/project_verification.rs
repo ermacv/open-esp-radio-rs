@@ -1,5 +1,8 @@
 //! Project-owned execution of independent vendor/Rust verification suites.
 
+#[path = "project_model_admission.rs"]
+mod admission;
+
 use std::{collections::BTreeSet, fmt::Write as _};
 
 use super::super::{
@@ -96,6 +99,7 @@ pub(super) fn execute(
                 .clone(),
         );
         let compiled_models = crate::providers::compiled_model_inputs()?;
+        let admission = admission::enter(project, project_manifest, &suite.model_mechanisms, svd)?;
         let mut report = super::verify_inventory::execute(
             arguments,
             svd,
@@ -103,6 +107,13 @@ pub(super) fn execute(
             target.knowledge_provider.as_deref(),
         )
         .map_err(|error| error.verification_suite(suite.id.clone()))?;
+        if let Some(admission) = &admission {
+            admission.check().map_err(|e| {
+                crate::Error::invalid(e.to_string()).verification_suite(suite.id.clone())
+            })?;
+        }
+        let admission_enforced = admission.is_some();
+        drop(admission);
         let root = project_manifest
             .ancestors()
             .filter(|p| p.join("Cargo.toml").is_file())
@@ -123,7 +134,7 @@ pub(super) fn execute(
             })
             .collect::<std::collections::BTreeMap<String, String>>();
         report.verification.model_context = Some(
-            serde_json::json!({"schema":1,"mechanisms":suite.model_mechanisms,"target":report.verification.target,"implementation":compiled_models,"contracts":contracts,"authentication":project.review_context.artifacts,"provider":{"context":{"ecosystems":project.review_context.ecosystems,"chips":project.review_context.chips,"chip_revisions":project.review_context.chip_revisions,"artifact_lineages":project.review_context.artifact_lineages},"chip":project.chip_pack.as_ref().map(|p| &p.id),"base":project.chip_pack.as_ref().and_then(|p| p.knowledge_provider.as_ref()),"overlay":project.analysis_provider}}),
+            serde_json::json!({"schema":1,"admission":if admission_enforced { "enforced-v1" } else { "unscoped" },"mechanisms":suite.model_mechanisms,"target":report.verification.target,"implementation":compiled_models,"contracts":contracts,"authentication":project.review_context.artifacts,"provider":{"context":{"ecosystems":project.review_context.ecosystems,"chips":project.review_context.chips,"chip_revisions":project.review_context.chip_revisions,"artifact_lineages":project.review_context.artifact_lineages},"chip":project.chip_pack.as_ref().map(|p| &p.id),"base":project.chip_pack.as_ref().and_then(|p| p.knowledge_provider.as_ref()),"overlay":project.analysis_provider}}),
         );
         passed &= report.verification.passed;
         execution_inputs.restore_paths(&mut report);

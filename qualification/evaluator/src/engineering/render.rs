@@ -14,6 +14,9 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
         map.next.len()
     );
     println!("NOTE\t{CONTRACT}");
+    if let Some(problem) = &map.observer_configuration_problem {
+        println!("NOTICE\tcurrent-observer-configuration-unavailable\treason={problem}");
+    }
     if !next_only {
         for entry in &map.entries {
             println!(

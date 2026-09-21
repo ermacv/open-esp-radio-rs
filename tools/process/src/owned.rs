@@ -72,6 +72,13 @@ impl Child {
     pub fn wait(&mut self) -> Result<ExitStatus> {
         self.wait_timeout(None)
     }
+    /// Forward cancellation and retain the child's final status after its shutdown grace.
+    pub fn wait_forwarding_cancellation(&mut self) -> Result<ExitStatus> {
+        match self.wait() {
+            Err(error) if crate::is_cancelled(&*error) => Ok(self.child.wait()?),
+            result => result,
+        }
+    }
     pub fn wait_timeout(&mut self, timeout: Option<Duration>) -> Result<ExitStatus> {
         let deadline = timeout
             .map(|timeout| Instant::now() + timeout)

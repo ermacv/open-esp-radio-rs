@@ -1310,6 +1310,11 @@ fn load_verification_workspace(
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(VerificationWorkspacePaths {
+        model_inputs: table
+            .get("model-inputs")
+            .map(|_| table_string(table, "model-inputs", "project verification", source))
+            .transpose()?
+            .map(|path| resolve_path(base, &path)),
         report,
         evidence_index,
         policy,

@@ -69,6 +69,11 @@ impl FunctionCacheRun {
         namespace_identities: bool,
         store: Option<&dyn FunctionFactStore>,
     ) -> Self {
+        let store = if open_radio_vendor_execution_model::admission::active() {
+            None
+        } else {
+            store
+        };
         let state = match store {
             None => FunctionCacheState::DisabledStoreAbsent,
             Some(_)
@@ -1864,6 +1869,34 @@ mod tests {
         );
 
         assert_eq!(resolver_fingerprint(&first), resolver_fingerprint(&second));
+    }
+
+    #[test]
+    fn admission_scope_reexecutes_model_calls_instead_of_reusing_unguarded_facts() {
+        let _scope = open_radio_vendor_execution_model::admission::Scope::enter(
+            &["target-abi".into()],
+            Default::default(),
+        )
+        .unwrap();
+        let owner = symbol(0x4000);
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let mut store = CountingStore::default();
+        let cache =
+            FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+        cache.load_symbols([&owner], Some(&store));
+        let analyses = Cell::new(0);
+        cache.direct_graph(&owner, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+        cache.persist(&mut store);
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(store.loads.get(), 0);
+        assert_eq!(store.stores, 0);
     }
 
     #[test]

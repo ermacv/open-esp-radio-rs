@@ -144,7 +144,8 @@ fn remove_dev_inputs(manifest: &mut Value) {
         }
     }
 }
-fn dependency_names_in(manifest: &Value, workspace: &Value) -> Result<BTreeSet<String>> {
+/// Resolve normal/build dependency names, including aliases and workspace inheritance.
+pub fn dependency_names_in(manifest: &Value, workspace: &Value) -> Result<BTreeSet<String>> {
     let mut names = BTreeSet::new();
     let scopes = std::iter::once(manifest).chain(
         manifest

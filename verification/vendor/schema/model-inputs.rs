@@ -182,7 +182,8 @@ pub fn matches(current: &Value, executed: Option<&Value>) -> bool {
     let Some(executed) = executed else {
         return false;
     };
-    current["schema"] == executed["schema"]
+    executed["admission"] == "enforced-v1"
+        && current["schema"] == executed["schema"]
         && current["mechanisms"] == executed["mechanisms"]
         && current["target"] == executed["target"]
         && current["provider"] == executed["provider"]
@@ -212,8 +213,11 @@ mod tests {
     use super::*;
     #[test]
     fn a_suite_uses_its_loaded_models_without_rebinding_to_new_or_foreign_models() {
-        let current = json!({"schema":1,"mechanisms":["wifi"],"target":{"id":"target"},"provider":{"base":"base"},"implementation":{"wifi.rs":"A"},"contracts":{"wifi.toml":"C"}});
+        let current = json!({"schema":1,"admission":"enforced-v1","mechanisms":["wifi"],"target":{"id":"target"},"provider":{"base":"base"},"implementation":{"wifi.rs":"A"},"contracts":{"wifi.toml":"C"}});
         let mut executed = current.clone();
+        executed.as_object_mut().unwrap().remove("admission");
+        assert!(!matches(&current, Some(&executed)));
+        executed["admission"] = json!("enforced-v1");
         executed["implementation"]["ble.rs"] = json!("B");
         assert!(matches(&current, Some(&executed)));
         executed["implementation"]["ble.rs"] = json!("new BLE model");

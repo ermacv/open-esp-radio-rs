@@ -147,7 +147,17 @@ selects the suite's required subset from this complete provenance, checks the
 actual target/provider, and refuses to bind a verdict to changed inputs. A
 selected contract must still belong to the current chip/project. Report
 renderers and undeclared foreign mechanisms do not enter this identity.
-Missing model provenance leaves earlier observations historical. A changed
+Project verification installs the suite's admission scope before comparison.
+Model summaries and device instances check their mechanism at the call boundary;
+register lookups check ownership derived from the loaded hardware contracts.
+An undeclared mechanism or unowned register blocks publication of an eligible
+result. Only denied mechanisms are retained, not a dynamic dependency graph.
+Persistent function facts are not reused inside an admission scope because they
+do not retain these call checks. Ordinary analysis retains its cache.
+Execution without a declared scope is marked `unscoped` and cannot establish
+qualification eligibility. Publication requires the `enforced-v1` admission
+record as well as matching inputs. Missing model provenance or admission leaves
+earlier observations historical. A changed
 shared ABI or shared interpretation source affects all suites declaring it;
 mechanism-specific changes affect its declared consumers.
 

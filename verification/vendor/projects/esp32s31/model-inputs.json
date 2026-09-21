@@ -24,7 +24,10 @@
         "verification/vendor/projects/esp32s31/blobray-host/build.rs",
         "verification/vendor/projects/esp32s31/blobray-host/src/main.rs",
         "tools/blobray/src/providers/mod.rs",
-        "tools/blobray/src/target.rs"
+        "tools/blobray/src/target.rs",
+        "tools/blobray/src/cli/commands/project_model_admission.rs",
+        "tools/blobray/src/cli/commands/project_verification.rs",
+        "tools/blobray/src/analysis/linked_ir/function_cache.rs"
       ],
       "contracts": [
         "registers/esp32s31/upstream/platform-radio-deps.svd",

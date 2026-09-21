@@ -214,12 +214,14 @@ impl ScenarioCatalog {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceIndex {
+    current_observer: observer::Current,
     scenarios: BTreeMap<String, Vec<ScenarioEvidence>>,
     summary: HilEvidenceSummary,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceSummary {
+    pub(crate) observer_configuration_problem: Option<String>,
     pub(crate) directories: usize,
     pub(crate) bundles: usize,
     pub(crate) incomplete: usize,
@@ -292,6 +294,7 @@ impl HilEvidenceIndex {
     #[cfg(test)]
     pub(crate) fn synthetic(entries: &[(&str, usize)]) -> Self {
         Self {
+            current_observer: observer::Current::default(),
             scenarios: entries
                 .iter()
                 .map(|(scenario, repetitions)| {
@@ -329,6 +332,7 @@ impl HilEvidenceIndex {
         target: &str,
         repository: &RepositoryState,
     ) -> Result<Self> {
+        let current_observer = observer::Current::load(root);
         let directory = root.join(runs);
         if !directory.try_exists()? {
             return Ok(Self {
@@ -350,6 +354,7 @@ impl HilEvidenceIndex {
         entries.sort_by_key(std::fs::DirEntry::file_name);
         let mut scenarios = BTreeMap::<String, Vec<ScenarioEvidence>>::new();
         let mut summary = HilEvidenceSummary {
+            observer_configuration_problem: current_observer.problem.clone(),
             evaluator_dirty: repository.dirty,
             ..HilEvidenceSummary::default()
         };
@@ -522,7 +527,11 @@ impl HilEvidenceIndex {
                                 .collect(),
                         });
                     let observation = scenarios.get_mut(&scenario_id).unwrap().last_mut().unwrap();
-                    if !observer::matches(root, observation, None)? {
+                    if !current_observer.available() {
+                        observation
+                            .exclusions
+                            .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
+                    } else if !observer::matches(root, &current_observer, observation, None)? {
                         observation
                             .exclusions
                             .push(decision::Exclusion::ObserverIdentityNotEstablished);
@@ -535,7 +544,11 @@ impl HilEvidenceIndex {
             summary.current_source_producer += usize::from(current_producer);
             summary.qualifying += usize::from(qualifying);
         }
-        Ok(Self { scenarios, summary })
+        Ok(Self {
+            scenarios,
+            summary,
+            current_observer,
+        })
     }
 
     pub(crate) fn evidence_for(

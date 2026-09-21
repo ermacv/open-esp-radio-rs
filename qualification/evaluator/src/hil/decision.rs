@@ -17,6 +17,7 @@ pub(super) enum Exclusion {
     SourceBindingNotEstablished,
     ProcedureMismatch,
     ObserverIdentityNotEstablished,
+    CurrentObserverConfigurationUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

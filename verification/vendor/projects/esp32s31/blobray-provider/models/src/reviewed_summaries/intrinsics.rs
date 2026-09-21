@@ -21,6 +21,7 @@ pub(crate) fn wide_signed_divide_intrinsic(
     arguments: &Rv32CallArguments,
 ) -> Option<(SymbolicValue, SymbolicValue)> {
     exact_wide_signed_divide(symbol).then(|| {
+        execution_model::admission::mechanism("phy-calibration");
         SymbolicValue::wide_signed_divide_words(
             arguments[0].clone(),
             arguments[1].clone(),

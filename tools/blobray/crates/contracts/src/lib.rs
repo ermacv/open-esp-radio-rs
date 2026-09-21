@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+pub use open_radio_vendor_execution_model::admission as model_admission;
+
 use std::cmp::Ordering;
 
 mod fact;

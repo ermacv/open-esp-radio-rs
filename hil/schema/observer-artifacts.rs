@@ -22,7 +22,16 @@ pub fn compile(root: &Path) -> Result<Compilation> {
         .read(true)
         .write(true)
         .open(directory.join("receipt.lock"))?;
-    lock.lock()?;
+    loop {
+        oer_process::check_cancelled()?;
+        match lock.try_lock() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) => {
+                oer_process::sleep(std::time::Duration::from_millis(20))?
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
     let registry: Value = serde_json::from_slice(&std::fs::read(
         root.join("hil/schema/observer-inputs.json"),
     )?)?;
@@ -30,7 +39,8 @@ pub fn compile(root: &Path) -> Result<Compilation> {
         .as_str()
         .ok_or("observer build profile missing")?;
     let profile = if profile == "debug" { "dev" } else { profile };
-    let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command
         .current_dir(root)
         .env("CARGO_TARGET_DIR", &directory)
         .args([
@@ -38,15 +48,16 @@ pub fn compile(root: &Path) -> Result<Compilation> {
             "--profile",
             profile,
             "--locked",
-            "--offline",
             "-p",
             "open-esp-radio-hil-runner",
             "--bin",
             "open-esp-radio-hil-runner",
             "--message-format=json-render-diagnostics",
         ])
+        .stdin(Stdio::null())
         .stderr(Stdio::inherit())
-        .output()?;
+        .stdout(Stdio::piped());
+    let output = oer_process::owned::Child::spawn(&mut command)?.wait_with_output()?;
     if !output.status.success() {
         return Err("observer compilation failed".into());
     }

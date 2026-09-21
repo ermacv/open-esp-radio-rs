@@ -220,7 +220,11 @@ impl MmioMap {
         self.registers
             .binary_search_by_key(&address, |register| register.address)
             .ok()
-            .map(|index| &self.registers[index])
+            .map(|index| {
+                let register = &self.registers[index];
+                crate::model_admission::register(&register.name);
+                register
+            })
     }
 
     pub fn classify_access(

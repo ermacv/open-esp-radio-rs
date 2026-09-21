@@ -506,6 +506,8 @@ mod tests {
             .unwrap()
             .model_context,
         );
+        verification.model_context.as_mut().unwrap()["admission"] =
+            serde_json::json!("enforced-v1");
         let mut function =
             FunctionVerificationReport::new("vendor", "entry", FunctionVerificationStatus::Match);
         function.evidence_class = EvidenceClass::ProductionTrace;

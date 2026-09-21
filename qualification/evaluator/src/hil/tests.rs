@@ -453,7 +453,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         ),
     )
     .unwrap();
-    let resolved = observer::build_inputs::resolve_compiled(root).unwrap();
+    let resolved = prepare_observer(root);
     let build = json!({"schema":2,"inputs":{"observer.rs":sha256_file(&root.join("observer.rs")).unwrap()},"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
     manifest["runner"] = json!({"observer":{"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build}});
 
@@ -492,4 +492,25 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         serde_json::to_vec(&provenance).unwrap(),
     )
     .unwrap();
+}
+
+pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
+    let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
+    let configuration = observer::required_configuration(root, &registry).unwrap();
+    #[path = "../../../../hil/schema/observer-resolve.rs"]
+    mod resolve;
+    let mut resolved = resolve::resolve(
+        root,
+        configuration["environment"]["TARGET"].as_str().unwrap(),
+    )
+    .unwrap();
+    for node in resolved["nodes"].as_array_mut().unwrap() {
+        node["units"] = json!([{"kind":["lib"],"profile":{"opt_level":"0"}}]);
+    }
+    resolved["compilation"] = json!("cargo-compiler-artifacts-v1");
+    resolved["selected_profile"] = json!("dev");
+    resolved["configuration"] = configuration.clone();
+    fs::create_dir_all(root.join("target/hil")).unwrap();
+    fs::write(root.join("target/hil/current-observer.json"), serde_json::to_vec(&json!({"build":{"schema":2,"resolved":resolved,"compiler":configuration["compiler"],"environment":configuration["environment"]}})).unwrap()).unwrap();
+    resolved
 }

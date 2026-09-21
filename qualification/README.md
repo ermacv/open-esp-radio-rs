@@ -10,6 +10,13 @@ host coverage and async states are reviewed declarations; vendor and HIL
 states are derived from independent evidence. Qualification remains the sole
 readiness authority for the selected scope.
 
+Saved HIL evidence uses the current observer descriptor prepared by `cargo hil`
+or `cargo xtask hil-observer`. Evaluation reads it once and never builds or
+executes a runner. An unavailable descriptor is diagnosed separately from an
+incompatible historical observer; the observations remain in the report.
+See [observer preparation and cancellation](../hil/host/README.md) for the
+build configuration, receipt selection and explicit offline option.
+
 ## Everyday status and next work
 
 Read declarations without loading vendor results, HIL runs or Git state:

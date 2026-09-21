@@ -43,6 +43,7 @@ struct EvidenceInputsReport {
 
 #[derive(Serialize)]
 struct HilInputsReport {
+    observer_configuration_problem: Option<String>,
     directories: usize,
     bundles: usize,
     incomplete: usize,
@@ -137,6 +138,11 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 current_source_producer: qualification.evidence_inputs.hil.current_source_producer,
                 qualifying: qualification.evidence_inputs.hil.qualifying,
                 sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
+                observer_configuration_problem: qualification
+                    .evidence_inputs
+                    .hil
+                    .observer_configuration_problem
+                    .clone(),
                 evaluator_dirty: qualification.evidence_inputs.hil.evaluator_dirty,
             },
         },
@@ -190,6 +196,13 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.sealed_attempts,
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
+    if let Some(problem) = &qualification
+        .evidence_inputs
+        .hil
+        .observer_configuration_problem
+    {
+        println!("NOTICE\tcurrent-observer-configuration-unavailable\treason={problem}");
+    }
     if qualification.evidence_inputs.hil.incomplete != 0 {
         println!(
             "NOTICE\thil-input-incomplete={}\treason=manifest-missing\tdisposition=ignored-as-evidence",

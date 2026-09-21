@@ -52,22 +52,27 @@ pub(super) fn reference_intrinsic_trace(
     }
 
     if fail_stop::exact_btdm_assert(symbol) {
+        execution_model::admission::mechanism("bluetooth-fail-stop");
         return Some(fail_stop::btdm_assert_trace(symbol));
     }
 
     if exact_rfpll_calibration_poll(symbol) {
+        execution_model::admission::mechanism("phy-calibration");
         return Some(rfpll_calibration_poll_trace(symbol));
     }
 
     if exact_rfpll_cap_calibration_search(symbol) {
+        execution_model::admission::mechanism("phy-calibration");
         return Some(rfpll_cap_calibration_search_trace(symbol));
     }
 
     if exact_rf_frequency_offset_scratch_wrapper(symbol) {
+        execution_model::admission::mechanism("phy-calibration");
         return Some(rf_frequency_offset_scratch_trace(symbol));
     }
 
     if exact_iq_estimator_poll(symbol) {
+        execution_model::admission::mechanism("phy-calibration");
         return iq_estimator_poll_trace(symbol, svd, pointer_context);
     }
 
@@ -75,6 +80,7 @@ pub(super) fn reference_intrinsic_trace(
         && symbol.address == 0x2f82_9ffa
         && symbol.bytes == PHY_CHIP_I2C_READ_REG_ORG_BODY
     {
+        execution_model::admission::mechanism("phy-i2c");
         return chip_i2c_read_reg_org_trace(symbol, svd);
     }
 
@@ -82,6 +88,7 @@ pub(super) fn reference_intrinsic_trace(
         && symbol.address == 0x2f82_a30e
         && symbol.bytes == PHY_CHIP_I2C_WRITE_REG_BODY
     {
+        execution_model::admission::mechanism("phy-i2c");
         return chip_i2c_write_reg_trace(symbol, svd, pointer_context);
     }
 
@@ -92,7 +99,10 @@ pub(super) fn reference_intrinsic_trace(
                 && symbol.address == u64::from(summary.address)
                 && symbol.bytes == summary.body
         })
-        .map(|summary| host_id_trace(symbol, svd, *summary))
+        .map(|summary| {
+            execution_model::admission::mechanism("phy-i2c");
+            host_id_trace(symbol, svd, *summary)
+        })
 }
 
 #[cfg(test)]

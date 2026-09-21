@@ -32,6 +32,7 @@ impl DeviceModel for SarSamples {
     }
 
     fn instantiate(&self) -> Result<Box<dyn DeviceModelInstance>> {
+        crate::execution_model::admission::mechanism("phy-calibration");
         Ok(Box::new(SarStream {
             profile: *self,
             index: 0,

@@ -22,6 +22,8 @@ mod render;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct ProjectMap {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) observer_configuration_problem: Option<String>,
     pub(crate) schema: u16,
     pub(crate) mode: &'static str,
     pub(crate) target: Option<String>,
@@ -175,6 +177,8 @@ impl ProjectMap {
     ) -> Result<Self> {
         let selected = select(declarations, focus)?;
         let mut map = Self {
+            observer_configuration_problem: program
+                .and_then(|p| p.evidence_inputs.hil.observer_configuration_problem.clone()),
             schema: 1,
             mode: if program.is_some() {
                 "saved-evidence"

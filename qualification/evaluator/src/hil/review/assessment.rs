@@ -77,6 +77,9 @@ pub(super) fn assess(
         .filter(|i| i.kind == InputKind::Evidence)
         .map(|i| (i.path.clone(), i.sha256.clone()))
         .collect();
+    if !index.current_observer.available() {
+        return Ok("current-observer-configuration-unavailable");
+    }
     let observer_matches = |observation: &ScenarioEvidence, scenario: &str| {
         let control_requirement;
         let required = if scenario == requirement.scenario {
@@ -92,15 +95,22 @@ pub(super) fn assess(
         let Ok(sensitive) = observer::timing_sensitive(root, required, catalog) else {
             return false;
         };
-        observer::matches(root, observation, None).unwrap_or(false)
+        observer::matches(root, &index.current_observer, observation, None).unwrap_or(false)
             || (!sensitive
                 && review.observer_configuration.iter().any(|configuration| {
-                    observer::compatible(root, observation, None, Some(configuration))
-                        .unwrap_or(false)
+                    observer::compatible(
+                        root,
+                        &index.current_observer,
+                        observation,
+                        None,
+                        Some(configuration),
+                    )
+                    .unwrap_or(false)
                 }))
             || review.observer_provenance.iter().any(|path| {
                 observer::reviewed(
                     root,
+                    &index.current_observer,
                     observation,
                     scenario,
                     path,

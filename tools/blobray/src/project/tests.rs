@@ -547,6 +547,7 @@ locator = "review"
     assert_eq!(
         project.verification,
         Some(VerificationWorkspacePaths {
+            model_inputs: None,
             report: directory.join("generated/verification.json"),
             evidence_index: directory.join("generated/vendor-evidence.json"),
             policy: None,

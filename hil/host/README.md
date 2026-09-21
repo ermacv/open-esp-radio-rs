@@ -28,6 +28,33 @@ not HIL scenarios or runner commands.
 The ownership map and bundle contract are in the
 [execution and evidence architecture](architecture.md).
 
+`cargo hil` builds the observer through xtask using Cargo's actual artifact
+messages, saves its executable receipt, and atomically publishes
+`target/hil/current-observer.json`. Cargo uses `--locked`; downloads of pinned
+dependencies remain allowed. Set `CARGO_NET_OFFLINE=true` or Cargo's
+`net.offline` configuration when offline execution is required. Cancellation of
+xtask is forwarded to its owned runner process group, with up to five minutes
+for fixture cleanup and evidence sealing; this does not limit campaign runtime.
+The wrapper returns the runner's exit code (or `128 + signal` on Unix).
+
+Prepare the same observer descriptor without running HIL with:
+
+```console
+cargo xtask hil-observer
+```
+
+Qualification reads this descriptor once per evaluation, or the invocation's
+receipt selected by `OER_OBSERVER_RECEIPT`. It never builds or executes the
+observer. The descriptor selects the required compiler, features and profile;
+prepare it again to select a different build configuration. Current normal/build manifests, lock identities and Cargo configuration are
+checked once before use. Changes in any domain's normal/build declarations
+require explicit preparation because they may alter shared feature unification;
+dev-only declarations do not. Rust source and fixture changes are checked only
+within the observation's workload scope.
+Missing, invalid or stale configuration is reported as
+`current-observer-configuration-unavailable`; historical observations remain
+visible. Source compatibility is still checked per workload.
+
 ## Configure the lab
 
 Run the host interface through the workspace alias:

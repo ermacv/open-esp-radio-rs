@@ -214,6 +214,7 @@ pub(crate) struct VerificationSuiteSpec {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationWorkspacePaths {
+    pub(crate) model_inputs: Option<PathBuf>,
     pub(crate) report: PathBuf,
     pub(crate) evidence_index: PathBuf,
     pub(crate) policy: Option<PathBuf>,

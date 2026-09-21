@@ -1,5 +1,6 @@
 //! Architecture-neutral execution environment contracts.
 
+pub mod admission;
 mod device;
 mod goal;
 mod service;

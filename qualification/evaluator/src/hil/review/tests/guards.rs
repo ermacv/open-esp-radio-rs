@@ -750,12 +750,22 @@ fn compiler_review_admits_functional_evidence_but_never_timing_or_changed_flags(
     profile_only["build"]["environment"]["OPT_LEVEL"] = json!("3");
     profile_only["build_sha256"] =
         json!(digest(&serde_json::to_vec(&profile_only["build"]).unwrap()));
-    assert!(!observer::compatible(&fixture.0, source, Some(&profile_only), None).unwrap());
+    assert!(
+        !observer::compatible(
+            &fixture.0,
+            &observer::Current::load(&fixture.0),
+            source,
+            Some(&profile_only),
+            None
+        )
+        .unwrap()
+    );
     let mut profile_review = review.observer_configuration[0].clone();
     profile_review["build_sha256"] = profile_only["build_sha256"].clone();
     assert!(
         observer::compatible(
             &fixture.0,
+            &observer::Current::load(&fixture.0),
             source,
             Some(&profile_only),
             Some(&profile_review)
@@ -769,6 +779,7 @@ fn compiler_review_admits_functional_evidence_but_never_timing_or_changed_flags(
     assert!(
         !observer::compatible(
             &fixture.0,
+            &observer::Current::load(&fixture.0),
             source,
             Some(&proof),
             Some(&review.observer_configuration[0])
@@ -812,12 +823,21 @@ fn observer_dependency_manifest_detects_features_but_ignores_dev_only_inputs() {
     };
     lock();
     let mut proof = source.subject.as_ref().unwrap().observer.clone().unwrap();
-    proof["build"]["resolved"] = observer::build_inputs::resolve_compiled(root).unwrap();
+    proof["build"]["resolved"] = crate::hil::tests::prepare_observer(root);
     for path in ["hil/host/wire/Cargo.toml", "hil/host/wire/src/lib.rs"] {
         proof["build"]["inputs"][path] = json!(sha256_file(&root.join(path)).unwrap());
     }
     proof["build_sha256"] = json!(digest(&serde_json::to_vec(&proof["build"]).unwrap()));
-    assert!(observer::compatible(root, source, Some(&proof), None).unwrap());
+    assert!(
+        observer::compatible(
+            root,
+            &observer::Current::load(root),
+            source,
+            Some(&proof),
+            None
+        )
+        .unwrap()
+    );
     let unused = root.join("hil/host/unused");
     fs::create_dir_all(unused.join("src")).unwrap();
     fs::write(unused.join("src/lib.rs"), "pub fn unused() {}\n").unwrap();
@@ -829,13 +849,127 @@ fn observer_dependency_manifest_detects_features_but_ignores_dev_only_inputs() {
     let development = format!("{manifest}\n[dev-dependencies]\nunused={{path='../unused'}}\n");
     fs::write(wire.join("Cargo.toml"), &development).unwrap();
     lock();
-    assert!(observer::compatible(root, source, Some(&proof), None).unwrap());
+    assert!(
+        observer::compatible(
+            root,
+            &observer::Current::load(root),
+            source,
+            Some(&proof),
+            None
+        )
+        .unwrap()
+    );
     let lock_before = fs::read(root.join("Cargo.lock")).unwrap();
     fs::write(
         wire.join("Cargo.toml"),
         format!("{development}\n[features]\ndefault=['counter']\ncounter=[]\n"),
     )
     .unwrap();
-    assert!(!observer::compatible(root, source, Some(&proof), None).unwrap());
+    assert!(
+        !observer::compatible(
+            root,
+            &observer::Current::load(root),
+            source,
+            Some(&proof),
+            None
+        )
+        .unwrap()
+    );
     assert_eq!(lock_before, fs::read(root.join("Cargo.lock")).unwrap());
+}
+
+#[test]
+fn archive_evaluation_reuses_prepared_descriptor_even_when_runner_cannot_build() {
+    let fixture = setup();
+    let root = &fixture.0;
+    // This is outside the fixture's observer mechanism. Any hidden build would fail.
+    fs::write(root.join("hil/host/runner/src/main.rs"), "this is not Rust").unwrap();
+    let index = fixture.load().unwrap();
+    assert_eq!(index.scenarios["exchange"].len(), 2);
+    assert!(index.scenarios["exchange"].iter().all(|o| {
+        !o.exclusions
+            .contains(&decision::Exclusion::ObserverIdentityNotEstablished)
+            && !o
+                .exclusions
+                .contains(&decision::Exclusion::CurrentObserverConfigurationUnavailable)
+    }));
+    fs::remove_file(root.join("target/hil/current-observer.json")).unwrap();
+    let unavailable = fixture.load().unwrap();
+    assert_eq!(unavailable.scenarios["exchange"].len(), 2);
+    assert!(unavailable.summary.observer_configuration_problem.is_some());
+    assert!(unavailable.scenarios["exchange"].iter().all(|o| {
+        o.exclusions
+            .contains(&decision::Exclusion::CurrentObserverConfigurationUnavailable)
+            && !o
+                .exclusions
+                .contains(&decision::Exclusion::ObserverIdentityNotEstablished)
+    }));
+    // The index owns its descriptor; subsequent reviews do not reload or prepare it.
+    assert!(index.current_observer.available());
+}
+
+#[test]
+fn foreign_normal_build_changes_require_explicit_descriptor_preparation() {
+    let fixture = setup();
+    let root = &fixture.0;
+    let ble = root.join("hil/host/ble");
+    fs::create_dir_all(ble.join("src")).unwrap();
+    fs::write(ble.join("src/lib.rs"), "pub fn count() {}\n").unwrap();
+    let ble_manifest = "[package]\nname='ble'\nversion='0.1.0'\nedition='2024'\n";
+    fs::write(ble.join("Cargo.toml"), ble_manifest).unwrap();
+    let runner = root.join("hil/host/runner/Cargo.toml");
+    let runner_text = format!(
+        "{}\n[dependencies]\nble={{path='../ble'}}\n",
+        fs::read_to_string(&runner).unwrap()
+    );
+    fs::write(&runner, &runner_text).unwrap();
+    let mut registry: Value = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
+    registry["dependencies"]["bluetooth"] = json!(["ble"]);
+    write(&root.join("hil/schema/observer-inputs.json"), &registry);
+    assert!(
+        Command::new("cargo")
+            .current_dir(root)
+            .args(["generate-lockfile", "--offline"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    crate::hil::tests::prepare_observer(root);
+    assert!(observer::Current::load(root).available());
+    fs::write(
+        ble.join("Cargo.toml"),
+        format!("{ble_manifest}\n[dev-dependencies]\nunused={{path='../unused'}}\n"),
+    )
+    .unwrap();
+    assert!(observer::Current::load(root).available());
+    fs::write(
+        ble.join("Cargo.toml"),
+        format!("{ble_manifest}\n[features]\ndefault=['counter']\ncounter=[]\n"),
+    )
+    .unwrap();
+    let unavailable = fixture.load().unwrap();
+    assert_eq!(unavailable.scenarios["exchange"].len(), 2);
+    assert!(
+        unavailable
+            .summary
+            .observer_configuration_problem
+            .as_ref()
+            .unwrap()
+            .contains("stale")
+    );
+    assert!(unavailable.scenarios["exchange"].iter().all(|o| {
+        o.exclusions
+            .contains(&decision::Exclusion::CurrentObserverConfigurationUnavailable)
+    }));
+    crate::hil::tests::prepare_observer(root);
+    assert!(observer::Current::load(root).available());
+    // An unregistered new dependency must not disappear from the freshness check.
+    fs::write(
+        &runner,
+        format!(
+            "{runner_text}\n[build-dependencies]\nnew-build-input={{path='../new-build-input'}}\n"
+        ),
+    )
+    .unwrap();
+    assert!(!observer::Current::load(root).available());
 }

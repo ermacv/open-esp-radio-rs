@@ -59,6 +59,7 @@ impl DeviceModel for Rfpll {
     }
 
     fn instantiate(&self) -> Result<Box<dyn DeviceModelInstance>> {
+        crate::execution_model::admission::mechanism("phy-i2c");
         Ok(Box::new(Port {
             bbpll_control: None,
             registers: BTreeMap::from([
@@ -114,6 +115,7 @@ impl DeviceModel for RegisterBank {
     }
 
     fn instantiate(&self) -> Result<Box<dyn DeviceModelInstance>> {
+        crate::execution_model::admission::mechanism("phy-i2c");
         if self
             .registers
             .keys()

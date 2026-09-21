@@ -75,6 +75,8 @@ fn package(
 }
 #[path = "../../schema/observer-build.rs"]
 mod observer_build;
+#[path = "../../schema/observer-resolve.rs"]
+mod observer_resolve;
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
@@ -104,7 +106,7 @@ fn main() {
         environment.insert(key.to_owned(), env::var(key).unwrap_or_default());
     }
     environment.extend(env::vars().filter(|(key, _)| key.starts_with("CARGO_FEATURE_")));
-    let resolved = observer_build::resolve(&root, &environment["TARGET"])
+    let resolved = observer_resolve::resolve(&root, &environment["TARGET"])
         .expect("resolve executed observer dependencies");
     let registry: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("hil/schema/observer-inputs.json")).unwrap())

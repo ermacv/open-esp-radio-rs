@@ -366,3 +366,21 @@ fn authenticated_rom_bindings_accept_reviewed_bodies_and_reject_every_byte_mutat
         }
     }
 }
+
+#[test]
+fn undeclared_fail_stop_summary_cannot_be_admitted_for_qualification() {
+    let symbol = btdm_assert_symbol(BLE_BTDM_ASSERT_ADDRESS);
+    for allowed in [false, true] {
+        let names = if allowed {
+            vec!["target-abi".into(), "bluetooth-fail-stop".into()]
+        } else {
+            vec!["target-abi".into()]
+        };
+        let scope = execution_model::admission::Scope::enter(&names, Default::default()).unwrap();
+        let trace =
+            reference_intrinsic_trace(&symbol, &map(), &StructuralPointerContext::default())
+                .unwrap();
+        assert!(trace.is_reference_eligible());
+        assert_eq!(scope.check().is_ok(), allowed);
+    }
+}

@@ -20,6 +20,8 @@ enum Task {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
+    /// Prepare the current observer configuration without running HIL.
+    HilObserver,
     /// Report the basic source workflow tools in the current environment.
     Doctor,
     Check {
@@ -101,7 +103,7 @@ enum Build {
     },
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<std::process::ExitCode> {
     let cli = Cli::parse();
     let ctx = match cli.root {
         Some(root) => Context::new(root)?,
@@ -109,7 +111,15 @@ fn run() -> Result<()> {
     };
     let _signals = process::install_signal_handlers()?;
     match cli.command {
-        Task::Hil { args } => oer_xtask::hil::run(&ctx, &args),
+        Task::HilObserver => {
+            oer_xtask::hil::prepare(&ctx)?;
+            println!(
+                "{}",
+                ctx.root.join("target/hil/current-observer.json").display()
+            );
+            Ok(())
+        }
+        Task::Hil { args } => return oer_xtask::hil::run(&ctx, &args),
         Task::Build {
             build: Build::Hostapd,
         } => oer_xtask::hostapd::build(&ctx),
@@ -179,12 +189,13 @@ fn run() -> Result<()> {
         Task::Build {
             build: Build::VendorProbes { chip, list_roles },
         } => checks::vendor::run(&ctx, &chip, list_roles),
-    }
+    }?;
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 fn main() -> std::process::ExitCode {
     match run() {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(status) => status,
         Err(error) => {
             eprintln!("xtask: {error}");
             std::process::ExitCode::FAILURE

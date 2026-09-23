@@ -1,6 +1,6 @@
 //! Borrowed ELF function views; no linker or ISA semantics.
 use blobray_domain::*;
-use object::{Object, ObjectSection, ObjectSymbol};
+use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
 
 pub struct FunctionView<'a> {
     pub abi: RiscvAbi,
@@ -81,15 +81,25 @@ pub fn with_prepared_object<T>(
             "function analysis requires little-endian RV32 ET_REL or ET_EXEC",
         ));
     }
+    let object::File::Elf32(elf) = &file else {
+        unreachable!()
+    };
+    use object::read::elf::SectionHeader;
     let mut static_tables = 0;
-    for s in file.sections() {
+    let mut dynamic_tables = 0;
+    for header in elf.elf_section_table().iter() {
         control.checkpoint(1)?;
-        if s.name_bytes().map_err(parse)? == b".symtab" {
-            static_tables += 1;
+        match header.sh_type(elf.endian()) {
+            object::elf::SHT_SYMTAB => static_tables += 1,
+            object::elf::SHT_DYNSYM => dynamic_tables += 1,
+            _ => {}
         }
     }
-    if static_tables != 1 {
-        return Err(invalid("ambiguous static symbol table"));
+    if static_tables > 1 || dynamic_tables > 1 {
+        return Err(invalid("ambiguous physical symbol tables"));
+    }
+    if static_tables + dynamic_tables == 0 {
+        return Err(invalid("missing symbol table"));
     }
     let image = if file.kind() == object::ObjectKind::Executable {
         Some(crate::program::ProgramView::new(
@@ -156,12 +166,44 @@ pub fn with_function<T>(
         object.with_function(request, c, consume)
     })
 }
-impl PreparedObject<'_, '_> {
+impl<'data> PreparedObject<'data, '_> {
+    /// Validate physical table kind, section and index without a name lookup or
+    /// interpreting one table's index in another table.
+    fn selected_symbol(
+        &self,
+        occurrence: &ObjectId,
+        symbol: &SymbolId,
+    ) -> Result<object::Symbol<'data, '_>> {
+        let object::File::Elf32(elf) = &self.file else {
+            unreachable!()
+        };
+        let (physical, table) = match symbol.table {
+            SymbolTableKind::Static => (elf.elf_symbol_table().section(), self.file.symbol_table()),
+            SymbolTableKind::Dynamic => (
+                elf.elf_dynamic_symbol_table().section(),
+                self.file.dynamic_symbol_table(),
+            ),
+        };
+        if symbol.object != *occurrence
+            || physical.0 == 0
+            || symbol.table_section as usize != physical.0
+        {
+            return Err(invalid(
+                "symbol belongs to another object or physical table",
+            ));
+        }
+        table
+            .ok_or_else(|| invalid("missing selected symbol table"))?
+            .symbol_by_index(object::SymbolIndex(
+                usize::try_from(symbol.index).map_err(|_| invalid("symbol index overflow"))?,
+            ))
+            .map_err(parse)
+    }
+
     fn prepare_section(
         &mut self,
         section_index: object::SectionIndex,
         occurrence: &ObjectId,
-        table_section: u32,
         control: &mut dyn RunControl,
     ) -> Result<()> {
         let file = &self.file;
@@ -170,6 +212,7 @@ impl PreparedObject<'_, '_> {
         let object::File::Elf32(elf) = file else {
             unreachable!()
         };
+        let table_section = elf.elf_symbol_table().section().0 as u32;
         if self.sections[section_index.0].is_none() {
             control.phase(RunPhase::PrepareSection)?;
             let mut count = 0usize;
@@ -207,7 +250,10 @@ impl PreparedObject<'_, '_> {
                         && hdr.2 == section_index.0 as u32
                     {
                         if hdr.1 != table_section {
-                            return Err(invalid("relocation uses another symbol table"));
+                            return Err(Error::new(
+                                ErrorCode::Incompatible,
+                                "relocations using a non-static symbol table require a dynamic relocation profile",
+                            ));
                         }
                         if relocation_section
                             .replace((s.index().0 as u32, hdr.0))
@@ -368,34 +414,7 @@ impl PreparedObject<'_, '_> {
             self.occurrence = Some(request.symbol.object.clone());
         }
         let file = &self.file;
-        if request.symbol.table != SymbolTableKind::Static {
-            return Err(invalid("function selector requires static symbol table"));
-        }
-        let table = file
-            .section_by_index(object::SectionIndex(request.symbol.table_section as usize))
-            .map_err(parse)?;
-        if table.name_bytes().map_err(parse)? != b".symtab" {
-            return Err(invalid("function selector does not identify .symtab"));
-        }
-        let object::File::Elf32(elf) = file else {
-            unreachable!()
-        };
-        use object::read::elf::SectionHeader;
-        if elf
-            .elf_section_table()
-            .section(table.index())
-            .map_err(parse)?
-            .sh_type(elf.endian())
-            != object::elf::SHT_SYMTAB
-        {
-            return Err(invalid("selected table is not SHT_SYMTAB"));
-        }
-        let symbol = file
-            .symbol_by_index(object::SymbolIndex(
-                usize::try_from(request.symbol.index)
-                    .map_err(|_| invalid("symbol index overflow"))?,
-            ))
-            .map_err(parse)?;
+        let symbol = self.selected_symbol(&request.symbol.object, &request.symbol)?;
         let section_index = symbol
             .section_index()
             .ok_or_else(|| invalid("function symbol has no defined section"))?;
@@ -431,12 +450,7 @@ impl PreparedObject<'_, '_> {
                 "function extent must start at the selected aligned symbol and stay in its section",
             ));
         }
-        self.prepare_section(
-            section_index,
-            &request.symbol.object,
-            request.symbol.table_section,
-            control,
-        )?;
+        self.prepare_section(section_index, &request.symbol.object, control)?;
         let section = self.file.section_by_index(section_index).map_err(parse)?;
         let image = &self.image;
         let data = section.data().map_err(parse)?;

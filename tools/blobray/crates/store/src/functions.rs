@@ -37,7 +37,7 @@ pub(crate) fn decode(
     let manifest: FunctionManifest = serde_json::from_slice(&bytes).map_err(jobs::json)?;
     let supported = manifest.schema == 4
         && manifest.recipe.schema == 4
-        && manifest.recipe.policy == 4
+        && manifest.recipe.policy == 5
         && manifest.semantics.is_some()
         && manifest
             .recipe

@@ -930,3 +930,211 @@ fn invalid_relocation_write_extent_cannot_publish_an_unaffected_table() {
         .is_empty()
     );
 }
+
+#[test]
+fn dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen() {
+    for only in [false, true] {
+        let mut f = fixture(support::dynamic_symbols(data_object(false), only), false);
+        let inventory = app::inventory(&f.project, None).unwrap();
+        let symbols = &inventory.revision.inputs[0]
+            .inventory
+            .as_ref()
+            .unwrap()
+            .objects[1]
+            .elf
+            .as_ref()
+            .unwrap()
+            .symbols;
+        let entry = symbols
+            .iter()
+            .find(|s| s.id.table == SymbolTableKind::Dynamic && s.name.as_deref() == Some(b"entry"))
+            .unwrap();
+        let table = symbols
+            .iter()
+            .find(|s| s.id.table == SymbolTableKind::Dynamic && s.name.as_deref() == Some(b"table"))
+            .unwrap();
+        let table = table.id.clone();
+        f.request.symbol = entry.id.clone();
+        let entry_id = f.request.symbol.clone();
+        fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+        fs::remove_file(f.dir.path().join("entry.o")).unwrap();
+        let result = analyze(&f);
+        assert_eq!(result.state, RunState::Completed, "{result:?}");
+        let analysis_id = result.analysis.unwrap();
+        let (manifest, _) = export(&f, analysis_id.clone());
+        assert_eq!(manifest.recipe.symbol, entry_id);
+        assert_eq!(manifest.instructions, 2);
+        let mut p = proposal(&f);
+        p.selector = DataSelector::Symbol {
+            symbol: table.clone(),
+            length: None,
+        };
+        p.occurrence.symbol = Some(table.clone());
+        for bad in [
+            SymbolId {
+                index: u64::MAX,
+                ..table.clone()
+            },
+            SymbolId {
+                table: SymbolTableKind::Static,
+                ..table.clone()
+            },
+            SymbolId {
+                table_section: 0,
+                ..table.clone()
+            },
+        ] {
+            let mut invalid = p.clone();
+            invalid.occurrence.symbol = Some(bad);
+            let run = f
+                .app
+                .start_propose_data(&f.project, invalid, budget())
+                .unwrap()
+                .wait();
+            assert_eq!(run.state, RunState::Failed, "{run:?}");
+            assert!(run.knowledge.is_none());
+        }
+        let proposed = f
+            .app
+            .start_propose_data(&f.project, p, budget())
+            .unwrap()
+            .wait();
+        let (revision, assertion) = review(&f, proposed, ReviewDecision::Accept, None);
+        let values = collect(
+            &f,
+            app::ReadQuery::ReviewedData {
+                revision: revision.clone(),
+                assertion: assertion.clone(),
+            },
+        )
+        .data;
+        let integers: Vec<_> = values
+            .iter()
+            .filter_map(|r| match r {
+                DataRecord::Integer { signed, .. } => *signed,
+                _ => None,
+            })
+            .collect();
+        assert_eq!(integers, [-5, 3]);
+        // New application instance reads captured source and accepted knowledge.
+        f.app = application(&f.dir.path().join("reopened-runtime"));
+        let mut output = f
+            .app
+            .query(
+                &f.project,
+                app::ReadQuery::ReviewedData {
+                    revision,
+                    assertion,
+                },
+                budget(),
+            )
+            .unwrap();
+        let destination = f.dir.path().join("dynamic-export");
+        output.export_data(&destination, &|| false).unwrap();
+        assert_eq!(
+            fs::read(destination.join("data.bin")).unwrap(),
+            [0xfb, 0xff, 3, 0]
+        );
+        let manifest: DataManifest =
+            serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest.request.occurrence.symbol, Some(table));
+        f.app
+            .query(
+                &f.project,
+                app::ReadQuery::Analysis {
+                    id: analysis_id,
+                    export: false,
+                },
+                budget(),
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn dynamic_function_selection_keeps_static_relocation_target_identity() {
+    let bytes = object(
+        &[
+            0x97, 0, 0, 0, 0xe7, 0x80, 0, 0, 0x37, 5, 0, 0, 0x13, 5, 5, 0, 0x67, 0x80, 0, 0,
+        ],
+        20,
+        true,
+    );
+    let mut f = fixture(support::dynamic_symbols(bytes, false), true);
+    let inventory = app::inventory(&f.project, None).unwrap();
+    let symbols = &inventory.revision.inputs[0]
+        .inventory
+        .as_ref()
+        .unwrap()
+        .objects[1]
+        .elf
+        .as_ref()
+        .unwrap()
+        .symbols;
+    let dynamic = symbols
+        .iter()
+        .find(|s| s.id.table == SymbolTableKind::Dynamic && s.name.as_deref() == Some(b"entry"))
+        .unwrap()
+        .id
+        .clone();
+    assert_ne!(dynamic.index, f.request.symbol.index);
+    f.request.symbol = dynamic.clone();
+    let run = analyze(&f);
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let (manifest, records) = export(&f, run.analysis.unwrap());
+    assert_eq!(manifest.recipe.symbol, dynamic);
+    let references: Vec<_> = records
+        .iter()
+        .filter_map(|r| match r {
+            FunctionRecord::Reference { raw, target, .. } => Some((raw, target)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(references.len(), 3);
+    for (raw, target) in references {
+        let expected = symbols
+            .iter()
+            .find(|s| {
+                s.id.table == SymbolTableKind::Static && s.name.as_ref() == Some(&target.name)
+            })
+            .unwrap();
+        assert_eq!(raw.target.symbol, expected.id);
+        assert_eq!(target.symbol, expected.id);
+    }
+}
+
+#[test]
+fn ambiguous_symbol_tables_and_dynamic_relocations_fail_explicitly() {
+    let duplicate =
+        support::dynamic_symbols(support::dynamic_symbols(data_object(false), false), false);
+    let mut dynamic_relocation = support::dynamic_symbols(data_object(true), false);
+    let shoff = u32::from_le_bytes(dynamic_relocation[32..36].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(dynamic_relocation[48..50].try_into().unwrap()) as usize;
+    for i in 1..count {
+        let at = shoff + i * 40;
+        if u32::from_le_bytes(dynamic_relocation[at + 4..at + 8].try_into().unwrap())
+            == object::elf::SHT_RELA
+        {
+            dynamic_relocation[at + 24..at + 28]
+                .copy_from_slice(&((count - 1) as u32).to_le_bytes());
+        }
+    }
+    for (bytes, expected) in [
+        (duplicate, ErrorCode::InvalidRequest),
+        (dynamic_relocation, ErrorCode::Incompatible),
+    ] {
+        let f = fixture(bytes, false);
+        let result = f
+            .app
+            .start_propose_data(&f.project, proposal(&f), budget())
+            .unwrap()
+            .wait();
+        assert_eq!(result.state, RunState::Failed, "{result:?}");
+        assert_eq!(result.error.unwrap().code, expected);
+        assert!(result.knowledge.is_none());
+        assert_eq!(
+            app::inventory(&f.project, None).unwrap().revision_id,
+            f.revision
+        );
+    }
+}

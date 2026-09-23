@@ -697,7 +697,7 @@ fn check_function_publication(decoding: bool) {
             abi: RiscvAbi::Ilp32,
             address_space: CodeAddressSpace::Section,
             schema: 4,
-            policy: 4,
+            policy: 5,
             semantics: Some("fixture-values/1".into()),
             decoder: "fixture/1".into(),
             project: project.id().clone(),
@@ -807,7 +807,7 @@ fn staged_investigation(
     digest.include(&entry).unwrap();
     let plan = investigation_plan(InvestigationRecipe {
         schema: 2,
-        policy: 2,
+        policy: 3,
         project: writer.project.id.clone(),
         request: InvestigationRequest {
             revision: Some(revision.clone()),
@@ -853,7 +853,7 @@ fn staged_investigation(
                     abi: RiscvAbi::Ilp32,
                     address_space: CodeAddressSpace::Section,
                     schema: 4,
-                    policy: 4,
+                    policy: 5,
                     project: writer.project.id.clone(),
                     revision: revision.clone(),
                     source: FunctionSource::Input { input: 0 },

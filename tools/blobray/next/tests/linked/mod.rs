@@ -1435,3 +1435,86 @@ fn image_data_relocation_overlap_uses_section_relative_coordinates() {
         }
     }
 }
+
+#[test]
+fn static_executable_with_only_dynamic_symbols_analyzes_captured_bytes() {
+    let f = fixture(false, true);
+    let object_path = f.dir.path().join("standalone.o");
+    let image_path = f.dir.path().join("standalone.elf");
+    fs::write(&object_path, object(false)).unwrap();
+    let status = Command::new(linker())
+        .args(["-m", "elf32lriscv", "-e", "helper", "-o"])
+        .arg(&image_path)
+        .arg(&object_path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    fs::write(
+        &image_path,
+        support::dynamic_symbols(fs::read(&image_path).unwrap(), true),
+    )
+    .unwrap();
+    f.app
+        .import(
+            &f.project,
+            vec![app::ImportInput {
+                role: "image".into(),
+                path: image_path.clone(),
+                expected: None,
+            }],
+            Target::Riscv32Ilp32,
+            budget(),
+        )
+        .unwrap();
+    let inventory = app::inventory(&f.project, None).unwrap();
+    let object = &inventory.revision.inputs[0]
+        .inventory
+        .as_ref()
+        .unwrap()
+        .objects[0];
+    let symbol = object
+        .elf
+        .as_ref()
+        .unwrap()
+        .symbols
+        .iter()
+        .find(|s| s.name.as_deref() == Some(b"helper"))
+        .unwrap()
+        .id
+        .clone();
+    assert_eq!(symbol.table, SymbolTableKind::Dynamic);
+    let request = FunctionRequest {
+        revision: Some(inventory.revision_id),
+        source: FunctionSource::Input { input: 0 },
+        symbol: symbol.clone(),
+        extent: None,
+        research: None,
+    };
+    fs::remove_file(image_path).unwrap();
+    fs::remove_file(object_path).unwrap();
+    let request_path = f.dir.path().join("dynamic-request.json");
+    fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let result = cli(
+        &f,
+        &[
+            "analyze-function",
+            "--request",
+            request_path.to_str().unwrap(),
+        ],
+    );
+    let id: FunctionAnalysisId = serde_json::from_value(result["run"]["analysis"].clone()).unwrap();
+    let output = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::Analysis { id, export: false },
+            budget(),
+        )
+        .unwrap();
+    let app::QuerySummary::Analysis { manifest, .. } = output.summary() else {
+        panic!("analysis")
+    };
+    assert_eq!(manifest.recipe.symbol, symbol);
+    assert_eq!(manifest.recipe.address_space, CodeAddressSpace::Image);
+    assert_eq!(manifest.instructions, 1);
+}

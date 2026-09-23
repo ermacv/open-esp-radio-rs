@@ -792,3 +792,23 @@ intersects the selected range or any section relocation has unknown write extent
 Proven disjoint fixed-width writes do not block unrelated integer data. The
 manifest retains total, overlapping and unknown-extent counts. Unknown transforms
 are never excluded merely by their offset, and invalid known extents are rejected. Successful export makes no general completeness or comparison claim.
+
+### Physical symbol selection
+
+Prepared function/data views select SHT_SYMTAB or SHT_DYNSYM by physical table
+kind, section and entry index; conventional section names are not identities.
+One table of each kind is supported. Missing, duplicate or mismatched tables and
+invalid indices fail before publishing an analysis or accepting knowledge.
+Dynamic symbols in static RV32 ET_REL/ET_EXEC remain ordinary captured metadata;
+they grant no dynamic-loading or TLS support. Static relocations keep their own
+`sh_link` target table independently of the selected function/data symbol. A
+relocation referencing another table is explicitly outside the current profile.
+
+Whole-object enumeration preserves both static and dynamic STT_FUNC occurrences,
+including aliases, as separate physical requests and results. Coverage unions
+selected byte intervals without turning duplicate symbols into additional bytes.
+Function selection policy 5 and investigation policy 3 record this interpretation;
+reading does not convert older policies. Regression coverage lives in Next
+`functions` tests `dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen`,
+`dynamic_function_selection_keeps_static_relocation_target_identity` and
+`dynamic_and_static_function_aliases_remain_distinct_in_saved_publication`.

@@ -62,7 +62,7 @@ pub fn investigation_plan(recipe: InvestigationRecipe) -> Result<InvestigationPl
 }
 pub fn validate_investigation_plan(plan: &InvestigationPlan) -> Result<()> {
     let r = &plan.recipe;
-    if r.schema != 2 || r.policy != 2 {
+    if r.schema != 2 || r.policy != 3 {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported investigation recipe",

@@ -221,7 +221,7 @@ impl<'m> FunctionEngine<'m> {
                 abi: view.abi,
                 address_space: view.address_space,
                 schema: 4,
-                policy: 4,
+                policy: 5,
                 decoder: self.decoder.identity().into(),
                 semantics: Some(self.decoder.semantic_identity().into()),
                 project: self.project.id().clone(),

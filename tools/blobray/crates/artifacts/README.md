@@ -80,3 +80,10 @@ An ordinal index retains valid prefix entries when a later archive header is mal
 VMA ranges from the same verified buffer and prepared sections as function views.
 It preserves raw relocations and writable-initialization metadata, rejects missing
 or ambiguous backing, and gives no runtime-value or semantic-layout guarantee.
+
+Prepared data/function selection validates SHT_SYMTAB/SHT_DYNSYM kind, physical
+section and entry index without a name lookup. At most one of each table kind is
+supported. A selected dynamic symbol never changes the table used to interpret
+static relocations: their targets retain the `sh_link` table identity. Relocations
+using another table are explicitly unsupported by this static profile. Mapping
+markers from both tables share the same validation and admitted interval owner.

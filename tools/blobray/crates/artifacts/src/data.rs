@@ -14,32 +14,7 @@ impl PreparedObject<'_, '_> {
         elf.data()
     }
     pub fn validate_data_symbol(&self, occurrence: &ObjectId, symbol: &SymbolId) -> Result<()> {
-        use object::read::elf::SectionHeader;
-        let object::File::Elf32(elf) = &self.file else {
-            unreachable!()
-        };
-        let table = self
-            .file
-            .section_by_name(".symtab")
-            .ok_or_else(|| invalid("missing symbol table"))?
-            .index();
-        if symbol.object != *occurrence
-            || symbol.table != SymbolTableKind::Static
-            || symbol.table_section != table.0 as u32
-            || elf
-                .elf_section_table()
-                .section(table)
-                .map_err(parse)?
-                .sh_type(elf.endian())
-                != object::elf::SHT_SYMTAB
-        {
-            return Err(invalid("data symbol belongs to another object or table"));
-        }
-        self.file
-            .symbol_by_index(object::SymbolIndex(
-                usize::try_from(symbol.index).map_err(|_| invalid("symbol index overflow"))?,
-            ))
-            .map_err(parse)?;
+        self.selected_symbol(occurrence, symbol)?;
         Ok(())
     }
 
@@ -54,12 +29,6 @@ impl PreparedObject<'_, '_> {
             return Err(invalid("prepared data belongs to another occurrence"));
         }
         self.occurrence = Some(occurrence.clone());
-        let table = self
-            .file
-            .section_by_name(".symtab")
-            .ok_or_else(|| invalid("missing symbol table"))?
-            .index()
-            .0 as u32;
         let (index, offset, length) = match selector {
             DataSelector::Section {
                 section,
@@ -67,20 +36,7 @@ impl PreparedObject<'_, '_> {
                 length,
             } => (object::SectionIndex(*section as usize), *offset, *length),
             DataSelector::Symbol { symbol, length } => {
-                self.validate_data_symbol(occurrence, symbol)?;
-                if symbol.object != *occurrence
-                    || symbol.table != SymbolTableKind::Static
-                    || symbol.table_section != table
-                {
-                    return Err(invalid("data symbol belongs to another object or table"));
-                }
-                let symbol = self
-                    .file
-                    .symbol_by_index(object::SymbolIndex(
-                        usize::try_from(symbol.index)
-                            .map_err(|_| invalid("symbol index overflow"))?,
-                    ))
-                    .map_err(parse)?;
+                let symbol = self.selected_symbol(occurrence, symbol)?;
                 let index = symbol
                     .section_index()
                     .ok_or_else(|| invalid("data symbol has no defined section"))?;
@@ -142,7 +98,7 @@ impl PreparedObject<'_, '_> {
         if end > file_length {
             return Err(invalid("data range exceeds file backing"));
         }
-        self.prepare_section(index, occurrence, table, control)?;
+        self.prepare_section(index, occurrence, control)?;
         let section = self.file.section_by_index(index).map_err(parse)?;
         let data = section.data().map_err(parse)?;
         let bytes = data

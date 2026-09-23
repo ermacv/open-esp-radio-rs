@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00 and 01 are complete. Stage 02.1 is complete; stage 02.2 is active with the partitions below.
+Stages 00 and 01 are complete. Stages 02.1 and 02.2 are complete; stage 02.3 is active with the partitions below.
 Stage 01 acceptance is covered by `record_memory` regressions, application
 `research::lifetime_tests`, Next `functions`/`images` tests, and the real
 `phy_research.py` linked/review/export/reopen scenario. All nine Next packages,
@@ -202,8 +202,8 @@ retaining the parent acceptance criteria and native source-free workflows:
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 02.1 | done | Range-local relocation effects: unaffected integer bytes decode; intersecting/unknown transformations remain explicitly unresolved; preserve all source relocations and initialization classification; boundary/width/unknown cases and review/export/reopen pass. |
-| 02.2 | active | Exact dynamic-symbol occurrences: selected physical tables/indices are validated, data/functions use the correct table, duplicates and aliases do not merge, malformed/unsupported ELF is explicit; ordinary static-symbol scenarios remain correct. |
-| 02.3 | pending | Native symbol-less executable identities and reviewed boundaries across request/recipe/knowledge/planning/query/coverage. No synthetic SymbolId, no inference from neighboring symbols, no dual legacy resolver. Analyze/export/reopen retains exact ranges and explicit claim scope. |
+| 02.2 | done | Exact dynamic-symbol occurrences: selected physical tables/indices are validated, data/functions use the correct table, duplicates and aliases do not merge, malformed/unsupported ELF is explicit; ordinary static-symbol scenarios remain correct. |
+| 02.3 | active | Native symbol-less executable identities and reviewed boundaries across request/recipe/knowledge/planning/query/coverage. No synthetic SymbolId, no inference from neighboring symbols, no dual legacy resolver. Analyze/export/reopen retains exact ranges and explicit claim scope. |
 
 ### Stage 14 partitions fixed before activation
 

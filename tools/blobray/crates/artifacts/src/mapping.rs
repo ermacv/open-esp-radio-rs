@@ -45,7 +45,7 @@ pub(crate) fn data_ranges<'a>(
         .checked_add(section.size())
         .ok_or_else(|| invalid("mapping section extent overflow"))?;
     let mut count = 0usize;
-    for symbol in file.symbols() {
+    for symbol in file.symbols().chain(file.dynamic_symbols()) {
         control.checkpoint(1)?;
         if symbol.section_index() == Some(section_index)
             && kind(
@@ -74,7 +74,7 @@ pub(crate) fn data_ranges<'a>(
         .map_err(|_| allocation())?;
     let mut ranges = Vec::new();
     ranges.try_reserve_exact(count).map_err(|_| allocation())?;
-    for symbol in file.symbols() {
+    for symbol in file.symbols().chain(file.dynamic_symbols()) {
         control.checkpoint(1)?;
         if symbol.section_index() != Some(section_index) {
             continue;

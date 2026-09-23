@@ -805,8 +805,7 @@ identifies the retained ELF, not a symbol from an original archive. Extents use
 section offsets for ET_REL and virtual addresses for ET_EXEC. Nonempty
 extents must start at the selected symbol, on a halfword boundary, and remain in
 its file-backed executable section. Selection names enumerate candidates,
-including undefined references; choose the exact defined occurrence. Static-table
-identity is validated, and physical input/member identities never collapse by name.
+including undefined references; choose the exact defined occurrence. Physical static/dynamic table kind, section and entry index are validated, and physical input/member identities never collapse by name.
 
 ```console
 cargo blobray analyze-function --project /path/to/investigation \
@@ -951,7 +950,9 @@ Function recipe/manifest version 4 records the semantic producer, typed source,
 address space, register values, memory accesses, transfers and semantic gaps.
 Older function schemas are unsupported; reading never converts or recomputes
 a result. Captured inputs are unchanged. Function manifests are independent
-of storage metadata version. Investigation recipes use version/policy 2.
+of storage metadata version. Function selection policy 5 validates physical static/dynamic tables.
+Investigation recipes use version 2 / policy 3 and enumerate both tables; older
+selection policies are unsupported.
 
 The domain `FunctionSemantics` port extends decoding with typed operations and
 relocation roles. The RISC-V backend lifts decoded instructions, never display
@@ -1150,8 +1151,10 @@ includes decoder and semantic producer identities, but excludes runtime budgets
 and local paths. Changing the producer requires a new plan. Inspection `plan` /
 `run` commands remain a separate read-only operation.
 
-Enumeration selects static `STT_FUNC` symbols defined in nonempty executable
-sections. Every input and object is accounted for, including data-only objects.
+Enumeration selects static and dynamic `STT_FUNC` symbols defined in nonempty executable
+sections. Aliases and occurrences in different tables remain separate selections
+even when their names, addresses and bytes match. Every input and object is
+accounted for, including data-only objects.
 An executable object without such symbols is a gap; no function boundaries are
 inferred from disassembly. Complete coverage means complete outcomes for this
 selected symbol scope, not proof that every executable byte has a function or
@@ -1515,11 +1518,15 @@ Each range uses one of these selectors:
 | Selector | JSON fields in addition to `kind` | Meaning |
 | --- | --- | --- |
 | `section` | `section`, `offset`, `length` | Explicit section-relative bytes |
-| `symbol` | `symbol`, `length` (integer or null) | Exact static SymbolId; null uses its declared size |
+| `symbol` | `symbol`, `length` (integer or null) | Exact static or dynamic SymbolId; null uses its declared size |
 | `image` | `address`, `length` | Virtual address in a file-backed load mapping of an executable ELF |
 
-The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with one
-static `.symtab`. There are at most 32 ranges and 32 analysis IDs per request; at
+The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with at least one
+physical symbol table and at most one each of SHT_SYMTAB and SHT_DYNSYM; names
+such as `.symtab` are not table identity. Dynamic symbol selection does not enable
+dynamic loading, TLS or relocation application. Section relocations must reference
+the static table through `sh_link`; a different table is an explicit unsupported
+profile, never an index interpreted in the static table. There are at most 32 ranges and 32 analysis IDs per request; at
 least one is required. A zero-sized symbol needs an explicit length. A sized symbol cannot
 be expanded past its declared size. Overflow, out-of-range, ambiguous addresses,
 compressed sections and NOBITS are explicit errors. Requests never guess length

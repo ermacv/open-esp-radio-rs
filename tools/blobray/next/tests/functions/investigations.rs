@@ -949,3 +949,48 @@ fn malformed_archive_suffix_preserves_captured_functions_as_partial_results() {
     assert_eq!(manifest.coverage.analyzed, 1);
     assert!(manifest.coverage.gaps > 0);
 }
+
+#[test]
+fn dynamic_and_static_function_aliases_remain_distinct_in_saved_publication() {
+    let f = fixture(
+        support::dynamic_symbols(object(BRANCH, BRANCH.len() as u64, false), false),
+        false,
+    );
+    let p = plan(&f, InvestigationRequest::default());
+    assert_eq!(p.recipe.policy, 3);
+    assert_eq!(p.recipe.functions, 4); // two tables in each of two physical members
+    fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+    fs::remove_file(f.dir.path().join("entry.o")).unwrap();
+    let run = publish(&f, &p);
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let (manifest, records) = read(&f, &run.publication.unwrap(), InvestigationFilter::Members);
+    assert_eq!(manifest.coverage.functions, 4);
+    assert_eq!(manifest.coverage.analyzed, 4);
+    let mut identities = Vec::new();
+    let mut analyses = Vec::new();
+    for member in records.members {
+        if let PlanEntry::Function { request, .. } = member.entry {
+            assert!(!identities.contains(&request.symbol));
+            identities.push(request.symbol);
+            let InvestigationOutcome::Analyzed { analysis, .. } = member.outcome else {
+                panic!("missing analysis")
+            };
+            assert!(!analyses.contains(&analysis));
+            analyses.push(analysis);
+        }
+    }
+    assert_eq!(
+        identities
+            .iter()
+            .filter(|s| s.table == SymbolTableKind::Dynamic)
+            .count(),
+        2
+    );
+    assert_eq!(
+        identities
+            .iter()
+            .filter(|s| s.table == SymbolTableKind::Static)
+            .count(),
+        2
+    );
+}

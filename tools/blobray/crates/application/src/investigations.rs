@@ -163,7 +163,7 @@ impl ElfSink for Enumeration<'_> {
         c.checkpoint(1)
     }
     fn symbol(&mut self, r: &SymbolRecord, c: &mut dyn RunControl) -> Result<()> {
-        if !self.selected || r.symbol_type != 2 || r.id.table != SymbolTableKind::Static {
+        if !self.selected || r.symbol_type != 2 {
             return Ok(());
         }
         let section = if r.raw_section == 0xffff {
@@ -376,7 +376,7 @@ pub(crate) fn enumerate(
     let entries = scan.digest.finish()?;
     investigation_plan(InvestigationRecipe {
         schema: 2,
-        policy: 2,
+        policy: 3,
         project: project.id().clone(),
         request: original_request.clone(),
         producer: producer.clone(),

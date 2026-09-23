@@ -10,7 +10,7 @@ pub enum DataSelector {
         offset: u64,
         length: u64,
     },
-    /// A defined static symbol; a zero-sized symbol requires an explicit length.
+    /// A defined physical static or dynamic symbol; a zero-sized symbol requires an explicit length.
     Symbol {
         symbol: SymbolId,
         length: Option<u64>,
